@@ -7,6 +7,7 @@ import {
   contentEpochFollows,
   InvalidProtectedData,
   signContentEpoch,
+  signContentReview,
   signPolicyContinuation,
   verifyContentEpoch,
 } from "@sortsys/zerotrust/sortsys";
@@ -24,10 +25,112 @@ import {
   projectPayload,
 } from "../data/projectData";
 import { publicId } from "../data/products";
-import { protectedReadView, required } from "../data/protectedObjects";
+import {
+  protectedReadView,
+  required,
+  type Collection,
+  type OpenedObject,
+} from "../data/protectedObjects";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
+import {
+  TOOL_BOOKING_MODEL,
+  TOOL_MODEL,
+  toolBookingArea,
+  toolCollection,
+  toolDomain,
+} from "../data/toolData";
 
 type Activation = MutateInput<"zerotrust.content.activate">;
+type Proposal = Omit<Activation, "review">;
+type ReadView = Awaited<ReturnType<typeof protectedReadView>>;
+
+export class RestoreBookingConflict extends Error {}
+
+async function readAreas(
+  view: ReadView,
+  areas: readonly Collection[],
+  visit: (area: Collection, object: OpenedObject) => void,
+) {
+  for (let offset = 0; offset < areas.length; offset += 16) {
+    const batch = areas.slice(offset, offset + 16);
+    await view.prefetch(batch.map((area) => ({ area })));
+    await mapConcurrent(batch, 4, async (area) => {
+      for (const object of await view.read(area)) visit(area, object);
+    });
+  }
+}
+
+async function verifyActiveBookings(
+  view: ReadView,
+  projects: ReadonlySet<string>,
+) {
+  const records = view.areas((domain) => {
+    const part = toolDomain(domain);
+    if (!part || part.facet !== "master-data") return null;
+    return toolCollection(part.namespace, part.id, part.facet);
+  });
+  const bookingAreas = records
+    .filter((area) => area.scope.startsWith("tool:"))
+    .map((area) => toolBookingArea(toolDomain(area.domain)!.id));
+  const tools = new Map<string, string | null>();
+  const slots = new Map<string, string | null>();
+  const active = new Map<
+    string,
+    { tracking: string; project: string | null }
+  >();
+  await readAreas(
+    view,
+    [...records, ...bookingAreas],
+    (area, { envelope, value }) => {
+      if (area.prefix.endsWith(":booking")) {
+        const slot = TOOL_BOOKING_MODEL.decode(value, envelope.object, area);
+        slots.set(slot.toolId, slot.trackingId);
+        return;
+      }
+      const part = TOOL_MODEL.decode(value, envelope.object, area);
+      if (part.deleted) return;
+      if (part.namespace === "tool") {
+        tools.set(part.id, part.activeTrackingId);
+        return;
+      }
+      const row = part.rows[0]!.values;
+      if (row.ended_at !== null) return;
+      const id = publicId(row.tool_id);
+      if (active.has(id)) throw new RestoreBookingConflict();
+      active.set(id, {
+        tracking: part.id,
+        project: row.project_id === null ? null : publicId(row.project_id),
+      });
+    },
+  );
+
+  let unchecked = 0;
+  for (const [tool, tracking] of tools) {
+    if (!slots.has(tool)) slots.set(tool, tracking);
+  }
+  for (const [tool, tracking] of slots) {
+    if (tracking === null) continue;
+    if (!tools.has(tool)) throw new RestoreBookingConflict();
+    if (
+      !view.readable(toolCollection("tool-tracking", tracking, "master-data"))
+    ) {
+      unchecked++;
+    } else if (active.get(tool)?.tracking !== tracking) {
+      throw new RestoreBookingConflict();
+    }
+  }
+  for (const [tool, booking] of active) {
+    if (!view.readable(toolCollection("tool", tool, "master-data"))) {
+      unchecked++;
+    } else if (!tools.has(tool) || slots.get(tool) !== booking.tracking) {
+      throw new RestoreBookingConflict();
+    }
+    if (booking.project === null) continue;
+    if (!view.readable(projectCollection(booking.project))) unchecked++;
+    else if (!projects.has(booking.project)) throw new RestoreBookingConflict();
+  }
+  return unchecked;
+}
 
 /** Bind the prepared copy to the current account's pinned authority and policy.
  * The called workflow owns the confirmation and sends the resulting approval. */
@@ -35,7 +138,7 @@ export async function approvePreparedContent(
   client: Client,
   prepared: MutateResult<"zerotrust.content.prepare">,
   signal: AbortSignal,
-): Promise<Activation> {
+): Promise<Proposal> {
   const context = await administratorContext(client, signal);
   const { account, history, authority } = context;
   const expected = { tenant: account.tenant };
@@ -97,17 +200,24 @@ export async function inspectPreparedContent(
       throw new InvalidProtectedData();
   };
   const check = { operation, approval };
-  const view = await protectedReadView(client, signal, (pages) =>
-    required(
+  const { stamp } = await required(
+    client.query(
+      "zerotrust.content.inspect",
+      { ...check, start: true },
+      { strategy: "network-only" },
+    ),
+  );
+  const view = await protectedReadView(client, signal, async (pages) => {
+    const response = await required(
       client.query(
         "zerotrust.content.inspect",
         { ...check, pages },
-        {
-          strategy: "network-only",
-        },
+        { strategy: "network-only" },
       ),
-    ),
-  );
+    );
+    if (response.stamp !== stamp) throw new InvalidProtectedData();
+    return response.pages;
+  });
   const catalogues = [CUSTOMER_COLLECTION, CONTACT_COLLECTION].filter(
     view.readable,
   );
@@ -146,43 +256,48 @@ export async function inspectPreparedContent(
     const id = projectDomainId(domain);
     return id ? projectCollection(id) : null;
   });
-  let projectCount = 0;
-  for (let offset = 0; offset < projects.length; offset += 16) {
-    const batch = projects.slice(offset, offset + 16);
-    await view.prefetch(batch.map((area) => ({ area })));
-    await mapConcurrent(batch, 4, async (area) => {
-      const id = projectDomainId(area.domain);
-      if (!id) throw new InvalidProtectedData();
-      for (const { envelope, value } of await view.read(area)) {
-        const { project, contacts: links } = projectPayload(
-          value,
-          envelope.object,
-          id,
-        );
-        if (!project) continue;
-        projectCount++;
-        if (project.values.customer_id !== null)
-          checkReference(customers, project.values.customer_id);
-        for (const link of links)
-          checkReference(contacts, link.values.contact_id);
-      }
-    });
-    live();
-  }
+  const projectIds = new Set<string>();
+  await readAreas(view, projects, (area, { envelope, value }) => {
+    const id = projectDomainId(area.domain);
+    if (!id) throw new InvalidProtectedData();
+    const { project, contacts: links } = projectPayload(
+      value,
+      envelope.object,
+      id,
+    );
+    if (!project) return;
+    projectIds.add(id);
+    if (project.values.customer_id !== null)
+      checkReference(customers, project.values.customer_id);
+    for (const link of links) checkReference(contacts, link.values.contact_id);
+  });
+  const uncheckedBookings = await verifyActiveBookings(view, projectIds);
   const dependencies = await required(
     client.query("zerotrust.content.inspect", check, {
       strategy: "network-only",
     }),
   );
   live();
-  if (!Array.isArray(dependencies) || dependencies.length !== 0)
+  if (dependencies.pages.length !== 0 || dependencies.stamp !== stamp)
     throw new InvalidProtectedData();
+  const context = await administratorContext(client, signal);
+  live();
+  const review = await signContentReview(
+    contentEpoch(approval),
+    operation,
+    stamp,
+    context.authority,
+  );
+  context.live();
+  live();
   return {
-    projects: projectCount,
+    projects: projectIds.size,
     customers: customers?.size ?? null,
     contacts: contacts?.size ?? null,
     missingReferences,
     uncheckedReferences,
+    uncheckedBookings,
+    review,
   };
 }
 
@@ -210,7 +325,8 @@ export async function activatePreparedContent(
     receipt.operation !== input.operation ||
     receipt.content !== fingerprint ||
     receipt.policyVersion !== input.policy.version ||
-    receipt.policySignature !== input.policy.signature
+    receipt.policySignature !== input.policy.signature ||
+    receipt.reviewSignature !== input.review.signature
   )
     throw new InvalidProtectedData();
   await client.clearCache();

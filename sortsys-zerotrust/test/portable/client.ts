@@ -36,6 +36,7 @@ import {
   stampOtsDigest,
   VerifiedStore,
   signContentEpoch,
+  signContentReview,
   contentEpochFrame,
   contentEpochFingerprint,
   contentEpochFollows,
@@ -117,6 +118,13 @@ export async function exerciseFramework() {
     identity.signingKey.privateKey,
   );
   await contentEpochFollows(restoredContent, null, null);
+  const restoreOperation = "restore-research-backup";
+  const restoredReview = await signContentReview(
+    restoredContent,
+    restoreOperation,
+    await digest(bytes("observed laboratory metadata")),
+    identity.signingKey.privateKey,
+  );
   const logicalContent = { collection: "research-notes", key: "note:1" };
   const restoredRecord = namespaceRecord(
     logicalContent,
@@ -562,6 +570,8 @@ export async function exerciseFramework() {
   return {
     passkey,
     restoredContent,
+    restoreOperation,
+    restoredReview,
     restoredContentFrame: base64(contentEpochFrame(restoredContent)),
     pinnedContent,
     pinnedContentKey: await contentPinKey(logicalContent),

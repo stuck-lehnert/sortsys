@@ -878,6 +878,14 @@ laden. Eine gültige Signatur eines nie veröffentlichten Seitenzweigs genügt
 nicht. Autorisierung, Prüfung der Sicherungsdatei und Veröffentlichung des
 neuen Kopfes gehören in denselben atomaren Ablauf.
 
+Wenn ein Client vor der Freigabe verschlüsselte Verknüpfungen prüft, kann er
+die Beobachtung mit `signContentReview` bestätigen. Die Bestätigung bindet
+Auftrag, signierte Auswahl und einen vom Speicheradapter gelieferten
+Fingerabdruck. `content_epoch::ContentReview::verify` prüft die Signatur.
+Die Anwendung legt fest, welche Versionen der Fingerabdruck erfasst. Sie
+muss dieselben Versionen in der Freigabetransaktion vergleichen und die
+Freigabe bei einer Änderung abbrechen.
+
 `namespaceRecord(record, number)` bildet eine logische Metadatenkennung auf
 eine getrennte Sammlung ab; `logicalRecord` prüft die umgekehrte Zuordnung.
 Objektkennungen bleiben erhalten. Die Anwendung legt ausdrücklich fest, welche

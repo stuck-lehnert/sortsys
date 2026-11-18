@@ -552,6 +552,12 @@ async fn commit_batch_inner(
         }
     }
     context.transaction.prefetch_protected(retained).await?;
+    let reviewed_bookings = input
+        .objects
+        .iter()
+        .filter_map(|packet| super::super::resource_access::booking_review_key(&packet.envelope))
+        .collect();
+    context.transaction.prefetch(reviewed_bookings).await?;
     let checkpoints = super::super::live_checkpoints::persistence::prepare(
         &mut context,
         input.documents.as_deref().unwrap_or_default(),
@@ -969,6 +975,9 @@ async fn save(
     // One checkpoint per key bounds checkpoint size while current rows advance.
     for record in retained.into_iter().take(retained_record_count(input)) {
         context.transaction.protect_record(record).await?;
+    }
+    if let Some(record) = super::super::resource_access::booking_review_key(envelope) {
+        context.transaction.put(record, &envelope.revision).await?;
     }
     Ok(true)
 }

@@ -178,11 +178,11 @@ async fn browser_with_tenant(
         } else {
             Duration::from_secs(1800)
         }
-    } else if mode == "administration"
+    } else if matches!(mode, "administration" | "owner-content-preparation")
         && std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() == Ok("1")
     {
-        // This includes the actual scoped-access and seed-recovery views as
-        // well as both signed restore and recovery transitions.
+        // These cases combine multiple signed transitions with real browser
+        // sessions. Their individual interaction deadlines stay unchanged.
         Duration::from_secs(420)
     } else if matches!(
         mode,

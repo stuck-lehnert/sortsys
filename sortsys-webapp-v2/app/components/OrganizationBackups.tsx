@@ -10,6 +10,7 @@ import {
   activatePreparedContent,
   approvePreparedContent,
   inspectPreparedContent,
+  RestoreBookingConflict,
 } from "~/lib/backups/contentRestore";
 import { client } from "~/lib/client";
 import { unlockedAccount } from "~/lib/crypto/session";
@@ -24,7 +25,13 @@ type CheckedBackup = {
   report: Verification;
 };
 type Review =
-  | { status: "checking" | "failed"; backup: Backup; operation: string }
+  | { status: "checking"; backup: Backup; operation: string }
+  | {
+      status: "failed";
+      backup: Backup;
+      operation: string;
+      bookingConflict: boolean;
+    }
   | { status: "checked"; checked: CheckedBackup };
 type Publication =
   | { status: "restoring" | "failed"; checked: CheckedBackup }
@@ -86,6 +93,14 @@ function RestoreCounts({ report }: { report: Verification }) {
           {uiText(
             "Für einige verknüpfte Adressdaten fehlt die Lesefreigabe zur Prüfung.",
             "Some linked address data could not be checked with the current read access.",
+          )}
+        </p>
+      )}
+      {report.uncheckedBookings > 0 && (
+        <p className="text-sm text-muted">
+          {uiText(
+            "Für einige Verknüpfungen laufender Werkzeugbuchungen fehlt die Lesefreigabe zur Prüfung.",
+            "Some active tool booking links could not be checked with the current read access.",
           )}
         </p>
       )}
@@ -174,7 +189,10 @@ export default function OrganizationBackups() {
         input,
         controller.signal,
       );
-      setReview({ status: "checked", checked: { backup, input, report } });
+      setReview({
+        status: "checked",
+        checked: { backup, input: { ...input, review: report.review }, report },
+      });
     } catch (error) {
       if (!controller.signal.aborted) {
         const conflict =
@@ -182,6 +200,7 @@ export default function OrganizationBackups() {
         setReview({
           status: "failed",
           backup,
+          bookingConflict: error instanceof RestoreBookingConflict,
           operation: conflict ? crypto.randomUUID() : operation,
         });
       }
@@ -359,10 +378,15 @@ export default function OrganizationBackups() {
             )}
             {failedReview && (
               <MyCallout color="red">
-                {uiText(
-                  "Die Sicherung konnte nicht geprüft werden.",
-                  "The backup could not be checked.",
-                )}
+                {failedReview.bookingConflict
+                  ? uiText(
+                      "Die Sicherung passt nicht zu den laufenden Werkzeugbuchungen. Prüfen Sie eine neuere Sicherung oder klären Sie die betroffenen Buchungen.",
+                      "This backup is incompatible with the active tool bookings. Check a more recent backup or resolve the affected bookings.",
+                    )
+                  : uiText(
+                      "Die Sicherung konnte nicht geprüft werden.",
+                      "The backup could not be checked.",
+                    )}
                 <MyButton
                   kind="ghost"
                   onClick={() =>

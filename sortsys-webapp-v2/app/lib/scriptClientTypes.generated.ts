@@ -210,6 +210,11 @@ export type ContentEpoch = {
     signature: string;
 };
 
+export type ContentReview = {
+    stamp: string;
+    signature: string;
+};
+
 export type CreationCapability = {
     tenant: string;
     id: string;
@@ -615,6 +620,15 @@ export type MigrationOrigin = {
     generation: string;
     signature: string;
     history?: HistoryOrigin;
+};
+
+export type ObjectPage = {
+    snapshot: string;
+    keyGeneration: string;
+    objects: Array<EncryptedObject<Facet>>;
+    after: string | null;
+    recipientAccess: Array<RecipientAccess>;
+    openings?: Array<DomainOpening>;
 };
 
 export type PacketCommitment = {
@@ -1332,6 +1346,7 @@ export type QueryInputs = {
         operation: string;
         approval: ContentEpoch;
         pages?: ListBatchInput;
+        start?: boolean;
     };
     "zerotrust.content.snapshots": {
         after?: string;
@@ -2798,14 +2813,10 @@ export type QueryOutputs = {
         after: string | null;
         unchanged: boolean;
     };
-    "zerotrust.content.inspect": Array<{
-        snapshot: string;
-        keyGeneration: string;
-        objects: Array<EncryptedObject<Facet>>;
-        after: string | null;
-        recipientAccess: Array<RecipientAccess>;
-        openings?: Array<DomainOpening>;
-    }>;
+    "zerotrust.content.inspect": {
+        pages: Array<ObjectPage>;
+        stamp: string;
+    };
     "zerotrust.content.snapshots": {
         rows: Array<TenantSnapshot>;
         after: string | null;
@@ -4306,6 +4317,7 @@ export type MutationInputs = {
         operation: string;
         approval: ContentEpoch;
         policy: SignedPolicy;
+        review: ContentReview;
     };
     "zerotrust.content.prepare": {
         snapshotOperation: string;
@@ -5209,6 +5221,7 @@ export type MutationOutputs = {
         content: string;
         policyVersion: string;
         policySignature: string;
+        reviewSignature: string;
     };
     "zerotrust.content.prepare": {
         operation: string;

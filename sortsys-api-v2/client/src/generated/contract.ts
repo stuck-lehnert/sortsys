@@ -48,6 +48,8 @@ export type Completion = { tenant: string, generation: string, subject: string, 
 
 export type ContentEpoch = { format: string, tenant: string, authorityGeneration: string, number: string, previous: string | null, sourceNumber: string, sourceHead: string | null, snapshot: string, actor: string, signature: string, };
 
+export type ContentReview = { stamp: string, signature: string, };
+
 export type CreationCapability = { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
 
 export type CreationOptions = { challenge: string, rp: RelyingParty, user: PasskeyUser, pubKeyCredParams: Array<CredentialParameter>, timeout: number, attestation: "none", authenticatorSelection: AuthenticatorSelection, excludeCredentials: Array<CredentialDescriptor>, };
@@ -151,6 +153,8 @@ export type MemberCreation = { tenant: string, generation: string, author: strin
 export type Message = { sequence: string, kind: Kind, key: string, authorityGeneration: string, content?: string, envelope: EncryptedObject<Facet>, };
 
 export type MigrationOrigin = { generation: string, signature: string, history?: HistoryOrigin, };
+
+export type ObjectPage = { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, };
 
 export type PacketCommitment = { count: number, digest: string, };
 
@@ -356,7 +360,7 @@ export type QueryInputs = {
   "users.vacations.list": { from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; };
   "zerotrust.access.page": { snapshot: string, after: string, includeDomains: boolean, };
   "zerotrust.access.snapshot": { known?: string, domain?: string, domains?: Array<string>, includeDomains?: boolean, };
-  "zerotrust.content.inspect": { operation: string, approval: ContentEpoch, pages?: ListBatchInput, };
+  "zerotrust.content.inspect": { operation: string, approval: ContentEpoch, pages?: ListBatchInput, start?: boolean, };
   "zerotrust.content.snapshots": { after?: string, };
   "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', subject?: string, };
   "zerotrust.creations.list": void;
@@ -508,7 +512,7 @@ export type QueryOutputs = {
   "users.vacations.list": { id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: "vacation" | "other"; label: null | string; status: "denied" | "requested" | "approved"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[];
   "zerotrust.access.page": { snapshot: string, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, after: string | null, };
   "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, };
-  "zerotrust.content.inspect": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, }>;
+  "zerotrust.content.inspect": { pages: Array<ObjectPage>, stamp: string, };
   "zerotrust.content.snapshots": { rows: Array<TenantSnapshot>, after: string | null, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
   "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, }>;
@@ -725,7 +729,7 @@ export type MutationInputs = {
   "users.vacations.delete": { id: string; expectedRevision?: undefined | string; };
   "users.vacations.deny": { id: string; expectedRevision?: undefined | string; reason: string; };
   "zerotrust.access.publish": { policyVersion: string, grants: Array<KeyGrant>, domains: Array<DomainDefinition>, };
-  "zerotrust.content.activate": { operation: string, approval: ContentEpoch, policy: SignedPolicy, };
+  "zerotrust.content.activate": { operation: string, approval: ContentEpoch, policy: SignedPolicy, review: ContentReview, };
   "zerotrust.content.prepare": { snapshotOperation: string, operation: string, };
   "zerotrust.creations.grant": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
   "zerotrust.creations.renew": { origins: Array<CreationOrigin>, object: string, revision: string, packetSignature: string, proof: string, };
@@ -938,7 +942,7 @@ export type MutationOutputs = {
   "users.vacations.delete": { success: true; };
   "users.vacations.deny": { success: true; };
   "zerotrust.access.publish": { success: true, };
-  "zerotrust.content.activate": { operation: string, content: string, policyVersion: string, policySignature: string, };
+  "zerotrust.content.activate": { operation: string, content: string, policyVersion: string, policySignature: string, reviewSignature: string, };
   "zerotrust.content.prepare": { operation: string, snapshotOperation: string, snapshot: string, bytes: string, current: ContentEpoch | null, source: ContentEpoch | null, sourceAuthority: AuthorityCertificate, number: string, records: string, ciphertexts: string, };
   "zerotrust.creations.grant": { success: true, };
   "zerotrust.creations.renew": { success: true, };

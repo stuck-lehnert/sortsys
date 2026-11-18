@@ -45,8 +45,8 @@ Projektkosten. Die Werkzeugkarte kann auf ihre frühere Beschreibung und
 ihren früheren Standardtagessatz zurückkehren. Für eine laufende Buchung
 gilt weiterhin der bei der Ausgabe erfasste Tagessatz. Die Freigaben für
 Verantwortliche und für Kosten bleiben getrennt.
-Die Prüfung der Zuordnungen über Fachstände hinweg ist noch offen, wenn die
-Sicherung das zugehörige Werkzeug oder Projekt noch nicht enthält.
+Fehlt das zugehörige Werkzeug oder Projekt im älteren Fachstand, hält der
+Browser die Rücksicherung an, sofern er die Verknüpfung lesen kann.
 
 Auch endgültige Dokumentsperren, unveränderliche Datensätze und
 Abwesenheitsentscheidungen erhalten unabhängige Nachweise. Sobald ein
@@ -93,11 +93,18 @@ API-Instanz fortsetzen.
 
 Der Browser prüft die Signaturen und das Datenmodell der lesbaren Projekte
 und Adressdaten. Er zeigt deren Anzahl sowie fehlende Verknüpfungen zu Kunden
-oder Kontakten an, soweit deren Kataloge lesbar sind. Andere verschlüsselte
-Fachdaten und ihre Verknüpfungen sind in dieser Vorschau noch nicht abgedeckt.
+oder Kontakten an, soweit deren Kataloge lesbar sind. Bei lesbaren laufenden
+Werkzeugbuchungen prüft er auch, ob Werkzeug, Buchung und Projekt zusammenpassen.
+Fehlende Leserechte weist die Vorschau aus. Weitere verschlüsselte Fachdaten
+und ihre Verknüpfungen sind in dieser Vorschau noch nicht abgedeckt.
 Erst **Fachdaten wiederherstellen** gibt den vorbereiteten Stand frei. Die
 Freigabe erfordert die Administratorrolle und den Schlüssel der
-Mandantenautorität im Browser.
+Mandantenautorität im Browser. Der Browser signiert nach der Prüfung eine
+Bestätigung für genau diese Sicherung und den beobachteten Stand. Ändern sich
+die Berechtigungen, der Schlüsselkatalog oder die Werkzeugbuchungen, muss die
+Prüfung wiederholt werden. Die API vergleicht den beobachteten Stand in der gleichen
+Transaktion, die die Rücksicherung freigibt. Die Bestätigung enthält keine
+entschlüsselten Daten oder Verknüpfungen.
 
 Bei der Freigabe prüft die API die öffentlich prüfbaren Verweise von
 abgeschlossenen Dokumenten, persönlichen Einsatzzuweisungen und

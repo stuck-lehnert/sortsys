@@ -102,6 +102,25 @@ export async function contentEpochFingerprint(
   );
 }
 
+export type ContentReview = { stamp: string; signature: string };
+
+/** Confirm an observation of an exact pending content selection. The storage
+ * adapter defines the opaque stamp and compares it when applying the selection. */
+export async function signContentReview(
+  approval: ContentEpoch,
+  operation: string,
+  stamp: string,
+  key: CryptoKey,
+): Promise<ContentReview> {
+  identifier(operation);
+  sized(stamp, 32);
+  const content = await contentEpochFingerprint(approval);
+  return {
+    stamp,
+    signature: await sign(key, frame("zt/content-review/v1", [operation, content, stamp])),
+  };
+}
+
 export async function verifyContentEpoch(
   input: unknown,
   expected: {

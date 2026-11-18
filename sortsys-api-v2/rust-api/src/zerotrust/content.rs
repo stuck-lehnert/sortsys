@@ -15,7 +15,8 @@ use crate::{
     storage::{TenantSnapshotInput, TenantSnapshotPage},
 };
 use serde::{Deserialize, Serialize};
-use sortsys_zerotrust::content_epoch::{ContentEpoch, logical_record};
+use sha2::{Digest, Sha256};
+use sortsys_zerotrust::content_epoch::{ContentEpoch, ContentReview, logical_record};
 use std::{collections::BTreeSet, sync::Arc};
 use ts_rs::TS;
 
@@ -47,6 +48,7 @@ struct ActivateInput {
     operation: String,
     approval: ContentEpoch,
     policy: SignedPolicy,
+    review: ContentReview,
 }
 
 #[derive(Deserialize, TS)]
@@ -56,6 +58,15 @@ struct InspectContentInput {
     approval: ContentEpoch,
     #[ts(optional)]
     pages: Option<ListBatchInput>,
+    #[serde(default)]
+    #[ts(optional)]
+    start: Option<bool>,
+}
+
+#[derive(Serialize, TS)]
+struct Inspection {
+    pages: Vec<ObjectPage>,
+    stamp: String,
 }
 
 #[derive(Clone, Deserialize, Serialize, TS)]
@@ -65,6 +76,7 @@ struct ContentActivation {
     content: String,
     policy_version: String,
     policy_signature: String,
+    review_signature: String,
 }
 
 pub(super) fn register(
@@ -119,7 +131,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
     builder
         .query_stub::<TenantSnapshotInput, TenantSnapshotPage>("zerotrust.content.snapshots")
         .mutation_stub::<PrepareInput, PreparedContent>("zerotrust.content.prepare")
-        .query_stub::<InspectContentInput, Vec<ObjectPage>>("zerotrust.content.inspect")
+        .query_stub::<InspectContentInput, Inspection>("zerotrust.content.inspect")
         .mutation_stub::<ActivateInput, ContentActivation>("zerotrust.content.activate")
 }
 
@@ -159,6 +171,11 @@ fn verify_approval(
     if input.policy.tenant != context.auth.tenant {
         return Err(forbidden());
     }
+    input.review.verify(
+        &input.approval,
+        &input.operation,
+        &context.security.authority,
+    )?;
     Ok(())
 }
 
@@ -179,11 +196,43 @@ fn verify_signed_view(
     Ok(())
 }
 
+async fn review_stamp(
+    context: &mut super::access::MetadataContext,
+    operation: &str,
+    approval: &ContentEpoch,
+) -> RpcResult<String> {
+    // The prepared namespace is sealed. The browser additionally reads the
+    // live checkout pointers and tracking parents retained across epochs.
+    let booking_version = context
+        .transaction
+        .collection_version(super::resource_access::REVIEWED_BOOKINGS)
+        .await?;
+    let catalog =
+        super::setup::metadata_root(&mut context.transaction, &context.auth.tenant).await?;
+    let content = approval.fingerprint()?;
+    Ok(super::crypto::encode(&Sha256::digest(
+        super::crypto::frame(
+            "sortsys/content-review-stamp/v1",
+            &[
+                operation,
+                &content,
+                &context.security.policy.signature,
+                &catalog.catalog_version,
+                &booking_version,
+            ],
+        ),
+    )))
+}
+
 async fn inspect(
     service: &AuthService,
     request: &RequestContext,
     input: InspectContentInput,
-) -> RpcResult<Vec<ObjectPage>> {
+) -> RpcResult<Inspection> {
+    let start = input.start.unwrap_or(false);
+    if start && input.pages.is_some() {
+        return Err(invalid());
+    }
     let mut context = if let Some(pages) = &input.pages {
         let domains = persistence::selected_domains(pages)?;
         let context =
@@ -194,14 +243,17 @@ async fn inspect(
     };
     verify_signed_view(&context, &input.operation, &input.approval)?;
     select_ready_view(&mut context, &input.operation, &input.approval).await?;
+    let stamp = review_stamp(&mut context, &input.operation, &input.approval).await?;
     let pages = if let Some(pages) = input.pages {
         persistence::selected_pages(&mut context, pages).await?
     } else {
-        checks::dependencies(&mut context).await?;
+        if !start {
+            checks::dependencies(&mut context).await?;
+        }
         Vec::new()
     };
     context.transaction.validate().await?;
-    Ok(pages)
+    Ok(Inspection { pages, stamp })
 }
 
 async fn activation_receipt(
@@ -221,6 +273,7 @@ async fn activation_receipt(
             || receipt.content != head.fingerprint()?
             || receipt.policy_version != input.policy.version
             || receipt.policy_signature != input.policy.signature
+            || receipt.review_signature != input.review.signature
             || context
                 .transaction
                 .read::<ContentEpoch>(history_key(&head.number)?)
@@ -256,6 +309,9 @@ async fn activate_once(
         return Ok(receipt);
     }
     select_ready_view(&mut context, &input.operation, head).await?;
+    if review_stamp(&mut context, &input.operation, head).await? != input.review.stamp {
+        return Err(conflict());
+    }
 
     let content = head.fingerprint()?;
     checks::dependencies(&mut context).await?;
@@ -274,6 +330,7 @@ async fn activate_once(
         content,
         policy_version: input.policy.version.clone(),
         policy_signature: input.policy.signature.clone(),
+        review_signature: input.review.signature.clone(),
     };
     context
         .transaction

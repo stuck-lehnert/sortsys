@@ -6,12 +6,14 @@ import type { Client, MutateInput } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
 import {
   base64,
+  contentEpoch,
   contentEpochFingerprint,
   documentHead,
   documentHeadHash,
   encryptedObject,
   randomSecret,
   signContentEpoch,
+  signContentReview,
   signPolicy,
   sized,
   verifyPolicy,
@@ -36,7 +38,10 @@ import {
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
-import { prepareToolBookingRestore } from "./test-tool-booking-restore";
+import {
+  prepareToolBookingRestore,
+  rejectRestoreWithoutBookingParents,
+} from "./test-tool-booking-restore";
 
 async function adoptOrder(owner: Client, projectId: string) {
   const contract = await required(
@@ -217,10 +222,31 @@ async function rejectSnapshotWithoutLockedDocument(
   await assert.rejects(() => inspectPreparedContent(peer, signed, signal), {
     code: "CONFLICT",
   });
-  const [activated, error] = await peer.mutate(
-    "zerotrust.content.activate",
-    signed,
+  const { stamp } = await required(
+    peer.query(
+      "zerotrust.content.inspect",
+      {
+        operation: signed.operation,
+        approval: signed.approval,
+        start: true,
+      },
+      { strategy: "network-only" },
+    ),
   );
+  const setup = await required(
+    peer.query("zerotrust.status", undefined, { strategy: "network-only" }),
+  );
+  assert.ok(setup.profile);
+  const review = await signContentReview(
+    contentEpoch(signed.approval),
+    signed.operation,
+    stamp,
+    await openAuthority(peer, setup.profile),
+  );
+  const [activated, error] = await peer.mutate("zerotrust.content.activate", {
+    ...signed,
+    review,
+  });
   assert.equal(activated, null);
   assert.ok(error instanceof RpcClientError);
   assert.equal(error.code, "CONFLICT");
@@ -598,18 +624,23 @@ export async function exerciseContentPreparation(
   assert.equal(reportPreview.contacts, 1);
   assert.equal(reportPreview.missingReferences, 0);
   assert.equal(reportPreview.uncheckedReferences, 0);
-  const preview = await protectedReadView(peer, previewSignal, (pages) =>
-    required(
-      peer.query(
-        "zerotrust.content.inspect",
-        {
-          operation,
-          approval,
-          pages,
-        },
-        { strategy: "network-only" },
-      ),
-    ),
+  const preview = await protectedReadView(
+    peer,
+    previewSignal,
+    async (pages) =>
+      (
+        await required(
+          peer.query(
+            "zerotrust.content.inspect",
+            {
+              operation,
+              approval,
+              pages,
+            },
+            { strategy: "network-only" },
+          ),
+        )
+      ).pages,
   );
   const [olderProject] = await preview.read(projectArea);
   assert.ok(olderProject);
@@ -645,7 +676,13 @@ export async function exerciseContentPreparation(
     { ...permissions, version: (BigInt(permissions.version) + 1n).toString() },
     authority,
   );
-  const activate = { operation, approval, policy: nextPolicy };
+  assert.deepEqual(approvalInput.approval, approval);
+  let activate = {
+    operation,
+    approval,
+    policy: nextPolicy,
+    review: reportPreview.review,
+  };
   const historyInput = {
     prefixes: [`project:${later.id}`],
     before: null,
@@ -691,6 +728,22 @@ export async function exerciseContentPreparation(
     activate,
   );
   assert.ok(denied);
+  const { review: _review, ...withoutReview } = activate;
+  const [unreviewed, missingReview] = await peer.mutateDynamic(
+    "zerotrust.content.activate",
+    withoutReview,
+  );
+  assert.equal(unreviewed, null);
+  assert.ok(missingReview);
+  const [forgedRelease, forgedReview] = await peer.mutate(
+    "zerotrust.content.activate",
+    {
+      ...activate,
+      review: { ...activate.review, signature: base64(new Uint8Array(64)) },
+    },
+  );
+  assert.equal(forgedRelease, null);
+  assert.ok(forgedReview);
   const wrong = await signContentEpoch(
     { ...epoch, snapshot: base64(randomSecret()) },
     authority,
@@ -744,6 +797,36 @@ export async function exerciseContentPreparation(
   await required(
     owner.mutate("projects.deployments.delete", { id: unrelatedAssignment.id }),
   );
+  const extraTool = await required(
+    owner.mutate("tools.create", {
+      customId: await required(
+        owner.query("tools.suggestNextCustomId", undefined),
+      ),
+      brand: "Montagegerät für Freigabekonflikt",
+      category: "Montage",
+    }),
+  );
+  await required(
+    owner.mutate("tools.track", {
+      id: extraTool.id,
+      data: { projectId: project.id },
+    }),
+  );
+  await required(owner.mutate("tools.untrack", { id: extraTool.id }));
+  const [outdated, staleReview] = await peer.mutate(
+    "zerotrust.content.activate",
+    activate,
+  );
+  assert.equal(outdated, null);
+  assert.ok(staleReview instanceof RpcClientError);
+  assert.equal(staleReview.code, "CONFLICT");
+  const currentReview = await inspectPreparedContent(
+    peer,
+    approvalInput,
+    previewSignal,
+  );
+  assert.notEqual(currentReview.review.stamp, activate.review.stamp);
+  activate = { ...activate, review: currentReview.review };
   const [published, simultaneous] = await Promise.all([
     required(owner.mutate("zerotrust.content.activate", activate)),
     required(peer.mutate("zerotrust.content.activate", activate)),
@@ -881,11 +964,17 @@ export async function exerciseContentPreparation(
     { ...permissions, version: (BigInt(nextPolicy.version) + 1n).toString() },
     authority,
   );
+  const secondReview = await inspectPreparedContent(
+    peer,
+    { operation: second.operation, approval: secondApproval },
+    previewSignal,
+  );
   const secondReceipt = await required(
     peer.mutate("zerotrust.content.activate", {
       operation: second.operation,
       approval: secondApproval,
       policy: secondPolicy,
+      review: secondReview.review,
     }),
   );
   assert.equal(
@@ -955,4 +1044,11 @@ export async function exerciseContentPreparation(
   }
   await rejectSnapshotWithoutLockedDocument(tenant, owner, peer, operator);
   await booking.checkMemberAndReturn();
+  await rejectRestoreWithoutBookingParents(
+    tenant,
+    owner,
+    peer,
+    operator,
+    project.id,
+  );
 }

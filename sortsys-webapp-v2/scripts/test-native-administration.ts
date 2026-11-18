@@ -37,7 +37,10 @@ import {
   administratorPolicyContext,
 } from "../app/lib/crypto/administration";
 import { verifiedAccessContext } from "../app/lib/crypto/accessContext";
-import { approvePreparedContent } from "../app/lib/backups/contentRestore";
+import {
+  approvePreparedContent,
+  inspectPreparedContent,
+} from "../app/lib/backups/contentRestore";
 import { prepareHistoricalKeyGrants } from "../app/lib/crypto/historicalKeyGrants";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
 import {
@@ -1098,7 +1101,9 @@ try {
       snapshotOperation: backup.id,
     }),
   );
-  const restore = await approvePreparedContent(owner, prepared, signal);
+  const proposal = await approvePreparedContent(owner, prepared, signal);
+  const reviewed = await inspectPreparedContent(owner, proposal, signal);
+  const restore = { ...proposal, review: reviewed.review };
   const restoredContent = await contentEpochFingerprint(
     contentEpoch(restore.approval),
   );
@@ -1318,8 +1323,16 @@ try {
     restoreForRecovery.policy.administration?.profiles,
     delegatedBeforeRecovery.administration?.profiles,
   );
+  const recoveryReview = await inspectPreparedContent(
+    owner,
+    restoreForRecovery,
+    signal,
+  );
   await required(
-    owner.mutate("zerotrust.content.activate", restoreForRecovery),
+    owner.mutate("zerotrust.content.activate", {
+      ...restoreForRecovery,
+      review: recoveryReview.review,
+    }),
   );
   const policyAtRecovery = await current(manager);
   assert.ok(policyAtRecovery.administration?.continuation);

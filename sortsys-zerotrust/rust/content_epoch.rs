@@ -41,6 +41,28 @@ pub struct ContentEpoch {
     pub actor: String,
     pub signature: String,
 }
+
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[cfg_attr(feature = "typescript", derive(TS))]
+#[serde(deny_unknown_fields)]
+pub struct ContentReview {
+    pub stamp: String,
+    pub signature: String,
+}
+
+impl ContentReview {
+    pub fn verify(&self, approval: &ContentEpoch, operation: &str, authority: &[u8]) -> Result<()> {
+        identifier(operation)?;
+        sized::<32>(&self.stamp)?;
+        let content = approval.fingerprint()?;
+        verify(
+            authority,
+            &self.signature,
+            &frame("zt/content-review/v1", &[operation, &content, &self.stamp]),
+        )
+    }
+}
+
 impl ContentEpoch {
     pub fn frame(&self) -> Result<Vec<u8>> {
         if self.format != "zt-content-epoch-v1" {

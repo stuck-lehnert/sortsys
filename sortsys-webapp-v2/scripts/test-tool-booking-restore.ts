@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
 import { type Client } from "@sortsys/v2-client";
+import {
+  approvePreparedContent,
+  inspectPreparedContent,
+  RestoreBookingConflict,
+} from "../app/lib/backups/contentRestore";
 import { signIn } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { newProductRowId, publicId } from "../app/lib/data/products";
@@ -12,6 +17,65 @@ import { exerciseToolResponsibilityBrowser } from "./test-tool-responsibility-br
 
 type Login = { tenant: string; username: string; password: string };
 const fresh = { strategy: "network-only" } as const;
+
+export async function rejectRestoreWithoutBookingParents(
+  tenant: string,
+  owner: Client,
+  peer: Client,
+  operator: Client,
+  existingProjectId: string,
+) {
+  async function createTool() {
+    return required(
+      owner.mutate("tools.create", {
+        customId: await required(
+          owner.query("tools.suggestNextCustomId", undefined),
+        ),
+        brand: "Montagegerät für Abhängigkeitsprüfung",
+        category: "Montage",
+        usageCostPerDay: 17.5,
+      }),
+    );
+  }
+  const first = await createTool();
+  const backup = await required(
+    operator.mutate("admin.storage.snapshots.create", {
+      tenant,
+      operation: crypto.randomUUID(),
+    }),
+  );
+  const later = await required(
+    owner.mutate("projects.create", { title: "Projekt nach der Sicherung" }),
+  );
+  async function checkRejected(toolId: string, projectId: string) {
+    const booking = await required(
+      owner.mutate("tools.track", { id: toolId, data: { projectId } }),
+    );
+    try {
+      const prepared = await required(
+        peer.mutate("zerotrust.content.prepare", {
+          snapshotOperation: backup.id,
+          operation: crypto.randomUUID(),
+        }),
+      );
+      const signal = new AbortController().signal;
+      const proposed = await approvePreparedContent(peer, prepared, signal);
+      await assert.rejects(
+        () => inspectPreparedContent(peer, proposed, signal),
+        RestoreBookingConflict,
+      );
+      const live = await required(
+        peer.query("tools.get", { id: toolId }, fresh),
+      );
+      assert.equal(live.activeTrackingId, booking.trackingId);
+    } finally {
+      await required(owner.mutate("tools.untrack", { id: toolId }));
+    }
+  }
+  await checkRejected(first.id, later.id);
+  const lateTool = await createTool();
+  await checkRejected(lateTool.id, existingProjectId);
+}
 
 export async function prepareToolBookingRestore(
   owner: Client,

@@ -12,6 +12,19 @@ use crate::{
     ids::Id,
 };
 
+pub(super) const REVIEWED_BOOKINGS: &str = "tool-booking-revisions";
+
+/// Checkout pointers and tracking parents are decrypted during a restore
+/// review. Keep a per-object revision for an inexpensive collection CAS.
+pub(super) fn booking_review_key(
+    envelope: &EncryptedObject,
+) -> Option<sortsys_zerotrust::metadata::RecordKey> {
+    (envelope.facet == Facet::MasterData
+        && (envelope.scope.starts_with("tool:") || envelope.scope.starts_with("tool-tracking:"))
+        && retains_tool_booking(envelope))
+    .then(|| key(REVIEWED_BOOKINGS, &envelope.object))
+}
+
 fn canonical_id(token: &str) -> bool {
     Id::decode(token).is_ok_and(|id| id.0 > 0 && id.encode() == token)
 }

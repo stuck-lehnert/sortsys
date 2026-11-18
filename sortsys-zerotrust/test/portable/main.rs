@@ -3,7 +3,7 @@ use sha2::{Digest, Sha256};
 use sortsys_zerotrust::{
     administration::{PolicyAdministration, PolicyAdministrationRef},
     anchors::RecordAnchor,
-    content_epoch::{ContentEpoch, ContentPin, content_pin_key},
+    content_epoch::{ContentEpoch, ContentPin, ContentReview, content_pin_key},
     credentials::CredentialPrincipal,
     crypto::{AccountVault, decode, encode, packet_hash, sized},
     delegations::{DelegationCertificate, DelegationContext},
@@ -81,6 +81,8 @@ impl Policy {
 #[serde(rename_all = "camelCase")]
 struct BrowserVector {
     restored_content: ContentEpoch,
+    restore_operation: String,
+    restored_review: ContentReview,
     restored_content_frame: String,
     pinned_content: ContentPin,
     pinned_content_key: sortsys_zerotrust::metadata::RecordKey,
@@ -233,6 +235,23 @@ fn main() {
     assert_eq!(
         encode(&vector.restored_content.frame().unwrap()),
         vector.restored_content_frame
+    );
+    vector
+        .restored_review
+        .verify(&vector.restored_content, &vector.restore_operation, &signer)
+        .unwrap();
+    assert!(
+        vector
+            .restored_review
+            .verify(&vector.restored_content, "different-restore", &signer)
+            .is_err()
+    );
+    let mut substituted = vector.restored_review.clone();
+    substituted.stamp = encode(&[0; 32]);
+    assert!(
+        substituted
+            .verify(&vector.restored_content, &vector.restore_operation, &signer)
+            .is_err()
     );
     vector.pinned_content.validate().unwrap();
     assert_eq!(
