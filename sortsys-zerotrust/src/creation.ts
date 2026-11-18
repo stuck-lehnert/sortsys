@@ -3,7 +3,9 @@ import {
   identifier,
   InvalidProtectedData,
   record,
+  revision,
   signedPacketFrame,
+  sized,
 } from "./encoding";
 import { importSigningKey, sign } from "./identity";
 import {
@@ -287,6 +289,57 @@ export async function createOrigin(
     ...creationOrigin({ ...input, signature: "" }),
     signature: await sign(creator, await creationOriginFrame(input)),
   };
+}
+
+export type CreationRenewal = {
+  origins: readonly CreationOrigin[];
+  object: string;
+  revision: string;
+  packetSignature: string;
+};
+
+/** A fresh tenant authority confirms an existing booking without reviving any
+ * historical member grant. The exact ciphertext source prevents stale renewal. */
+export async function creationRenewalFrame(
+  input: CreationRenewal,
+): Promise<Uint8Array<ArrayBuffer>> {
+  if (input.origins.length !== 2) throw new InvalidProtectedData();
+  const origins = input.origins.map(creationOrigin);
+  const master = origins[0]!;
+  if (
+    master.capability.namespace !== "tool-tracking" ||
+    input.object !== `${master.scope}:master-data:record`
+  )
+    throw new InvalidProtectedData();
+  revision(input.revision);
+  sized(input.packetSignature, 64);
+  const hashes = [];
+  for (const [index, origin] of origins.entries()) {
+    if (
+      origin.tenant !== master.tenant ||
+      origin.scope !== master.scope ||
+      origin.facet !== ["master-data", "scope"][index] ||
+      origin.capability.signature !== master.capability.signature ||
+      origin.assignee ||
+      origin.access ||
+      origin.parent
+    )
+      throw new InvalidProtectedData();
+    hashes.push(
+      await digest(
+        signedPacketFrame(await creationOriginFrame(origin), origin.signature),
+      ),
+    );
+  }
+  return frame("sortsys/created-booking-renewal/v1", [
+    master.tenant,
+    master.capability.generation,
+    master.scope,
+    input.object,
+    input.revision,
+    input.packetSignature,
+    ...hashes,
+  ]);
 }
 export async function verifyCreationOrigin(
   input: unknown,

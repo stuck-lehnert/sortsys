@@ -643,14 +643,8 @@ async fn commit_batch_inner(
         wrote = true;
     }
     if changed_access {
-        let mut root =
-            super::super::setup::metadata_root(&mut context.transaction, &context.auth.tenant)
-                .await?;
-        root.catalog_version = revision(&root.catalog_version)?
-            .checked_add(1)
-            .ok_or_else(conflict)?
-            .to_string();
-        super::super::setup::write_root(&mut context.transaction, &root).await?;
+        super::super::setup::advance_catalog(&mut context.transaction, &context.auth.tenant)
+            .await?;
         context.transaction.notify(
             "access",
             &serde_json::json!({"policy": context.security.policy.version}),

@@ -16,6 +16,7 @@ import type { DuckDriver } from "../data/database";
 import { publicId } from "../data/products";
 import { acquireDataRuntime } from "../data/runtime/session";
 import { toolDomain, toolRequest } from "../data/toolData";
+import { renewToolResponsibilityOrigins } from "./renewToolResponsibilityOrigins";
 
 /** The intent targets no encryption domain. A separately verified, active
  * booking checkpoint activates read access; returning it ends that access. */
@@ -65,7 +66,7 @@ export async function synchronizeToolResponsibilityDefaults(
   signal: AbortSignal,
   driver?: () => Promise<DuckDriver>,
 ): Promise<void> {
-  const context = await administratorPolicyContext(client, signal);
+  let context = await administratorPolicyContext(client, signal);
   const origins = new Map<string, CreationOrigin>();
   // The verified inventory owns both the actual domains and their current
   // creation proofs. No public identifier or server role supplies a data key.
@@ -73,6 +74,21 @@ export async function synchronizeToolResponsibilityDefaults(
   const access = await verifiedAccessContext(client, signal);
   context.live();
   for (const origin of access.origins) origins.set(origin.id, origin);
+  if (
+    await renewToolResponsibilityOrigins(
+      client,
+      context,
+      origins,
+      signal,
+      driver,
+    )
+  ) {
+    context = await administratorPolicyContext(client, signal);
+    const refreshed = await verifiedAccessContext(client, signal);
+    context.live();
+    origins.clear();
+    for (const origin of refreshed.origins) origins.set(origin.id, origin);
+  }
   const selected = context.domains.flatMap((domain) => {
     const part = toolDomain(domain.id);
     const origin = origins.get(domain.id);

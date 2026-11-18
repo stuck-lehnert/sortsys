@@ -712,6 +712,7 @@ export type MutationInputs = {
   "users.vacations.deny": { id: string; expectedRevision?: undefined | string; reason: string; };
   "zerotrust.access.publish": { policyVersion: string, grants: Array<KeyGrant>, domains: Array<DomainDefinition>, };
   "zerotrust.creations.grant": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
+  "zerotrust.creations.renew": { origins: Array<CreationOrigin>, object: string, revision: string, packetSignature: string, proof: string, };
   "zerotrust.deliveryNotes.adopt": { context: string, generation: string, policyVersion: string, allocations: Array<DeliveryAllocation>, proof: string, };
   "zerotrust.deliveryNotes.allocate": { projectId: Id, requestId: string, generation: string, policyVersion: string, proof: string, };
   "zerotrust.deliveryNotes.initialize": { generation: string, policyVersion: string, proof: string, };
@@ -921,6 +922,7 @@ export type MutationOutputs = {
   "users.vacations.deny": { success: true; };
   "zerotrust.access.publish": { success: true, };
   "zerotrust.creations.grant": { success: true, };
+  "zerotrust.creations.renew": { success: true, };
   "zerotrust.deliveryNotes.adopt": { success: true, };
   "zerotrust.deliveryNotes.allocate": { id: Id, projectId: Id, number: string, };
   "zerotrust.deliveryNotes.initialize": { success: true, };
@@ -1278,6 +1280,7 @@ const mutationProcedures = new Set<string>([
   "users.vacations.deny",
   "zerotrust.access.publish",
   "zerotrust.creations.grant",
+  "zerotrust.creations.renew",
   "zerotrust.deliveryNotes.adopt",
   "zerotrust.deliveryNotes.allocate",
   "zerotrust.deliveryNotes.initialize",

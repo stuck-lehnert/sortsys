@@ -675,7 +675,7 @@ try {
       username: nextPlan.username,
       password: passwords[1],
     },
-    false,
+    true,
   );
   await readCanary(second);
   await recoveryDraft(first, source.tenant, next.newPhrase, passwords[1]);

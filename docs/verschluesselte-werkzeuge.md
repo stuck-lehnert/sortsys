@@ -96,10 +96,23 @@ Rust-Prozess; der Ablauf prüft keine getrennten Betriebssystemprozesse.
 Ein nativer Test durchläuft außerdem zwei Mandantenwiederherstellungen mit
 aktiven und zurückgegebenen Werkzeugbuchungen. Der neue Administrator kann die
 Buchungen lesen und Werkzeuge zurücknehmen; Preise und frühere Änderungen
-bleiben erhalten. Ein erneut eingeladener Mitarbeiter erhält seine alten
-Buchungsfreigaben nicht automatisch zurück. Eine anschließende neue Ausgabe
-erteilt ihm wieder die vorgesehene Lesefreigabe. Nach der Rückgabe öffnet auch
-sein behaltener alter Schlüssel keine späteren Änderungen.
+bleiben erhalten. Alte Mitarbeiterzertifikate bleiben nach dem Wechsel
+gesperrt. Wird die Einladung eines Verantwortlichen erneut bestätigt, erhält
+er Leserechte für seine noch aktive Buchung. Zurückgegebene Buchungen und
+Kosten bleiben verborgen. Das prüft der Test nach beiden Wiederherstellungen.
+Nach einer Rückgabe öffnet auch ein behaltener alter Schlüssel keine späteren
+Änderungen.
+
+Fehlt ein Anlagenachweis unter der aktuellen Mandantenautorität, bestätigt der
+Browser des Administrators den vorhandenen Buchungsbereich erneut. Diese
+Bestätigung benötigt eine Signatur mit dem privaten Mandantenschlüssel und
+bindet die genaue Ausgangsrevision samt Paketsignatur. Die API speichert beide
+Nachweise gemeinsam oder keinen. Sie liest dafür keine Buchungsinhalte.
+Die Bestätigung ersetzt weder historische Inhalte noch deren Urheber und
+erteilt allein keine Mitarbeiterfreigabe. Erst der anschließende Abgleich
+prüft im Browser die tatsächliche Zuständigkeit und die bestätigte Identität.
+Eine verlorene Speicherantwort lässt sich durch geprüfte Rücklese bestätigen;
+eine Wiederholung entfernt keinen inzwischen veröffentlichten Aktivitätsnachweis.
 
 Ein weiterer Browserlauf legt mit Franks delegiertem Anlegerecht eine Buchung
 an. John kann sie über die andere API-Instanz lesen. Nach dem Entzug darf Frank
@@ -146,9 +159,6 @@ die API prüft Signaturen, Schreibrechte und technische Versionsstände.
 
 Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
 
-- Der nachträgliche Abgleich benötigt einen aktuellen zertifizierten
-  Anlagenachweis der Buchung. Für nach einer Mandanten-Recovery erneut
-  eingeladene Mitarbeiter ist der Anschluss an alte Buchungen weiterhin offen.
 - Rechte zum Rückgeben oder Umbuchen folgen noch nicht automatisch aus der
   Zuständigkeit. Schließt ein berechtigter Benutzer ohne Administrationsrecht
   die Buchung, bleibt der nötige Schlüsselwechsel zur administrativen

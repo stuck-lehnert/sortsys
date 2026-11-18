@@ -10,7 +10,9 @@ const fixturePath = process.argv[2];
 const fixture = JSON.parse(await readFile(fixturePath, "utf8"));
 const endpoints = JSON.parse(process.env.SORTSYS_AUTH_TEST_ENDPOINTS);
 assert.equal(endpoints.length, 2);
-const artifacts = join(dirname(fixturePath), "browser-artifacts", "late-tools");
+const scenario = fixture.artifactName ?? "late-tools";
+assert.match(scenario, /^[a-z0-9-]+$/);
+const artifacts = join(dirname(fixturePath), "browser-artifacts", scenario);
 await mkdir(artifacts, { recursive: true });
 const directory = new URL("../../build/client", import.meta.url).pathname;
 const server = await applicationServer(directory, endpoints[1]);
@@ -61,7 +63,8 @@ try {
       fixture.activeLabel,
       fixture.closedLabel,
     ])
-      if (wire.includes(value)) leaks.push({ path: url.pathname, value });
+      if (value && wire.includes(value))
+        leaks.push({ path: url.pathname, value });
   });
   page.on("websocket", (socket) => {
     if (!new URL(socket.url()).pathname.endsWith("/zerotrust/events")) return;
@@ -86,7 +89,11 @@ try {
   ).toBeVisible();
   const active = page.getByText(new RegExp(fixture.activeLabel));
   await expect(active).toBeVisible();
-  await expect(page.getByText(new RegExp(fixture.closedLabel))).toHaveCount(0);
+  await expect(active).toHaveCount(1);
+  if (fixture.closedLabel)
+    await expect(page.getByText(new RegExp(fixture.closedLabel))).toHaveCount(
+      0,
+    );
   await expect(page.locator(`a[href="/tools/${fixture.toolId}"]`)).toHaveCount(
     0,
   );
@@ -114,7 +121,10 @@ try {
     page.getByText("Keine Einträge vorhanden.", { exact: true }),
   ).toBeVisible();
   await expect(active).toHaveCount(0);
-  await expect(page.getByText(new RegExp(fixture.closedLabel))).toHaveCount(0);
+  if (fixture.closedLabel)
+    await expect(page.getByText(new RegExp(fixture.closedLabel))).toHaveCount(
+      0,
+    );
   assert.deepEqual(errors, []);
   assert.deepEqual(leaks, []);
   await page.screenshot({

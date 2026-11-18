@@ -339,6 +339,17 @@ pub(super) async fn write_root(transaction: &mut Transaction, root: &RootState) 
         .await
 }
 
+/// Advance the public access inventory in the same transaction as its change.
+/// Ordinary content revisions deliberately do not invalidate that inventory.
+pub(super) async fn advance_catalog(transaction: &mut Transaction, tenant: &str) -> RpcResult<()> {
+    let mut root = metadata_root(transaction, tenant).await?;
+    root.catalog_version = super::crypto::revision(&root.catalog_version)?
+        .checked_add(1)
+        .ok_or_else(super::objects::conflict)?
+        .to_string();
+    write_root(transaction, &root).await
+}
+
 async fn validate_anchor(transaction: &mut Transaction, root: &RootState) -> RpcResult<()> {
     use sortsys_zerotrust::anchors::{ANCHOR_COLLECTION, RecordAnchor};
     let anchor: RecordAnchor = transaction

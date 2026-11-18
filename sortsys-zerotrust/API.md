@@ -606,6 +606,17 @@ Diese Vorbereitung gehört zum allgemeinen Kern und unterstützt wiederholte
 Wiederherstellungen. Der Anwendungseinstieg ergänzt dafür seine fachlichen
 Herkunftsprüfungen; die Übernahme in den dauerhaften Speicher bleibt beim Adapter.
 
+Der Sortsys-Einstieg ergänzt `creationRenewalFrame` für vorhandene
+Werkzeugbuchungen, deren Freigaben nach einer Recovery neu bestätigt werden.
+Der Rahmen bindet die Nachweise beider Buchungsbereiche sowie Kennung, Revision
+und Signatur des verschlüsselten Ausgangsdatensatzes. Die aktuelle
+Mandantenautorität muss ihn zusätzlich signieren. Der API-Adapter prüft die
+Signatur, den aktuellen Ausgangsstand und die beiden vorhandenen Bereiche in
+einer Transaktion. Er darf vorhandene Nachweise dabei nicht ersetzen. Eine
+identische Wiederholung lässt auch einen inzwischen ergänzten
+Aktivitätsnachweis unverändert. Diese Bestätigung ersetzt keine fachliche
+Zuständigkeitsprüfung und gewährt selbst keine Mitarbeiterrechte.
+
 Auch normale Schreibzugriffe benötigen einen Versionsvergleich innerhalb der
 Speichertransaktion. Die Anwendung prüft erwarteten Mandanten, Sitzung,
 Berechtigungsstand, Autor und aktuelle Schlüsselgeneration. Die Bibliothek

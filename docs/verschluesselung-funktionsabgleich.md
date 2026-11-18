@@ -257,15 +257,19 @@ abgeleitete Recht. Ein nativer Test mit zwei API-Instanzen prüft die Freigabe,
 abgewiesene Schreibversuche, den Entzug und den administrativen Schlüsselwechsel.
 Ein weiterer nativer Ablauf prüft diese Buchungen über zwei Recoveries hinweg:
 historische Inhalte und Kosten bleiben erhalten, alte Schlüssel öffnen keine
-späteren Änderungen, und eine erneute Einladung stellt alte Buchungsrechte nicht
-automatisch wieder her. Neue Ausgaben erhalten die neue Freigabe.
+späteren Änderungen. Alte Mitarbeiterzertifikate bleiben gesperrt. Nach einer
+erneut bestätigten Einladung erhält der Verantwortliche Leserechte für seine
+aktive Buchung, während abgeschlossene Buchungen und Kosten verborgen bleiben.
+Der aktuelle Administrator bestätigt dafür den bestehenden Buchungsbereich
+mit einem an die genaue Ausgangsrevision gebundenen Nachweis. Eine veraltete
+Bestätigung veröffentlicht nichts; eine verlorene Antwort und deren
+Wiederholung verändern keinen bereits bestätigten Aktivitätsnachweis.
 Die Bestätigung einer späteren Einladung führt Leserechte für vorher angelegte,
 noch aktive Buchungen nach. Ein administrativer Werkzeugabruf gleicht außerdem
 Buchungen bereits registrierter Mitarbeiter ab. Ein nativer Test prüft den
 fehlenden ursprünglichen Aktivitätsnachweis, die spätere Freigabe, verborgene
 Kosten, einen gültig signierten abgewiesenen Schreibversuch und den Entzug nach
-Rückgabe. Für nach Recovery erneut eingeladene Mitarbeiter sowie für
-Rückgabe und Umbuchung durch den Verantwortlichen fehlen noch Anschlüsse. Ohne
+Rückgabe. Für Rückgabe und Umbuchung durch den Verantwortlichen fehlen noch Anschlüsse. Ohne
 Administrationsrecht bleibt der Schlüsselwechsel nach einer Rückgabe vorgemerkt.
 Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
 aus. Siehe

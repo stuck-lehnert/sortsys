@@ -8,10 +8,11 @@ export async function exerciseToolResponsibilityBrowser<T>(
     tenant: string;
     member: { username: string; password: string };
     activeLabel: string;
-    closedLabel: string;
+    closedLabel?: string;
     toolBrand: string;
     toolId: string;
     bookingDomain: string;
+    artifactName?: string;
   },
   returnTool: () => Promise<T>,
 ): Promise<T> {
@@ -19,9 +20,14 @@ export async function exerciseToolResponsibilityBrowser<T>(
   assert.equal(process.env.SORTSYS_NATIVE_BROWSER, "1");
   const root = process.env.SORTSYS_NATIVE_AUTH_ROOT;
   assert.ok(root);
-  const path = join(root, "tool-responsibility-browser-fixture.json");
+  const scenario = fixture.artifactName ?? "late-tools";
+  assert.match(scenario, /^[a-z0-9-]+$/);
+  const path = join(
+    root,
+    `tool-responsibility-${scenario}-browser-fixture.json`,
+  );
   await writeFile(path, JSON.stringify(fixture), { mode: 0o600 });
-  const log = join(root, "browser-tool-responsibility.log");
+  const log = join(root, `browser-tool-responsibility-${scenario}.log`);
   const output = await open(log, "w");
   try {
     const child = spawn(

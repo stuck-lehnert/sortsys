@@ -1,6 +1,6 @@
 //! Public, certified creation authority. No private tenant key is delegated.
 use super::{
-    crypto::{frame, invalid, sized, verify},
+    crypto::{frame, invalid, revision, sized, verify},
     objects::packet_hash,
     wire::{Action, Effect, Facet, IdentityCertificate, Rule},
 };
@@ -99,6 +99,58 @@ pub(super) struct CreationParent {
     pub facet: Facet,
     pub capability: CreationCapability,
     pub signature: String,
+}
+
+#[derive(Clone, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(super) struct CreationRenewalInput {
+    pub origins: Vec<CreationOrigin>,
+    pub object: String,
+    pub revision: String,
+    pub packet_signature: String,
+    pub proof: String,
+}
+impl CreationRenewalInput {
+    pub fn frame(&self) -> RpcResult<Vec<u8>> {
+        if self.origins.len() != 2 {
+            return Err(invalid());
+        }
+        let master = &self.origins[0];
+        if master.capability.namespace != "tool-tracking"
+            || self.object != format!("{}:master-data:record", master.scope)
+        {
+            return Err(invalid());
+        }
+        revision(&self.revision)?;
+        sized::<64>(&self.packet_signature)?;
+        let mut hashes = Vec::new();
+        for (origin, facet) in self.origins.iter().zip([Facet::MasterData, Facet::Scope]) {
+            if origin.tenant != master.tenant
+                || origin.scope != master.scope
+                || origin.facet != facet
+                || origin.capability.signature != master.capability.signature
+                || origin.assignee.is_some()
+                || origin.access.is_some()
+                || origin.parent.is_some()
+            {
+                return Err(invalid());
+            }
+            hashes.push(packet_hash(origin.frame()?, &origin.signature)?);
+        }
+        Ok(frame(
+            "sortsys/created-booking-renewal/v1",
+            &[
+                &master.tenant,
+                &master.capability.generation,
+                &master.scope,
+                &self.object,
+                &self.revision,
+                &self.packet_signature,
+                &hashes[0],
+                &hashes[1],
+            ],
+        ))
+    }
 }
 impl CreationParent {
     fn origin(&self) -> CreationOrigin {
@@ -490,6 +542,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .query_stub::<OriginInput, Option<CreationOrigin>>("zerotrust.creations.origin")
         .query_stub::<CapabilityInput, Option<CreationCapability>>("zerotrust.creations.capability")
         .mutation_stub::<CreationCapability, Success>("zerotrust.creations.grant")
+        .mutation_stub::<CreationRenewalInput, Success>("zerotrust.creations.renew")
 }
 
 #[cfg(test)]

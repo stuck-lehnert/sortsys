@@ -9,6 +9,7 @@ pub(super) use registry::{
     install_identity as metadata_install_identity, replace_policy as metadata_replace_policy,
 };
 mod access_inventory;
+mod creation_renewals;
 pub(super) use access_inventory::check_snapshot as metadata_check_inventory_snapshot;
 pub(super) mod registry;
 

@@ -1607,11 +1607,6 @@ async fn put_domain_in_transaction(
     if let Some(certificate) = &input.key_authority {
         store_key_authority(&mut context.transaction, guard, certificate).await?;
     }
-    let mut root: super::super::setup::RootState = context
-        .transaction
-        .read(super::super::setup::root_key())
-        .await?
-        .ok_or_else(forbidden)?;
     super::super::recovery::inventory::reserve_key(&mut context.transaction, current.is_none())
         .await?;
     if current.is_none() {
@@ -1712,11 +1707,7 @@ async fn put_domain_in_transaction(
         .transaction
         .put(key("domains", &input.id), &area)
         .await?;
-    root.catalog_version = revision(&root.catalog_version)?
-        .checked_add(1)
-        .ok_or_else(conflict)?
-        .to_string();
-    super::super::setup::write_root(&mut context.transaction, &root).await?;
+    super::super::setup::advance_catalog(&mut context.transaction, &context.auth.tenant).await?;
     context.transaction.notify(
         "domain",
         &serde_json::json!({"domain": input.id, "sequence": area.sequence}),
@@ -1807,14 +1798,8 @@ async fn grant_key_in_transaction(context: &mut MetadataContext, input: KeyGrant
     // Historical grants and replacement envelopes do not change the public
     // inventory. Only invalidate it when the advertised rotation state changes.
     if previous_rotation != current_rotation {
-        let mut root =
-            super::super::setup::metadata_root(&mut context.transaction, &context.auth.tenant)
-                .await?;
-        root.catalog_version = revision(&root.catalog_version)?
-            .checked_add(1)
-            .ok_or_else(conflict)?
-            .to_string();
-        super::super::setup::write_root(&mut context.transaction, &root).await?;
+        super::super::setup::advance_catalog(&mut context.transaction, &context.auth.tenant)
+            .await?;
     }
     context.transaction.notify(
         "account",
@@ -1963,7 +1948,12 @@ pub(in crate::zerotrust) fn register_creation(
     let list = Arc::clone(&service);
     let get = Arc::clone(&service);
     let capabilities = Arc::clone(&service);
+    let renewals = Arc::clone(&service);
     builder
+        .mutation("zerotrust.creations.renew", move |ctx, input| {
+            let service = Arc::clone(&renewals);
+            async move { super::creation_renewals::renew(&service, &ctx, input).await }
+        })
         .query("zerotrust.creations.list", move |ctx, _: ()| {
             let service = Arc::clone(&list);
             async move {

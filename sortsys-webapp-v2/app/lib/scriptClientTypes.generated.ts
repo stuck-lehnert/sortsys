@@ -4222,6 +4222,13 @@ export type MutationInputs = {
         readers: Array<IdentityCertificate>;
         signature: string;
     };
+    "zerotrust.creations.renew": {
+        origins: Array<CreationOrigin>;
+        object: string;
+        revision: string;
+        packetSignature: string;
+        proof: string;
+    };
     "zerotrust.deliveryNotes.adopt": {
         context: string;
         generation: string;
@@ -5095,6 +5102,9 @@ export type MutationOutputs = {
         success: true;
     };
     "zerotrust.creations.grant": {
+        success: true;
+    };
+    "zerotrust.creations.renew": {
         success: true;
     };
     "zerotrust.deliveryNotes.adopt": {

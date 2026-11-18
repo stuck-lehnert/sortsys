@@ -1,10 +1,18 @@
 import assert from "node:assert/strict";
-import { RpcClientError, type Client } from "@sortsys/v2-client";
+import {
+  RpcClientError,
+  type Client,
+  type MutateInput,
+} from "@sortsys/v2-client";
 import {
   areaKey,
   decryptObject,
   domainBoxSigner,
   verifyDomain,
+  base64,
+  creationRenewalFrame,
+  creationOrigin,
+  sign,
 } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { newProductRowId, publicId } from "../app/lib/data/products";
@@ -27,6 +35,7 @@ import {
   signInMemberInvitation,
 } from "../app/lib/crypto/invitations";
 import { openBox } from "@sortsys/zerotrust/sortsys";
+import { administratorContext } from "../app/lib/crypto/administration";
 
 type Login = { tenant: string; username: string; password: string };
 type ToolRecovery = {
@@ -36,6 +45,8 @@ type ToolRecovery = {
   password: string;
   toolId: string;
   bookingId: string;
+  extraToolId: string;
+  extraBookingId: string;
   closed: string[];
   key: CryptoKey;
   initial: NonNullable<Awaited<ReturnType<typeof initialDefinition>>>;
@@ -178,28 +189,40 @@ export async function prepareNativeToolRecovery(
   );
   const username = "recovery.worker";
   const password = "Recovered-worker-password-762941!";
-  const { person, toolId } = await asBusiness(owner, async (business) => {
-    const person = await required(
-      business.mutate("users.create", {
-        username,
-        firstName: "Werkzeug",
-        lastName: "Wiederherstellung",
-      }),
-    );
-    const customId = await required(
-      business.query("tools.suggestNextCustomId", undefined),
-    );
-    const tool = await required(
-      business.mutate("tools.create", {
-        customId,
-        brand: marker,
-        category: "Montage",
-        purchasePrice: 1547.5,
-        usageCostPerDay: 31.25,
-      }),
-    );
-    return { person, toolId: tool.id };
-  });
+  const { person, toolId, extraToolId } = await asBusiness(
+    owner,
+    async (business) => {
+      const person = await required(
+        business.mutate("users.create", {
+          username,
+          firstName: "Werkzeug",
+          lastName: "Wiederherstellung",
+        }),
+      );
+      const customId = await required(
+        business.query("tools.suggestNextCustomId", undefined),
+      );
+      const tool = await required(
+        business.mutate("tools.create", {
+          customId,
+          brand: marker,
+          category: "Montage",
+          purchasePrice: 1547.5,
+          usageCostPerDay: 31.25,
+        }),
+      );
+      const extra = await required(
+        business.mutate("tools.create", {
+          customId: customId + 1,
+          brand: marker,
+          category: "Montage",
+          label: "Zusätzliche Ausgabe",
+          usageCostPerDay: 8.75,
+        }),
+      );
+      return { person, toolId: tool.id, extraToolId: extra.id };
+    },
+  );
   await enroll(owner, member, { id: person.id, username }, login, password);
   await signIn(owner, login);
   const returned = await book(owner, toolId, person.id);
@@ -207,6 +230,7 @@ export async function prepareNativeToolRecovery(
     await required(business.mutate("tools.untrack", { id: toolId }));
   });
   const bookingId = await book(owner, toolId, person.id);
+  const extraBookingId = await book(owner, extraToolId, person.id);
   const initial = await initialDefinition(owner, bookingId);
   assert.equal(initial.creation?.assignee?.user, `user:${person.id}`);
   await signIn(member, { tenant: login.tenant, username, password });
@@ -234,6 +258,8 @@ export async function prepareNativeToolRecovery(
     password,
     toolId,
     bookingId,
+    extraToolId,
+    extraBookingId,
     closed: [returned],
     key,
     initial,
@@ -259,8 +285,8 @@ async function assertDenied(client: Client, bookingId: string) {
   }
 }
 
-/** Check the old conditional grants, retained keys and real return operation.
- * Re-enrolment also proves that old derived rights do not reappear afterwards. */
+/** Old certificates stay denied. Re-enrolment confirms only the actual active
+ * booking under the new root, before return revokes that access again. */
 export async function verifyNativeToolRecovery(
   owner: Client,
   fixture: ToolRecovery,
@@ -286,34 +312,205 @@ export async function verifyNativeToolRecovery(
     "An old certificate is not a current tenant approval",
   );
   await assertDenied(fixture.member, fixture.bookingId);
-  await asBusiness(owner, async (business) => {
-    const tool = await required(
-      business.query("tools.get", { id: fixture.toolId }),
+  await assertDenied(fixture.member, fixture.extraBookingId);
+  const renewals: MutateInput<"zerotrust.creations.renew">[] = [];
+  if (reEnroll) {
+    const observed: Client = {
+      ...owner,
+      mutate: (async (path, input, options) => {
+        if (path === "zerotrust.creations.renew") {
+          const renewal = structuredClone(
+            input as MutateInput<"zerotrust.creations.renew">,
+          );
+          renewals.push(renewal);
+          const domains = renewal.origins.map((origin) => origin.id);
+          const inventory = await required(
+            owner.query(
+              "zerotrust.access.snapshot",
+              { domains },
+              { strategy: "network-only" },
+            ),
+          );
+          const administrator = await administratorContext(owner, signal);
+          const stale = {
+            ...renewal,
+            revision: (BigInt(renewal.revision) + 1n).toString(),
+          };
+          stale.proof = await sign(
+            administrator.authority,
+            await creationRenewalFrame({
+              ...stale,
+              origins: stale.origins.map(creationOrigin),
+            }),
+          );
+          const [, conflict] = await owner.mutate(
+            "zerotrust.creations.renew",
+            stale,
+          );
+          assert.ok(conflict instanceof RpcClientError);
+          assert.equal(conflict?.code, "CONFLICT");
+          assert.equal(
+            (
+              await required(
+                owner.query(
+                  "zerotrust.access.snapshot",
+                  { domains, known: inventory.snapshot },
+                  { strategy: "network-only" },
+                ),
+              )
+            ).unchanged,
+            true,
+          );
+          for (const origin of renewal.origins) {
+            const [current, readError] = await owner.query(
+              "zerotrust.creations.origin",
+              { domain: origin.id },
+              { strategy: "network-only" },
+            );
+            assert.equal(readError, null);
+            assert.equal(
+              current,
+              null,
+              "A stale attestation must publish neither facet",
+            );
+          }
+          const result = await owner.mutate(path, input, options);
+          const refreshed = await required(
+            owner.query(
+              "zerotrust.access.snapshot",
+              { domains, known: inventory.snapshot },
+              { strategy: "network-only" },
+            ),
+          );
+          assert.equal(refreshed.unchanged, false);
+          assert.equal(refreshed.origins.length, 2);
+          console.log(
+            "Renewed origin inventory: stale request leaves its snapshot unchanged; both committed facets invalidate the previous snapshot",
+          );
+          if (renewals.length === 1) {
+            assert.equal(result[1], null);
+            throw new Error(
+              "Lost acknowledgement after committed origin renewal",
+            );
+          }
+          return result;
+        }
+        return owner.mutate(path, input, options);
+      }) as Client["mutate"],
+    };
+    await enroll(
+      observed,
+      fixture.member,
+      { id: fixture.memberId, username: fixture.username },
+      login,
+      fixture.password,
     );
-    assert.equal(tool.available, false);
-    assert.equal(tool.brand, marker);
-    assert.equal(tool.purchasePrice, 1547.5);
-    assert.equal(tool.usageCostPerDay, 31.25);
-    const bookings = await required(
-      business.query("tools.trackings.list", { toolId: fixture.toolId }),
+    assert.equal(renewals.length, 2);
+    await asBusiness(fixture.member, async (business) => {
+      const bookings = await required(
+        business.query("tools.trackings.list", {}),
+      );
+      assert.deepEqual(
+        bookings.map((booking) => booking.id).sort(),
+        [fixture.bookingId, fixture.extraBookingId].sort(),
+      );
+      assert.equal(bookings[0]!.toolUsageCostPerDay, null);
+      assert.equal(bookings[0]!.toolSummary?.brand, marker);
+    });
+    for (const closed of fixture.closed)
+      await assertDenied(fixture.member, closed);
+    const [, noRenewal] = await fixture.member.mutate(
+      "zerotrust.creations.renew",
+      renewals[0]!,
     );
-    assert.equal(
-      bookings.find((booking) => booking.id === fixture.bookingId)?.endedAt,
-      null,
+    assert.ok(noRenewal instanceof RpcClientError);
+    assert.equal(noRenewal?.code, "FORBIDDEN");
+    await signIn(owner, login);
+    const [, forged] = await owner.mutate("zerotrust.creations.renew", {
+      ...renewals[0]!,
+      proof: base64(new Uint8Array(64)),
+    });
+    assert.ok(forged instanceof RpcClientError);
+    assert.equal(forged.code, "BAD_REQUEST");
+    const beforeRetry = await required(
+      owner.query(
+        "zerotrust.creations.origin",
+        {
+          domain: renewals[0]!.origins[0]!.id,
+        },
+        { strategy: "network-only" },
+      ),
     );
-    for (const closed of fixture.closed) {
-      const booking = bookings.find((booking) => booking.id === closed);
-      assert.ok(booking?.endedAt);
-      if (fixture.comments.has(closed))
-        assert.equal(booking.comment, fixture.comments.get(closed));
-    }
-    await required(business.mutate("tools.untrack", { id: fixture.toolId }));
-    assert.equal(
-      (await required(business.query("tools.get", { id: fixture.toolId })))
-        .available,
-      true,
+    await required(owner.mutate("zerotrust.creations.renew", renewals[0]!));
+    const afterRetry = await required(
+      owner.query(
+        "zerotrust.creations.origin",
+        {
+          domain: renewals[0]!.origins[0]!.id,
+        },
+        { strategy: "network-only" },
+      ),
     );
-  });
+    assert.ok(beforeRetry?.access?.active);
+    assert.equal(afterRetry?.access?.signature, beforeRetry.access.signature);
+    await asBusiness(owner, async (business) => {
+      await required(
+        business.mutate("tools.untrack", { id: fixture.extraToolId }),
+      );
+    });
+    fixture.closed.push(fixture.extraBookingId);
+  }
+  const returnTool = () =>
+    asBusiness(owner, async (business) => {
+      const tool = await required(
+        business.query("tools.get", { id: fixture.toolId }),
+      );
+      assert.equal(tool.available, false);
+      assert.equal(tool.brand, marker);
+      assert.equal(tool.purchasePrice, 1547.5);
+      assert.equal(tool.usageCostPerDay, 31.25);
+      const bookings = await required(
+        business.query("tools.trackings.list", {}),
+      );
+      assert.equal(
+        bookings.find((booking) => booking.id === fixture.bookingId)?.endedAt,
+        null,
+      );
+      for (const closed of fixture.closed) {
+        const booking = bookings.find((booking) => booking.id === closed);
+        assert.ok(booking?.endedAt);
+        if (fixture.comments.has(closed))
+          assert.equal(booking.comment, fixture.comments.get(closed));
+      }
+      await required(business.mutate("tools.untrack", { id: fixture.toolId }));
+      assert.equal(
+        (await required(business.query("tools.get", { id: fixture.toolId })))
+          .available,
+        true,
+      );
+    });
+  if (reEnroll && process.env.SORTSYS_NATIVE_BROWSER === "1") {
+    const { exerciseToolResponsibilityBrowser } =
+      await import("./test-tool-responsibility-browser");
+    await exerciseToolResponsibilityBrowser(
+      {
+        tenant: login.tenant,
+        member: { username: fixture.username, password: fixture.password },
+        activeLabel: marker,
+        toolBrand: marker,
+        toolId: fixture.toolId,
+        bookingDomain: toolCollection(
+          "tool-tracking",
+          fixture.bookingId,
+          "master-data",
+        ).domain,
+        artifactName: `recovery-tools-${generation}`,
+      },
+      returnTool,
+    );
+  } else {
+    await returnTool();
+  }
   fixture.closed.push(fixture.bookingId);
   const area = toolCollection(
     "tool-tracking",
@@ -376,13 +573,11 @@ export async function verifyNativeToolRecovery(
     assert.ok(["BAD_REQUEST", "CONFLICT", "FORBIDDEN"].includes(replay.code));
   }
   if (!reEnroll) return;
-  await enroll(
-    owner,
-    fixture.member,
-    { id: fixture.memberId, username: fixture.username },
-    login,
-    fixture.password,
-  );
+  await signIn(fixture.member, {
+    tenant: login.tenant,
+    username: fixture.username,
+    password: fixture.password,
+  });
   assert.equal(
     (await trustedHistory(fixture.member)).current.generation,
     generation,
@@ -402,6 +597,11 @@ export async function verifyNativeToolRecovery(
     true,
   );
   fixture.bookingId = await book(owner, fixture.toolId, fixture.memberId);
+  fixture.extraBookingId = await book(
+    owner,
+    fixture.extraToolId,
+    fixture.memberId,
+  );
   fixture.initial = await initialDefinition(owner, fixture.bookingId);
   assert.equal(fixture.initial.creation?.capability.generation, generation);
   await signIn(fixture.member, {
@@ -412,8 +612,8 @@ export async function verifyNativeToolRecovery(
   await asBusiness(fixture.member, async (business) => {
     const bookings = await required(business.query("tools.trackings.list", {}));
     assert.deepEqual(
-      bookings.map((booking) => booking.id),
-      [fixture.bookingId],
+      bookings.map((booking) => booking.id).sort(),
+      [fixture.bookingId, fixture.extraBookingId].sort(),
     );
     assert.equal(bookings[0]!.toolUsageCostPerDay, null);
     assert.equal(bookings[0]!.toolSummary?.brand, marker);
