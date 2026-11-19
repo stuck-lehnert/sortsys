@@ -5,14 +5,21 @@ import {
   certifyIdentity,
   createIdentity,
   createOrigin,
+  createResourceCommandKey,
   creationAssignmentBinding,
   creationResourceBinding,
   activeBookingReadScope,
   compilePolicy,
   creationRules,
   encryptObject,
+  digest,
+  importSigningKey,
+  openResourceCommandSigner,
   publicIdentity,
   signResourceAccess,
+  sign,
+  sized,
+  verify,
   verifyCreationOrigin,
   verifyResourceAccess,
   createDelegatedDomain,
@@ -122,6 +129,30 @@ test("a resource state binds one exact ciphertext and its certified author", asy
     await expect(
       verifyResourceAccess(f.state, expected, () => f.authorityKey.publicKey),
     ).rejects.toThrow();
+});
+
+test("a command verification key is commit-bound and its signing seed stays separate", async () => {
+  const f = await fixture();
+  const key = await createResourceCommandKey();
+  const alternate = await createResourceCommandKey();
+  const command = bytes("Confirm release of this specific resource");
+  const signature = await sign(await openResourceCommandSigner(key), command);
+  await verify(await importSigningKey(key.verificationKey), signature, command);
+  await expect(openResourceCommandSigner({
+    ...key, signingSeed: alternate.signingSeed,
+  })).rejects.toThrow();
+
+  const commandBinding = await digest(sized(key.verificationKey, 32));
+  const bound = await signResourceAccess({ ...f.state, commandBinding }, f.creator.signingKey.privateKey);
+  const { commandBinding: _, ...omitted } = bound;
+  expect(JSON.stringify(bound)).not.toContain(key.signingSeed);
+  await verifyResourceAccess(bound, f.expected, () => f.authorityKey.publicKey);
+  for (const changed of [
+    omitted,
+    { ...bound, commandBinding: await digest(sized(alternate.verificationKey, 32)) },
+  ]) {
+    await expect(verifyResourceAccess(changed, f.expected, () => f.authorityKey.publicKey)).rejects.toThrow();
+  }
 });
 
 test("an assignee receives read access only through an authenticated active state", async () => {

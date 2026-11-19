@@ -517,6 +517,7 @@ async function exerciseDelegatedToolReturn(
   }
   const before = await domains();
   const operational = createBusinessClient(managerClient, { productDriver: duckDriver });
+  let stage = "return with a delegated signing certificate";
   try {
     await unlockManager();
     const session = await required(managerClient.query("auth.sessionInfo", undefined));
@@ -558,10 +559,12 @@ async function exerciseDelegatedToolReturn(
     }, { strategy: "network-only" });
     assert.equal(revoked?.code, "FORBIDDEN");
 
+    stage = "reissue the same tool to the previous assignee";
     const next = await required(owner.mutate("tools.track", {
       id: toolId,
       data: { responsibleUserId: readerId },
     }));
+    stage = "repeat the old return and reject the ungranted return";
     await unlockManager();
     await required(operational.mutate("tools.untrack", close));
     const [, denied] = await operational.mutate("tools.untrack", {
@@ -573,12 +576,15 @@ async function exerciseDelegatedToolReturn(
       strategy: "network-only",
     }));
     assert.equal(active.activeTrackingId, next.trackingId);
+    stage = "resume the pending rotation through the owner";
     await finishToolBookingRotations(owner, new Set([tracking.scope]), signal);
     const repaired = await domains();
     assert.equal(repaired.current.generation, after.current.generation);
     assert.equal(BigInt(repaired.transfers.generation), BigInt(before.transfers.generation) + 1n);
     assert.equal(repaired.transfers.rotationRequired, false);
     console.log("Scoped tool return: manager rotated only the certified facet; exact retry left the new booking untouched; owner resumed the other facet");
+  } catch (cause) {
+    throw new Error(`Scoped tool return failed while attempting to ${stage}`, { cause });
   } finally {
     operational.dispose();
     managerClient.setToken(null);

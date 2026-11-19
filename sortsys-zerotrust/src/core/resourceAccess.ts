@@ -1,13 +1,15 @@
 import {
+  base64,
   frame,
   identifier,
   InvalidProtectedData,
   record,
+  randomSecret,
   revision,
   signedPacketFrame,
   sized,
 } from "../encoding";
-import { importSigningKey, sign } from "../identity";
+import { importSigningKey, sign, signingPair } from "../identity";
 import { publicProofDigest, verifyPublicProof } from "../publicProofs";
 import {
   identityCertificate,
@@ -25,6 +27,7 @@ export type ResourceAccessState = {
   binding: string;
   active: boolean;
   packetSignature: string;
+  commandBinding?: string;
   author: IdentityCertificate;
   signature: string;
 };
@@ -33,7 +36,46 @@ export type ResourceAccessContext = Pick<
   "tenant" | "resource" | "object" | "generation" | "binding"
 >;
 
+export type ResourceCommandKey = { verificationKey: string; signingSeed: string };
+
+export function resourceCommandKey(input: unknown): ResourceCommandKey {
+  const value = record(input, ["verificationKey", "signingSeed"]);
+  sized(value.verificationKey as string, 32);
+  sized(value.signingSeed as string, 32);
+  return value as ResourceCommandKey;
+}
+
+/** Share the verification key with projections that may check a command.
+ * Keep the signing seed exclusively in the encrypted source record. */
+export async function createResourceCommandKey(): Promise<ResourceCommandKey> {
+  const seed = randomSecret();
+  try {
+    const { publicKey } = await signingPair(seed);
+    return {
+      verificationKey: base64(await crypto.subtle.exportKey("raw", publicKey)),
+      signingSeed: base64(seed),
+    };
+  } finally {
+    seed.fill(0);
+  }
+}
+
+export async function openResourceCommandSigner(input: unknown): Promise<CryptoKey> {
+  const key = resourceCommandKey(input);
+  const seed = sized(key.signingSeed, 32);
+  try {
+    const { publicKey, privateKey } = await signingPair(seed);
+    const verificationKey = base64(await crypto.subtle.exportKey("raw", publicKey));
+    if (verificationKey !== key.verificationKey) throw new InvalidProtectedData();
+    return privateKey;
+  } finally {
+    seed.fill(0);
+  }
+}
+
 export function resourceAccessState(input: unknown): ResourceAccessState {
+  const hasCommand =
+    !!input && typeof input === "object" && Object.hasOwn(input, "commandBinding");
   const value = record(input, [
     "tenant",
     "resource",
@@ -45,6 +87,7 @@ export function resourceAccessState(input: unknown): ResourceAccessState {
     "packetSignature",
     "author",
     "signature",
+    ...(hasCommand ? ["commandBinding"] : []),
   ]);
   for (const field of [value.tenant, value.resource, value.object])
     identifier(field);
@@ -52,6 +95,7 @@ export function resourceAccessState(input: unknown): ResourceAccessState {
   revision(value.generation);
   sized(value.binding as string, 32);
   sized(value.packetSignature as string, 64);
+  if (hasCommand) sized(value.commandBinding as string, 32);
   const author = identityCertificate(value.author);
   if (
     author.tenant !== value.tenant ||
@@ -73,7 +117,7 @@ export async function resourceAccessFrame(
       value.author.signature,
     ),
   );
-  return frame("sortsys/resource-access/v1", [
+  const fields = [
     value.tenant,
     value.resource,
     value.object,
@@ -83,7 +127,11 @@ export async function resourceAccessFrame(
     String(value.active),
     value.packetSignature,
     author,
-  ]);
+  ];
+  if (value.commandBinding !== undefined) {
+    return frame("sortsys/resource-access/v2", [...fields, value.commandBinding]);
+  }
+  return frame("sortsys/resource-access/v1", fields);
 }
 
 export async function signResourceAccess(

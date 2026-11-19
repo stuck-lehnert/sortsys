@@ -828,6 +828,7 @@ export type ResourceAccessState = {
     binding: string;
     active: boolean;
     packetSignature: string;
+    commandBinding?: string;
     author: IdentityCertificate;
     signature: string;
 };

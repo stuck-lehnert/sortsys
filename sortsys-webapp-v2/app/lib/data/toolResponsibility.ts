@@ -1,11 +1,13 @@
 import {
   creationResourceBinding,
+  digest,
   InvalidProtectedData,
   signResourceAccess,
   type CreationOrigin,
   type EncryptedObject,
   type IdentityCertificate,
   TOMBSTONE_FORMAT,
+  sized,
 } from "@sortsys/zerotrust/sortsys";
 import { toolCollection, toolDomain, TOOL_MODEL } from "./toolData";
 import { publicId } from "./products";
@@ -22,7 +24,9 @@ function bookingValue(
     envelope.object !== `${origin.scope}:master-data:record`
   )
     return null;
-  if (envelope.format === TOMBSTONE_FORMAT) return { active: false };
+  if (envelope.format === TOMBSTONE_FORMAT) {
+    return { active: false, returnKey: undefined };
+  }
   if (
     !origin.assignee &&
     !origin.access &&
@@ -38,15 +42,26 @@ function bookingValue(
     facet: "master-data",
     prefix: envelope.object,
   });
-  if (part.deleted) return { active: false };
+  if (part.deleted) return { active: false, returnKey: undefined };
   const row = part.rows[0]!.values;
+  if (part.returnKey && part.returnKey.recipient.tenant !== envelope.tenant) {
+    throw new InvalidProtectedData();
+  }
   if (
     origin.assignee &&
     (row.responsible_user_id === null ||
       `user:${publicId(row.responsible_user_id)}` !== origin.assignee.user)
   )
     throw new InvalidProtectedData();
-  return { active: row.ended_at === null && row.responsible_user_id !== null };
+  return {
+    active: row.ended_at === null && row.responsible_user_id !== null,
+    returnKey: part.returnKey,
+  };
+}
+
+async function bookingCommandBinding(key: string | undefined) {
+  if (key === undefined) return undefined;
+  return digest(sized(key, 32));
 }
 
 export async function toolResponsibilityPacket(
@@ -59,6 +74,10 @@ export async function toolResponsibilityPacket(
   if (!origin) return undefined;
   const booking = bookingValue(origin, envelope, value);
   if (!booking) return undefined;
+  const commandBinding =
+    envelope.format === TOMBSTONE_FORMAT
+      ? origin.access?.commandBinding
+      : await bookingCommandBinding(booking.returnKey?.verificationKey);
   return signResourceAccess(
     {
       tenant: envelope.tenant,
@@ -68,6 +87,7 @@ export async function toolResponsibilityPacket(
       generation: origin.capability.generation,
       binding: await creationResourceBinding(origin),
       active: booking.active,
+      ...(commandBinding ? { commandBinding } : {}),
       packetSignature: envelope.signature,
       author,
     },
@@ -75,7 +95,7 @@ export async function toolResponsibilityPacket(
   );
 }
 
-export function checkToolResponsibility(
+export async function checkToolResponsibility(
   origin: CreationOrigin | undefined,
   envelope: EncryptedObject,
   value: unknown,
@@ -93,7 +113,9 @@ export function checkToolResponsibility(
     state.revision !== envelope.revision ||
     state.packetSignature !== envelope.signature ||
     state.author.user !== envelope.author ||
-    state.active !== booking.active
+    state.active !== booking.active ||
+    (envelope.format !== TOMBSTONE_FORMAT && state.commandBinding !==
+      await bookingCommandBinding(booking.returnKey?.verificationKey))
   )
     throw new InvalidProtectedData();
 }

@@ -1,5 +1,5 @@
-import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
-import { addressId } from "./addressBook";
+import { InvalidProtectedData, record, sized } from "@sortsys/zerotrust/sortsys";
+import { addressId, partialAddressRecord } from "./addressBook";
 import { publicId } from "./products";
 import { projectModuleArea, projectModuleDomain } from "./projectScope";
 import type { Collection } from "./protectedObjects";
@@ -15,6 +15,7 @@ export type ToolUsage = {
   projectId: string;
   facet: ToolUsageFacet;
   tracking: BusinessFields;
+  returnKey?: string;
 };
 
 export function toolUsageCollection(
@@ -54,6 +55,7 @@ export function trackingProject(tracking: BusinessFields): string | null {
 export function toolUsagePart(
   tracking: BusinessFields,
   facet: ToolUsageFacet,
+  returnKey?: string,
 ): ToolUsage {
   const projectId = trackingProject(tracking);
   if (!projectId) throw new InvalidProtectedData();
@@ -66,6 +68,7 @@ export function toolUsagePart(
     projectId,
     facet,
     tracking: decodeBusinessFields("tool_trackings", selected),
+    ...(facet === "master-data" && returnKey ? { returnKey } : {}),
   };
 }
 export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
@@ -75,7 +78,9 @@ export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
   tables: [],
   sources: () => [],
   decode(input, object, area) {
-    const payload = record(input, ["format", "projectId", "facet", "tracking"]);
+    const payload = partialAddressRecord(input, [
+      "format", "projectId", "facet", "tracking", "returnKey",
+    ]);
     const part = toolUsageDomain(area.domain);
     if (
       !part ||
@@ -84,6 +89,12 @@ export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
       payload.facet !== part.facet
     )
       throw new InvalidProtectedData();
+    const returnKey = payload.returnKey;
+    if (returnKey !== undefined) {
+      if (part.facet !== "master-data" || typeof returnKey !== "string")
+        throw new InvalidProtectedData();
+      sized(returnKey, 32);
+    }
     const expected = toolUsageCollection(part.projectId, part.facet);
     if (
       area.scope !== expected.scope ||
@@ -115,6 +126,7 @@ export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
       projectId: part.projectId,
       facet: part.facet,
       tracking,
+      ...(returnKey === undefined ? {} : { returnKey }),
     };
   },
 });
@@ -137,13 +149,23 @@ export function syncToolUsage(
   transaction: DataTransaction,
   tracking: BusinessFields,
   facets: readonly ToolUsageFacet[] = TOOL_USAGE_FACETS,
+  returnKey?: string,
 ) {
   for (const request of toolUsageRequests(tracking, facets)) {
     const object = request.area.prefix + publicId(tracking.values.id);
     const previous = transaction
       .documents(request)
       .find((document) => document.id === object);
-    const value = toolUsagePart(tracking, request.area.facet as ToolUsageFacet);
+    if (
+      request.area.facet === "master-data" &&
+      previous &&
+      previous.value.returnKey !== returnKey
+    ) throw new InvalidProtectedData();
+    const value = toolUsagePart(
+      tracking,
+      request.area.facet as ToolUsageFacet,
+      returnKey,
+    );
     if (previous) {
       transaction.require(request, "update");
       transaction.edit(request, object, (current) =>

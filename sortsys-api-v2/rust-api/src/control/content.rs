@@ -538,6 +538,8 @@ mod tests {
             "file-chunks",
             "delivery-state",
             "timestamp-targets",
+            "tool-booking-command-bindings",
+            "tool-booking-commands",
             "zt-content-epochs",
             "unknown-future-collection",
         ] {

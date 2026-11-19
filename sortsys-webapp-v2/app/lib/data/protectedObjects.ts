@@ -586,7 +586,7 @@ function openCollection(
           throw new InvalidProtectedData();
         origin = fresh;
       }
-      checkToolResponsibility(origin, envelope, value, historical);
+      await checkToolResponsibility(origin, envelope, value, historical);
       return { envelope, value };
     } finally {
       plain.fill(0);

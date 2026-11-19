@@ -2,6 +2,7 @@ import {
   CREATION_FACETS,
   InvalidProtectedData,
   record,
+  sized,
   type Facet,
 } from "@sortsys/zerotrust/sortsys";
 import type { QueryResult } from "@sortsys/v2-client";
@@ -17,6 +18,7 @@ import {
 import { businessSchema, tableDefinition } from "./schema";
 import { defineDataModel } from "./runtime/model";
 import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
+import { toolReturnKey, type ToolReturnKey } from "./toolReturnKey";
 
 export type ToolNamespace = "tool" | "tool-tracking";
 export type ToolBookingTool = NonNullable<
@@ -32,6 +34,7 @@ export type ToolPart = {
   activeTrackingId: string | null;
   rows: BusinessFields[];
   toolSummary?: ToolBookingTool;
+  returnKey?: ToolReturnKey;
 };
 
 export function bookingToolSummary(row: BusinessFields): ToolBookingTool {
@@ -241,6 +244,8 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
       !!input &&
       typeof input === "object" &&
       Object.hasOwn(input, "toolSummary");
+    const hasReturnKey =
+      !!input && typeof input === "object" && Object.hasOwn(input, "returnKey");
     const part = toolDomain(area.domain),
       value = record(input, [
         "format",
@@ -252,6 +257,7 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
         "activeTrackingId",
         "rows",
         ...(hasSummary ? ["toolSummary"] : []),
+        ...(hasReturnKey ? ["returnKey"] : []),
       ]);
     if (
       !part ||
@@ -276,6 +282,15 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
       )
         throw new InvalidProtectedData();
       addressId(value.activeTrackingId);
+    }
+    let returnKey: ToolReturnKey | undefined;
+    if (hasReturnKey) {
+      if (
+        part.namespace !== "tool-tracking" ||
+        part.facet !== "master-data" ||
+        value.deleted
+      ) throw new InvalidProtectedData();
+      returnKey = toolReturnKey(value.returnKey, area.scope);
     }
     const expected = layout(part.namespace, part.facet),
       seen = new Set<string>();
@@ -322,6 +337,11 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
           rows.length !== 1
     )
       throw new InvalidProtectedData();
+    if (
+      returnKey &&
+      (rows[0]!.values.responsible_user_id === null ||
+        returnKey.recipient.recipient !== `user:${publicId(rows[0]!.values.responsible_user_id)}`)
+    ) throw new InvalidProtectedData();
     let toolSummary: ToolBookingTool | undefined;
     if (hasSummary) {
       if (part.namespace !== "tool-tracking" || part.facet !== "master-data")
@@ -337,6 +357,7 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
       ...value,
       rows,
       ...(toolSummary ? { toolSummary } : {}),
+      ...(returnKey ? { returnKey } : {}),
     } as ToolPart;
   },
   sources: (value) =>
@@ -410,6 +431,7 @@ type ToolBookingState = {
   format: "sortsys-tool-booking-state-v1";
   toolId: string;
   trackingId: string | null;
+  returnKey?: string;
 };
 
 export function toolBookingArea(toolId: string): Collection {
@@ -422,7 +444,7 @@ export const TOOL_BOOKING_MODEL = defineDataModel<ToolBookingState>({
   tables: [],
   sources: () => [],
   decode(input, object, area) {
-    const value = record(input, ["format", "toolId", "trackingId"]);
+    const value = partialAddressRecord(input, ["format", "toolId", "trackingId", "returnKey"]);
     addressId(value.toolId);
     const expected = toolBookingArea(value.toolId as string);
     if (
@@ -434,6 +456,11 @@ export const TOOL_BOOKING_MODEL = defineDataModel<ToolBookingState>({
     )
       throw new InvalidProtectedData();
     if (value.trackingId !== null) addressId(value.trackingId);
+    if (value.returnKey !== undefined) {
+      if (value.trackingId === null || typeof value.returnKey !== "string")
+        throw new InvalidProtectedData();
+      sized(value.returnKey, 32);
+    }
     return value as ToolBookingState;
   },
 });
@@ -445,8 +472,20 @@ export function toolBookingRequest(toolId: string) {
 export function toolBookingState(
   toolId: string,
   trackingId: string | null,
+  returnKey?: string,
 ): ToolBookingState {
-  return { format: "sortsys-tool-booking-state-v1", toolId, trackingId };
+  return {
+    format: "sortsys-tool-booking-state-v1",
+    toolId,
+    trackingId,
+    ...(returnKey === undefined ? {} : { returnKey }),
+  };
+}
+
+export function checkToolReturnBinding(view: DataView, toolId: string, tracking: ToolPart) {
+  const [booking] = view.documents(toolBookingRequest(toolId));
+  if (booking?.value.returnKey !== tracking.returnKey?.verificationKey)
+    throw new InvalidProtectedData();
 }
 
 export function activeToolBooking(
@@ -461,17 +500,20 @@ export function setActiveToolBooking(
   tx: DataTransaction,
   toolId: string,
   trackingId: string | null,
+  returnKey?: string,
 ) {
   const request = toolBookingRequest(toolId);
   if (tx.documents(request).length) {
     tx.edit(request, request.area.prefix, (booking) => {
       booking.trackingId = trackingId;
+      if (returnKey === undefined) delete booking.returnKey;
+      else booking.returnKey = returnKey;
     });
   } else {
     tx.create(
       request,
       request.area.prefix,
-      toolBookingState(toolId, trackingId),
+      toolBookingState(toolId, trackingId, returnKey),
     );
   }
 }
@@ -483,6 +525,7 @@ export function toolPart(
   rows: BusinessRow[],
   activeTrackingId: string | null = null,
   toolSummary?: ToolBookingTool,
+  returnKey?: ToolReturnKey,
 ): ToolPart {
   const expected = layout(namespace, facet);
   return {
@@ -495,6 +538,9 @@ export function toolPart(
     activeTrackingId,
     ...(namespace === "tool-tracking" && facet === "master-data" && toolSummary
       ? { toolSummary }
+      : {}),
+    ...(namespace === "tool-tracking" && facet === "master-data" && returnKey
+      ? { returnKey }
       : {}),
     rows: rows
       .filter((row) => row.table === expected.table)

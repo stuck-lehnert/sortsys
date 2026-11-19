@@ -175,6 +175,13 @@ async fn responsible_bookings(context: &mut MetadataContext) -> RpcResult<()> {
             {
                 return Err(conflict());
             }
+            super::super::resource_access::check_command_binding(
+                &mut context.transaction,
+                &origin.scope,
+                access.command_binding.as_deref(),
+                false,
+            )
+            .await?;
         }
         let Some(next) = page.after else {
             return Ok(());

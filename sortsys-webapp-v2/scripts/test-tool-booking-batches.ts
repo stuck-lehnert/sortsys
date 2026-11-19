@@ -1,10 +1,19 @@
 import assert from "node:assert/strict";
-import type { Client, MutateInput } from "@sortsys/v2-client";
-import { immutableObject, type Action } from "@sortsys/zerotrust/sortsys";
+import { RpcClientError, type Client, type MutateInput } from "@sortsys/v2-client";
+import {
+  base64,
+  digest,
+  immutableObject,
+  openBox,
+  openResourceCommandSigner,
+  sized,
+  type Action,
+} from "@sortsys/zerotrust/sortsys";
 import { publicId, newProductRowId } from "../app/lib/data/products";
-import { required } from "../app/lib/data/protectedObjects";
-import { toolCollection } from "../app/lib/data/toolData";
-import { toolUsageCollection } from "../app/lib/data/projectToolUsage";
+import { protectedCollection, required } from "../app/lib/data/protectedObjects";
+import { TOOL_BOOKING_MODEL, TOOL_MODEL, toolBookingArea, toolCollection } from "../app/lib/data/toolData";
+import { TOOL_USAGE_MODEL, toolUsageCollection } from "../app/lib/data/projectToolUsage";
+import { prepareToolReturnKeys } from "../app/lib/data/toolReturnKey";
 import { trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
 import { openAuthority } from "../app/lib/crypto/setup";
 import {
@@ -41,6 +50,90 @@ function isBookingPublication(
   return calls.some(({ json }) =>
     json.objects?.some(({ envelope }) => envelope.object === receipt),
   );
+}
+
+async function checkReturnBinding(
+  owner: Client,
+  peer: Client,
+  toolId: string,
+  trackingId: string,
+  projectId: string,
+) {
+  const signal = new AbortController().signal;
+  const source = toolCollection("tool-tracking", trackingId, "master-data");
+  const pointer = toolBookingArea(toolId);
+  const projection = toolUsageCollection(projectId, "master-data");
+  const tracking = await protectedCollection(owner, source, signal);
+  const tool = await protectedCollection(peer, pointer, signal);
+  const usage = await protectedCollection(peer, projection, signal);
+  try {
+    const opened = await tracking.get(source.prefix);
+    const stored = TOOL_MODEL.decode(opened.value, source.prefix, source);
+    assert.ok(stored.returnKey);
+    const publicKey = stored.returnKey.verificationKey;
+    const pointerObject = await tool.get(pointer.prefix);
+    const checkedPointer = TOOL_BOOKING_MODEL.decode(pointerObject.value, pointer.prefix, pointer);
+    const usageId = projection.prefix + trackingId;
+    const usageObject = await usage.get(usageId);
+    const checkedUsage = TOOL_USAGE_MODEL.decode(usageObject.value, usageId, projection);
+    assert.equal(checkedPointer.returnKey, publicKey);
+    assert.equal(checkedUsage.returnKey, publicKey);
+    const member = unlockedAccount()!;
+    const box = stored.returnKey.recipient;
+    const copy = await openBox(
+      box,
+      {
+        tenant: member.tenant,
+        purpose: "resource-command-key",
+        object: `${source.scope}:return:${publicKey}`,
+        generation: box.generation,
+        recipient: member.vault.subject,
+        author: member.vault.subject,
+      },
+      member.identity.encryptionKey.privateKey,
+      member.identity.signingKey.publicKey,
+    );
+    try {
+      const signingSeed = base64(copy);
+      await openResourceCommandSigner({ verificationKey: publicKey, signingSeed });
+      for (const value of [opened.value, pointerObject.value, usageObject.value]) {
+        assert.ok(!JSON.stringify(value).includes(signingSeed));
+      }
+    } finally {
+      copy.fill(0);
+    }
+    const origin = await required(peer.query("zerotrust.creations.origin", {
+      domain: source.domain,
+    }, { strategy: "network-only" }));
+    const commitment = await digest(sized(publicKey, 32));
+    assert.equal(origin?.access?.commandBinding, commitment);
+
+    // A valid author and signature cannot replace or remove a committed key.
+    const prepare = await prepareToolReturnKeys(
+      owner, stored.rows[0]!.values.responsible_user_id as string, signal,
+    );
+    assert.ok(prepare);
+    const alternate = await prepare(trackingId);
+    const replacement = { ...stored, returnKey: alternate };
+    const sequence = await tracking.inspect();
+    for (const value of [replacement, { ...stored, returnKey: undefined }]) {
+      const input = structuredClone(value);
+      if (!input.returnKey) delete input.returnKey;
+      const packet = await tracking.packet(source.prefix, input, opened.envelope);
+      const [result, error] = await owner.mutate("zerotrust.objects.batch", {
+        objects: [packet], heads: [{ domain: source.domain, sequence }],
+      });
+      assert.equal(result, null);
+      assert.ok(error instanceof RpcClientError);
+      assert.equal(error.code, "CONFLICT");
+    }
+    assert.equal((await tracking.get(source.prefix)).envelope.signature, opened.envelope.signature);
+    console.log("Tool return key: two projections hold only the matched verification key; API rejects any change to the signed commitment");
+  } finally {
+    usage.close();
+    tool.close();
+    tracking.close();
+  }
 }
 
 export async function exerciseToolBookingBatches(
@@ -85,6 +178,7 @@ export async function exerciseToolBookingBatches(
       data: { projectId: source.id, responsibleUserId: session.user.id },
     }),
   );
+  await checkReturnBinding(owner, peer, first.id, old.trackingId, source.id);
   const transfer = await required(
     owner.mutate("tools.trackings.transfers.request", {
       toolTrackingId: old.trackingId,

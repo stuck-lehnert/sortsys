@@ -20,6 +20,7 @@ export const BOX_PURPOSES = [
   "search-request",
   "search-result",
   "live-llm-context",
+  "resource-command-key",
 ] as const;
 export type BoxContext = {
   tenant: string;

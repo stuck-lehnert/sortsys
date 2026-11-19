@@ -210,7 +210,7 @@ export type RelyingParty = { name: string, id: string, };
 
 export type RequestOptions = { challenge: string, rpId: string, allowCredentials: Array<CredentialDescriptor>, timeout: number, userVerification: "required", };
 
-export type ResourceAccessState = { tenant: string, resource: string, object: string, revision: string, generation: string, binding: string, active: boolean, packetSignature: string, author: IdentityCertificate, signature: string, };
+export type ResourceAccessState = { tenant: string, resource: string, object: string, revision: string, generation: string, binding: string, active: boolean, packetSignature: string, commandBinding?: string, author: IdentityCertificate, signature: string, };
 
 export type Room = { scope: string, document: string, facet: string, };
 

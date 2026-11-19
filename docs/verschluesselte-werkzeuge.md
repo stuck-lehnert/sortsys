@@ -145,6 +145,16 @@ Die Kosten der vorherigen Buchung bleiben erhalten. Rückgabe und Ablehnung
 offener Umbuchungsanfragen erfolgen ebenfalls gemeinsam. Eine Rückgabe benötigt
 keinen Kostenschlüssel.
 
+Bei einer neuen Ausgabe an ein registriertes Mitglied erzeugt der Browser ein
+Signaturschlüsselpaar für genau diese Buchung. Den privaten Teil versiegelt er
+für das zuständige Mitglied und die Mandantenwiederherstellung. Werkzeugstatus
+und Projektkosten enthalten in ihren verschlüsselten Daten nur den Prüfschlüssel.
+Die API erhält dessen Prüfsumme und bindet sie an die signierte Buchungsrevision.
+Ein späterer Schreibvorgang darf diese Zuordnung weder austauschen noch entfernen.
+Der Mehrinstanztest prüft diese Bindung und die getrennte Ablage in den drei
+Bereichen. Der Abschluss durch den Verantwortlichen benötigt noch den passenden
+Befehl und dessen Auswertung in den Ansichten.
+
 Die Rückgabe aus der Werkzeugansicht gilt für die dort angezeigte Buchung.
 Wurde das Werkzeug zwischenzeitlich erneut ausgegeben, lässt die alte Aktion
 die neue Buchung bestehen. Wer die frühere Buchung selbst abgeschlossen hat,

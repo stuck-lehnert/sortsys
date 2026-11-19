@@ -7,12 +7,42 @@ use super::{
     wire::{EncryptedObject, Facet},
 };
 use crate::{
-    control::key,
+    control::{Transaction, key},
     error::{RpcResult, forbidden},
     ids::Id,
 };
 
 pub(super) const REVIEWED_BOOKINGS: &str = "tool-booking-revisions";
+const COMMAND_BINDINGS: &str = "tool-booking-command-bindings";
+const BOOKING_COMMANDS: &str = "tool-booking-commands";
+
+pub(super) async fn check_command_binding(
+    transaction: &mut Transaction,
+    scope: &str,
+    binding: Option<&str>,
+    register: bool,
+) -> RpcResult<()> {
+    let by_booking = key(BOOKING_COMMANDS, scope);
+    let Some(binding) = binding else {
+        if transaction.read::<String>(by_booking).await?.is_some() {
+            return Err(conflict());
+        }
+        return Ok(());
+    };
+    let by_binding = key(COMMAND_BINDINGS, binding);
+    let saved = transaction
+        .many::<String>(vec![by_binding.clone(), by_booking.clone()])
+        .await?;
+    match saved.as_slice() {
+        [None, None] if register => {
+            transaction.put(by_binding, &scope).await?;
+            transaction.put(by_booking, &binding).await?;
+        }
+        [Some(owner), Some(previous)] if owner == scope && previous == binding => {}
+        _ => return Err(conflict()),
+    }
+    Ok(())
+}
 
 /// Checkout pointers and tracking parents are decrypted during a restore
 /// review. Keep a per-object revision for an inexpensive collection CAS.
@@ -136,11 +166,28 @@ pub(super) async fn save(
     if let Some(previous) = &original.access {
         if revision(&previous.revision)?.checked_add(1) != Some(revision(&state.revision)?)
             || (!previous.active && state.active)
+            || previous.command_binding.is_some()
+                && previous.command_binding != state.command_binding
         {
             return Err(conflict());
         }
     } else if original.assignee.is_some() && state.revision != "1" {
         return Err(conflict());
+    }
+    if original
+        .access
+        .as_ref()
+        .is_none_or(|previous| previous.command_binding.is_none())
+    {
+        // A new or renewed origin must reserve or re-use the exact existing
+        // commitment. Both index directions survive content restoration.
+        check_command_binding(
+            &mut context.transaction,
+            &original.scope,
+            state.command_binding.as_deref(),
+            true,
+        )
+        .await?;
     }
     context
         .transaction

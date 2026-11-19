@@ -20,6 +20,9 @@ pub struct ResourceAccessState {
     pub binding: String,
     pub active: bool,
     pub packet_signature: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[cfg_attr(feature = "typescript", ts(optional))]
+    pub command_binding: Option<String>,
     pub author: IdentityCertificate,
     pub signature: String,
 }
@@ -45,20 +48,23 @@ impl ResourceAccessState {
             return Err(invalid());
         }
         let author = packet_hash(&self.author.frame()?, &self.author.signature)?;
-        Ok(frame(
-            "sortsys/resource-access/v1",
-            &[
-                &self.tenant,
-                &self.resource,
-                &self.object,
-                &self.revision,
-                &self.generation,
-                &self.binding,
-                if self.active { "true" } else { "false" },
-                &self.packet_signature,
-                &author,
-            ],
-        ))
+        let mut fields = vec![
+            self.tenant.as_str(),
+            &self.resource,
+            &self.object,
+            &self.revision,
+            &self.generation,
+            &self.binding,
+            if self.active { "true" } else { "false" },
+            &self.packet_signature,
+            &author,
+        ];
+        if let Some(binding) = &self.command_binding {
+            sized::<32>(binding)?;
+            fields.push(binding);
+            return Ok(frame("sortsys/resource-access/v2", &fields));
+        }
+        Ok(frame("sortsys/resource-access/v1", &fields))
     }
 
     pub fn verify(&self, expected: &ResourceAccessContext<'_>, authority: &[u8]) -> Result<()> {

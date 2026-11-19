@@ -26,6 +26,7 @@ import {
 } from "./projectToolUsage";
 import { protectedCollections } from "./protectedObjects";
 import { finishToolResponsibilityChanges } from "./toolResponsibility";
+import { prepareToolReturnKeys } from "./toolReturnKey";
 import { defineDataModel } from "./runtime/model";
 import type {
   DataRequest,
@@ -41,6 +42,7 @@ import {
   toolRow,
   toolTimestamp,
   bookingToolSummary,
+  checkToolReturnBinding,
   type ToolPart,
 } from "./toolData";
 
@@ -372,7 +374,9 @@ export async function bookProtectedTools(
           throw new InvalidProtectedData();
         part(view, selection.price);
         if (selection.previous) {
-          const row = part(view, selection.previous.master).rows[0]!;
+          const previous = part(view, selection.previous.master);
+          const row = previous.rows[0]!;
+          checkToolReturnBinding(view, selection.id, previous);
           if (
             row.values.tool_id !== addressId(selection.id) ||
             row.values.ended_at !== null
@@ -398,6 +402,7 @@ export async function bookProtectedTools(
     ...(await context.reference(data.data.projectId)),
   ];
   const responsible = await context.member(data.data.responsibleUserId, guards);
+  const returnKeyFor = await prepareToolReturnKeys(client, responsible, signal);
   const oldUsage = basis.previousRows.flatMap((row) =>
     toolUsageRequests(row, ["master-data"]),
   );
@@ -436,7 +441,7 @@ export async function bookProtectedTools(
   try {
     const prepared = await runtime.prepare(
       [...sources, ...next, ...usage, receiptRequest],
-      (tx) => {
+      async (tx) => {
         const previous = saved(tx);
         if (previous) return previous;
         for (const selection of selected) {
@@ -448,6 +453,8 @@ export async function bookProtectedTools(
               throw new ProtectedWriteConflict();
           }
           if (selection.previous) {
+            const prior = part(tx, selection.previous.master);
+            checkToolReturnBinding(tx, selection.id, prior);
             tx.patch(
               "tool_trackings",
               { id: addressId(selection.expectedTrackingId) },
@@ -457,9 +464,12 @@ export async function bookProtectedTools(
                 modified_at: now,
               },
             );
-            syncToolUsage(tx, part(tx, selection.previous.master).rows[0]!, [
-              "master-data",
-            ]);
+            syncToolUsage(
+              tx,
+              part(tx, selection.previous.master).rows[0]!,
+              ["master-data"],
+              prior.returnKey?.verificationKey,
+            );
             tx.edit(
               selection.previous.scope,
               selection.previous.scope.area.prefix,
@@ -472,6 +482,7 @@ export async function bookProtectedTools(
             );
           }
           const deadline = data.data.deadlineAt;
+          const returnKey = await returnKeyFor?.(selection.trackingId);
           const row = toolRow("tool_trackings", {
             id: addressId(selection.trackingId),
             tool_id: addressId(selection.id),
@@ -506,11 +517,12 @@ export async function bookProtectedTools(
                 [row],
                 null,
                 bookingToolSummary(part(tx, selection.tool).rows[0]!),
+                returnKey,
               ),
             );
           }
-          setActiveToolBooking(tx, selection.id, selection.trackingId);
-          syncToolUsage(tx, row);
+          setActiveToolBooking(tx, selection.id, selection.trackingId, returnKey?.verificationKey);
+          syncToolUsage(tx, row, undefined, returnKey?.verificationKey);
         }
         const result = { trackings };
         tx.create(receiptRequest, receiptId, {
