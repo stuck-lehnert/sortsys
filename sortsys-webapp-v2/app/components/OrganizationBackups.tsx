@@ -14,6 +14,7 @@ import {
   RestoreInvoiceConflict,
   RestorePlanningConflict,
 } from "~/lib/backups/contentRestore";
+import { RestoreProjectFileConflict } from "~/lib/backups/projectFileReview";
 import { client } from "~/lib/client";
 import { unlockedAccount } from "~/lib/crypto/session";
 import { RestoreDocumentConflict } from "~/lib/data/commercialRegistrations";
@@ -27,7 +28,8 @@ type CheckedBackup = {
   input: MutateInput<"zerotrust.content.activate">;
   report: Verification;
 };
-type ReviewProblem = "booking" | "document" | "invoice" | "planning" | null;
+type ReviewProblem =
+  "booking" | "document" | "invoice" | "planning" | "file" | null;
 type Review =
   | { status: "checking"; backup: Backup; operation: string }
   | {
@@ -83,6 +85,11 @@ function reviewFailure(problem: ReviewProblem) {
       "Diese Sicherung enthält widersprüchliche Einträge in der Einsatzplanung. Wählen Sie eine andere Sicherung.",
       "This backup contains conflicting entries in the schedule. Choose a different backup.",
     );
+  if (problem === "file")
+    return uiText(
+      "In der Sicherung ist eine Datei unvollständig oder die Ordnerstruktur ist ungültig. Wählen Sie eine andere Sicherung.",
+      "This backup contains an incomplete file or an invalid folder structure. Choose a different backup.",
+    );
   return uiText(
     "Die Sicherung konnte nicht geprüft werden.",
     "The backup could not be checked.",
@@ -91,10 +98,13 @@ function reviewFailure(problem: ReviewProblem) {
 
 function RestoreCounts({ report }: { report: Verification }) {
   const count = new Intl.NumberFormat(currentLocaleTag());
+  const files = report.restoredFiles;
   const entries = [
     { label: uiText("Projekte", "Projects"), value: report.projects },
     { label: uiText("Kunden", "Customers"), value: report.customers },
     { label: uiText("Kontakte", "Contacts"), value: report.contacts },
+    { label: uiText("Dateien", "Files"), value: files.files },
+    { label: uiText("Ordner", "Folders"), value: files.folders },
   ];
   if (report.retainedDocuments > 0) {
     entries.push({
@@ -104,9 +114,7 @@ function RestoreCounts({ report }: { report: Verification }) {
   }
   return (
     <>
-      <dl
-        className={`grid gap-4 rounded-md border border-border p-3 ${entries.length === 4 ? "grid-cols-2" : "grid-cols-3"}`}
-      >
+      <dl className="grid grid-cols-2 gap-4 rounded-md border border-border p-3 sm:grid-cols-3">
         {entries.map(({ label, value }) => (
           <div key={label}>
             <dt className="text-sm text-muted">{label}</dt>
@@ -159,6 +167,31 @@ function RestoreCounts({ report }: { report: Verification }) {
           )}
         </p>
       )}
+      {files.missingProjects > 0 && (
+        <MyCallout color="yellow">
+          {uiText(
+            "In der Sicherung fehlen Projekte, denen Dateien oder Ordner zugeordnet sind.",
+            "This backup is missing projects referenced by files or folders.",
+          )}
+        </MyCallout>
+      )}
+      {files.missingPhotos > 0 && (
+        <MyCallout color="yellow">
+          {uiText(
+            "In der Sicherung fehlen Fotos, die in Bautagesberichten verknüpft sind.",
+            "This backup is missing photos linked to daily site reports.",
+          )}{" "}
+          {count.format(files.missingPhotos)}
+        </MyCallout>
+      )}
+      {(files.uncheckedAreas > 0 || files.uncheckedPhotos > 0) && (
+        <p className="text-sm text-muted">
+          {uiText(
+            "Einige Dateien oder Verknüpfungen konnten mit den vorhandenen Leserechten nicht geprüft werden.",
+            "Some files or links could not be checked with the current read access.",
+          )}
+        </p>
+      )}
       {report.uncheckedDocuments > 0 && (
         <p className="text-sm text-muted">
           {uiText(
@@ -169,8 +202,8 @@ function RestoreCounts({ report }: { report: Verification }) {
       )}
       <p className="text-sm text-muted">
         {uiText(
-          "Der Browser hat die lesbaren Projekte und Adressdaten geprüft.",
-          "The browser checked projects and address data available to this account.",
+          "Der Browser hat die lesbaren Projekte, Adressdaten und Projektdateien geprüft.",
+          "The browser checked projects, address data and project files available to this account.",
         )}
       </p>
     </>
@@ -265,6 +298,7 @@ export default function OrganizationBackups() {
         else if (error instanceof RestoreDocumentConflict) problem = "document";
         else if (error instanceof RestoreInvoiceConflict) problem = "invoice";
         else if (error instanceof RestorePlanningConflict) problem = "planning";
+        else if (error instanceof RestoreProjectFileConflict) problem = "file";
         setReview({
           status: "failed",
           backup,

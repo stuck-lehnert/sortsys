@@ -68,6 +68,7 @@ import {
   toolCollection,
   toolDomain,
 } from "../data/toolData";
+import { inspectRestoredFiles } from "./projectFileReview";
 
 type Activation = MutateInput<"zerotrust.content.activate">;
 type Proposal = Omit<Activation, "review">;
@@ -519,6 +520,7 @@ export async function inspectPreparedContent(
   });
   const uncheckedBookings = await verifyActiveBookings(client, view, projectIds, signal);
   const planning = await inspectPlanning(view, projectIds);
+  const restoredFiles = await inspectRestoredFiles(client, view, projectIds, signal);
   const dependencies = await required(
     client.query("zerotrust.content.inspect", check, {
       strategy: "network-only",
@@ -584,6 +586,7 @@ export async function inspectPreparedContent(
     uncheckedBookings,
     missingPlanningReferences: planning.missing,
     uncheckedPlanningReferences: planning.unchecked,
+    restoredFiles,
     retainedDocuments,
     uncheckedDocuments: dependencies.uncheckedDocuments + uncheckedInvoices,
     review,

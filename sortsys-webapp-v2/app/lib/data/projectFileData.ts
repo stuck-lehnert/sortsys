@@ -256,6 +256,52 @@ export function folderPayload(
   itemName(folder.values.name);
   return { format: data.format, folder };
 }
+
+export function projectFileEntries(
+  project: string,
+  objects: Iterable<readonly [object: string, record: { value: unknown }]>,
+) {
+  const files = new Map<string, FilePayload>();
+  const folders = new Map<string, FolderPayload>();
+  const prefix = fileCollection(project).prefix;
+  for (const [object, { value }] of objects) {
+    if (object.startsWith(`${prefix}file:`)) {
+      const id = object.slice(prefix.length + "file:".length);
+      if (files.has(id)) throw new InvalidProtectedData();
+      files.set(id, filePayload(value, object, project));
+    } else if (object.startsWith(`${prefix}folder:`)) {
+      const id = object.slice(prefix.length + "folder:".length);
+      if (folders.has(id)) throw new InvalidProtectedData();
+      folders.set(id, folderPayload(value, object, project));
+    } else {
+      throw new InvalidProtectedData();
+    }
+  }
+  const checked = new Set<string>();
+  for (const [id, payload] of folders) {
+    if (!payload.folder || checked.has(id)) continue;
+    const path = new Set<string>();
+    let current: string | null = id;
+    while (current && !checked.has(current)) {
+      if (path.has(current)) throw new InvalidProtectedData();
+      path.add(current);
+      const folder: BusinessRow | null | undefined =
+        folders.get(current)?.folder;
+      if (!folder) throw new InvalidProtectedData();
+      const parent: unknown = folder.values.parent_folder_id;
+      current = parent === null ? null : publicId(parent);
+    }
+    for (const visited of path) checked.add(visited);
+  }
+  for (const { file } of files.values()) {
+    if (!file) continue;
+    const folder = file.values.folder_id;
+    if (folder !== null && !folders.get(publicId(folder))?.folder)
+      throw new InvalidProtectedData();
+  }
+  return { files, folders };
+}
+
 export function itemName(input: unknown): string {
   const name = addressText(input, true, 255)!;
   if ([".", ".."].includes(name) || /[/\\]/.test(name))

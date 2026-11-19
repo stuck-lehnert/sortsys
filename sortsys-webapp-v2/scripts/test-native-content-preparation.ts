@@ -31,7 +31,11 @@ import type { EncryptedChange } from "../app/lib/data/events";
 import { openDocumentMessages } from "../app/lib/data/documentMessages";
 import { prepareLivePublication } from "../app/lib/data/liveCheckpoints";
 import { newProductRowId, publicId } from "../app/lib/data/products";
-import { fileObject } from "../app/lib/data/projectFileData";
+import {
+  fileCollection,
+  fileObject,
+  filePayload,
+} from "../app/lib/data/projectFileData";
 import { projectCollection, projectPayload } from "../app/lib/data/projectData";
 import {
   scheduleCollection,
@@ -48,6 +52,7 @@ import {
   RestoreInvoiceConflict,
   RestorePlanningConflict,
 } from "../app/lib/backups/contentRestore";
+import { RestoreProjectFileConflict } from "../app/lib/backups/projectFileReview";
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
@@ -62,6 +67,137 @@ import {
 } from "./test-tool-booking-restore";
 
 const originalOrderTitle = "Vertraulicher Auftrag zur Rücksicherung";
+const restorePhotoName = "Vertraulicher Baufortschritt aus der Sicherung.png";
+const reportDay = "2026-11-18";
+const photoMime = "image/png";
+const photoBytes = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGNIMLgARww4OQA8thCB8fEjXwAAAABJRU5ErkJggg==",
+    "base64",
+  ),
+);
+const thumbnailBytes = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGN4MEHxwQRFAAx8AyPyTiS5AAAAAElFTkSuQmCC",
+    "base64",
+  ),
+);
+
+async function uploadRestorePhoto(
+  owner: Client,
+  peer: ReturnType<typeof createBusinessClient>,
+  projectId: string,
+) {
+  await required(
+    owner.mutate("projects.dailyReports.create", {
+      projectId,
+      day: reportDay,
+      summary: "Abnahme der ersten Fensterlaibungen",
+      workHours: [],
+    }),
+  );
+  const folder = await required(
+    owner.mutate("projects.files.folders.create", {
+      projectId,
+      name: "Fotos zur Bauabnahme",
+    }),
+  );
+  const id = await peer.files.upload({
+    projectId,
+    folderId: folder.id,
+    name: restorePhotoName,
+    mime: photoMime,
+    blob: new Blob([photoBytes], { type: photoMime }),
+    inspect: async () => ({
+      thumbnail: new Blob([thumbnailBytes], { type: photoMime }),
+      width: 2,
+      height: 1,
+    }),
+  });
+  await required(
+    owner.mutate("projects.dailyReports.photos.add", {
+      projectId,
+      day: reportDay,
+      fileId: id,
+    }),
+  );
+  return id;
+}
+
+async function checkAttachmentReview(
+  owner: Client,
+  peer: Client,
+  operator: Client,
+  tenant: string,
+  projectId: string,
+  photoId: string,
+) {
+  const signal = new AbortController().signal;
+  async function inspectSnapshot() {
+    const backup = await required(
+      operator.mutate("admin.storage.snapshots.create", {
+        tenant,
+        operation: crypto.randomUUID(),
+      }),
+    );
+    const prepared = await required(
+      peer.mutate("zerotrust.content.prepare", {
+        snapshotOperation: backup.id,
+        operation: crypto.randomUUID(),
+      }),
+    );
+    return inspectPreparedContent(
+      peer,
+      await approvePreparedContent(peer, prepared, signal),
+      signal,
+    );
+  }
+  const collection = await protectedCollection(
+    owner,
+    fileCollection(projectId),
+    signal,
+  );
+  const object = fileObject(projectId, photoId);
+  try {
+    await collection.read();
+    const saved = await collection.get(object);
+    const photo = filePayload(saved.value, object, projectId);
+    assert.ok(photo.thumbnail?.parts.length);
+    const damaged = {
+      ...photo,
+      thumbnail: {
+        ...photo.thumbnail,
+        parts: photo.thumbnail.parts.map((part) => ({
+          ...part,
+          hash: base64(new Uint8Array(32).fill(39)),
+        })),
+      },
+    };
+    await collection.write([
+      await collection.packet(object, damaged, saved.envelope),
+    ]);
+    try {
+      await assert.rejects(() => inspectSnapshot(), RestoreProjectFileConflict);
+    } finally {
+      await collection.read();
+      const current = await collection.get(object);
+      await collection.write([
+        await collection.packet(object, saved.value, current.envelope),
+      ]);
+    }
+  } finally {
+    collection.close();
+  }
+  await required(
+    owner.mutate("projects.files.delete", { projectId, fileId: photoId }),
+  );
+  const preview = await inspectSnapshot();
+  assert.equal(preview.restoredFiles.missingPhotos, 1);
+  assert.equal(preview.restoredFiles.uncheckedPhotos, 0);
+  console.log(
+    "Restore review rejects mismatched file blocks and reports removed daily photos",
+  );
+}
 
 async function adoptOrder(owner: Client, projectId: string) {
   const contract = await required(
@@ -960,6 +1096,7 @@ export async function exerciseContentPreparation(
     },
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
+  const photoId = await uploadRestorePhoto(owner, peer, project.id);
   const contract = await adoptOrder(owner, project.id);
   const finalizeConfirmation = prepareConfirmation(owner, contract);
   const ownerSession = await required(
@@ -1003,6 +1140,10 @@ export async function exerciseContentPreparation(
     }),
   );
   assert.ok(snapshot.bytes);
+  await required(owner.mutate("projects.files.delete", {
+    projectId: project.id,
+    fileId: photoId,
+  }));
   const booking = await replaceBooking();
   const confirmation = await finalizeConfirmation(peer);
   const invoice = await issueInvoiceAfterBackup(owner, peer, project.id, contract);
@@ -1154,6 +1295,7 @@ export async function exerciseContentPreparation(
     prepared,
     previewSignal,
   );
+  const beforeFileVerification = transmissions.length;
   const reportPreview = await inspectPreparedContent(
     peer,
     approvalInput,
@@ -1166,6 +1308,23 @@ export async function exerciseContentPreparation(
   assert.equal(reportPreview.uncheckedReferences, 0);
   assert.equal(reportPreview.missingPlanningReferences, 0);
   assert.equal(reportPreview.uncheckedPlanningReferences, 0);
+  assert.deepEqual(reportPreview.restoredFiles, {
+    files: 2,
+    folders: 1,
+    missingProjects: 0,
+    uncheckedAreas: 0,
+    missingPhotos: 0,
+    uncheckedPhotos: 0,
+  });
+  const fileVerification = transmissions
+    .slice(beforeFileVerification)
+    .flat()
+    .filter((path) => path === "zerotrust.fileChunks.getMany");
+  assert.equal(
+    fileVerification.length,
+    1,
+    "The document, photo and thumbnail share a block request",
+  );
   assert.equal(reportPreview.retainedDocuments, 2);
   assert.equal(reportPreview.uncheckedDocuments, 0);
   const preview = await protectedReadView(
@@ -1545,6 +1704,30 @@ export async function exerciseContentPreparation(
     ),
   );
   assert.equal(restoredAgain.title, originalTitle);
+  const restoredReport = await required(
+    peer.query("projects.dailyReports.get", {
+      projectId: project.id,
+      day: reportDay,
+    }),
+  );
+  assert.deepEqual(
+    restoredReport.photos?.map(({ id }) => id),
+    [photoId],
+  );
+  assert.deepEqual(
+    new Uint8Array(
+      await (await peer.files.blob(project.id, photoId)).arrayBuffer(),
+    ),
+    photoBytes,
+  );
+  assert.deepEqual(
+    new Uint8Array(
+      await (
+        await peer.files.blob(project.id, photoId, undefined, true)
+      ).arrayBuffer(),
+    ),
+    thumbnailBytes,
+  );
   await confirmation.check();
   await invoice.check();
   await booking.check();
@@ -1571,6 +1754,8 @@ export async function exerciseContentPreparation(
             SORTSYS_RESTORE_E2E_INVOICE_CASE: invoice.caseId,
             SORTSYS_RESTORE_E2E_BEFORE: newTitle,
             SORTSYS_RESTORE_E2E_AFTER: originalTitle,
+            SORTSYS_RESTORE_E2E_PHOTO: restorePhotoName,
+            SORTSYS_RESTORE_E2E_REPORT_DAY: reportDay,
           },
         },
       );
@@ -1633,4 +1818,5 @@ export async function exerciseContentPreparation(
   });
   await invoice.settle();
   await rejectInvoiceWithoutContract(tenant, owner, peer, operator);
+  await checkAttachmentReview(owner, peer, operator, tenant, project.id, photoId);
 }

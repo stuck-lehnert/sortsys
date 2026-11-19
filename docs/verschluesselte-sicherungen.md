@@ -120,7 +120,16 @@ Projektzuordnung mit der Sicherung ab. Bei Einsätzen prüft er auch das
 zugeordnete Personalprofil. Die Vorschau meldet fehlende Verknüpfungen und
 weist darauf hin, wenn Leserechte für ihre Prüfung fehlen. Sind zwei
 gespeicherte Fassungen desselben Planungseintrags gleichzeitig aktiv, hält die
-Prüfung an. Die Vorschau beschränkt sich auf die hier beschriebenen
+Prüfung an.
+
+Bei lesbaren Projektdateien prüft der Browser die Ordnerstruktur und
+kontrolliert die verschlüsselten Blöcke für Originale und Vorschaubilder.
+Die Blöcke werden paketweise entschlüsselt und nach der Prüfung verworfen.
+Fehlt ein Block oder weicht er vom signierten Dateieintrag ab, bleibt die
+Freigabe gesperrt. Fehlende Projektzuordnungen und nicht mehr vorhandene
+Fotos aus Bautagesberichten erscheinen als Hinweise in der Vorschau.
+Bei fehlender Lesefreigabe ist die Prüfung der betroffenen Verknüpfung
+nicht möglich. Die Vorschau beschränkt sich auf die hier beschriebenen
 Verknüpfungen.
 
 Erst **Fachdaten wiederherstellen** gibt den vorbereiteten Stand frei. Die

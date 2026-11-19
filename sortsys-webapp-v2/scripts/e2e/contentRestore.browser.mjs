@@ -15,7 +15,17 @@ const finalizedText = "Vertrauliche Ausführung nach der Sicherung.";
 const paymentReference = "Anzahlung vom Bauherrn 736284";
 const before = env.SORTSYS_RESTORE_E2E_BEFORE;
 const after = env.SORTSYS_RESTORE_E2E_AFTER;
-assert.ok(project && confirmationCase && invoiceCase && before && after);
+const photo = env.SORTSYS_RESTORE_E2E_PHOTO;
+const reportDay = env.SORTSYS_RESTORE_E2E_REPORT_DAY;
+assert.ok(
+  project &&
+    confirmationCase &&
+    invoiceCase &&
+    before &&
+    after &&
+    photo &&
+    reportDay,
+);
 const artifacts = join(process.argv[2], "browser-artifacts", "content-restore");
 await mkdir(artifacts, { recursive: true });
 const server = await applicationServer(
@@ -50,7 +60,7 @@ try {
     if (!url.pathname.startsWith("/api/v2/")) return;
     if (url.pathname.includes("zerotrust.content.activate")) activations++;
     const wire = (request.postData() ?? "") + decodeURIComponent(url.search);
-    if ([before, after, finalizedText, paymentReference].some((text) => wire.includes(text))) {
+    if ([before, after, finalizedText, paymentReference, photo].some((text) => wire.includes(text))) {
       leaks.push(url.pathname);
     }
   });
@@ -87,6 +97,8 @@ try {
   });
   await expect(confirm).toBeEnabled();
   await expect(dialog.getByText("Projekte", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Dateien", { exact: true })).toBeVisible();
+  await expect(dialog.getByText("Ordner", { exact: true })).toBeVisible();
   await expect(
     dialog.getByText("Erhaltene Dokumente", { exact: true }),
   ).toBeVisible();
@@ -109,6 +121,12 @@ try {
   await expect(
     page.getByRole("heading", { name: after, exact: true }),
   ).toBeVisible();
+  await page.goto(`${projectUrl}/dailyReports/${reportDay}`);
+  const thumbnail = page.getByRole("img", { name: photo, exact: true });
+  await expect(thumbnail).toBeVisible();
+  await expect
+    .poll(() => thumbnail.evaluate((image) => image.naturalWidth))
+    .toBe(2);
   await page.goto(`${server.origin}/gaeb/${confirmationCase}`);
   await page
     .getByRole("button", {
@@ -147,6 +165,7 @@ try {
       activations,
       lockedConfirmationVisible: true,
       invoicePaymentVisible: true,
+      restoredPhotoVisible: true,
       errors,
       leaks,
     }),

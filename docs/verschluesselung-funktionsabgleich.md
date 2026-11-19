@@ -524,13 +524,14 @@ Inhaltscursor bleibt davon getrennt. Die Organisationsverwaltung kann einen
 älteren Fachstand prüfen und freigeben. Die Vorschau prüft die lesbaren
 Projekte und Adressdaten samt Verknüpfungen sowie die Bezüge erhaltener
 Werkzeugbuchungen, Auftragsbestätigungen und ausgestellter Rechnungen. Die
-Vorschau prüft auch die Projekt- und Personalbezüge lesbarer
-Planungseinträge. Fehlende Leserechte erscheinen in der Vorschau. Im
-Produktionsbrowser sind Abbruch und
-Bestätigung über zwei getrennte API-Prozesse geprüft. Danach sind die
-gesperrte Auftragsbestätigung und der Zahlungsstand der vorhandenen Rechnung
-weiterhin sichtbar. Ein vollständiger Abgleich aller verschlüsselten
-Fachdaten steht noch aus.
+Vorschau prüft auch die Projekt- und Personalbezüge lesbarer Planungseinträge.
+Bei Projektdateien prüft der Browser die Ordner, die Blöcke für Originale
+und Vorschaubilder sowie die Fotoverknüpfungen aus Bautagesberichten.
+Fehlende Leserechte erscheinen in der Vorschau. Im Produktionsbrowser sind
+Abbruch und Bestätigung über zwei getrennte API-Prozesse geprüft. Danach sind
+ein wiederhergestelltes Bautagesberichtsfoto, die gesperrte Auftragsbestätigung
+und der Zahlungsstand der vorhandenen Rechnung sichtbar. Ein vollständiger
+Abgleich aller verschlüsselten Fachdaten steht noch aus.
 Ein Test startet den Datendienst aus einem vollständigen DuckDB-Dateisatz neu
 und prüft Anmeldung, ein Projekt, dessen Anhang und einen weiteren
 Phrase-Wechsel. Die [Betriebsdokumentation](deployment.md#sicherungen-und-wiederanlauf)

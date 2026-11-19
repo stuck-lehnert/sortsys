@@ -302,7 +302,7 @@ export async function loadFileContent(
   const parts = await readFileBlocks(
     client,
     namespace,
-    checked,
+    [checked],
     signal,
     async (raw) => new Blob([raw]),
   );
@@ -310,12 +310,38 @@ export async function loadFileContent(
   return new Blob(parts, { type: mime });
 }
 
+type ReadableBlock = {
+  part: FileContent["parts"][number];
+  index: number;
+  bytes: number;
+};
+function* manifestBlockGroups(manifests: readonly FileContent[]) {
+  let group: ReadableBlock[] = [];
+  for (const manifest of manifests) {
+    for (const [index, part] of manifest.parts.entries()) {
+      group.push({
+        part,
+        index,
+        bytes: Math.min(
+          FILE_CHUNK_BYTES,
+          manifest.size - index * FILE_CHUNK_BYTES,
+        ),
+      });
+      if (group.length === CONCURRENT_FILE_BLOCKS) {
+        yield group;
+        group = [];
+      }
+    }
+  }
+  if (group.length > 0) yield group;
+}
+
 /** Verify each block before consuming plaintext. On failure, drain all started
  * work before closing the collection and its shared key cache. */
 async function readFileBlocks<T>(
   client: Client,
   namespace: string,
-  manifest: FileContent,
+  manifests: readonly FileContent[],
   signal: AbortSignal,
   consume: (raw: Uint8Array<ArrayBuffer>, index: number) => Promise<T>,
 ): Promise<T[]> {
@@ -323,32 +349,23 @@ async function readFileBlocks<T>(
   const collection = await protectedCollection(client, area, signal);
   try {
     const result: T[] = [];
-    for (
-      let start = 0;
-      start < manifest.parts.length;
-      start += CONCURRENT_FILE_BLOCKS
-    ) {
-      const group = manifest.parts.slice(start, start + CONCURRENT_FILE_BLOCKS);
+    for (const group of manifestBlockGroups(manifests)) {
       const packets = await fetchFileBlocks(
         client,
         area.domain,
-        group.map((part) => part.id),
+        group.map(({ part }) => part.id),
         signal,
       );
       const consumed = await mapConcurrent(
         group,
         CONCURRENT_FILE_BLOCKS,
-        async (part, offset) => {
-          const index = start + offset;
+        async ({ part, index, bytes }, offset) => {
           const envelope = packets[offset];
           if ((await packetHash(envelope)) !== part.hash)
             throw new InvalidProtectedData();
           const raw = block(
             (await collection.open(envelope, part.id)).value,
-            Math.min(
-              FILE_CHUNK_BYTES,
-              manifest.size - index * FILE_CHUNK_BYTES,
-            ),
+            bytes,
           );
           try {
             signal.throwIfAborted();
@@ -384,7 +401,7 @@ export async function verifyFileContent(
   await readFileBlocks(
     client,
     namespace,
-    checked,
+    [checked],
     signal,
     async (actual, index) => {
       let expected: Uint8Array<ArrayBuffer> | null = null;
@@ -402,5 +419,40 @@ export async function verifyFileContent(
         expected?.fill(0);
       }
     },
+  );
+}
+
+/** The restore review streams all renditions in one namespace through one
+ * access context. It verifies authentication and length without retaining bytes. */
+export async function verifyFileContents(
+  client: Client,
+  namespace: string,
+  files: readonly { id: string; manifest: FileContent }[],
+  signal: AbortSignal,
+): Promise<void> {
+  if (!files.length) return;
+  const unique = new Map<string, FileContent>();
+  for (const { id, manifest } of files) {
+    const checked = content(manifest, namespace, id);
+    const key = `${id}:${checked.version}`;
+    const previous = unique.get(key);
+    if (previous) {
+      if (
+        previous.size !== checked.size ||
+        previous.parts.some(
+          (part, index) => part.hash !== checked.parts[index]?.hash,
+        )
+      )
+        throw new InvalidProtectedData();
+    } else {
+      unique.set(key, checked);
+    }
+  }
+  await readFileBlocks(
+    client,
+    namespace,
+    [...unique.values()],
+    signal,
+    async () => undefined,
   );
 }

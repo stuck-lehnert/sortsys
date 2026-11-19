@@ -62,9 +62,8 @@ import {
   fileCollection,
   fileDomainId,
   fileObject,
-  filePayload,
   folderObject,
-  folderPayload,
+  projectFileEntries,
   itemName,
   wireFile,
   FILE_MUTATIONS,
@@ -126,34 +125,6 @@ function row(table: string, values: Record<string, unknown>): BusinessRow {
     ),
   });
 }
-function tree(store: Store) {
-  const done = new Set<string>();
-  for (const [id, payload] of store.folders) {
-    if (!payload.folder || done.has(id)) {
-      continue;
-    }
-    const path = new Set<string>();
-    let current: string | null = id;
-    while (current && !done.has(current)) {
-      if (path.has(current)) {
-        throw new InvalidProtectedData();
-      }
-      path.add(current);
-      const parent: BusinessRow | null | undefined =
-        store.folders.get(current)?.folder;
-      if (!parent) {
-        throw new InvalidProtectedData();
-      }
-      current =
-        parent.values.parent_folder_id === null
-          ? null
-          : publicId(parent.values.parent_folder_id);
-    }
-    for (const visited of path) {
-      done.add(visited);
-    }
-  }
-}
 export function createProtectedProjectFiles(
   client: Client,
   signal: AbortSignal,
@@ -211,34 +182,12 @@ export function createProtectedProjectFiles(
     objects: Map<string, OpenedObject>,
     id: string,
   ): Store {
-    const files = new Map<string, FilePayload>();
-    const folders = new Map<string, FolderPayload>();
-    for (const [object, entry] of objects) {
-      if (object.startsWith(`${fileCollection(id).prefix}file:`)) {
-        const payload = filePayload(entry.value, object, id);
-        files.set(
-          object.slice(`${fileCollection(id).prefix}file:`.length),
-          payload,
-        );
-      } else if (object.startsWith(`${fileCollection(id).prefix}folder:`)) {
-        const payload = folderPayload(entry.value, object, id);
-        folders.set(
-          object.slice(`${fileCollection(id).prefix}folder:`.length),
-          payload,
-        );
-      } else {
-        throw new InvalidProtectedData();
-      }
-    }
-    const result = {
+    return {
       collection,
       head: collection.snapshot(),
       objects,
-      files,
-      folders,
+      ...projectFileEntries(id, objects),
     };
-    tree(result);
-    return result;
   }
   async function projected(candidate: Map<string, Store>) {
     const next = await createBusinessDatabase(await driver?.());
