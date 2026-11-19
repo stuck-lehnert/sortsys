@@ -945,6 +945,12 @@ export async function exerciseGaebCaseBatches(
     owner.mutate("projects.create", { title: "Betriebsgebäude im GAEB-Batchtest" }),
   );
   const contract = await adoptOrder(owner, project.id);
+  await peer.files.upload({
+    projectId: project.id,
+    name: "Baufoto.png",
+    mime: photoMime,
+    blob: new Blob([photoBytes], { type: photoMime }),
+  });
   const firstCaseRead = transmissions.length;
   const detail = await required(
     peer.query(
@@ -988,13 +994,39 @@ export async function exerciseGaebCaseBatches(
     .filter((path) => path === registrations);
   assert.equal(registrationLookups.length, 1);
   const firstSearch = transmissions.length;
-  const positions = await required(
-    peer.query("gaeb.positions.search", { query: "fensterlaib" }),
-  );
-  assert.ok(
-    positions.items.some(({ shortText }) => shortText === "Fensterlaibung"),
-    "the cold index must return a decrypted GAEB position",
-  );
+  const objectPages = "zerotrust.objects.pages";
+  const searchPrefixes = [
+    `${commercialCollection(contract.caseId, "master-data").prefix}case`,
+    `${fileCollection(project.id).prefix}file:`,
+  ];
+  const sourcePages: string[][] = [];
+  setRequestHook(async (url, next, options) => {
+    const paths = url.pathname.slice(1).split(",");
+    const index = paths.indexOf(objectPages);
+    if (index < 0) return next();
+    const body = options?.body ?? url.searchParams.get("input");
+    assert.ok(typeof body === "string");
+    const input: QueryInput<typeof objectPages> = JSON.parse(body)[index].json;
+    const prefixes = input.selections
+      .map(({ prefix }) => prefix)
+      .filter((prefix) => searchPrefixes.includes(prefix));
+    if (prefixes.length > 0) sourcePages.push(prefixes);
+    return next();
+  });
+  try {
+    const positions = await required(
+      peer.query("gaeb.positions.search", { query: "fensterlaib" }),
+    );
+    assert.ok(
+      positions.items.some(({ shortText }) => shortText === "Fensterlaibung"),
+      "the cold index must return a decrypted GAEB position",
+    );
+  } finally {
+    setRequestHook(null);
+  }
+  assert.deepEqual(sourcePages.map((prefixes) => prefixes.sort()), [
+    searchPrefixes.sort(),
+  ]);
   const searchRequests = transmissions.slice(firstSearch);
   assert.ok(
     searchRequests.every((paths) => !paths.includes("gaeb.positions.search")),
@@ -1007,7 +1039,7 @@ export async function exerciseGaebCaseBatches(
   assert.deepEqual(searchHeads, [detail.documents.length]);
 
   console.log(
-    `GAEB: ${detail.documents.length} document heads share one HTTP request in the case details and in a cold position search. Parallel opening and download each check the case registrations once.`,
+    `GAEB: ${detail.documents.length} document heads share one HTTP request. The position index reads the case and project file metadata in one pages request. Parallel opening and download each check the case registrations once.`,
   );
 
   const sequences: string[] = [];

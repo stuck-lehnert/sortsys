@@ -13,8 +13,7 @@ import { commercialDocumentStore } from "./commercialDocumentContent";
 import { fileCollection, fileDomainId, filePayload } from "./projectFileData";
 import { loadFileContent } from "./fileContent";
 import { publicId } from "./products";
-import { protectedCollections } from "./protectedObjects";
-import { readableAreas } from "./readableAreas";
+import { protectedCollections, type Collection } from "./protectedObjects";
 import { createPositionIndex, type PositionSource } from "./positionIndex";
 
 /** Inventory and texts come exclusively from verified encrypted collections.
@@ -27,7 +26,6 @@ export function createProtectedPositionIndex(
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
   type Store = {
-    collection: ReturnType<Awaited<ReturnType<typeof protectedCollections>>>;
     head: string;
     sources: PositionSource[];
   };
@@ -43,15 +41,16 @@ export function createProtectedPositionIndex(
   async function sources() {
     live();
     if (snapshot) return snapshot;
-    const started = generation,
-      areas = await readableAreas(client, signal, (domain) => {
-        const part = commercialDomain(domain);
-        if (part && ["master-data", "scope"].includes(part.facet))
-          return commercialCollection(part.id, part.facet);
-        const project = fileDomainId(domain);
-        return project ? fileCollection(project) : null;
-      });
+    const started = generation;
+    const open = await protectedCollections(client, signal);
     live();
+    const areas = open.areas((domain) => {
+      const part = commercialDomain(domain);
+      if (part && ["master-data", "scope"].includes(part.facet))
+        return commercialCollection(part.id, part.facet);
+      const project = fileDomainId(domain);
+      return project ? fileCollection(project) : null;
+    });
     const scope = new Set(
       areas.filter((area) => area.facet === "scope").map((area) => area.scope),
     );
@@ -61,28 +60,26 @@ export function createProtectedPositionIndex(
         (area.facet === "master-data" && scope.has(area.scope)),
     );
     const visible = new Set(selected.map((area) => area.domain));
-    for (const [domain, previous] of stores)
-      if (!visible.has(domain)) {
-        previous.collection.close();
-        stores.delete(domain);
-      }
-    const open = await protectedCollections(client, signal);
-    live();
-    async function refresh(area: (typeof selected)[number]) {
-      const previous = stores.get(area.domain),
-        collection = open(area);
+    for (const domain of stores.keys())
+      if (!visible.has(domain)) stores.delete(domain);
+
+    async function refresh({
+      area,
+      known,
+    }: {
+      area: Collection;
+      known?: string;
+    }) {
+      const collection = open(area);
       try {
-        const project = fileDomainId(area.domain),
-          prefix = project ? area.prefix + "file:" : area.prefix + "case";
-        const rows = previous
-          ? await collection.readIfChanged(previous.head, prefix)
-          : await collection.read(prefix);
+        const rows =
+          known === undefined
+            ? await collection.read()
+            : await collection.readIfChanged(known);
         live();
-        if (rows === null) {
-          collection.close();
-          return;
-        }
+        if (rows === null) return;
         const entries: PositionSource[] = [];
+        const project = fileDomainId(area.domain);
         if (project)
           for (const row of rows) {
             const payload = filePayload(
@@ -139,7 +136,7 @@ export function createProtectedPositionIndex(
           if (rows[0]) {
             const row = rows[0],
               part = commercialDomain(area.domain)!;
-            if (row.envelope.object !== prefix)
+            if (row.envelope.object !== area.prefix)
               throw new InvalidProtectedData();
             const value = joinCommercialFacets(
               part.id,
@@ -179,20 +176,23 @@ export function createProtectedPositionIndex(
         }
         live();
         stores.set(area.domain, {
-          collection,
           head: collection.snapshot(),
           sources: entries,
         });
-        previous?.collection.close();
-      } catch (error) {
+      } finally {
         collection.close();
-        throw error;
       }
     }
     for (let offset = 0; offset < selected.length; offset += 8) {
-      const result = await Promise.allSettled(
-        selected.slice(offset, offset + 8).map(refresh),
-      );
+      const requests = selected.slice(offset, offset + 8).map((area) => ({
+        area: {
+          ...area,
+          prefix: area.prefix + (area.facet === "attachment" ? "file:" : "case"),
+        },
+        known: stores.get(area.domain)?.head,
+      }));
+      await open.prefetch(requests);
+      const result = await Promise.allSettled(requests.map(refresh));
       for (const item of result)
         if (item.status === "rejected") throw item.reason;
     }
@@ -210,7 +210,6 @@ export function createProtectedPositionIndex(
     closed = true;
     snapshot = null;
     index.close();
-    for (const store of stores.values()) store.collection.close();
     stores.clear();
   }
   signal.addEventListener("abort", close, { once: true });
