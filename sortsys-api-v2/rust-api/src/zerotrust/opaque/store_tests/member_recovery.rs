@@ -33,6 +33,7 @@ async fn seed_recovery_restores_an_ordinary_member_without_granting_administrati
     assert_eq!(result["repeatedSeedRotation"], true);
     assert_eq!(result["memberRemainsOrdinary"], true);
     assert_eq!(result["privateHistoryRecovered"], true);
+    assert_eq!(result["toolReturnsRecovered"], true);
     let member = crate::ids::Id::decode(result["member"].as_str().unwrap()).unwrap();
     let account = tenant
         .read::<Account>(accounts::account_key(member.0))
@@ -49,4 +50,5 @@ async fn seed_recovery_restores_an_ordinary_member_without_granting_administrati
     );
     assert_protected_collection(&tenant, "accounts").await;
     assert_protected_collection(&tenant, "identity-history").await;
+    assert_protected_collection(&tenant, "tool-booking-renewals").await;
 }

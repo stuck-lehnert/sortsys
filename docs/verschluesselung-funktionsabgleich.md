@@ -265,9 +265,10 @@ späteren Änderungen. Alte Mitarbeiterzertifikate bleiben gesperrt. Nach einer
 erneut bestätigten Einladung erhält der Verantwortliche Leserechte für seine
 aktive Buchung, während abgeschlossene Buchungen und Kosten verborgen bleiben.
 Der aktuelle Administrator bestätigt dafür den bestehenden Buchungsbereich
-mit einem an die genaue Ausgangsrevision gebundenen Nachweis. Eine veraltete
-Bestätigung veröffentlicht nichts; eine verlorene Antwort und deren
-Wiederholung verändern keinen bereits bestätigten Aktivitätsnachweis.
+mit einem an die genaue Ausgangsrevision gebundenen Nachweis. Hatte die offene
+Buchung bereits einen Rückgabeschlüssel, ersetzt ihn der Browser gemeinsam mit
+den Nachweisen im Werkzeugstatus und in der Projektsicht. Ein alter
+Rückgabeschlüssel bleibt auch mit einer gültigen neuen Anmeldung gesperrt.
 Die Bestätigung einer späteren Einladung führt Leserechte für vorher angelegte,
 noch aktive Buchungen nach. Ein administrativer Werkzeugabruf gleicht außerdem
 Buchungen bereits registrierter Mitarbeiter ab. Ein nativer Test prüft den
@@ -279,10 +280,9 @@ Schlüsselwechsel ohne globale Administratorrolle ausführen. Für andere Bereic
 bleibt der Wechsel vorgemerkt. Für neue Buchungen an registrierte Mitarbeiter
 ermöglicht ein buchungseigener Schlüssel die Rückgabe direkt aus der Liste.
 Werkzeugstatus und Projektkosten berücksichtigen den bestätigten Abschluss.
-Alte Buchungen ohne diesen Schlüssel oder Buchungen nach einem Wechsel des
-Kontoschlüssels können weiterhin über die Werkzeugverwaltung abgeschlossen
-werden. Die eigenständige Umbuchung mit ausschließlich abgeleitetem Leserecht
-steht noch aus.
+Buchungen ohne Rückgabeschlüssel können über die Werkzeugverwaltung
+abgeschlossen werden. Die eigenständige Umbuchung mit ausschließlich
+abgeleitetem Leserecht steht noch aus.
 Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
 aus. Siehe
 [Werkzeugverwaltung](verschluesselte-werkzeuge.md).

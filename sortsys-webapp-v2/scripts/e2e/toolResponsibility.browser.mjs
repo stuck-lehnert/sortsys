@@ -140,6 +140,13 @@ try {
   if (fixture.manager) await returnFromToolDetail();
   process.send("booking-visible");
   await returned;
+  if (fixture.selfReturn) {
+    const accepted = page.waitForResponse((response) =>
+      response.ok() && new URL(response.url()).pathname.includes("zerotrust.toolReturns.publish"),
+    );
+    await page.getByRole("button", { name: "Zurückbuchen", exact: true }).click();
+    await accepted;
+  }
   await expect(active).toHaveCount(0);
   const revocation = events.find((event) => event.reset && event.control);
   assert.ok(revocation, "The live stream must invalidate revoked permissions");
@@ -176,6 +183,7 @@ try {
         costsHidden: true,
         crossInstanceRevocation: true,
         returnedByScopedManager: Boolean(fixture.manager),
+        returnedByResponsibleMember: Boolean(fixture.selfReturn),
         reload: true,
         plaintextLeaks: leaks,
         pageErrors: errors,

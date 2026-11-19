@@ -117,11 +117,15 @@ Browser des Administrators den vorhandenen Buchungsbereich erneut. Diese
 Bestätigung benötigt eine Signatur mit dem privaten Mandantenschlüssel und
 bindet die genaue Ausgangsrevision samt Paketsignatur. Die API speichert beide
 Nachweise gemeinsam oder keinen. Sie liest dafür keine Buchungsinhalte.
-Die Bestätigung ersetzt weder historische Inhalte noch deren Urheber und
-erteilt allein keine Mitarbeiterfreigabe. Erst der anschließende Abgleich
-prüft im Browser die tatsächliche Zuständigkeit und die bestätigte Identität.
-Eine verlorene Speicherantwort lässt sich durch geprüfte Rücklese bestätigen;
-eine Wiederholung entfernt keinen inzwischen veröffentlichten Aktivitätsnachweis.
+Erst beim anschließenden Abgleich erhält der erneut bestätigte Verantwortliche
+Zugriff auf die offene Buchung. War bereits ein Rückgabeschlüssel vorhanden,
+erzeugt der Browser ein neues Schlüsselpaar für die aktuelle Identität. Er
+speichert die neue Buchungsrevision, den Werkzeugstatus, die Projektsicht und
+die Lesefreigabe in derselben Veröffentlichung. Buchungsnummer, historische
+Inhalte und Preise bleiben erhalten. Der frühere Rückgabeschlüssel ist auch
+mit einer gültigen Anmeldung und der aktuellen Buchungsrevision unbrauchbar.
+Eine verlorene Speicherantwort lässt sich anhand der gespeicherten Signaturen
+prüfen.
 
 Ein weiterer Browserlauf legt mit Franks delegiertem Anlegerecht eine Buchung
 an. John kann sie über die andere API-Instanz lesen. Nach dem Entzug darf Frank
@@ -150,7 +154,9 @@ Signaturschlüsselpaar für genau diese Buchung. Den privaten Teil versiegelt er
 für das zuständige Mitglied und die Mandantenwiederherstellung. Werkzeugstatus
 und Projektkosten enthalten in ihren verschlüsselten Daten nur den Prüfschlüssel.
 Die API erhält dessen Prüfsumme und bindet sie an die signierte Buchungsrevision.
-Ein späterer Schreibvorgang darf diese Zuordnung weder austauschen noch entfernen.
+Bei einer gewöhnlichen Änderung bleibt diese Zuordnung fest. Nur die erste
+bestätigte Fassung nach einer Seed-Wiederherstellung kann sie für eine noch
+offene Buchung durch einen neuen Schlüssel ersetzen.
 Der Mehrinstanztest prüft diese Bindung und die getrennte Ablage in den drei
 Bereichen.
 
@@ -166,11 +172,9 @@ gebündelt. Eine spätere Rücksicherung darf den bestätigten Abschluss nicht
 aufheben.
 
 Bei vor der Registrierung oder aus einem Sicherungsarchiv angelegten Buchungen
-kann der persönliche Rückgabeschlüssel fehlen. Hat die zuständige Person durch
-eine Wiederherstellung einen neuen Kontoschlüssel erhalten, ist ihr bisheriger
-Rückgabeschlüssel damit nicht zu öffnen. In beiden Fällen steht die Rückgabe
-aus der Werkzeugverwaltung zur Verfügung. Bei der nächsten Ausgabe erzeugt
-der Browser einen neuen Rückgabeschlüssel.
+kann der persönliche Rückgabeschlüssel fehlen. Für solche Buchungen steht die
+Rückgabe aus der Werkzeugverwaltung zur Verfügung. Bei der nächsten Ausgabe
+erzeugt der Browser einen Rückgabeschlüssel.
 
 Die Rückgabe aus der Werkzeugansicht gilt für die dort angezeigte Buchung.
 Wurde das Werkzeug zwischenzeitlich erneut ausgegeben, lässt die alte Aktion

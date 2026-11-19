@@ -13,10 +13,15 @@ import { finishAccessChanges } from "./accessRotations";
 import { commitProtectedWrites } from "../data/atomicWrites";
 import type { DuckDriver } from "../data/database";
 import { publicId } from "../data/products";
+import type { DataView } from "../data/runtime/runtime";
 import { acquireDataRuntime } from "../data/runtime/session";
-import { toolDomain, toolRequest } from "../data/toolData";
-import { loadToolReturns } from "../data/toolReturns";
+import { toolDomain, toolRequest, type ToolPart } from "../data/toolData";
+import { prepareToolReturnKeys } from "../data/toolReturnKey";
 import { renewToolResponsibilityOrigins } from "./renewToolResponsibilityOrigins";
+import {
+  replaceToolReturnKey,
+  toolReturnKeyDependencies,
+} from "./renewToolReturnKeys";
 
 /** The intent targets no encryption domain. A separately verified, active
  * booking checkpoint activates read access; returning it ends that access. */
@@ -61,6 +66,19 @@ export function activeBookingIntents(
   });
 }
 
+function activeTracking(view: DataView, part: ToolPart): boolean {
+  if (part.deleted) return false;
+  const row = part.rows[0]!.values;
+  if (row.responsible_user_id === null) return false;
+  const tracking = view.row("tool_trackings", { id: row.id });
+  return tracking.require("ended_at") === null;
+}
+
+function hasEarlierReturnKey(part: ToolPart, generation: string): boolean {
+  if (!part.returnKey) return false;
+  return part.returnKey.recipient.generation !== generation;
+}
+
 export async function synchronizeToolResponsibilityDefaults(
   client: Client,
   signal: AbortSignal,
@@ -100,16 +118,23 @@ export async function synchronizeToolResponsibilityDefaults(
   };
   const lease = acquireDataRuntime(client, signal, driver);
   try {
-    const prepared = await lease.runtime.prepare(selected, async (transaction) => {
+    const generation = context.history.current.generation;
+    const dependencies = await lease.runtime.read(selected, (view) =>
+      selected.flatMap((request) => {
+        if (origins.get(request.area.domain)?.access) return [];
+        const booking = view.documents(request)[0]?.value;
+        if (
+          !booking ||
+          !activeTracking(view, booking) ||
+          !hasEarlierReturnKey(booking, generation)
+        )
+          return [];
+        return toolReturnKeyDependencies(booking);
+      }),
+    );
+    const prepared = await lease.runtime.prepare([...selected, ...dependencies], async (transaction) => {
       const bookings = [];
       const certified = new Set<string>();
-      const returned = await loadToolReturns(
-        client,
-        selected.flatMap((request) =>
-          transaction.documents(request).map(({ value }) => value.returnKey?.verificationKey),
-        ),
-        signal,
-      );
       for (const request of selected) {
         const documents = transaction.documents(request);
         if (!documents.length) continue;
@@ -132,17 +157,25 @@ export async function synchronizeToolResponsibilityDefaults(
           }
         }
         const origin = origins.get(request.area.domain)!;
-        const active =
-          row.ended_at === null &&
-          responsible !== null &&
-          origin.returned === undefined &&
-          !returned.has(document.value.returnKey?.verificationKey ?? "");
+        const active = activeTracking(transaction, document.value) &&
+          origin.returned === undefined;
         bookings.push({ scope: request.area.scope, responsible, active });
-        if (active && known && !origin.access) {
-          // An unchanged payload gets a new signed revision that attests its
-          // actual state. The policy publication guards this exact source.
+        if (!active || !known || origin.access) continue;
+        if (!hasEarlierReturnKey(document.value, generation)) {
+          // Attest the actual state with a fresh signed revision. The
+          // policy publication guards the exact source of the grant.
           transaction.edit(request, document.id, () => {});
+          continue;
         }
+        const makeKey = await prepareToolReturnKeys(
+          client,
+          row.responsible_user_id as string,
+          signal,
+          context.history,
+        );
+        if (!makeKey) throw new InvalidProtectedData();
+        const replacement = await makeKey(document.value.id);
+        replaceToolReturnKey(transaction, request, document.value, replacement);
       }
       return activeBookingIntents(previous.permissions, bookings, certified);
     });

@@ -95,6 +95,12 @@ pub(super) async fn renew(
             .put_protected(key(&collection, &origin.id), origin)
             .await?;
     }
+    crate::zerotrust::resource_access::record_booking_renewal(
+        &mut context.transaction,
+        &input.origins[0],
+        &input.revision,
+    )
+    .await?;
     crate::zerotrust::setup::advance_catalog(&mut context.transaction, &context.auth.tenant)
         .await?;
     context.transaction.notify(

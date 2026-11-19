@@ -14,6 +14,7 @@ export async function exerciseToolResponsibilityBrowser<T>(
     bookingDomain: string;
     artifactName?: string;
     manager?: { username: string; password: string };
+    selfReturn?: boolean;
   },
   returnTool: () => Promise<T>,
 ): Promise<T> {

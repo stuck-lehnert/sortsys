@@ -11,11 +11,35 @@ use crate::{
     error::{RpcResult, forbidden},
     ids::Id,
 };
+use serde::{Deserialize, Serialize};
 use sortsys_zerotrust::metadata::RecordKey;
 
 pub(super) const REVIEWED_BOOKINGS: &str = "tool-booking-revisions";
 const COMMAND_BINDINGS: &str = "tool-booking-command-bindings";
 const BOOKING_COMMANDS: &str = "tool-booking-commands";
+const BOOKING_RENEWALS: &str = "tool-booking-renewals";
+
+#[derive(Deserialize, Serialize)]
+struct BookingRenewal {
+    origin_signature: String,
+    source_revision: String,
+}
+
+pub(super) async fn record_booking_renewal(
+    transaction: &mut Transaction,
+    origin: &CreationOrigin,
+    source_revision: &str,
+) -> RpcResult<()> {
+    transaction
+        .put_protected(
+            key(BOOKING_RENEWALS, &origin.scope),
+            &BookingRenewal {
+                origin_signature: origin.signature.clone(),
+                source_revision: source_revision.to_owned(),
+            },
+        )
+        .await
+}
 
 pub(super) async fn check_command_binding(
     transaction: &mut Transaction,
@@ -45,6 +69,87 @@ pub(super) async fn check_command_binding(
     Ok(())
 }
 
+async fn bind_booking_command(
+    context: &mut MetadataContext,
+    origin: &CreationOrigin,
+    next: &sortsys_zerotrust::resource_access::ResourceAccessState,
+) -> RpcResult<()> {
+    let booking = key(BOOKING_COMMANDS, &origin.scope);
+    let previous: Option<String> = context.transaction.read(booking.clone()).await?;
+    let Some(old_binding) = previous.as_deref() else {
+        return check_command_binding(
+            &mut context.transaction,
+            &origin.scope,
+            next.command_binding.as_deref(),
+            true,
+        )
+        .await;
+    };
+    let renewal = if next.active && origin.access.is_none() {
+        context
+            .transaction
+            .read::<BookingRenewal>(key(BOOKING_RENEWALS, &origin.scope))
+            .await?
+            .filter(|renewal| renewal.origin_signature == origin.signature)
+    } else {
+        None
+    };
+    if next.command_binding.as_deref() == Some(old_binding) {
+        if renewal.is_some() {
+            return Err(conflict());
+        }
+        return check_command_binding(
+            &mut context.transaction,
+            &origin.scope,
+            Some(old_binding),
+            false,
+        )
+        .await;
+    }
+
+    let new_binding = next.command_binding.as_deref().ok_or_else(conflict)?;
+    // Only the administrator who reattested this exact booking under the
+    // replacement authority may replace its key in the first new checkpoint.
+    if !context.auth.is_admin() || origin.capability.creator.user != context.security.subject {
+        return Err(conflict());
+    }
+    let renewal = renewal.ok_or_else(conflict)?;
+    if revision(&renewal.source_revision)?.checked_add(1) != Some(revision(&next.revision)?) {
+        return Err(conflict());
+    }
+    check_command_binding(
+        &mut context.transaction,
+        &origin.scope,
+        Some(old_binding),
+        false,
+    )
+    .await?;
+    if super::tool_returns::existing_command(
+        &mut context.transaction,
+        &context.auth.tenant,
+        &origin.scope,
+        old_binding,
+    )
+    .await?
+    .is_some()
+    {
+        return Err(conflict());
+    }
+    let replacement = key(COMMAND_BINDINGS, new_binding);
+    if context
+        .transaction
+        .read::<String>(replacement.clone())
+        .await?
+        .is_some()
+    {
+        return Err(conflict());
+    }
+    // Keep the old reverse reservation. It cannot be selected again or
+    // assigned to another booking even when a previous backup is restored.
+    context.transaction.put(replacement, &origin.scope).await?;
+    context.transaction.put(booking, &new_binding).await
+}
+
 /// Checkout pointers and tracking parents are decrypted during a restore
 /// review. Keep a per-object revision for an inexpensive collection CAS.
 pub(super) fn booking_review_key(envelope: &EncryptedObject) -> Option<RecordKey> {
@@ -61,6 +166,9 @@ pub(super) fn booking_write_keys(packet: &SaveInput) -> Vec<RecordKey> {
     }
     if let Some(state) = &packet.resource_access {
         records.push(key(BOOKING_COMMANDS, &packet.envelope.scope));
+        if state.active {
+            records.push(key(BOOKING_RENEWALS, &packet.envelope.scope));
+        }
         if let Some(binding) = &state.command_binding
             && super::crypto::sized::<32>(binding).is_ok()
         {
@@ -143,6 +251,16 @@ pub(super) async fn save(
     };
     if packet.resource_access.is_none() && original.assignee.is_none() && original.access.is_none()
     {
+        // A publication prepared before reattestation must not consume the
+        // revision reserved for the replacement key without a checkpoint.
+        if context
+            .transaction
+            .read::<BookingRenewal>(key(BOOKING_RENEWALS, &original.scope))
+            .await?
+            .is_some_and(|renewal| renewal.origin_signature == original.signature)
+        {
+            return Err(conflict());
+        }
         return Ok(false);
     }
     let state = packet.resource_access.as_ref().ok_or_else(invalid)?;
@@ -209,15 +327,7 @@ pub(super) async fn save(
         .as_ref()
         .is_none_or(|previous| previous.command_binding.is_none())
     {
-        // A new or renewed origin must reserve or re-use the exact existing
-        // commitment. Both index directions survive content restoration.
-        check_command_binding(
-            &mut context.transaction,
-            &original.scope,
-            state.command_binding.as_deref(),
-            true,
-        )
-        .await?;
+        bind_booking_command(context, &original, state).await?;
     }
     context
         .transaction

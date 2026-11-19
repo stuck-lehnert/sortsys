@@ -52,12 +52,13 @@ export async function prepareToolReturnKeys(
   client: Client,
   responsible: string | null,
   signal: AbortSignal,
+  verifiedHistory?: Awaited<ReturnType<typeof trustedHistory>>,
 ) {
   if (responsible === null) return;
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
   const recipient = `user:${publicId(responsible)}`;
-  const history = await trustedHistory(client);
+  const history = verifiedHistory ?? await trustedHistory(client);
   signal.throwIfAborted();
   if (unlockedAccount() !== account) throw new InvalidProtectedData();
   let identity;

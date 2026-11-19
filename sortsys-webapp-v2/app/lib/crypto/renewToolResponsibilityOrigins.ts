@@ -50,7 +50,8 @@ export async function renewToolResponsibilityOrigins(
           const document = documents[0]!;
           if (document.value.deleted) continue;
           const row = document.value.rows[0]!.values;
-          if (row.ended_at !== null || row.responsible_user_id === null)
+          const endedAt = view.row("tool_trackings", { id: row.id }).require("ended_at");
+          if (endedAt !== null || row.responsible_user_id === null)
             continue;
           try {
             context.history.identityCertificate(

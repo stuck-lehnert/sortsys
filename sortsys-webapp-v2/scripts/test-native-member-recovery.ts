@@ -1,11 +1,24 @@
 import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { createClient } from "@sortsys/v2-client";
+import {
+  createClient,
+  RpcClientError,
+  type Client,
+  type MutateInput,
+} from "@sortsys/v2-client";
 import {
   base64,
+  boxFrame,
+  identityCertificate,
+  openBox,
+  openResourceCommandSigner,
   randomSecret,
+  resourceCommandBinding,
   sign,
+  signResourceCommand,
+  signResourceAccess,
+  TOOL_RETURN_PURPOSE,
   recoveryMemberFrame,
 } from "@sortsys/zerotrust/sortsys";
 import {
@@ -30,8 +43,9 @@ import {
 } from "../app/lib/crypto/recovery";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { newAssistantId, openPrivateLlm } from "../app/lib/data/privateLlm";
-import { required } from "../app/lib/data/protectedObjects";
+import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
+import { TOOL_MODEL, toolCollection } from "../app/lib/data/toolData";
 
 assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
 const endpoints: unknown = JSON.parse(
@@ -58,6 +72,7 @@ const newPassword = "Recovered-member-password-2026!";
 const ownerPassword = "Recovered-member-owner-password-2026!";
 const privateName = "Privater Katalogeintrag nach Mitarbeiter-Recovery 73419";
 const privateChat = "Vertraulicher persönlicher Verlauf 87214";
+const toolBrand = "Montagegerät nach Wiederherstellung";
 const wire: string[] = [];
 const originalFetch = globalThis.fetch;
 globalThis.fetch = new Proxy(originalFetch, {
@@ -78,6 +93,50 @@ const access = {
   prices: "none" as const,
   assistant: true,
 };
+
+async function readBooking(trackingId: string) {
+  const area = toolCollection("tool-tracking", trackingId, "master-data");
+  const collection = await protectedCollection(member, area, signal);
+  try {
+    const [opened] = await collection.read();
+    assert.ok(opened);
+    const booking = TOOL_MODEL.decode(opened.value, area.prefix, area);
+    assert.ok(booking.returnKey);
+    return { key: booking.returnKey, revision: opened.envelope.revision };
+  } finally {
+    collection.close();
+  }
+}
+
+async function retainReturnSigner(trackingId: string) {
+  const { key } = await readBooking(trackingId);
+  const account = unlockedAccount()!;
+  const trust = await trustedHistory(member);
+  const box = key.recipient;
+  const seed = await openBox(
+    box,
+    {
+      tenant,
+      object: `tool-tracking:${trackingId}:return:${key.verificationKey}`,
+      purpose: "resource-command-key",
+      generation: box.generation,
+      author: box.author,
+      recipient: account.vault.subject,
+    },
+    account.identity.encryptionKey.privateKey,
+    await trust.proofSigner(box.author, box.generation, box.signature, boxFrame(box)),
+  );
+  try {
+    const signer = await openResourceCommandSigner({
+      verificationKey: key.verificationKey,
+      signingSeed: base64(seed),
+    });
+    return { signer, verificationKey: key.verificationKey };
+  } finally {
+    seed.fill(0);
+  }
+}
+
 try {
   await signIn(owner, {
     tenant,
@@ -139,6 +198,25 @@ try {
     signal,
     duckDriver,
   );
+  business = createBusinessClient(owner, { productDriver: duckDriver });
+  const project = await required(business.mutate("projects.create", {
+    title: "Baustelle für Werkzeugrückgabe nach Recovery",
+  }));
+  const assignments: { toolId: string; trackingId: string }[] = [];
+  for (const customId of [73420, 73421]) {
+    const tool = await required(business.mutate("tools.create", {
+      customId,
+      brand: toolBrand,
+      category: "Montage",
+      usageCostPerDay: 18.75,
+    }));
+    const booking = await required(business.mutate("tools.track", {
+      id: tool.id,
+      data: { responsibleUserId: person.id, projectId: project.id },
+    }));
+    assignments.push({ toolId: tool.id, trackingId: booking.trackingId });
+  }
+  business.dispose();
   await signIn(member, {
     tenant,
     username: "recover.member",
@@ -152,6 +230,10 @@ try {
   const previousIdentity = (await trustedHistory(member)).identityCertificate(
     `user:${person.id}`,
   );
+  const retiredSigners = [
+    [await retainReturnSigner(assignments[0]!.trackingId)],
+    [await retainReturnSigner(assignments[1]!.trackingId)],
+  ];
   business = createBusinessClient(member, { productDriver: duckDriver });
   const product = await required(
     business.mutate("products.create", {
@@ -278,6 +360,74 @@ try {
   assert.notEqual(current.encryptionKey, previousIdentity.encryptionKey);
   await assert.rejects(() => openPrivateLlm(member, signal));
 
+  async function returnRecoveredBooking(
+    index: number,
+    username: string,
+    administratorPassword: string,
+    memberPassword: string,
+  ) {
+    const { toolId, trackingId } = assignments[index]!;
+    const booking = await readBooking(trackingId);
+    for (const retired of retiredSigners[index]!) {
+      assert.notEqual(booking.key.verificationKey, retired.verificationKey);
+      const command = await signResourceCommand({
+        tenant,
+        purpose: TOOL_RETURN_PURPOSE,
+        revision: booking.revision,
+        issuedAt: String(Date.now()),
+        verificationKey: retired.verificationKey,
+      }, retired.signer);
+      const [accepted, rejected] = await member.mutate(
+        "zerotrust.toolReturns.publish", { trackingId, command },
+      );
+      assert.equal(accepted, null);
+      assert.ok(rejected instanceof RpcClientError);
+      assert.equal(rejected.code, "FORBIDDEN");
+    }
+    business = createBusinessClient(member, { productDriver: duckDriver });
+    try {
+      const rows = await required(business.query("tools.trackings.list", {}));
+      const assigned = rows.find((row) => row.id === trackingId);
+      assert.equal(assigned?.canReturnOwn, true);
+      assert.equal(assigned?.toolUsageCostPerDay, null);
+      assert.ok((await business.query("tools.get", { id: toolId }))[1]);
+      if (index === 1 && process.env.SORTSYS_NATIVE_BROWSER === "1") {
+        const { exerciseToolResponsibilityBrowser } =
+          await import("./test-tool-responsibility-browser");
+        await exerciseToolResponsibilityBrowser({
+          tenant,
+          member: { username: "recover.member", password: memberPassword },
+          activeLabel: toolBrand,
+          toolBrand,
+          toolId,
+          bookingDomain: toolCollection("tool-tracking", trackingId, "master-data").domain,
+          artifactName: "recovered-member-tool-return",
+          selfReturn: true,
+        }, async () => {});
+      } else {
+        await required(business.mutate("tools.trackings.return", { trackingId }));
+      }
+      const remaining = await required(business.query("tools.trackings.list", {}, {
+        strategy: "network-only",
+      }));
+      assert.equal(remaining.some((row) => row.id === trackingId), false);
+    } finally {
+      business.dispose();
+    }
+    await signIn(owner, { tenant, username, password: administratorPassword });
+    business = createBusinessClient(owner, { productDriver: duckDriver });
+    try {
+      assert.equal((await required(business.query("tools.get", { id: toolId }))).available, true);
+      const costs = await required(business.query("projects.costs.get", { projectId: project.id }));
+      const usage = costs.toolTrackings.find((row) => row.id === trackingId);
+      assert.ok(usage?.endedAt instanceof Date);
+      assert.equal(usage.endedByUserId, person.id);
+      assert.equal(usage.toolUsageCostPerDay, 18.75);
+    } finally {
+      business.dispose();
+    }
+  }
+
   async function verifyRestoredAccess(
     username: string,
     administratorPassword: string,
@@ -289,6 +439,9 @@ try {
       password: administratorPassword,
     });
     assert.equal(unlockedAccount()!.vault.subject, administrator.vault.subject);
+    // The production shell holds ordinary members until the administrator
+    // completes the setup for the new authority generation.
+    await initializeTenant(owner, signal, duckDriver);
     business = createBusinessClient(owner, { productDriver: duckDriver });
     assert.equal(
       (await required(business.query("products.get", { id: product.id }))).name,
@@ -315,12 +468,61 @@ try {
       recoveredOwner.username,
       false,
     );
+    const firstRecovery = recoveredOwner.pins.recoveryGeneration === "2";
+    const index = firstRecovery ? 0 : 1;
+    const currentTracking = assignments[index]!.trackingId;
+    const area = toolCollection("tool-tracking", currentTracking, "master-data");
+    const formerSigner = retiredSigners[index]!.at(-1)!;
+    let rejectedCheckpoint = false;
+    const observedOwner: Client = {
+      ...owner,
+      mutate: (async (path, input, options) => {
+        if (path === "zerotrust.objects.batch" && !rejectedCheckpoint) {
+          const stale = structuredClone(input as MutateInput<"zerotrust.objects.batch">);
+          const replacement = stale.objects.find(
+            (entry) => entry.domain === area.domain && entry.resourceAccess?.active,
+          );
+          if (replacement?.resourceAccess) {
+            const state = replacement.resourceAccess;
+            const previousBinding = await resourceCommandBinding(formerSigner.verificationKey);
+            assert.notEqual(state.commandBinding, previousBinding);
+            const before = await required(owner.query("zerotrust.objects.get", {
+              id: area.prefix,
+            }, { strategy: "network-only" }));
+            delete replacement.resourceAccess;
+            const [unconfirmed, missingState] = await owner.mutate("zerotrust.objects.batch", stale);
+            assert.equal(unconfirmed, null);
+            assert.ok(missingState instanceof RpcClientError);
+            assert.equal(missingState.code, "CONFLICT");
+            replacement.resourceAccess = await signResourceAccess(
+              {
+                ...state,
+                author: identityCertificate(state.author),
+                commandBinding: previousBinding,
+              },
+              recoveredOwner.identity.signingKey.privateKey,
+            );
+            const [published, rejected] = await owner.mutate("zerotrust.objects.batch", stale);
+            assert.equal(published, null);
+            assert.ok(rejected instanceof RpcClientError);
+            assert.equal(rejected.code, "CONFLICT");
+            const after = await required(owner.query("zerotrust.objects.get", {
+              id: area.prefix,
+            }, { strategy: "network-only" }));
+            assert.equal(after.signature, before.signature);
+            rejectedCheckpoint = true;
+          }
+        }
+        return owner.mutate(path, input, options);
+      }) as Client["mutate"],
+    };
     await approveMemberInvitation(
-      owner,
+      observedOwner,
       repeated.link.invitation.id,
       signal,
       duckDriver,
     );
+    assert.ok(rejectedCheckpoint);
     await signIn(member, {
       tenant,
       username: "recover.member",
@@ -330,6 +532,14 @@ try {
     assert.equal(
       (await required(business.query("products.get", { id: product.id }))).name,
       privateName,
+    );
+    const visibleBookings = await required(business.query("tools.trackings.list", {}));
+    const expectedBookingIds = firstRecovery
+      ? assignments.map(({ trackingId }) => trackingId)
+      : [assignments[1]!.trackingId];
+    assert.deepEqual(
+      visibleBookings.map(({ id }) => id).sort(),
+      expectedBookingIds.sort(),
     );
     business.dispose();
     const restoredHistory = await openPrivateLlm(member, signal);
@@ -345,6 +555,8 @@ try {
     assert.deepEqual(session.roles, []);
   }
   await verifyRestoredAccess(plan.username, ownerPassword, newPassword);
+  retiredSigners[1]!.push(await retainReturnSigner(assignments[1]!.trackingId));
+  await returnRecoveredBooking(0, plan.username, ownerPassword, newPassword);
   await lockCryptoSession();
   for (const client of [owner, member, oldDevice]) client.setToken(null);
   const secondMemberPassword = "Second-recovered-member-password-2026!";
@@ -386,6 +598,9 @@ try {
     secondOwnerPassword,
     secondMemberPassword,
   );
+  await returnRecoveredBooking(
+    1, secondPlan.username, secondOwnerPassword, secondMemberPassword,
+  );
   for (const secret of [
     originalPassword,
     racingPassword,
@@ -416,6 +631,7 @@ try {
       seedRequired: true,
       memberRemainsOrdinary: true,
       privateHistoryRecovered: true,
+      toolReturnsRecovered: true,
     }),
   );
 } finally {
