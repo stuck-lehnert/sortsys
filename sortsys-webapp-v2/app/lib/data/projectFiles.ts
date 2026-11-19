@@ -127,15 +127,16 @@ export function createProtectedProjectFiles(
     throw new InvalidProtectedData();
   }
   let stores = new Map<string, Store>();
-  let closed = false;
+  let closing: Promise<void> | undefined;
   let pending: Promise<unknown> = Promise.resolve();
+  let validationDatabase: ReturnType<typeof createBusinessDatabase> | undefined;
   let searchController: AbortController | null = null;
   const documentSearch = createDocumentSearch();
-  let searchPolicy: Collections["root"] | undefined;
+  let filePolicy: Collections["root"] | undefined;
   const urls = new Set<string>();
   const live = () => {
     signal.throwIfAborted();
-    if (closed || unlockedAccount() !== account) {
+    if (closing || unlockedAccount() !== account) {
       throw new InvalidProtectedData();
     }
   };
@@ -149,8 +150,9 @@ export function createProtectedProjectFiles(
     pending = result.catch(() => undefined);
     return result;
   };
-  async function close() {
-    closed = true;
+  function close() {
+    if (closing) return closing;
+    closing = closeValidationDatabase();
     searchController?.abort();
     documentSearch.clear();
     signal.removeEventListener("abort", abort);
@@ -162,6 +164,7 @@ export function createProtectedProjectFiles(
       store.collection.close();
     }
     stores.clear();
+    return closing;
   }
   const abort = () => {
     void close().catch(() => undefined);
@@ -179,23 +182,40 @@ export function createProtectedProjectFiles(
       ...projectFileEntries(id, objects),
     };
   }
+  async function closeValidationDatabase() {
+    const opening = validationDatabase;
+    validationDatabase = undefined;
+    const database = await opening?.catch(() => undefined);
+    await database?.close();
+  }
+
+  function* fileRows(candidate: Iterable<Store>): Iterable<BusinessRow> {
+    for (const store of candidate) {
+      for (const { file } of store.files.values()) {
+        if (file) yield file;
+      }
+      for (const { folder } of store.folders.values()) {
+        if (folder) yield folder;
+      }
+    }
+  }
+
   async function validateFileRows(candidate: Map<string, Store>) {
-    const database = await createBusinessDatabase(await driver?.());
+    const opening = (validationDatabase ??= Promise.resolve(driver?.()).then(
+      createBusinessDatabase,
+    ));
     try {
       await projectFacetRows(
-        database,
-        [...candidate.values()].flatMap((store) => [
-          ...[...store.files.values()].flatMap((payload) =>
-            payload.file ? [payload.file] : [],
-          ),
-          ...[...store.folders.values()].flatMap((payload) =>
-            payload.folder ? [payload.folder] : [],
-          ),
-        ]),
+        await opening,
+        fileRows(candidate.values()),
         EXTERNAL,
+        { rollback: true },
       );
-    } finally {
-      await database.close();
+    } catch (error) {
+      if (validationDatabase === opening) {
+        await closeValidationDatabase().catch(() => undefined);
+      }
+      throw error;
     }
     live();
   }
@@ -204,14 +224,15 @@ export function createProtectedProjectFiles(
     return { area: fileCollection(id), known: stores.get(id)?.head };
   }
 
-  function checkSearchPolicy({ root }: Collections) {
+  async function checkFilePolicy({ root }: Collections) {
     if (
-      !searchPolicy ||
-      root.generation !== searchPolicy.generation ||
-      root.policyVersion !== searchPolicy.policyVersion
+      !filePolicy ||
+      root.generation !== filePolicy.generation ||
+      root.policyVersion !== filePolicy.policyVersion
     ) {
       documentSearch.clear();
-      searchPolicy = root;
+      filePolicy = root;
+      await closeValidationDatabase();
     }
   }
 
@@ -231,7 +252,7 @@ export function createProtectedProjectFiles(
       const open =
         openedCollections ??
         (await protectedCollections(client, signal, selectedDomains, pages));
-      checkSearchPolicy(open);
+      await checkFilePolicy(open);
       await open.prefetch(pages);
       if (visible) {
         for (const id of candidate.keys()) {
@@ -952,7 +973,7 @@ export function createProtectedProjectFiles(
     // change. Compare every searched head, including collections with no
     // matches, before returning a ranked result for this snapshot.
     const current = await protectedCollections(client, active);
-    checkSearchPolicy(current);
+    await checkFilePolicy(current);
     const currentReadable =
       projectId === null
         ? readableProjectsWithFiles(current)

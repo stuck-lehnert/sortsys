@@ -56,7 +56,12 @@ im Arbeitsspeicher. Nach dem Neuladen beginnt die Suche mit einem leeren Feld.
 Bei der Suche in einem Projekt fordert der Browser den Berechtigungsnachweis
 und die erste Dateiseite zusammen an.
 Die Suche über mehrere Projekte lädt Dateisammlungen gebündelt. Weitere Abrufe
-prüfen ihren Änderungsstand. Die Textauswertung läuft in einem eigenen Worker.
+prüfen ihren Änderungsstand. DuckDB prüft die Dateidaten und Ordnerbeziehungen
+in einer lokalen Transaktion. Bei weiteren Prüfungen verwendet der Browser
+dieselbe DuckDB-Instanz und rollt die Prüfdaten nach jeder Transaktion zurück.
+Ein Wechsel der Freigaberichtlinie oder das Sitzungsende schließt die Instanz.
+
+Die Textauswertung läuft in einem eigenen Worker.
 Dieser hält Wortformen und Textpositionen eines begrenzten Bestands im
 Arbeitsspeicher, damit auch eine andere Suchanfrage denselben Text wiederverwenden
 kann. Bei geänderten Rechten oder Dateien, beim Abbruch der Textauswertung und

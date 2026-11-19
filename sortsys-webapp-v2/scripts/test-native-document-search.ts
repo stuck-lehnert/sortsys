@@ -282,6 +282,8 @@ try {
   const changing = await upload(visible.id, "Zwischenstand.txt", "Eichentür");
   let projectLookups = 0;
   let deletedDuringSearch = false;
+  let validationStarts = 0;
+  let validationCloses = 0;
   const racingSearch = createProtectedProjectFiles(
     owner,
     signal,
@@ -300,7 +302,17 @@ try {
       deletedDuringSearch = true;
       return [project];
     },
-    duckDriver,
+    async () => {
+      validationStarts++;
+      const { connection, close } = await duckDriver();
+      return {
+        connection,
+        async close() {
+          validationCloses++;
+          await close();
+        },
+      };
+    },
   );
   try {
     assert.deepEqual(
@@ -314,9 +326,17 @@ try {
     );
     assert.equal(projectLookups, 1, "Only matched projects get a title lookup");
     assert.equal(deletedDuringSearch, true);
+    assert.equal(
+      validationStarts,
+      1,
+      "Changed snapshots reuse the validation database",
+    );
   } finally {
-    await racingSearch.close();
+    const closing = racingSearch.close();
+    assert.equal(racingSearch.close(), closing);
+    await closing;
   }
+  assert.equal(validationCloses, 1, "Closing the adapter also closes its database");
 
   await acceptVaultWithKey(reader.dataKey, reader.vault, reader.username, false);
   memberBusiness = createBusinessClient(member, { productDriver: duckDriver });

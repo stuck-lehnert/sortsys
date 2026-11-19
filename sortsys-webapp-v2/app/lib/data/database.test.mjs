@@ -219,6 +219,35 @@ test("large attachment projections batch inserts and reject duplicate keys or mi
   }
 }, 15000);
 
+test("reused validation transactions never supply rows to the next snapshot", async () => {
+  const db = await database();
+  const deferred = new Set(["projects", "users"]);
+  const options = { rollback: true };
+  const parent = row("project_file_folders", {
+    id: "100",
+    project_id: "50",
+    name: "Ausführung",
+  });
+  const child = row("project_file_folders", {
+    id: "101",
+    project_id: "50",
+    name: "Pläne",
+    parent_folder_id: "100",
+  });
+
+  try {
+    await projectFacetRows(db, [child, parent], deferred, options);
+    await expect(
+      projectFacetRows(db, [child], deferred, options),
+    ).rejects.toThrow();
+    await projectFacetRows(db, [parent, child], deferred, options);
+    const { rows } = await db.query("SELECT id FROM project_file_folders");
+    expect(rows).toEqual([]);
+  } finally {
+    await db.close();
+  }
+});
+
 test("expression and partial unique keys keep category names and ready template assets consistent", async () => {
   const db = await database();
   try {

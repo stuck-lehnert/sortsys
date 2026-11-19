@@ -56,11 +56,13 @@ export async function projectCompleteRows(
 
 /** An independently keyed facet cannot check another facet's private rows.
  * Only explicitly named external tables may be deferred. Internal references,
- * CHECKs, primary keys and uniqueness still run in this local transaction. */
+ * CHECKs, primary keys and uniqueness still run in this local transaction.
+ * Validation-only callers can roll back to reuse an empty schema. */
 export async function projectFacetRows(
   database: BusinessDatabase,
   inputs: Iterable<unknown>,
   deferred: ReadonlySet<string>,
+  options?: { rollback?: boolean },
 ): Promise<void> {
   const groups = new Map<string, BusinessRow["values"][]>();
   for (const input of inputs) {
@@ -86,7 +88,7 @@ export async function projectFacetRows(
           throw new InvalidProtectedData();
         }
       }
-    });
+    }, options);
   } catch {
     throw new InvalidProtectedData();
   }
