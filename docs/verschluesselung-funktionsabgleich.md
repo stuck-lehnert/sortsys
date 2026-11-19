@@ -90,6 +90,15 @@ aktuelle Rechte; mehrere Bereiche werden gemeinsam signiert. Fachliche
 Bedingungen über Geheimwerte prüft der Client. Die unabhängige Löschung von
 Unterzeilen benötigt teils noch feiner aufgeteilte Objekte.
 
+Im Projektzugriff ergänzt eine Vorlage die Einzelrechte etwa für
+Baustellendokumentation oder Bauleitung. Die Verwaltung prüft den Entwurf
+vor dem Speichern. Im Chromium-Test mit zwei API-Instanzen konnte ein
+Mitarbeiter nach der Freigabe einen Bautagesbericht samt Foto öffnen und
+den Bericht bearbeiten. Die Löschaktion blieb gesperrt. Nach dem Entzug
+verschwand der Bericht aus der laufenden Sitzung. Mandantenweite Fachrollen
+bleiben offen. Siehe
+[Projektfreigaben](menues-und-datenfreigaben.md#freigabevorlagen-für-projekte).
+
 Das Framework und die API unterstützen außerdem bereichsgebundene
 Verwaltungsrechte mit dem eigenen Signaturschlüssel des beauftragten Nutzers.
 Die Hauptadministration gibt diesen Nutzern keinen privaten Mandantenschlüssel.

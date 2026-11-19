@@ -126,6 +126,7 @@ function auditPage(page) {
       "Mitarbeiterzahlung Browserprüfung 682143",
       "Geprüfte Fensterabdichtung 765324",
       "Baustellenfoto 765324.png",
+      "Fensteranschlüsse nachgearbeitet 765324",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -1058,6 +1059,76 @@ try {
       await selectAccess(page, projects, reportAccess, "Kein Zugriff");
       await save(reportAccess);
       await expect(member.getByText(summary, { exact: true })).toHaveCount(0);
+
+      const master = "Projektgrunddaten";
+      const regie = "Regieberichte und Material";
+      const costs = "Interne Arbeitskosten";
+      for (const field of [master, regie, costs]) {
+        await expect(
+          projects.getByRole("button", { name: new RegExp(field) }),
+        ).toContainText("Kein Zugriff");
+      }
+      await selectAccess(
+        page,
+        projects,
+        "Freigabevorlage",
+        "Baustellendokumentation",
+      );
+      await projects
+        .getByRole("button", { name: "Einzelrechte ergänzen", exact: true })
+        .click();
+      const reportActions = projects.getByRole("group", {
+        name: `Einzelrechte für ${reportAccess}`,
+        exact: true,
+      });
+      for (const action of ["Lesen", "Anlegen", "Bearbeiten"]) {
+        await expect(
+          reportActions.getByRole("checkbox", { name: action, exact: true }),
+        ).toBeChecked();
+      }
+      await expect(
+        reportActions.getByRole("checkbox", { name: "Löschen", exact: true }),
+      ).not.toBeChecked();
+      await expect(
+        projects.getByRole("button", { name: new RegExp(costs) }),
+      ).toContainText("Kein Zugriff");
+      await expect(member.getByText(summary, { exact: true })).toHaveCount(0);
+
+      await save(reportAccess);
+      await expect(member.getByText(summary, { exact: true })).toBeVisible();
+      await expectPhoto(photoButton(member).getByRole("img"), 80);
+      const reportHeader = member.locator(".ss-page-header").filter({
+        has: member.getByRole("heading", {
+          name: "Bautagesbericht",
+          exact: true,
+        }),
+      });
+      await reportHeader
+        .getByRole("button", { name: "Aktionen", exact: true })
+        .click();
+      await expect(
+        member.getByRole("menuitem", { name: "Löschen", exact: true }),
+      ).toHaveCount(0);
+      await member
+        .getByRole("menuitem", { name: "Bearbeiten", exact: true })
+        .click();
+      const editor = member.getByRole("dialog", {
+        name: "Bautagesbericht bearbeiten",
+        exact: true,
+      });
+      const revisedSummary = "Fensteranschlüsse nachgearbeitet 765324";
+      await editor.getByLabel("Beschreibung der Arbeiten").fill(revisedSummary);
+      await editor
+        .getByRole("button", { name: "Speichern", exact: true })
+        .click();
+      await expect(editor).toBeHidden();
+      await expect(member.getByText(revisedSummary, { exact: true })).toBeVisible();
+
+      for (const field of [master, fileAccess, reportAccess, regie]) {
+        await selectAccess(page, projects, field, "Kein Zugriff");
+      }
+      await save(reportAccess);
+      await expect(member.getByText(revisedSummary, { exact: true })).toHaveCount(0);
       memberAudit.assertClean();
     } finally {
       await memberContext.close();

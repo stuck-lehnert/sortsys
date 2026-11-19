@@ -137,6 +137,20 @@ native Mehrinstanztest entzieht einem Mitarbeiter den Katalogzugriff, während
 sein Produktformular mit einem ungespeicherten Entwurf geöffnet ist. Formular
 und Kataloginhalte müssen daraufhin aus seiner Oberfläche verschwinden.
 
+## Freigabevorlagen für Projekte
+
+Unter **Berechtigungen verwalten → Projektzugriff** lässt sich für das
+gewählte Benutzerkonto eine **Freigabevorlage** auswählen. **Projekt und
+Anhänge lesen** umfasst die Projektgrunddaten und Dateien. Mit
+**Baustellendokumentation** kann das Team Tages- und Regieberichte bearbeiten
+sowie Dateien lesen und hochladen. **Bauleitung** umfasst außerdem die
+Einsatzplanung, Lieferscheine und die Regiestunden.
+
+**Einzelrechte ergänzen** trägt die Vorlage in die Felder des ausgewählten
+Projekts ein. Dort lassen sich die Einträge prüfen oder ändern. Die neue
+Freigabe wird mit **Projektzugriff speichern** wirksam. Rechte für Kosten,
+Rechnungen, Löschung und Freigabeverwaltung werden separat vergeben.
+
 ## Bautagesberichte und Arbeitskosten
 
 Ein Projekt kann Bautagesberichte und Arbeitszeiten freigeben, ohne seine

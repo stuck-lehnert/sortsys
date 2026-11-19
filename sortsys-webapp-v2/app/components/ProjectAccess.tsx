@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import type { QueryResult } from "@sortsys/v2-client";
-import { ComboBox } from "@sortsys/react-components";
+import { ComboBox, Select, SelectItem } from "@sortsys/react-components";
 import { client } from "~/lib/client";
 import {
   changeAreaActionAccesses,
@@ -22,6 +22,11 @@ import {
   accessDrafts,
   editAccessDraft,
 } from "~/lib/crypto/accessProfiles";
+import {
+  addProjectAccessPreset,
+  PROJECT_ACCESS_PRESETS,
+  type ProjectAccessPreset,
+} from "~/lib/crypto/projectAccessPresets";
 
 const labels: Record<ProjectAccessKey, () => string> = {
   "master-data": () => uiText("Projektgrunddaten", "Project master data"),
@@ -61,6 +66,13 @@ const labels: Record<ProjectAccessKey, () => string> = {
     uiText("Werkzeugkosten im Projekt", "Project tool costs"),
 };
 type Project = QueryResult<"projects.get">;
+const presetLabels: Record<ProjectAccessPreset, () => string> = {
+  overview: () => uiText("Projekt und Anhänge lesen", "Read project and files"),
+  documentation: () =>
+    uiText("Baustellendokumentation", "Site documentation"),
+  management: () => uiText("Bauleitung", "Site management"),
+};
+const presetKeys = Object.keys(presetLabels) as ProjectAccessPreset[];
 const emptyDrafts = () => accessDrafts(PROJECT_ACCESS_KEYS, () => "none");
 export function ProjectAccess({
   user,
@@ -75,6 +87,7 @@ export function ProjectAccess({
     [access, setAccess] = useState<ProjectAccessLevels>({});
   const [selected, setSelected] = useState<Project | null>(null),
     [drafts, setDrafts] = useState(emptyDrafts);
+  const [preset, setPreset] = useState<ProjectAccessPreset | "">("");
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(false),
     [version, setVersion] = useState(0);
@@ -82,6 +95,7 @@ export function ProjectAccess({
     const controller = new AbortController();
     setProjects(null);
     setSelected(null);
+    setPreset("");
     setDrafts(emptyDrafts());
     setError(false);
     setBusy(false);
@@ -164,6 +178,7 @@ export function ProjectAccess({
           selectedItem={selected}
           onChange={({ selectedItem }: { selectedItem: Project | null }) => {
             setSelected(selectedItem);
+            setPreset("");
             setDrafts(
               accessDrafts(PROJECT_ACCESS_KEYS, (key) =>
                 selectedItem
@@ -173,6 +188,35 @@ export function ProjectAccess({
             );
           }}
         />
+        <Select
+          labelText={uiText("Freigabevorlage", "Permission template")}
+          value={preset}
+          disabled={busy || disabled || !selected}
+          onChange={(event: { target: { value: string } }) => {
+            const value = event.target.value;
+            if (value === "" || Object.hasOwn(PROJECT_ACCESS_PRESETS, value))
+              setPreset(value as ProjectAccessPreset | "");
+          }}
+        >
+          <SelectItem value="" text={uiText("Auswählen", "Select")} />
+          {presetKeys.map((key) => (
+            <SelectItem key={key} value={key} text={presetLabels[key]()} />
+          ))}
+        </Select>
+        <MyButton
+          className="self-end justify-self-start"
+          kind="tertiary"
+          disabled={busy || disabled || !selected || !preset}
+          onClick={() => {
+            if (!preset) return;
+            setDrafts((current) => addProjectAccessPreset(current, preset));
+            setPreset("");
+          }}
+        >
+          {uiText("Einzelrechte ergänzen", "Add permissions")}
+        </MyButton>
+      </div>
+      <div className="grid items-start gap-4 sm:grid-cols-3">
         {PROJECT_ACCESS_KEYS.map((key) => (
           <AccessLevelSelect
             key={`${selected?.id}:${key}`}
