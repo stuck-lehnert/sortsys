@@ -237,6 +237,8 @@ pub(super) fn verify_references(
 #[serde(deny_unknown_fields)]
 struct ObjectsInput {
     objects: Vec<String>,
+    #[ts(optional)]
+    prepared: Option<super::content::PreparedView>,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -449,6 +451,14 @@ pub(crate) fn register_metadata(
                         return Err(invalid());
                     }
                     let mut context = super::access::metadata_context(&service, &ctx).await?;
+                    if let Some(prepared) = &input.prepared {
+                        context = super::content::select_for_inspection(
+                            context,
+                            &prepared.operation,
+                            &prepared.approval,
+                        )
+                        .await?;
+                    }
                     let mut object_keys = Vec::new();
                     for object in &input.objects {
                         let kind = kind(object)?.ok_or_else(invalid)?;

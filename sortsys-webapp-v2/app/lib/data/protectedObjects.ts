@@ -81,9 +81,10 @@ export type CollectionPageRequest = {
   headOnly?: boolean;
 };
 type ObjectPage = QueryResult<"zerotrust.objects.list">;
-type PageSource = (
-  request: QueryInput<"zerotrust.objects.pages">,
-) => Promise<ObjectPage[]>;
+type PreparedPageSource = {
+  view: NonNullable<QueryInput<"zerotrust.stock.references">["prepared"]>;
+  pages(request: QueryInput<"zerotrust.objects.pages">): Promise<ObjectPage[]>;
+};
 
 function pageRequest(
   area: Pick<Collection, "domain" | "prefix">,
@@ -180,7 +181,7 @@ function exceedsResponseBudget(error: unknown): boolean {
 export async function protectedReadView(
   client: Client,
   signal: AbortSignal,
-  source: PageSource,
+  source: PreparedPageSource,
 ) {
   const open = await bindCollections(client, signal, undefined, source);
   return {
@@ -202,7 +203,7 @@ async function bindCollections(
   client: Client,
   signal: AbortSignal,
   selectedDomains?: readonly string[],
-  source?: PageSource,
+  source?: PreparedPageSource,
   initial: readonly CollectionPageRequest[] = [],
 ) {
   const initialRequests = initial.map(selectionRequest);
@@ -251,7 +252,7 @@ async function bindCollections(
       try {
         const input = { selections: requests };
         pages = source
-          ? await source(input)
+          ? await source.pages(input)
           : await required(
               client.query("zerotrust.objects.pages", input, {
                 strategy: "network-only",
@@ -325,7 +326,7 @@ async function collectionContext(
   client: Client,
   signal: AbortSignal,
   selection?: string | readonly string[],
-  source?: PageSource,
+  source?: PreparedPageSource,
   initialRequests: QueryInput<"zerotrust.objects.list">[] = [],
 ) {
   let options: QueryInput<"zerotrust.access.snapshot"> = {};
@@ -649,7 +650,7 @@ function openCollection(
       }
     }
     if (context.source) {
-      const pages = await context.source({ selections: [input] });
+      const pages = await context.source.pages({ selections: [input] });
       if (!Array.isArray(pages) || pages.length !== 1 || !pages[0])
         throw new InvalidProtectedData();
       return pages[0];
@@ -780,7 +781,13 @@ function openCollection(
           result.push(...opened);
           after = page.after;
         } while (after !== null);
-        await checkStockObjects(client, result, history, live);
+        await checkStockObjects(
+          client,
+          result,
+          history,
+          live,
+          context.source?.view,
+        );
         await checkDeliveryObjects(client, result, live);
         live();
         head = snapshot;

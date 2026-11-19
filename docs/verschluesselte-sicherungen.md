@@ -122,6 +122,13 @@ weist darauf hin, wenn Leserechte für ihre Prüfung fehlen. Sind zwei
 gespeicherte Fassungen desselben Planungseintrags gleichzeitig aktiv, hält die
 Prüfung an.
 
+Bei lesbaren Lieferscheinen und Regieberichten prüft der Browser die
+Materialpositionen und ihre Bezüge zu Projekten und Produkten. Dafür verwendet
+er die Produktdaten und Signaturnachweise aus der ausgewählten Sicherung.
+Fehlende Verknüpfungen erscheinen als Hinweise, etwa wenn ein verbrauchtes
+Produkt später aus dem Katalog gelöscht wurde. Ebenso zeigt die Vorschau an,
+wenn Leserechte für die Prüfung fehlen.
+
 Bei lesbaren Projektdateien prüft der Browser die Ordnerstruktur und
 kontrolliert die verschlüsselten Blöcke für Originale und Vorschaubilder.
 Die Blöcke werden paketweise entschlüsselt und nach der Prüfung verworfen.
@@ -189,6 +196,7 @@ Sichtbarkeit nach einem Neuladen.
 Der [Rücksicherungstest](../sortsys-webapp-v2/scripts/e2e/contentRestore.browser.mjs)
 nutzt die gebaute Webapp und zwei getrennte API-Prozesse an derselben DuckDB.
 Er prüft, dass ein Abbruch den aktuellen Projektstand erhält und die
-Bestätigung danach den älteren Stand sichtbar macht. Der zugehörige
+Bestätigung danach den älteren Stand sichtbar macht. Zum wiederhergestellten
+Lieferschein lässt sich das damals verwendete Produkt öffnen. Der zugehörige
 [API-Test](../sortsys-webapp-v2/scripts/test-native-content-preparation.ts)
 prüft auch die Trennung der Sicherungslisten verschiedener Mandanten.

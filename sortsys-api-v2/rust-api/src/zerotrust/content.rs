@@ -63,6 +63,13 @@ struct InspectContentInput {
     start: Option<bool>,
 }
 
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+pub(in crate::zerotrust) struct PreparedView {
+    pub operation: String,
+    pub approval: ContentEpoch,
+}
+
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 struct Inspection {

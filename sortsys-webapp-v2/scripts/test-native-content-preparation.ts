@@ -62,6 +62,11 @@ import {
 } from "./test-native-gaeb-replay";
 import { invoiceXml } from "./test-live-billing";
 import {
+  prepareMaterialRestore,
+  savedDeliveryComment,
+  savedProductName,
+} from "./test-material-restore";
+import {
   preparePrintFilesForRestore,
   rejectCorruptPrintRestore,
   savedPrintAsset,
@@ -1143,6 +1148,7 @@ export async function exerciseContentPreparation(
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
   const photoId = await uploadRestorePhoto(owner, peer, project.id);
+  const material = await prepareMaterialRestore(owner, project.id);
   const print = await preparePrintFilesForRestore(
     peer,
     photoBytes,
@@ -1196,6 +1202,7 @@ export async function exerciseContentPreparation(
     fileId: photoId,
   }));
   await print.replace();
+  await material.replace();
   const booking = await replaceBooking();
   const confirmation = await finalizeConfirmation(peer);
   const invoice = await issueInvoiceAfterBackup(owner, peer, project.id, contract);
@@ -1347,6 +1354,25 @@ export async function exerciseContentPreparation(
     prepared,
     previewSignal,
   );
+  const objects = [`product:${material.productId}`];
+  const activeReferences = await required(
+    peer.query("zerotrust.stock.references", { objects }, { strategy: "network-only" }),
+  );
+  const savedReferences = await required(peer.query("zerotrust.stock.references", {
+    objects,
+    prepared: { operation, approval },
+  }, { strategy: "network-only" }));
+  assert.ok(
+    BigInt(savedReferences[0]!.references.revision) <
+      BigInt(activeReferences[0]!.references.revision),
+  );
+  const [invalidReferences, forgedReferenceError] = await peer.query(
+    "zerotrust.stock.references",
+    { objects, prepared: { operation, approval: { ...approval, signature: base64(new Uint8Array(64)) } } },
+    { strategy: "network-only" },
+  );
+  assert.equal(invalidReferences, null);
+  assert.ok(forgedReferenceError);
   const beforeFileVerification = transmissions.length;
   const reportPreview = await inspectPreparedContent(
     peer,
@@ -1360,6 +1386,13 @@ export async function exerciseContentPreparation(
   assert.equal(reportPreview.uncheckedReferences, 0);
   assert.equal(reportPreview.missingPlanningReferences, 0);
   assert.equal(reportPreview.uncheckedPlanningReferences, 0);
+  assert.deepEqual(reportPreview.restoredMaterial, {
+    deliveryNotes: 1,
+    regieReports: 1,
+    missingProjects: 0,
+    missingProducts: 1,
+    uncheckedReferences: 0,
+  });
   assert.deepEqual(reportPreview.restoredFiles, {
     files: 2,
     folders: 1,
@@ -1383,10 +1416,9 @@ export async function exerciseContentPreparation(
   );
   assert.equal(reportPreview.retainedDocuments, 2);
   assert.equal(reportPreview.uncheckedDocuments, 0);
-  const preview = await protectedReadView(
-    peer,
-    previewSignal,
-    async (pages) =>
+  const preview = await protectedReadView(peer, previewSignal, {
+    view: { operation, approval },
+    pages: async (pages) =>
       (
         await required(
           peer.query(
@@ -1400,7 +1432,7 @@ export async function exerciseContentPreparation(
           ),
         )
       ).pages,
-  );
+  });
   const [olderProject] = await preview.read(projectArea);
   assert.ok(olderProject);
   const older = projectPayload(
@@ -1612,6 +1644,7 @@ export async function exerciseContentPreparation(
   assert.equal(peer.context.context().aborted, false);
   await checkEditors(await contentEpochFingerprint(approval));
   await print.check();
+  await material.check(peer);
   await checkGaebReplayAfterRestore(peer, replay, published.content);
   await confirmation.check();
   await invoice.check();
@@ -1815,6 +1848,9 @@ export async function exerciseContentPreparation(
             SORTSYS_RESTORE_E2E_REPORT_DAY: reportDay,
             SORTSYS_RESTORE_E2E_PRINT_ASSET: savedPrintAsset,
             SORTSYS_RESTORE_E2E_PRINT_HEADER: savedPrintHeader,
+            SORTSYS_RESTORE_E2E_DELIVERY: material.deliveryId,
+            SORTSYS_RESTORE_E2E_DELIVERY_COMMENT: savedDeliveryComment,
+            SORTSYS_RESTORE_E2E_PRODUCT: savedProductName,
           },
         },
       );

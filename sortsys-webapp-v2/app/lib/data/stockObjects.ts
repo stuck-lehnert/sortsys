@@ -1,4 +1,4 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryInput } from "@sortsys/v2-client";
 import {
   digest,
   InvalidProtectedData,
@@ -125,6 +125,7 @@ export async function checkStockObjects(
   objects: Opened[],
   history: History,
   live: () => void,
+  prepared?: QueryInput<"zerotrust.stock.references">["prepared"],
 ) {
   const selected = objects.filter((object) =>
     stockKind(object.envelope.object),
@@ -154,7 +155,10 @@ export async function checkStockObjects(
       const states = await required(
         client.query(
           "zerotrust.stock.references",
-          { objects: chunk.map((object) => object.envelope.object) },
+          {
+            objects: chunk.map((object) => object.envelope.object),
+            ...(prepared ? { prepared } : {}),
+          },
           { strategy: "network-only" },
         ),
       );

@@ -14,6 +14,7 @@ import {
   RestoreInvoiceConflict,
   RestorePlanningConflict,
 } from "~/lib/backups/contentRestore";
+import { RestoreMaterialConflict } from "~/lib/backups/materialReview";
 import { RestorePrintFileConflict } from "~/lib/backups/organizationPrintReview";
 import { RestoreProjectFileConflict } from "~/lib/backups/projectFileReview";
 import { client } from "~/lib/client";
@@ -30,7 +31,14 @@ type CheckedBackup = {
   report: Verification;
 };
 type ReviewProblem =
-  "booking" | "document" | "invoice" | "planning" | "file" | "print" | null;
+  | "booking"
+  | "document"
+  | "invoice"
+  | "planning"
+  | "material"
+  | "file"
+  | "print"
+  | null;
 type Review =
   | { status: "checking"; backup: Backup; operation: string }
   | {
@@ -86,6 +94,11 @@ function reviewFailure(problem: ReviewProblem) {
       "Diese Sicherung enthält widersprüchliche Einträge in der Einsatzplanung. Wählen Sie eine andere Sicherung.",
       "This backup contains conflicting entries in the schedule. Choose a different backup.",
     );
+  if (problem === "material")
+    return uiText(
+      "Die Sicherung enthält ungültige Lieferscheine, Regieberichte oder Produktdaten. Wählen Sie eine andere Sicherung.",
+      "This backup contains invalid delivery notes, daywork reports or product records. Choose a different backup.",
+    );
   if (problem === "file")
     return uiText(
       "In der Sicherung ist eine Datei unvollständig oder die Ordnerstruktur ist ungültig. Wählen Sie eine andere Sicherung.",
@@ -106,6 +119,7 @@ function RestoreCounts({ report }: { report: Verification }) {
   const count = new Intl.NumberFormat(currentLocaleTag());
   const files = report.restoredFiles;
   const print = report.restoredPrintFiles;
+  const material = report.restoredMaterial;
   const entries = [
     { label: uiText("Projekte", "Projects"), value: report.projects },
     { label: uiText("Kunden", "Customers"), value: report.customers },
@@ -113,6 +127,18 @@ function RestoreCounts({ report }: { report: Verification }) {
     { label: uiText("Dateien", "Files"), value: files.files },
     { label: uiText("Ordner", "Folders"), value: files.folders },
   ];
+  if (material.deliveryNotes > 0) {
+    entries.push({
+      label: uiText("Lieferscheine", "Delivery notes"),
+      value: material.deliveryNotes,
+    });
+  }
+  if (material.regieReports > 0) {
+    entries.push({
+      label: uiText("Regieberichte", "Daywork reports"),
+      value: material.regieReports,
+    });
+  }
   if (print && print.files > 0) {
     entries.push({
       label: uiText("Druckdateien", "Print files"),
@@ -161,6 +187,32 @@ function RestoreCounts({ report }: { report: Verification }) {
           {uiText(
             "Für einige Verknüpfungen laufender Werkzeugbuchungen fehlt die Lesefreigabe zur Prüfung.",
             "Some active tool booking links could not be checked with the current read access.",
+          )}
+        </p>
+      )}
+      {material.missingProjects > 0 && (
+        <MyCallout color="yellow">
+          {uiText(
+            "In der Sicherung fehlen Projekte, denen Lieferscheine oder Regieberichte zugeordnet sind.",
+            "This backup is missing projects referenced by delivery notes or daywork reports.",
+          )}{" "}
+          {count.format(material.missingProjects)}
+        </MyCallout>
+      )}
+      {material.missingProducts > 0 && (
+        <MyCallout color="yellow">
+          {uiText(
+            "In der Sicherung fehlen Produkte, die in Lieferscheinen oder Regieberichten verwendet werden.",
+            "This backup is missing products used in delivery notes or daywork reports.",
+          )}{" "}
+          {count.format(material.missingProducts)}
+        </MyCallout>
+      )}
+      {material.uncheckedReferences > 0 && (
+        <p className="text-sm text-muted">
+          {uiText(
+            "Für einige Projekt- oder Produktverweise aus Lieferscheinen und Regieberichten fehlt die Lesefreigabe.",
+            "Some project or product links in delivery notes and daywork reports could not be checked with the current read access.",
           )}
         </p>
       )}
@@ -327,6 +379,7 @@ export default function OrganizationBackups() {
         else if (error instanceof RestoreDocumentConflict) problem = "document";
         else if (error instanceof RestoreInvoiceConflict) problem = "invoice";
         else if (error instanceof RestorePlanningConflict) problem = "planning";
+        else if (error instanceof RestoreMaterialConflict) problem = "material";
         else if (error instanceof RestoreProjectFileConflict) problem = "file";
         else if (error instanceof RestorePrintFileConflict) problem = "print";
         setReview({

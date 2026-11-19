@@ -528,6 +528,9 @@ Inhaltscursor bleibt davon getrennt. Die Organisationsverwaltung kann einen
 Projekte und Adressdaten samt Verknüpfungen sowie die Bezüge erhaltener
 Werkzeugbuchungen, Auftragsbestätigungen und ausgestellter Rechnungen. Die
 Vorschau prüft auch die Projekt- und Personalbezüge lesbarer Planungseinträge.
+Bei Lieferscheinen und Regieberichten prüft sie die Projekt- und Produktbezüge
+mit den Nachweisen aus der Sicherung. Ein dort fehlendes Produkt bleibt in der
+Vorschau als Hinweis sichtbar.
 Bei Projektdateien prüft der Browser die Ordner, die Blöcke für Originale
 und Vorschaubilder sowie die Fotoverknüpfungen aus Bautagesberichten.
 Für das Organisationslogo und Dateien der Druckvorlage prüft er die
@@ -535,7 +538,8 @@ Dateieinträge und Blöcke gemeinsam. Beschädigte Blöcke sperren die Freigabe.
 Fehlende Leserechte erscheinen in der Vorschau. Im Produktionsbrowser sind
 Abbruch und Bestätigung über zwei getrennte API-Prozesse geprüft. Danach sind
 ein wiederhergestelltes Bautagesberichtsfoto, die gesperrte Auftragsbestätigung
-und der Zahlungsstand der vorhandenen Rechnung sichtbar. Der Test öffnet auch
+und der Zahlungsstand der vorhandenen Rechnung sichtbar. Der Test öffnet einen
+wiederhergestellten Lieferschein mit seinem Produktbezug. Er öffnet auch
 das wiederhergestellte Logo und erzeugt aus der Druckvorlage mit eingebundenem
 Bild eine PDF-Vorschau. Ein vollständiger Abgleich aller verschlüsselten
 Fachdaten steht noch aus.

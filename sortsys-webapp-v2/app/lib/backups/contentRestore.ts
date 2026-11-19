@@ -68,33 +68,20 @@ import {
   toolCollection,
   toolDomain,
 } from "../data/toolData";
+import { inspectRestoredMaterial } from "./materialReview";
 import { inspectRestoredPrintFiles } from "./organizationPrintReview";
 import { inspectRestoredFiles } from "./projectFileReview";
+import { readContentAreas, type ContentReadView } from "./readContentAreas";
 
 type Activation = MutateInput<"zerotrust.content.activate">;
 type Proposal = Omit<Activation, "review">;
-type ReadView = Awaited<ReturnType<typeof protectedReadView>>;
 
 export class RestoreBookingConflict extends Error {}
 export class RestoreInvoiceConflict extends Error {}
 export class RestorePlanningConflict extends Error {}
 
-async function readAreas(
-  view: ReadView,
-  areas: readonly Collection[],
-  visit: (area: Collection, object: OpenedObject) => void,
-) {
-  for (let offset = 0; offset < areas.length; offset += 16) {
-    const batch = areas.slice(offset, offset + 16);
-    await view.prefetch(batch.map((area) => ({ area })));
-    await mapConcurrent(batch, 4, async (area) => {
-      for (const object of await view.read(area)) visit(area, object);
-    });
-  }
-}
-
 async function inspectPlanning(
-  view: ReadView,
+  view: ContentReadView,
   projectIds: ReadonlySet<string>,
 ) {
   const areas = view.areas((domain) => {
@@ -105,7 +92,7 @@ async function inspectPlanning(
   const users = new Set<string>();
   let missing = 0;
   let unchecked = 0;
-  await readAreas(view, areas, (area, { envelope, value }) => {
+  await readContentAreas(view, areas, (area, { envelope, value }) => {
     const { row } = SCHEDULE_MODEL.decode(value, envelope.object, area);
     const id = `${row.table}:${publicId(row.values.id)}`;
     if (scheduleIds.has(id)) throw new RestorePlanningConflict();
@@ -121,7 +108,7 @@ async function inspectPlanning(
   const personnel = [...users].map((id) => personnelCollection(id, "master-data"));
   const readablePersonnel = personnel.filter(view.readable);
   unchecked += personnel.length - readablePersonnel.length;
-  await readAreas(view, readablePersonnel, (area, { envelope, value }) => {
+  await readContentAreas(view, readablePersonnel, (area, { envelope, value }) => {
     const profile = PERSONNEL_MODEL.decode(value, envelope.object, area);
     profiles.add(profile.id);
   });
@@ -147,7 +134,7 @@ function inspectedCommercialAreas(scopes: string[]): Collection[] {
 
 async function verifySealedInvoices(
   client: Client,
-  view: ReadView,
+  view: ContentReadView,
   scopes: string[],
   projectIds: ReadonlySet<string>,
 ) {
@@ -156,7 +143,7 @@ async function verifySealedInvoices(
     const { id } = commercialDomain(area.domain)!;
     return { ...invoiceSealRequest(id).area, prefix: invoiceSealObject(id) };
   });
-  await readAreas(view, sealAreas, (area, { envelope, value }) => {
+  await readContentAreas(view, sealAreas, (area, { envelope, value }) => {
     const seal = INVOICE_SEAL_MODEL.decode(value, envelope.object, area);
     if (seals.has(seal.caseId)) throw new InvalidProtectedData();
     seals.set(seal.caseId, seal);
@@ -211,7 +198,7 @@ async function verifySealedInvoices(
   const parents = [...new Set(invoices.map(({ parent }) => parent))]
     .map(commercialMasterArea)
     .filter(view.readable);
-  await readAreas(view, parents, storeCase);
+  await readContentAreas(view, parents, storeCase);
   const crossCaseSources = invoices.some(({ document }) => {
     const source = document.values.source_document_id;
     return source !== null && !docs.has(publicId(source));
@@ -226,7 +213,7 @@ async function verifySealedInvoices(
         ? commercialMasterArea(area.id)
         : null;
     });
-    await readAreas(view, others, storeCase);
+    await readContentAreas(view, others, storeCase);
   }
 
   const checks = await mapConcurrent(invoices, 4, async (binding) => {
@@ -281,7 +268,7 @@ async function verifySealedInvoices(
 
 async function verifyActiveBookings(
   client: Client,
-  view: ReadView,
+  view: ContentReadView,
   projects: ReadonlySet<string>,
   signal: AbortSignal,
 ) {
@@ -305,7 +292,7 @@ async function verifyActiveBookings(
     string,
     { tracking: string; project: string | null }
   >();
-  await readAreas(
+  await readContentAreas(
     view,
     [...records, ...bookingAreas],
     (area, { envelope, value }) => {
@@ -455,16 +442,19 @@ export async function inspectPreparedContent(
       { strategy: "network-only" },
     ),
   );
-  const view = await protectedReadView(client, signal, async (pages) => {
-    const response = await required(
-      client.query(
-        "zerotrust.content.inspect",
-        { ...check, pages },
-        { strategy: "network-only" },
-      ),
-    );
-    if (response.stamp !== stamp) throw new InvalidProtectedData();
-    return response.pages;
+  const view = await protectedReadView(client, signal, {
+    view: check,
+    async pages(pages) {
+      const response = await required(
+        client.query(
+          "zerotrust.content.inspect",
+          { ...check, pages },
+          { strategy: "network-only" },
+        ),
+      );
+      if (response.stamp !== stamp) throw new InvalidProtectedData();
+      return response.pages;
+    },
   });
   const catalogues = [CUSTOMER_COLLECTION, CONTACT_COLLECTION].filter(
     view.readable,
@@ -505,7 +495,7 @@ export async function inspectPreparedContent(
     return id ? projectCollection(id) : null;
   });
   const projectIds = new Set<string>();
-  await readAreas(view, projects, (area, { envelope, value }) => {
+  await readContentAreas(view, projects, (area, { envelope, value }) => {
     const id = projectDomainId(area.domain);
     if (!id) throw new InvalidProtectedData();
     const { project, contacts: links } = projectPayload(
@@ -521,6 +511,11 @@ export async function inspectPreparedContent(
   });
   const uncheckedBookings = await verifyActiveBookings(client, view, projectIds, signal);
   const planning = await inspectPlanning(view, projectIds);
+  const restoredMaterial = await inspectRestoredMaterial(
+    view,
+    projectIds,
+    signal,
+  );
   const restoredFiles = await inspectRestoredFiles(client, view, projectIds, signal);
   const restoredPrintFiles = await inspectRestoredPrintFiles(client, view, signal);
   const dependencies = await required(
@@ -588,6 +583,7 @@ export async function inspectPreparedContent(
     uncheckedBookings,
     missingPlanningReferences: planning.missing,
     uncheckedPlanningReferences: planning.unchecked,
+    restoredMaterial,
     restoredFiles,
     restoredPrintFiles,
     retainedDocuments,

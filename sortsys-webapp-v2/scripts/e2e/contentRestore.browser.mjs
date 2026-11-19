@@ -19,6 +19,9 @@ const photo = env.SORTSYS_RESTORE_E2E_PHOTO;
 const reportDay = env.SORTSYS_RESTORE_E2E_REPORT_DAY;
 const printAsset = env.SORTSYS_RESTORE_E2E_PRINT_ASSET;
 const printHeader = env.SORTSYS_RESTORE_E2E_PRINT_HEADER;
+const delivery = env.SORTSYS_RESTORE_E2E_DELIVERY;
+const deliveryComment = env.SORTSYS_RESTORE_E2E_DELIVERY_COMMENT;
+const productName = env.SORTSYS_RESTORE_E2E_PRODUCT;
 assert.ok(
   project &&
     confirmationCase &&
@@ -28,7 +31,10 @@ assert.ok(
     photo &&
     reportDay &&
     printAsset &&
-    printHeader,
+    printHeader &&
+    delivery &&
+    deliveryComment &&
+    productName,
 );
 const artifacts = join(process.argv[2], "browser-artifacts", "content-restore");
 await mkdir(artifacts, { recursive: true });
@@ -72,6 +78,8 @@ try {
       photo,
       printAsset,
       printHeader,
+      deliveryComment,
+      productName,
     ];
     if (privateTexts.some((text) => wire.includes(text))) {
       leaks.push(url.pathname);
@@ -115,6 +123,15 @@ try {
   const printFiles = dialog.getByText("Druckdateien", { exact: true });
   await expect(printFiles).toBeVisible();
   await expect(printFiles.locator("..").locator("dd")).toHaveText("2");
+  for (const label of ["Lieferscheine", "Regieberichte"]) {
+    const entry = dialog.getByText(label, { exact: true });
+    await expect(entry.locator("..").locator("dd")).toHaveText("1");
+  }
+  await expect(
+    dialog.getByText(
+      /In der Sicherung fehlen Produkte, die in Lieferscheinen oder Regieberichten verwendet werden/,
+    ),
+  ).toBeVisible();
   await expect(
     dialog.getByText("Erhaltene Dokumente", { exact: true }),
   ).toBeVisible();
@@ -143,8 +160,16 @@ try {
   await expect
     .poll(() => thumbnail.evaluate((image) => image.naturalWidth))
     .toBe(2);
+  await page.goto(`${server.origin}/products/deliveryNotes/${delivery}`);
+  await expect(page.getByText(deliveryComment, { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: productName, exact: true }),
+  ).toBeVisible();
   await page.goto(`${server.origin}/admin?tab=logo`);
-  const logo = page.getByRole("img", { name: "Organisationslogo", exact: true });
+  const logo = page.getByRole("img", {
+    name: "Organisationslogo",
+    exact: true,
+  });
   await expect(logo).toBeVisible();
   await expect.poll(() => logo.evaluate((image) => image.naturalWidth)).toBe(4);
   await page
@@ -153,7 +178,9 @@ try {
   await expect(page.getByText(printAsset, { exact: true })).toBeVisible();
   const printPreview = page.getByTitle("PDF ansehen", { exact: true });
   await expect(printPreview).toBeVisible();
-  const previewFrame = await (await printPreview.elementHandle()).contentFrame();
+  const previewFrame = await (
+    await printPreview.elementHandle()
+  ).contentFrame();
   assert.ok(previewFrame);
   await previewFrame.waitForFunction(
     () => !!window.PDFViewerApplication?.pdfDocument,
@@ -162,7 +189,10 @@ try {
     const pdf = window.PDFViewerApplication.pdfDocument;
     const firstPage = await pdf.getPage(1);
     const text = await firstPage.getTextContent();
-    return text.items.map(({ str }) => str).join(" ").replace(/\s+/g, " ");
+    return text.items
+      .map(({ str }) => str)
+      .join(" ")
+      .replace(/\s+/g, " ");
   });
   assert.ok(printPreviewText.includes(printHeader), printPreviewText);
   await page.goto(`${server.origin}/gaeb/${confirmationCase}`);
@@ -183,8 +213,13 @@ try {
   });
   await page.goto(`${server.origin}/gaeb/${invoiceCase}`);
   await expect(page.locator("canvas").first()).toBeVisible();
-  await page.getByRole("button", { name: "Zahlungseingang", exact: true }).click();
-  const payments = page.getByRole("dialog", { name: "Zahlungseingänge", exact: true });
+  await page
+    .getByRole("button", { name: "Zahlungseingang", exact: true })
+    .click();
+  const payments = page.getByRole("dialog", {
+    name: "Zahlungseingänge",
+    exact: true,
+  });
   await expect(payments.getByText(/Offener Betrag.*27,60/)).toBeVisible();
   await expect(payments.getByText(new RegExp(paymentReference))).toBeVisible();
   await page.screenshot({
@@ -204,6 +239,8 @@ try {
       lockedConfirmationVisible: true,
       invoicePaymentVisible: true,
       restoredPhotoVisible: true,
+      restoredDeliveryVisible: true,
+      missingProductReported: true,
       restoredPrintFilesVisible: true,
       errors,
       leaks,

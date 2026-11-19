@@ -1569,6 +1569,7 @@ export type QueryInputs = {
     };
     "zerotrust.stock.references": {
         objects: Array<string>;
+        prepared?: PreparedView;
     };
     "zerotrust.timestamps.get": {
         scope: string;

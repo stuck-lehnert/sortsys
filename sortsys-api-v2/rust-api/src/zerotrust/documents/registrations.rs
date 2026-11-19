@@ -44,14 +44,7 @@ pub(super) struct ListInput {
     #[ts(optional)]
     after: Option<String>,
     #[ts(optional)]
-    prepared: Option<PreparedView>,
-}
-
-#[derive(Deserialize, TS)]
-#[serde(deny_unknown_fields)]
-struct PreparedView {
-    operation: String,
-    approval: sortsys_zerotrust::content_epoch::ContentEpoch,
+    prepared: Option<super::super::content::PreparedView>,
 }
 
 #[derive(Serialize, TS)]

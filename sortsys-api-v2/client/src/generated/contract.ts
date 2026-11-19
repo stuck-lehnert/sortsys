@@ -423,7 +423,7 @@ export type QueryInputs = {
   "zerotrust.setup.backup.status": void;
   "zerotrust.status": void;
   "zerotrust.stock.deleted": { object: string, };
-  "zerotrust.stock.references": { objects: Array<string>, };
+  "zerotrust.stock.references": { objects: Array<string>, prepared?: PreparedView, };
   "zerotrust.timestamps.get": { scope: string, object: string, revision: string, };
   "zerotrust.toolReturns.lookup": { verificationKeys: Array<string>, };
   "zerotrust.trust.history": void;
