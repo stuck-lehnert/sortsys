@@ -10,11 +10,16 @@ import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
 import { useForceUpdate } from "~/hooks/useForceUpdate";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client, contentAccess } from "~/lib/client";
+import { deliveryCollection } from "~/lib/data/deliveryNoteData";
+import {
+  scannedDeliveryRequestId,
+  type DeliveryNotePrefill,
+} from "~/lib/data/deliveryScanPrefill";
 import { productTitle } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallProductTile, SmallProjectTile } from "~/lib/tiles";
 import { generateId, parseFloatCustom, upmatchUnit } from "~/lib/utils";
-import type { DeliveryNote, Product, Project } from "~/type-helpers";
+import type { DeliveryNote, Product } from "~/type-helpers";
 
 function quantityInUnit(product: Product, baseQuantity: number, unit: string | null | undefined): [number, string | null] {
   if (!unit) return upmatchUnit(product, baseQuantity);
@@ -23,27 +28,6 @@ function quantityInUnit(product: Product, baseQuantity: number, unit: string | n
   if (!factor) return upmatchUnit(product, baseQuantity);
   return [baseQuantity / factor, unit];
 }
-
-export type DeliveryNotePrefill = {
-  project?: Project | null;
-  deliveryDate?: Date | null;
-  comment?: string | null;
-  records: {
-    product: Product;
-    amount: number;
-    unit: string;
-    comment?: string | null;
-  }[];
-  specialRecords: {
-    name: string;
-    unit: string;
-    amount: number;
-    pricePerUnit: number | null;
-    comment?: string | null;
-  }[];
-  warnings?: string[];
-};
-
 
 export function showCreateDeliveryNoteModal(
   modals: MyModalsInterface,
@@ -78,8 +62,11 @@ export function showCreateDeliveryNoteModal(
       const createEntityAction = useCreateEntityAction(modals);
       const forceUpdate = useForceUpdate();
       const projectId = context.field("project")?.getValue()?.[0]?.id;
-      const canSeePrices = !!projectId && session.canAccess(`project:${projectId}`, "procurement", "read");
-      const canWritePrices = !!projectId && session.canAccess(`project:${projectId}`, "procurement", "create");
+      const pricing = projectId ? deliveryCollection(projectId, true) : null;
+      const canSeePrices = pricing &&
+        session.canAccess(pricing.scope, pricing.facet, "read");
+      const canWritePrices = pricing &&
+        session.canAccess(pricing.scope, pricing.facet, "create");
 
       return (
         <>
@@ -104,7 +91,11 @@ export function showCreateDeliveryNoteModal(
               });
               if (error) throw error;
 
-              return data ?? [];
+              const access = await contentAccess.read();
+              return (data ?? []).filter(({ id }) => {
+                const area = deliveryCollection(id);
+                return access?.can(area.scope, area.facet, "create");
+              });
             }}
             renderItem={({ item }) => item.title}
             renderTile={(item) => <SmallProjectTile data={item} noLink />}
@@ -450,13 +441,29 @@ export function showCreateDeliveryNoteModal(
       });
 
       const access = await contentAccess.read();
-      const mayWritePrices = access?.can(`project:${projectId}`, "procurement", "create") === true;
-      const input = { projectId, effectiveTimestamp: values.deliveryDate ?? null, records,
-        specialRecords: specialRecords.map(row => ({ ...row, pricePerUnit: mayWritePrices ? row.pricePerUnit : null })),
-        comment: String(values.comment ?? "").trim() || null };
+      const pricing = deliveryCollection(projectId, true);
+      const mayWritePrices = access?.can(pricing.scope, pricing.facet, "create") === true;
+      const input = {
+        projectId,
+        effectiveTimestamp: values.deliveryDate ?? null,
+        records,
+        specialRecords: specialRecords.map((row) => ({
+          ...row,
+          pricePerUnit: mayWritePrices ? row.pricePerUnit : null,
+        })),
+        comment: String(values.comment ?? "").trim() || null,
+      };
       const key = JSON.stringify(input);
-      if (!submission || submission.key !== key) submission = { key, requestId: crypto.randomUUID() };
-      const [data, error] = await client.mutate("deliveryNotes.create", { ...input, requestId: submission.requestId });
+      if (!submission || submission.key !== key) {
+        const requestId = prefill?.scanId
+          ? await scannedDeliveryRequestId(prefill.scanId, input)
+          : crypto.randomUUID();
+        submission = { key, requestId };
+      }
+      const [data, error] = await client.mutate("deliveryNotes.create", {
+        ...input,
+        requestId: submission.requestId,
+      });
 
       if (error) throw error;
       if (!data) return;
@@ -473,11 +480,12 @@ export function showCreateDeliveryNoteModal(
 }
 
 export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: DeliveryNote) {
+  const pricing = deliveryCollection(note.projectId, true);
   modals.showForm({
     content: ({ context }) => {
       const session = useSessionInfo();
-      const canSeePrices = session.canAccess(`project:${note.projectId}`, "procurement", "read");
-      const canWritePrices = session.canAccess(`project:${note.projectId}`, "procurement", "update");
+      const canSeePrices = session.canAccess(pricing.scope, pricing.facet, "read");
+      const canWritePrices = session.canAccess(pricing.scope, pricing.facet, "update");
       const [recordIds, setRecordIds] = useState<string[]>([]);
       const [specialRecordIds, setSpecialRecordIds] = useState<string[]>([]);
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
@@ -856,7 +864,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
       });
 
       const access = await contentAccess.read();
-      const mayWritePrices = access?.can(`project:${note.projectId}`, "procurement", "update") === true;
+      const mayWritePrices = access?.can(pricing.scope, pricing.facet, "update") === true;
       specialRecordIds.forEach(id => {
         const name = values[`specialRecord:${id}:name`];
         if (!name) throw new Error();

@@ -157,7 +157,7 @@ const packages = new Set([
   "bigbag",
   "rolle",
 ]);
-function factor(
+export function scanProductUnit(
   product: Product,
   unit: string,
 ): { unit: string; factor: number } | null {
@@ -346,11 +346,11 @@ export function normalizeScanResult(
           normalized(product.name).length >= 6 &&
           source.includes(normalized(product.name)) &&
           (!product.brand || source.includes(normalized(product.brand))) &&
-          factor(product, line.unit),
+          scanProductUnit(product, line.unit),
       );
       if (candidates.length === 1) product = candidates[0];
     }
-    const converted = product ? factor(product, line.unit) : null;
+    const converted = product ? scanProductUnit(product, line.unit) : null;
     if (raw.documentType === "deliveryNote") {
       if (product && converted) {
         const quantity = line.quantity * converted.factor;

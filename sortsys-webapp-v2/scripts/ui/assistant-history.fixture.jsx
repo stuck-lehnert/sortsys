@@ -4,7 +4,7 @@ import { MemoryRouter, Route, Routes } from "react-router";
 import { NotificationProvider } from "@sortsys/react-components/notifications";
 import { MyModalsProvider } from "../../app/hooks/useMyModals";
 import { SessionInfoProvider } from "../../app/hooks/useSessionInfo";
-import { client, protectedContent } from "../../app/lib/client";
+import { client, contentAccess, protectedContent } from "../../app/lib/client";
 import { I18nProvider } from "../../app/lib/i18n";
 import { createBusinessClient } from "../../app/lib/data/businessClient";
 import {
@@ -19,6 +19,9 @@ import { signPolicy } from "@sortsys/zerotrust/sortsys";
 import { announceDataChanges } from "../../app/lib/data/runtime/changes";
 import { lockCryptoSession } from "../../app/lib/crypto/session";
 import { normalizeScanResult } from "../../app/lib/data/scanResult";
+import { deliveryCollection } from "../../app/lib/data/deliveryNoteData";
+import { projectCollection } from "../../app/lib/data/projectData";
+import { projectFacetArea } from "../../app/lib/data/projectScope";
 
 export async function showAssistantHistory(
   root,
@@ -30,6 +33,7 @@ export async function showAssistantHistory(
     hold = false,
     historyOnly = false,
     importPage = false,
+    reviewDelivery = null,
   } = {},
 ) {
   document.documentElement.classList.toggle("dark", theme === "dark");
@@ -37,8 +41,17 @@ export async function showAssistantHistory(
   document.body.dataset.ssTheme = theme;
   const own = chatCollection("user:1");
   const other = chatCollection("user:2");
+  const delivery = reviewDelivery
+    ? [
+        projectCollection("3"),
+        deliveryCollection("3"),
+        reviewDelivery === "module"
+          ? deliveryCollection("3", true)
+          : projectFacetArea("3", "procurement"),
+      ]
+    : [];
   const tenant = await protectedTenant(
-    [own, other, PRODUCT_COLLECTION],
+    [own, other, PRODUCT_COLLECTION, ...delivery],
     (area) => {
       if (readonly && area.domain === own.domain) return ["read"];
       return ["read", "create", "update", "delete"];
@@ -56,6 +69,20 @@ export async function showAssistantHistory(
     await copyChats(tenant.client, legacyChatSources(), lifetime.signal);
   }
   if (importPage) {
+    const line = {
+      sourceText: "Zwei Eimer Farbe",
+      name: "Farbe",
+      brand: null,
+      description: null,
+      quantity: 2,
+      unit: "Eimer",
+      baseUnit: "Eimer",
+      unitConversions: [],
+      productId: reviewDelivery ? "9" : null,
+      pricePerUnit: null,
+      confidence: 1,
+      comment: null,
+    };
     const result = normalizeScanResult(
       {
         documentType: "deliveryNote",
@@ -63,24 +90,13 @@ export async function showAssistantHistory(
         documentNumber: "782169",
         documentDate: "2026-11-17",
         comment: null,
-        lines: [
-          {
-            sourceText: "Zwei Eimer Farbe",
-            name: "Farbe",
-            brand: null,
-            description: null,
-            quantity: 2,
-            unit: "Eimer",
-            baseUnit: "Eimer",
-            unitConversions: [],
-            productId: null,
-            pricePerUnit: null,
-            confidence: 1,
-            comment: null,
-          },
-        ],
+        lines: reviewDelivery
+          ? [line, { ...line, name: "Abdeckfolie", productId: null, pricePerUnit: 12.5 }]
+          : [line],
       },
-      [],
+      reviewDelivery
+        ? [{ id: "9", customId: 9, name: "Farbe", baseUnit: "Eimer", otherUnits: {} }]
+        : [],
     );
     await tenant.seed(own, "assistant:scan:1", {
       format: "sortsys-assistant-v1",
@@ -154,6 +170,7 @@ export async function showAssistantHistory(
     });
   const business = createBusinessClient(tenant.client);
   const access = business.access;
+  if (reviewDelivery) Object.assign(contentAccess, access);
   Object.assign(protectedContent, business.context);
   let release;
   let captured = false;
@@ -162,6 +179,9 @@ export async function showAssistantHistory(
     release = resolve;
   });
   client.query = async (path, input, options) => {
+    if (reviewDelivery && path === "projects.list") {
+      return [[{ id: "3", title: "Eigene Baustelle" }, { id: "4", title: "Fremde Baustelle" }], null];
+    }
     const result = await business.query(path, input, options);
     if (path === "llm.chats.get" && hold) {
       captured = true;

@@ -72,9 +72,10 @@ Nummernzuordnung bleibt Bestandteil des Abrufs.
 Die lokale DuckDB prüft Beziehungen innerhalb des freigegebenen Mengenbestands.
 Die privaten Produkt-, Benutzer- und Projektgrunddaten gehören zu anderen
 Schlüsselbereichen und werden dafür nicht zusätzlich geöffnet. Beim Anlegen
-werden die benötigten Projekt- und Produktstände gesondert gelesen und ihre
-Versionen in die Veröffentlichung einbezogen. Die API kann fachlich falsche,
-aber gültig signierte Geheimwerte weiterhin nicht erkennen.
+liest der Browser den Projektstand und die benötigten Produkte in Paketen.
+Mehrere Positionen mit demselben Produkt teilen sich dessen Prüfung. Projekt-
+und Katalogstand gehen in die Versionsprüfung beim Speichern ein. Die API kann
+fachlich falsche, aber gültig signierte Geheimwerte weiterhin nicht erkennen.
 
 Die Kostenberechnung verwendet den letzten Preis vor oder zum Lieferdatum.
 Fehlt ein solcher Preis, gilt der erste spätere Preis. Bei identischen

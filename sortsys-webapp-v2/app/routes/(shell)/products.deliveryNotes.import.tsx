@@ -1,5 +1,5 @@
 import { Button as UIAction } from "@sortsys/react-components";
-import type { MutateResult, QueryResult } from "@sortsys/v2-client";
+import type { QueryResult } from "@sortsys/v2-client";
 import { Heading, Tile } from "@sortsys/react-components";
 import { useEffect, useRef } from "react";
 import { MyButton } from "~/components/MyButton";
@@ -8,21 +8,20 @@ import { MyHeader } from "~/components/MyHeader";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useProtectedState } from "~/hooks/useProtectedState";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
-import { API_ENDPOINT, client } from "~/lib/client";
+import { API_ENDPOINT, client, contentAccess } from "~/lib/client";
+import { deliveryScanPrefill } from "~/lib/data/deliveryScanPrefill";
 import { readSelectedDocuments } from "~/lib/data/imports";
+import { PRODUCT_COLLECTION } from "~/lib/data/products";
+import { required } from "~/lib/data/protectedObjects";
+import type { Product } from "~/lib/data/scanResult";
 import { importMime } from "~/lib/importFiles";
 import { processImport } from "~/lib/importProcessing";
 import { uiText, useI18n } from "~/lib/i18n";
 import { Icons } from "~/lib/icons";
-import {
-  showCreateDeliveryNoteModal,
-  type DeliveryNotePrefill,
-} from "~/modals/deliveryNotes";
+import { showCreateDeliveryNoteModal } from "~/modals/deliveryNotes";
 import { showPriceImportModal } from "~/modals/priceImports";
 import type { Route } from "./+types/products.deliveryNotes.import";
 
-type ScanResult = MutateResult<"deliveryNotes.scan.complete">;
-type DeliveryNoteScanResult = NonNullable<ScanResult["deliveryNote"]>;
 type ScanEntry = QueryResult<"deliveryNotes.scan.list">[number];
 type ProcessingPhase = "idle" | "processing";
 
@@ -40,13 +39,6 @@ const NO_FILES: File[] = [];
 
 export function meta({}: Route.MetaArgs) {
   return [{ title: uiText("Einlesen", "Import") }];
-}
-
-function deliveryDate(value: string | null) {
-  if (!value) return null;
-
-  const parsed = new Date(value + "T12:00:00");
-  return Number.isNaN(parsed.getTime()) ? null : parsed;
 }
 
 function formatFileSize(size: number) {
@@ -201,60 +193,6 @@ export default function ImportDeliveryNotePage() {
     input.click();
   }
 
-  async function buildPrefill(
-    result: DeliveryNoteScanResult,
-  ): Promise<DeliveryNotePrefill> {
-    const records = await Promise.all(
-      result.records.map(async (record) => {
-        const [product, productError] = await client.query(
-          "products.get",
-          { id: record.productId },
-          { strategy: "cache-first" },
-        );
-        if (productError) throw productError;
-        if (!product) {
-          throw new Error(
-            uiText(
-              "Ein erkanntes Produkt ist nicht mehr vorhanden.",
-              "A recognized product no longer exists.",
-            ),
-          );
-        }
-
-        return {
-          product,
-          amount: record.displayQuantity,
-          unit: record.unit,
-          comment: record.comment,
-        };
-      }),
-    );
-    const comment = [
-      result.supplier &&
-        uiText("Lieferant: " + result.supplier, "Supplier: " + result.supplier),
-      result.deliveryNumber &&
-        uiText(
-          "Lieferscheinnummer: " + result.deliveryNumber,
-          "Delivery note number: " + result.deliveryNumber,
-        ),
-      result.comment,
-    ].filter((value): value is string => Boolean(value));
-
-    return {
-      deliveryDate: deliveryDate(result.deliveryDate),
-      comment: comment.join(" · "),
-      records,
-      specialRecords: result.specialRecords.map((record) => ({
-        name: record.name,
-        unit: record.unit,
-        amount: record.amount,
-        pricePerUnit: record.pricePerUnit,
-        comment: record.comment,
-      })),
-      warnings: result.warnings,
-    };
-  }
-
   async function openScan(scan: ScanEntry) {
     if (context.aborted) return;
     if (scan.state === "failed") {
@@ -285,9 +223,20 @@ export default function ImportDeliveryNotePage() {
         );
 
       if (result.documentType === "deliveryNote" && result.deliveryNote) {
-        const prefill = await buildPrefill(result.deliveryNote);
+        let catalogue: Product[] = [];
+        if (result.deliveryNote.records.length) {
+          const access = await contentAccess.read();
+          if (context.aborted) return;
+          const { scope, facet } = PRODUCT_COLLECTION;
+          if (access?.can(scope, facet, "read")) {
+            catalogue = await required(client.query("products.list", {}));
+          }
+        }
         if (context.aborted) return;
-        showCreateDeliveryNoteModal(modals, prefill);
+        showCreateDeliveryNoteModal(
+          modals,
+          deliveryScanPrefill(scan, result.deliveryNote, catalogue),
+        );
       } else if (result.priceList) {
         showPriceImportModal(modals, result.priceList, result.documentType);
       } else {

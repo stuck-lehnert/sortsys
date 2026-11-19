@@ -110,6 +110,15 @@ nicht prüfbare Zuordnung bleibt bei Lieferscheinen als Sonderposten erhalten;
 Preise brauchen eine nachvollziehbare Einheitenumrechnung. Das Ergebnis lässt
 sich anschließend im bisherigen Lieferschein- oder Preisdialog prüfen.
 
+Beim Wiederöffnen eines Lieferschein-Scans prüft der Browser die erkannten
+Produkte gegen den aktuellen Katalog. Zuordnungen mit fehlendem Produkt oder
+geänderter Umrechnung erscheinen als Sonderposten mit der erkannten Menge und
+Einheit. Fehlt das Lieferdatum, schlägt das Formular den Einlesetag vor. Für
+Lieferscheinpreise gelten die eigenen Preisfreigaben des ausgewählten Projekts.
+Bestätigt dasselbe Konto den Scan erneut mit denselben Angaben, verwendet der
+Browser die Kennung der ursprünglichen Anlage. Das gilt auch nach erneutem
+Öffnen oder einer verlorenen Speicherantwort.
+
 Ergebnisse und Dateinamen liegen in einem eigenen verschlüsselten Bereich je
 Benutzer. Der Produktschlüssel öffnet diesen Verlauf nicht. Ein fehlgeschlagener
 Vorgang bekommt eine feste Meldung; Fehlermeldungen des Providers werden nicht

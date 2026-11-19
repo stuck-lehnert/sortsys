@@ -161,6 +161,36 @@ test("import history and selected originals disappear after signed permission re
   }
 });
 
+for (const reviewDelivery of ["module", "project"]) {
+  test(`a scanned delivery keeps missing products and shows prices only for its signed ${reviewDelivery} scope`, async () => {
+    const { context, page, external } = await open({ importPage: true, reviewDelivery });
+    try {
+      await page.getByRole("button").filter({ hasText: "Vertraulicher Lieferschein 782169.pdf" }).click();
+      const dialog = page.getByRole("dialog", { name: "Lieferschein schreiben" });
+      await dialog.getByText(/fehlenden oder geänderten Produktzuordnungen/).waitFor();
+      assert.deepEqual(
+        await dialog.getByRole("textbox", { name: /^Bezeichnung/ }).evaluateAll((fields) => fields.map(({ value }) => value)),
+        ["Abdeckfolie", "Farbe"],
+      );
+      await dialog.getByRole("combobox", { name: /^Projekt/ }).fill("Baustelle");
+      const project = page.getByRole("option", { name: "Eigene Baustelle" });
+      await project.waitFor();
+      assert.equal(await page.getByRole("option", { name: "Fremde Baustelle" }).count(), 0);
+      await project.click();
+      const prices = dialog.getByRole("spinbutton", { name: "Preis pro Einheit" });
+      if (reviewDelivery === "module") {
+        await prices.first().waitFor();
+        assert.equal(await prices.first().isEnabled(), true);
+      } else {
+        assert.equal(await prices.count(), 0);
+      }
+      assert.deepEqual(external, []);
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 test("a delayed import result cannot open a document dialog after permission revocation", async () => {
   const { context, page, external } = await open({
     importPage: true,

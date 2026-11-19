@@ -92,6 +92,7 @@ try {
     ownerEndpoint: endpoints[1],
     peerEndpoint: endpoints[0],
     adminPassword,
+    ownerToken,
   });
   const rows = await required(
     administrator.query("admin.llm.usage", undefined, {

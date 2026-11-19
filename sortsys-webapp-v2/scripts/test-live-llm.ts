@@ -26,6 +26,7 @@ import { llmActivity } from "../app/lib/llmActivity";
 import { chatModelFixture, testLiveChats } from "./test-live-chats";
 import { memberModelFixture, testMemberLlm } from "./test-member-llm";
 import { documentModelFixture, testChatDocuments } from "./test-chat-documents";
+import { testScannedDeliveryHandoff } from "./test-scanned-delivery-handoff";
 import type { DuckDriver } from "../app/lib/data/database";
 
 export async function testLiveLlm(
@@ -37,6 +38,7 @@ export async function testLiveLlm(
     ownerEndpoint: string;
     peerEndpoint: string;
     adminPassword: string;
+    ownerToken: string;
   },
 ) {
   if (process.env.SORTSYS_DISPOSABLE_AUTH_TEST !== "1")
@@ -485,14 +487,16 @@ export async function testLiveLlm(
         const saved = await required(
           fresh.query("deliveryNotes.scan.list", undefined),
         );
-        assert.equal(
-          saved.find((row) => row.id === id)?.fileName,
-          selected.name,
-        );
+        const scan = saved.find((row) => row.id === id);
+        assert.equal(scan?.fileName, selected.name);
         const reopened = await required(
           fresh.mutate("deliveryNotes.scan.complete", { scanId: id }),
         );
         assert.deepEqual(reopened, result);
+        await testScannedDeliveryHandoff(client, business, driver, scan!, {
+          endpoint: ownerEndpoint,
+          token: options.ownerToken,
+        });
       } finally {
         fresh.dispose();
       }

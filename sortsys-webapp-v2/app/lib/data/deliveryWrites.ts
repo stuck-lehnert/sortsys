@@ -290,39 +290,46 @@ export async function writeDeliveryNote(
         previous?.specialRecords ?? [],
         changes.specialRecords ?? [],
       );
-    let catalog: ReturnType<typeof open> | null = null,
-      catalogHead: string | null = null;
-    async function product(id: string) {
-      catalog ??= open(PRODUCT_COLLECTION);
-      if (!stores.includes(catalog)) {
-        stores.push(catalog);
+    const recordChanges = (changes.records ?? []).map((change) => {
+      const old = change.id ? oldRecords.get(change.id) : undefined;
+      const sameProduct = old?.values.product_id === addressId(change.productId);
+      const unit = change.unit ??
+        (sameProduct ? (old?.values.unit as string) : null);
+      return {
+        change,
+        old,
+        unit,
+        checkProduct: !sameProduct || !unit || unit !== old?.values.unit,
+      };
+    });
+    const products = new Map<string, BusinessRow["values"]>();
+    const requiredProducts = [...new Set(
+      recordChanges
+        .filter(({ checkProduct }) => checkProduct)
+        .map(({ change }) => PRODUCT_COLLECTION.prefix + change.productId),
+    )];
+    if (requiredProducts.length) {
+      const catalog = open(PRODUCT_COLLECTION);
+      stores.push(catalog);
+      const head = await catalog.inspect();
+      for (const { envelope, value } of await catalog.selected(requiredProducts)) {
+        const product = productPayload(value, envelope.object);
+        products.set(envelope.object, product.product.values);
       }
-      const key = PRODUCT_COLLECTION.prefix + id,
-        found = (await catalog.read(key)).find(
-          (item) => item.envelope.object === key,
-        );
+      await catalog.inspect(head);
       live();
-      if (!found) {
-        throw new InvalidProtectedData();
-      }
-      const value = productPayload(found.value, key);
-      if (catalogHead !== null && catalog.snapshot() !== catalogHead) {
-        throw new ProtectedWriteConflict();
-      }
-      catalogHead = catalog.snapshot();
-      return value.product.values;
+      guards.push({ domain: PRODUCT_COLLECTION.domain, sequence: head });
     }
+
     const rawId = addressId(id),
       now = new Date().toISOString();
     const records: BusinessRow[] =
       changes.records === undefined ? previous!.records : [];
-    for (const change of changes.records ?? []) {
-      const old = change.id ? oldRecords.get(change.id) : undefined,
-        same = old?.values.product_id === addressId(change.productId),
-        unit = change.unit ?? (same ? (old?.values.unit as string) : null);
+    for (const { change, old, unit, checkProduct } of recordChanges) {
       let chosen = unit;
-      if (!same || !chosen || chosen !== old?.values.unit) {
-        const p = await product(change.productId);
+      if (checkProduct) {
+        const p = products.get(PRODUCT_COLLECTION.prefix + change.productId);
+        if (!p) throw new InvalidProtectedData();
         chosen ??= p.base_unit as string;
         const other = JSON.parse(p.other_units as string) as Record<
           string,
@@ -516,9 +523,6 @@ export async function writeDeliveryNote(
           },
         });
       }
-    }
-    if (catalog && catalogHead !== null) {
-      guards.push({ domain: PRODUCT_COLLECTION.domain, sequence: catalogHead });
     }
     if (!groups.length) {
       return { success: true as const };
