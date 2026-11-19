@@ -388,6 +388,7 @@ function rpcInput(request, procedure) {
 
 async function deferGaebRequests(editors, procedure, shouldWait, work) {
   const gate = Promise.withResolvers();
+  const held = new Set();
   const match = (url) =>
     decodeURIComponent(url.pathname)
       .split("/")
@@ -395,18 +396,30 @@ async function deferGaebRequests(editors, procedure, shouldWait, work) {
       .split(",")
       .includes(procedure);
   const handler = async (route) => {
-    const body = route.request().postDataJSON();
-    if (Object.values(body).some((entry) => shouldWait(entry?.json))) {
-      await gate.promise;
+    const request = route.request();
+    const body = request.postDataJSON();
+    if (!Object.values(body).some((entry) => shouldWait(entry?.json, request))) {
+      await route.continue();
+      return;
     }
-    await route.continue();
+    const resume = gate.promise.then(() => route.continue());
+    held.add(resume);
+    try {
+      await resume;
+    } finally {
+      held.delete(resume);
+    }
   };
   await Promise.all(editors.map((editor) => editor.route(match, handler)));
   try {
     await work();
   } finally {
     gate.resolve();
-    await Promise.all(editors.map((editor) => editor.unroute(match, handler)));
+    try {
+      await Promise.all(held);
+    } finally {
+      await Promise.all(editors.map((editor) => editor.unroute(match, handler)));
+    }
   }
 }
 
@@ -420,12 +433,11 @@ async function shareTextBeforePublication(editors, work, saveTimeout = 20_000) {
   // The production save deadline starts after the test releases its own gate.
   // The earlier ordinary price saves retain their unchanged cold-save deadline.
   await Promise.all(
-    editors.map((editor) =>
-      expect(editor.locator(".gaeb-editor")).toHaveAttribute(
-        "data-save-state",
-        "saved",
-        { timeout: saveTimeout },
-      ),
+    editors.map((editor, index) =>
+      expect(
+        editor.locator(".gaeb-editor"),
+        `Editor ${index + 1} confirmed the native document`,
+      ).toHaveAttribute("data-save-state", "saved", { timeout: saveTimeout }),
     ),
   );
 }
@@ -433,14 +445,54 @@ async function shareTextBeforePublication(editors, work, saveTimeout = 20_000) {
 async function changeProjectTitleBeforePublication(writer, peer, value) {
   const editors = [writer, peer];
   const key = "project:title";
-  await shareTextBeforePublication(editors, async () => {
-    await changeGaebText(writer, key, value);
-    await Promise.all(
-      editors.map((editor) =>
-        expect(gaebField(editor, key)).toHaveAttribute("aria-description", value),
-      ),
-    );
-  });
+  const procedure = "zerotrust.objects.batch";
+  const stagesScope = (input) =>
+    input?.objects?.some(({ envelope }) =>
+      envelope.object.startsWith(`${envelope.scope}:scope:document:`),
+    ) === true;
+  let writerStaging = false;
+  let peerStaging;
+  await deferGaebRequests(
+    [peer],
+    procedure,
+    (input, request) => {
+      if (!stagesScope(input)) return false;
+      peerStaging ??= request;
+      return true;
+    },
+    async () => {
+      // Both editors use the same starting sequence. The writer publishes
+      // first, so the stale staging request fails the server's version check.
+      await deferGaebRequests(
+        [writer],
+        procedure,
+        (input) => {
+          if (!stagesScope(input)) return false;
+          writerStaging = true;
+          return true;
+        },
+        async () => {
+          await changeGaebText(writer, key, value);
+          await Promise.all(
+            editors.map((editor) =>
+              expect(gaebField(editor, key)).toHaveAttribute("aria-description", value),
+            ),
+          );
+          await expect.poll(() => writerStaging && !!peerStaging).toBe(true);
+        },
+      );
+      await expect(writer.locator(".gaeb-editor")).toHaveAttribute(
+        "data-save-state",
+        "saved",
+      );
+    },
+  );
+  await expect(peer.locator(".gaeb-editor")).toHaveAttribute(
+    "data-save-state",
+    "saved",
+  );
+  const reply = await (await peerStaging.response()).json();
+  assert.ok(reply.some((entry) => entry.error?.json?.data?.code === "CONFLICT"));
 }
 
 try {
@@ -740,16 +792,13 @@ try {
           "online",
         );
       }
-      await changeProjectTitleBeforePublication(
-        page,
-        peer,
-        "Treppenhaus im Live-Abgleich",
-      );
+      const projectTitle = `Treppenhaus im Live-Abgleich ${crypto.randomUUID().slice(0, 8)}`;
+      await changeProjectTitleBeforePublication(page, peer, projectTitle);
       console.log("GAEB E2E: live text arrived before native publication");
       await page.reload();
       await expect(
         page.locator('[data-gaeb-field="project:title"]'),
-      ).toHaveAttribute("aria-description", "Treppenhaus im Live-Abgleich");
+      ).toHaveAttribute("aria-description", projectTitle);
       await page.screenshot({
         path: join(artifacts, "gaeb-edited-and-reloaded.png"),
         fullPage: true,

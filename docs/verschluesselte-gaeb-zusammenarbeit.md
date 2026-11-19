@@ -376,8 +376,15 @@ bei einer neuen Version des Dokumentkopfs. Bei Projektdateien ist das Ziel das
 signierte Dateipaket. Die API prüft diesen Stand unter derselben
 Transaktionssperre, die auch neue Textnachrichten ordnet. Dokument, Bestätigung
 und betroffene Fachdaten werden gemeinsam veröffentlicht. Trifft über eine
-andere API-Instanz vorher noch eine Änderung ein, muss der Browser neu
-abgleichen und den Speichervorgang wiederholen.
+andere API-Instanz vorher noch eine Änderung ein, prüft der Browser den neuen
+Stand und führt abweichende Änderungen zusammen.
+
+Haben zwei Browser denselben Text vorbereitet, kann der zweite den inzwischen
+bestätigten Stand übernehmen. Dazu prüft er die Signatur, das vollständige XML
+und bei einem daraus kalkulierten Angebot die Version der zugrunde liegenden
+Anfrage. Das gilt auch, wenn bereits das Ablegen der verschlüsselten
+Dokumentteile an der geänderten Version scheitert. Offene Änderungen an
+Fachdaten brauchen weiterhin eine eigene Speicherung.
 
 Zum bestätigten Stand gehören auch geprüfte Initialisierungen und einzeln
 verworfene Inhaltspakete. Andernfalls könnte schon eine Initialisierung ohne

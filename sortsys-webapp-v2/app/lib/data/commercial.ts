@@ -1587,18 +1587,18 @@ export function createProtectedCommercial(
           facets.push("master-data");
         }
       }
-      // Capture all case heads after immutable staging, since staging advances
-      // only technical domain sequences. Business rows must still be unchanged.
-      const publication = await store.prepare(id, partition, {
-        previous,
-        modifiedAt: now,
-        locked: false,
-        livePositions: positions,
-        liveReplay: replay,
-      });
-      const refreshed = await afterStaging(basis);
-      await verifySourceVersion();
       try {
+        const publication = await store.prepare(id, partition, {
+          previous,
+          modifiedAt: now,
+          locked: false,
+          livePositions: positions,
+          liveReplay: replay,
+        });
+        // Capture case heads after staging has advanced technical sequences.
+        // Business rows must still be unchanged.
+        const refreshed = await afterStaging(basis);
+        await verifySourceVersion();
         await persist(
           refreshed,
           updated,
@@ -1606,6 +1606,7 @@ export function createProtectedCommercial(
           invoice?.guards ?? [],
           [publication],
         );
+        return { version: BigInt(publication.head.version), savedAt: now };
       } catch (error) {
         if (
           !isWriteConflict(error) ||
@@ -1615,9 +1616,9 @@ export function createProtectedCommercial(
         ) {
           throw error;
         }
-        // Two editors can compact the same accepted live text concurrently.
-        // A newer, verified native file with exactly the requested bytes already
-        // fulfils this document-only change. No business write may be skipped.
+        // Two editors can stage the same accepted live text against one domain
+        // sequence. A newer, verified native file with exactly the requested
+        // bytes fulfils this document-only change, even if staging lost the race.
         const currentHead = await store.head(id);
         if (
           !currentHead ||
@@ -1647,7 +1648,6 @@ export function createProtectedCommercial(
           savedAt: documentTimestamp(currentHead.modifiedMicros),
         };
       }
-      return { version: BigInt(publication.head.version), savedAt: now };
     } finally {
       store.close();
     }
