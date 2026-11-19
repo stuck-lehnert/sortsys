@@ -61,6 +61,16 @@ test("AND, OR and exclusions retain their clause boundaries", () => {
   expect(find("Fenster Türen", "Dort sind Türen vorgesehen.")).toBeNull();
 });
 
+test("phrases of different lengths can share a final word without sharing their preceding words", () => {
+  const query = '"die roten Fenster" OR "Fenster" -"neue Fenster"';
+  const { excerpt } = find(query, "Neue Fenster gegen die roten FENSTER tauschen.");
+  expect(
+    excerpt.highlights.map(({ start, end }) => excerpt.text.slice(start, end)),
+  ).toEqual(["die roten FENSTER"]);
+  expect(find(query, "die roten alten Fenster und neue Fenster")).toBeNull();
+  expect(find(query, "Fenster sind im Plan markiert.")).not.toBeNull();
+});
+
 test("incomplete quotes and punctuation are tolerated without turning empty input into all documents", () => {
   expect(find('"rote Fenster', "Rote Fenster einbauen.")).not.toBeNull();
   for (const query of ["", " ", "---", '""', "OR", "OR OR", "… !!!"]) {

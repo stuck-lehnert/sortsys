@@ -1,7 +1,10 @@
-import { createDocumentMatcher, type DocumentMatch } from "./documentQuery";
+import {
+  createDocumentMatcher,
+  matchDocuments,
+  type SearchDocument,
+  type SearchMatch,
+} from "./documentQuery";
 
-export type SearchDocument = { id: string; name: string; text: string | null };
-export type SearchMatch = DocumentMatch & { id: string };
 export type SearchRequest = { query: string; documents: SearchDocument[] };
 
 /** A disposable worker owns no persistent plaintext cache. Bounded messages
@@ -13,14 +16,7 @@ export async function searchDocuments(
 ): Promise<SearchMatch[]> {
   signal.throwIfAborted();
   if (typeof document === "undefined") {
-    const matcher = createDocumentMatcher(query);
-    const results: SearchMatch[] = [];
-    for (const document of documents) {
-      signal.throwIfAborted();
-      const found = matcher.match(document.name, document.text);
-      if (found) results.push({ id: document.id, ...found });
-    }
-    return results;
+    return matchDocuments(createDocumentMatcher(query), documents, signal);
   }
   const worker = new Worker(
     new URL("./documentSearch.worker.ts", import.meta.url),

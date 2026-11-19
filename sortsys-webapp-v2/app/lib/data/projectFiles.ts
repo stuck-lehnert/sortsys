@@ -51,8 +51,11 @@ import {
 } from "./officeCapsule";
 import { officeRecipients, sameOfficeRecipients } from "./officeRecipients";
 import { mapConcurrent } from "./runtime/concurrentReads";
-import { searchDocuments, type SearchDocument } from "../search/documentSearch";
-import { createDocumentMatcher } from "../search/documentQuery";
+import { searchDocuments } from "../search/documentSearch";
+import {
+  createDocumentMatcher,
+  type SearchDocument,
+} from "../search/documentQuery";
 import {
   currentDocumentText,
   fileCollection,
@@ -193,6 +196,11 @@ export function createProtectedProjectFiles(
     }
     live();
   }
+
+  function filePage(id: string): CollectionPageRequest {
+    return { area: fileCollection(id), known: stores.get(id)?.head };
+  }
+
   async function reload(
     ids: string[],
     visible?: Set<string>,
@@ -202,10 +210,7 @@ export function createProtectedProjectFiles(
     const opened: Collection[] = [];
     let changed = false;
     try {
-      const pages = ids.map((id) => ({
-        area: fileCollection(id),
-        known: stores.get(id)?.head,
-      }));
+      const pages = ids.map(filePage);
       const selectedDomains = pages.length > 0 && pages.length <= 16
         ? pages.map(({ area }) => area.domain)
         : undefined;
@@ -844,15 +849,24 @@ export function createProtectedProjectFiles(
     active: AbortSignal,
     scope?: DocumentSearchScope,
   ) {
-    const access = await protectedCollections(client, active);
-    if (
-      projectId !== null &&
-      (!access.readable(fileCollection(projectId)) ||
-        (scope && !scope.projects.has(projectId)))
-    ) {
+    if (projectId !== null && scope && !scope.projects.has(projectId)) {
       throw new InvalidProtectedData();
     }
-    const readable = projectId === null ? readableProjectsWithFiles(access) : [projectId];
+    let access: Collections;
+    let readable: string[];
+    if (projectId === null) {
+      access = await protectedCollections(client, active);
+      readable = readableProjectsWithFiles(access);
+    } else {
+      const page = filePage(projectId);
+      access = await protectedCollections(
+        client,
+        active,
+        [page.area.domain, projectCollection(projectId).domain],
+        [page],
+      );
+      readable = [projectId];
+    }
     const inScope = (id: string) => !scope || scope.projects.has(id);
     const ids = readable.filter(inScope);
     await reload(ids, projectId === null ? new Set(readable) : undefined, access);

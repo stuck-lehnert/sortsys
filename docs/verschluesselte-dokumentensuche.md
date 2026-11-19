@@ -44,12 +44,14 @@ in der eingeschränkten Ansicht **Projektanhänge**. Dateien aus nicht
 freigegebenen Bereichen liefern weder Treffer noch Ausschnitte.
 
 Die API erhält verschlüsselte Datensätze und technische Kennungen. Suchbegriffe,
-Dateinamen und Ausschnitte bleiben im Client. Der erste Abruf mehrerer
-Dateisammlungen wird gebündelt; weitere Abrufe prüfen deren Änderungsstand.
-Die Textauswertung läuft in einem eigenen Worker. Eine neue Suchanfrage oder das
-Ende der Sitzung beendet den vorherigen Worker. Der Browser liest die
-Projektbezeichnungen gebündelt für die angezeigten Treffer. Vor der Ausgabe
-prüft er die Freigaben und Stände aller durchsuchten Dateisammlungen erneut.
+Dateinamen und Ausschnitte bleiben im Client. Bei der Suche in einem Projekt
+fordert der Browser den Berechtigungsnachweis und die erste Dateiseite zusammen an.
+Die Suche über mehrere Projekte lädt Dateisammlungen gebündelt. Weitere Abrufe
+prüfen ihren Änderungsstand. Die Textauswertung läuft in einem eigenen Worker.
+Er hält für den laufenden Suchlauf bereits verarbeitete Wörter im Speicher.
+Eine neue Suchanfrage oder das Ende der Sitzung beendet den Worker. Der Browser
+liest die Projektbezeichnungen gebündelt für die angezeigten Treffer. Vor der
+Ausgabe prüft er die Freigaben und Stände aller durchsuchten Dateisammlungen erneut.
 Wird eine Datei während der Suche geändert oder gelöscht, wertet der Browser
 den neuen Stand aus. Fortlaufende Änderungen können den Abruf mit einem
 Hinweis auf die geänderten Daten beenden.

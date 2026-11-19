@@ -164,6 +164,28 @@ try {
       .length,
     3,
   );
+  const beforeScopedSearch = requests.length;
+  const scoped = await required(
+    ownerBusiness.query("projects.files.search", {
+      ...searchInput,
+      projectId: visible.id,
+    }),
+  );
+  assert.deepEqual(scoped.map(({ id }) => id), [dense, sparse]);
+  const selectedAreas = JSON.stringify([
+    fileCollection(visible.id).domain,
+    projectCollection(visible.id).domain,
+  ]);
+  const combinedReads = requests.slice(beforeScopedSearch).filter(
+    (request) =>
+      request.includes(`"domains":${selectedAreas}`) &&
+      request.includes('"pages":{"selections":'),
+  );
+  assert.equal(
+    combinedReads.length,
+    1,
+    "The scoped search opens its first file page with the access check",
+  );
 
   const staleText = "VERALTETE_TEXTERKENNUNG_519842";
   const staleVersion = await upload(visible.id, "Montagefassung.txt", staleText);
@@ -326,6 +348,13 @@ try {
     "",
     "A file grant must not decrypt unrelated project master data",
   );
+  const fileOnlyMatches = await required(
+    memberBusiness.query("projects.files.search", {
+      ...searchInput,
+      projectId: visible.id,
+    }),
+  );
+  assert.deepEqual(fileOnlyMatches, results);
   assert.match(results[0]!.excerpt!.text, /Fenster neben den Wänden/);
   assert.ok(results[0]!.excerpt!.text.startsWith("… "));
   const revisedMatches = await findDocuments(memberBusiness, `"${newVersionText}"`);

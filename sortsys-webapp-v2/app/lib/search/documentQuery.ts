@@ -4,10 +4,12 @@ import { stemmer as englishStemmer } from "@orama/stemmers/english";
 export type TextRange = { start: number; end: number };
 export type DocumentExcerpt = { text: string; highlights: TextRange[] };
 export type DocumentMatch = { rank: number; excerpt: DocumentExcerpt | null };
+export type SearchDocument = { id: string; name: string; text: string | null };
+export type SearchMatch = DocumentMatch & { id: string };
 type Word = { plain: string; german: string; english: string };
-type Token = Word & TextRange & { position: number };
 type Atom = {
-  words: Word[];
+  lastWord: Word;
+  precedingWords: Word[];
   phrase: boolean;
   excluded: boolean;
   clause: number;
@@ -27,9 +29,9 @@ export function createDocumentMatcher(query: string) {
   if (query.length > 1000) throw new RangeError("Document query is too long");
   const cache = new Map<string, Word>();
   function word(input: string): Word {
-    const plain = input.normalize("NFKC").toLowerCase();
-    const known = cache.get(plain);
+    const known = cache.get(input);
     if (known) return known;
+    const plain = input.normalize("NFKC").toLowerCase();
     // Identifiers and malformed giant words need no linguistic processing.
     const result =
       plain.length > 256
@@ -39,9 +41,9 @@ export function createDocumentMatcher(query: string) {
             german: germanStemmer(plain),
             english: englishStemmer(plain),
           };
-    if (plain.length <= 256) {
+    if (input.length <= 256 && plain.length <= 256) {
       if (cache.size >= 1024) cache.delete(cache.keys().next().value!);
-      cache.set(plain, result);
+      cache.set(input, result);
     }
     return result;
   }
@@ -61,13 +63,23 @@ export function createDocumentMatcher(query: string) {
     );
     const groups = phrase ? [words] : words.map((value) => [value]);
     for (const group of groups) {
-      if (!group.length) continue;
+      const lastWord = group.pop();
+      if (!lastWord) continue;
       clauses.at(-1)!.push(atoms.length);
-      atoms.push({ words: group, phrase, excluded, clause: clauses.length - 1 });
+      atoms.push({
+        lastWord,
+        precedingWords: group,
+        phrase,
+        excluded,
+        clause: clauses.length - 1,
+      });
     }
   }
   if (!clauses.at(-1)!.length) clauses.pop();
-  const phraseLength = Math.max(1, ...atoms.map((atom) => atom.words.length));
+  const precedingWordLimit = Math.max(
+    0,
+    ...atoms.map((atom) => atom.precedingWords.length),
+  );
 
   function matches(token: Word, term: Word, phrase: boolean): boolean {
     if (token.plain === term.plain) return true;
@@ -76,35 +88,38 @@ export function createDocumentMatcher(query: string) {
   }
 
   function scan(text: string, hit: (value: Hit) => void): number {
-    const recent: Token[] = [];
+    const preceding: { word: Word; start: number }[] = [];
     let position = 0;
     for (const match of text.matchAll(wordPattern())) {
-      const current: Token = {
-        ...word(match[0]),
-        start: match.index,
-        end: match.index + match[0].length,
-        position: position++,
-      };
-      recent.push(current);
-      if (recent.length > phraseLength) recent.shift();
+      const current = word(match[0]);
       for (let index = 0; index < atoms.length; index++) {
         const atom = atoms[index]!;
-        if (!matches(current, atom.words.at(-1)!, atom.phrase)) continue;
-        if (atom.words.length > recent.length) continue;
-        const start = recent.length - atom.words.length;
-        if (
-          !atom.words.every((term, offset) =>
-            matches(recent[start + offset]!, term, atom.phrase),
-          )
-        )
-          continue;
+        if (!matches(current, atom.lastWord, atom.phrase)) continue;
+        let start = match.index;
+        if (atom.precedingWords.length) {
+          const first = preceding.length - atom.precedingWords.length;
+          if (
+            first < 0 ||
+            !atom.precedingWords.every((term, offset) =>
+              matches(preceding[first + offset]!.word, term, true),
+            )
+          ) {
+            continue;
+          }
+          start = preceding[first]!.start;
+        }
         hit({
           atom: index,
-          position: current.position,
-          start: recent[start]!.start,
-          end: current.end,
+          position,
+          start,
+          end: match.index + match[0].length,
         });
       }
+      if (precedingWordLimit) {
+        preceding.push({ word: current, start: match.index });
+        if (preceding.length > precedingWordLimit) preceding.shift();
+      }
+      position++;
     }
     return position;
   }
@@ -227,4 +242,18 @@ export function createDocumentMatcher(query: string) {
       };
     },
   };
+}
+
+export function matchDocuments(
+  matcher: ReturnType<typeof createDocumentMatcher>,
+  documents: SearchDocument[],
+  signal?: AbortSignal,
+): SearchMatch[] {
+  const matches: SearchMatch[] = [];
+  for (const { id, name, text } of documents) {
+    signal?.throwIfAborted();
+    const found = matcher.match(name, text);
+    if (found) matches.push({ id, ...found });
+  }
+  return matches;
 }

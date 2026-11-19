@@ -1,5 +1,9 @@
-import { createDocumentMatcher } from "./documentQuery";
-import type { SearchRequest, SearchMatch } from "./documentSearch";
+import {
+  createDocumentMatcher,
+  matchDocuments,
+  type SearchMatch,
+} from "./documentQuery";
+import type { SearchRequest } from "./documentSearch";
 
 const scope = self as unknown as {
   onmessage: ((event: MessageEvent<SearchRequest>) => void) | null;
@@ -14,12 +18,7 @@ scope.onmessage = (event) => {
     const { query, documents } = event.data;
     if (!current || current.query !== query)
       current = { query, matcher: createDocumentMatcher(query) };
-    const matches: SearchMatch[] = [];
-    for (const document of documents) {
-      const found = current.matcher.match(document.name, document.text);
-      if (found) matches.push({ id: document.id, ...found });
-    }
-    scope.postMessage({ matches });
+    scope.postMessage({ matches: matchDocuments(current.matcher, documents) });
   } catch {
     // Do not echo decrypted source text, queries or parser errors across errors.
     scope.postMessage({ failed: true });
