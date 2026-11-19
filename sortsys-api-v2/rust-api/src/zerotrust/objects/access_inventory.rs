@@ -1,7 +1,10 @@
 //! Bounded public inventories. Cursors select records; each page independently
 //! authenticates its session and verifies permissions in the read transaction.
 use super::*;
-use crate::zerotrust::access::{MetadataContext, MetadataRequest, metadata_context_for_domains};
+use crate::zerotrust::{
+    access::{MetadataContext, MetadataRequest, inherited_rules, metadata_context_for_domains},
+    creation::{CreationOrigin, visible_origins},
+};
 
 // Public access metadata is small compared with encrypted object pages. A
 // bounded larger page avoids a round trip for each handful of project facets.
@@ -17,29 +20,36 @@ async fn inventory_page(
     if !include_domains {
         // Menus derive permissions from creation proofs. Authority-created
         // areas are already covered by the signed policy and need no listing.
-        let root =
-            super::super::setup::metadata_root(&mut request.transaction, &request.auth.tenant)
-                .await?;
-        let collection = registry::origin_collection(revision(&root.profile.authority.generation)?);
-        let page = request
+        let mut context = request.authorize_origins(&[]).await?;
+        let collection = registry::origin_collection(context.security.root.generation);
+        let page = context
             .transaction
-            .scan_with_limit::<super::super::creation::CreationOrigin>(
+            .scan_with_limit::<CreationOrigin>(
                 &collection,
                 after,
-                PAGE_SIZE,
+                sortsys_store::metadata::MAX_SCAN_PAGE,
             )
             .await?;
-        let mut domains = Vec::new();
+        let mut origins = Vec::with_capacity(page.records.len());
         for row in page.records {
             let origin = row.value.ok_or_else(invalid)?;
             if origin.id != row.record.key {
                 return Err(invalid());
             }
             identifier(&origin.id)?;
-            domains.push(origin.id);
+            origins.push(origin);
         }
-        let context = request.authorize_origins(&domains).await?;
-        return Ok((context, domains, page.after));
+        let security = &mut context.security;
+        security.origins = visible_origins(
+            origins,
+            &context.auth,
+            security.root.generation,
+            &security.authority,
+            &security.subject,
+            &security.policy,
+        )?;
+        security.inherited = inherited_rules(&security.origins, &security.policy);
+        return Ok((context, Vec::new(), page.after));
     }
     let page = request
         .transaction

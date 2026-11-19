@@ -237,16 +237,16 @@ async function bindCollections(
   const domainById = new Map(
     context.domains.map((domain) => [domain.id, domain]),
   );
-  function readable(collection: Collection): boolean {
+  function hasArea(collection: Collection): boolean {
     live();
     const domain = domainById.get(collection.domain);
-    if (
-      !domain ||
-      domain.scope !== collection.scope ||
-      domain.facet !== collection.facet
-    )
-      return false;
-    return context.access.allows(collection.scope, collection.facet, "read");
+    return domain?.scope === collection.scope && domain.facet === collection.facet;
+  }
+  function readable(collection: Collection): boolean {
+    return (
+      hasArea(collection) &&
+      context.access.allows(collection.scope, collection.facet, "read")
+    );
   }
   for (const selection of initial)
     if (!readable(selection.area)) throw new InvalidProtectedData();
@@ -335,6 +335,7 @@ async function bindCollections(
         generation: context.history.current.generation,
         policyVersion: context.permissions.version,
       },
+      hasArea,
       readable,
     },
   );

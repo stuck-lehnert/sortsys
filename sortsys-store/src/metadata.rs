@@ -7,6 +7,9 @@ use sortsys_zerotrust::metadata::{MetadataBatch, MetadataReceipt, MetadataRecord
 use std::collections::BTreeSet;
 
 pub const MAX_SCAN_BATCH: usize = 32;
+pub const MAX_SCAN_PAGE: usize = 640;
+const DEFAULT_SCAN_PAGE: usize = 128;
+const WIDE_SCAN_BYTES: usize = sortsys_zerotrust::metadata::MAX_RECORD_BYTES;
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, Hash)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
@@ -218,8 +221,8 @@ pub(super) fn scan(
     input: &ScanRequest,
 ) -> Result<RecordPage, StoreError> {
     sortsys_zerotrust::crypto::identifier(&input.collection).map_err(|_| StoreError::Integrity)?;
-    let limit = input.limit.unwrap_or(128);
-    if !(1..=128).contains(&limit) {
+    let limit = input.limit.unwrap_or(DEFAULT_SCAN_PAGE);
+    if !(1..=MAX_SCAN_PAGE).contains(&limit) {
         return Err(StoreError::Integrity);
     }
     if let Some(prefix) = &input.prefix {
@@ -263,8 +266,19 @@ pub(super) fn scan(
         )
         .map_err(database)?;
     let mut records = Vec::new();
+    let mut bytes = 0;
+    let mut more = false;
     for row in rows {
         let (key, version, value) = row.map_err(database)?;
+        if records.len() == limit
+            || (limit > DEFAULT_SCAN_PAGE
+                && !records.is_empty()
+                && bytes + value.len() > WIDE_SCAN_BYTES)
+        {
+            more = true;
+            break;
+        }
+        bytes += value.len();
         records.push(MetadataRecord {
             record: RecordKey {
                 collection: input.collection.clone(),
@@ -274,8 +288,7 @@ pub(super) fn scan(
             value: Some(value),
         });
     }
-    let after = if records.len() > limit {
-        records.truncate(limit);
+    let after = if more {
         records.last().map(|record| record.record.key.clone())
     } else {
         None
@@ -649,6 +662,40 @@ mod tests {
         initialize(&connection, "memory").unwrap();
         connection
     }
+
+    #[test]
+    fn wide_scan_continues_after_the_last_returned_record_at_its_size_limit() {
+        let connection = memory();
+        let full_page = "x".repeat(WIDE_SCAN_BYTES);
+        for (record, value) in [("first", full_page.as_str()), ("second", "small")] {
+            transact(
+                &connection,
+                "memory",
+                &batch(record, key(record), None, value),
+            )
+            .unwrap();
+        }
+
+        let mut input = ScanRequest {
+            target: Target::System,
+            collection: "accounts".into(),
+            after: None,
+            version: None,
+            prefix: None,
+            limit: Some(MAX_SCAN_PAGE),
+        };
+        let first = scan(&connection, "memory", &input).unwrap();
+        assert_eq!(first.records.len(), 1);
+        assert_eq!(first.after.as_deref(), Some("first"));
+
+        input.after = first.after;
+        input.version = Some(first.version);
+        let second = scan(&connection, "memory", &input).unwrap();
+        assert_eq!(second.records.len(), 1);
+        assert_eq!(second.records[0].record, key("second"));
+        assert_eq!(second.after, None);
+    }
+
     #[test]
     fn batched_reads_preserve_order_duplicates_absences_and_collection_identity() {
         let connection = memory();

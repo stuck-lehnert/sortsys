@@ -139,6 +139,15 @@ Beim Verbindungsaufbau laufen Ticketabruf und Prüfung der Vertrauenskette
 parallel. Der Browser öffnet den Socket erst, wenn das Ticket zur geprüften
 Schlüsselgeneration gehört.
 
+Das Menü lädt nur die öffentlichen Anlagenachweise, aus denen sich weitere
+Rechte ergeben. Eine Antwort bündelt bis zu 640 Nachweise und bis zu einem
+MiB gespeicherte Nachweisdaten. Die API prüft die im Scan beobachteten
+Nachweise direkt. Bestätigt die API denselben Stand erneut, verwendet der
+Browser die bereits geprüften abgeleiteten Rechte wieder.
+Bei einem einzelnen Personalprofil prüft der Browser nur dessen Bereiche.
+Für die Anlage des eigenen Profils prüft die Verwaltung den zugehörigen
+Stammdatenbereich und beachtet einen bestehenden Zugriffsentzug.
+
 Bei verbundenem WebSocket teilen Suchabfragen das geprüfte Verzeichnis der
 freigegebenen Bereiche für bis zu 15 Sekunden. Das spart beim Weiterfiltern
 in der Befehlspalette einen neuen Abruf des Verzeichnisses. Änderungen an

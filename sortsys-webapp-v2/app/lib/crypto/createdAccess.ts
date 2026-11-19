@@ -7,6 +7,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import type { Policy } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
+import { mapConcurrent } from "../data/runtime/concurrentReads";
 import { trustedHistory } from "./session";
 
 /** Derived rights are never represented as a root-signed policy. Verify the
@@ -57,12 +58,18 @@ export async function verifyCreatedAccess(
   if (!Array.isArray(origins)) throw new InvalidProtectedData();
   signal.throwIfAborted();
   if (origins.length === 0) return permissions;
+  const checked = await mapConcurrent(
+    origins.filter((origin) => origin !== null),
+    8,
+    async (origin) => {
+      signal.throwIfAborted();
+      return verifyCreationOrigin(origin, history.authority);
+    },
+  );
   const inherited = [];
   const seen = new Set<string>();
-  for (const input of origins) {
+  for (const origin of checked) {
     signal.throwIfAborted();
-    if (input === null) continue;
-    const origin = await verifyCreationOrigin(input, history.authority);
     if (
       origin.tenant !== permissions.tenant ||
       origin.capability.generation !== history.current.generation ||

@@ -636,6 +636,8 @@ try {
       });
     });
     let accessSnapshots = 0;
+    let menuPages = 0;
+    let fullDomainLists = 0;
     let controlReads = 0;
     let objectReads = 0;
     const personnelSearchReads = [];
@@ -646,6 +648,10 @@ try {
       );
     page.on("request", (request) => {
       accessSnapshots += rpcInputs(request, "zerotrust.access.snapshot").length;
+      menuPages += rpcInputs(request, "zerotrust.access.page").filter(
+        (input) => input?.includeDomains === false,
+      ).length;
+      fullDomainLists += rpcInputs(request, "zerotrust.domains.list").length;
       controlReads += controlProcedures(request);
       const selections = [
         ...rpcInputs(request, "zerotrust.access.snapshot").flatMap(
@@ -656,9 +662,15 @@ try {
         ),
         ...rpcInputs(request, "zerotrust.objects.list"),
       ];
-      objectReads += selections.filter(({ domain }) =>
-        /^(catalog|personnel|project|tool):.+:master-data$/.test(domain ?? ""),
-      ).length;
+      const fullProfiles = new Set(selections.flatMap(({ domain }) => {
+        const match = /^(personnel:[^:]+):(calculation|scope)$/.exec(domain ?? "");
+        return match ? [match[1]] : [];
+      }));
+      objectReads += selections.filter(({ domain }) => {
+        if (/^(catalog|project|tool):.+:master-data$/.test(domain ?? "")) return true;
+        const user = /^(personnel:[^:]+):master-data$/.exec(domain ?? "");
+        return user && !fullProfiles.has(user[1]);
+      }).length;
       const personnel = selections
         .map((selection) => selection.domain)
         .filter((domain) => domain?.startsWith("personnel:"));
@@ -672,11 +684,15 @@ try {
     ).toBeVisible();
     socket = undefined;
     fingerprint = undefined;
+    menuPages = 0;
+    fullDomainLists = 0;
     await page.goto(`${server.origin}/products`);
     await expect(
       page.getByText("Haftgrund, manuell angepasst", { exact: true }),
     ).toBeVisible();
     await expect.poll(() => typeof fingerprint).toBe("string");
+    await expect(page.locator('nav a[href="/projects"]')).toHaveCount(1);
+    assert.equal(menuPages, 0, "The menu's proof inventory fits in the first response");
 
     personnelSearchReads.length = 0;
     await page.keyboard.press("Control+k");
@@ -689,6 +705,7 @@ try {
     await search.fill("pirckheimer");
     await expect(project).toBeVisible();
     await expect(searchPanel).toHaveAttribute("data-searching", "false");
+    assert.equal(fullDomainLists, 0, "Startup and search do not list every domain");
     assert.ok(personnelSearchReads.length > 0);
     assert.ok(
       personnelSearchReads.every((domain) => domain.endsWith(":master-data")),

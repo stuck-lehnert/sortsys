@@ -90,9 +90,12 @@ test("a fresh unchanged response reuses only verified metadata and keeps returne
     return unchanged(head);
   });
   fixture.pageCalls.length = 0;
+  const expectedRules = structuredClone(first.permissions.rules);
   first.domains.length = 0;
+  first.permissions.rules.length = 0;
   const second = await verifiedAccessContext(fixture.client, signal());
   expect(second.domains).toHaveLength(5);
+  expect(second.permissions.rules).toEqual(expectedRules);
   expect(fixture.pageCalls.map((call) => call.path)).toEqual([
     "zerotrust.access.snapshot",
   ]);

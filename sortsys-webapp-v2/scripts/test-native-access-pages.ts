@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   RpcClientError,
   type Client,
+  type QueryInput,
   type QueryResult,
 } from "@sortsys/v2-client";
 import {
@@ -121,6 +122,7 @@ export async function exerciseNativeAccessPages(
       "Oversized batches fail before opening a metadata transaction",
     );
     const read = async (includeDomains: boolean) => {
+      const originLimit = includeDomains ? 128 : 640;
       const first = await required(
         owner.query(
           "zerotrust.access.snapshot",
@@ -131,13 +133,12 @@ export async function exerciseNativeAccessPages(
       const domains = [...first.domains];
       const origins = [...first.origins];
       assert.ok(first.domains.length <= 128);
-      assert.ok(first.origins.length <= 128);
+      assert.ok(first.origins.length <= originLimit);
       let page: Pick<
         QueryResult<"zerotrust.access.page">,
         "snapshot" | "after"
       > = first;
       let count = 1;
-      assert.ok(page.after, "The inventory must span more than one page");
       while (page.after !== null) {
         const next: QueryResult<"zerotrust.access.page"> = await required(
           owner.query(
@@ -152,13 +153,14 @@ export async function exerciseNativeAccessPages(
         );
         assert.equal(next.snapshot, first.snapshot);
         assert.ok(next.domains.length <= 128);
-        assert.ok(next.origins.length <= 128);
+        assert.ok(next.origins.length <= originLimit);
         domains.push(...next.domains);
         origins.push(...next.origins);
         page = next;
         count++;
       }
-      assert.ok(count >= 3);
+      if (includeDomains) assert.ok(count >= 3);
+      else assert.equal(count, 1, "Menu access fits in one bounded proof response");
       assert.equal(
         new Set(domains.map((area) => area.id)).size,
         domains.length,
@@ -305,18 +307,26 @@ export async function exerciseNativeAccessPages(
           "A narrow reload must preserve previously verified areas",
         );
       });
-      assert.deepEqual(metadataReads, [
-        {
-          path: "zerotrust.access.snapshot",
-          input: { domains: [firstRequest.area.domain] },
-        },
-        {
-          path: "zerotrust.access.snapshot",
-          input: {
-            domains: [lastRequest.area.domain, firstRequest.area.domain],
-          },
-        },
+      assert.deepEqual(
+        metadataReads.map(({ path }) => path),
+        ["zerotrust.access.snapshot", "zerotrust.access.snapshot"],
+      );
+      const inventories = metadataReads.map(
+        ({ input }) => input as QueryInput<"zerotrust.access.snapshot">,
+      );
+      assert.deepEqual(inventories.map(({ domains }) => domains), [
+        [firstRequest.area.domain],
+        [lastRequest.area.domain, firstRequest.area.domain],
       ]);
+      assert.deepEqual(
+        inventories.map(({ pages }) =>
+          pages?.selections.map(({ domain, prefix }) => ({ domain, prefix })),
+        ),
+        [
+          [{ domain: firstRequest.area.domain, prefix: firstRequest.area.prefix }],
+          [{ domain: lastRequest.area.domain, prefix: lastRequest.area.prefix }],
+        ],
+      );
       console.log(
         "Native selected inventories: two runtime reads use one bounded metadata request each across 258 certified areas and retain the first private record",
       );

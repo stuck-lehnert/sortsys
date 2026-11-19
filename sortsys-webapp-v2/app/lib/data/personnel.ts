@@ -19,7 +19,7 @@ import {
   wirePersonnel,
 } from "./personnelData";
 import { provisionOwnedCollections } from "./prepareCollections";
-import { required } from "./protectedObjects";
+import { protectedCollections, required } from "./protectedObjects";
 import { personnelPart, PERSONNEL_FACETS } from "./personnelData";
 import {
   createMemberAccount,
@@ -104,34 +104,26 @@ export function createProtectedPersonnel(
     );
     live();
     if (!session.roles.includes(":admin")) return;
-    const id = session.user.id,
-      selected = PERSONNEL_FACETS.map((facet) => personnelRequest(id, facet));
-    const domains = await required(
-      client.query("zerotrust.domains.list", undefined, {
-        strategy: "network-only",
-      }),
-    );
+    const id = session.user.id;
+    const selected = PERSONNEL_FACETS.map((facet) => personnelRequest(id, facet));
+    const master = personnelRequest(id, "master-data");
+    const access = await protectedCollections(client, signal, [
+      master.area.domain,
+    ]);
     live();
-    const existing = domains.some(
-      (domain) => domain.id === selected[0]!.area.domain,
-    );
-    if (!existing)
+    if (!access.hasArea(master.area)) {
       await provisionOwnedCollections(
         client,
         `user:${id}`,
         selected.map((request) => request.area),
         signal,
       );
-    else {
-      const readable = await readableAreas(client, signal, (domain) =>
-        domain === selected[0]!.area.domain ? selected[0]!.area : null,
-      );
-      live();
-      if (!readable.length) return; // An existing denial is never repaired by bootstrap.
+    } else if (!access.readable(master.area)) {
+      return; // An existing denial is never repaired by bootstrap.
     }
     const present = await runtime.read(
-      [selected[0]!],
-      (view) => view.documents(selected[0]!).length > 0,
+      [master],
+      (view) => view.documents(master).length > 0,
     );
     live();
     if (present) return;
@@ -171,7 +163,7 @@ export function createProtectedPersonnel(
     ).synchronizeAbsenceDefaults(client, signal, driver);
     live();
   }
-  async function requests(prepareOwnProfile = true) {
+  async function requests(prepareOwnProfile = true, userId?: string) {
     if (prepareOwnProfile) {
       preparingSelf ??= prepareSelf().catch((error) => {
         preparingSelf = null;
@@ -180,6 +172,18 @@ export function createProtectedPersonnel(
       await preparingSelf;
     }
     live();
+    if (userId !== undefined) {
+      const selected = PERSONNEL_FACETS.map((facet) =>
+        personnelRequest(userId, facet),
+      );
+      const access = await protectedCollections(
+        client,
+        signal,
+        selected.map(({ area }) => area.domain),
+      );
+      live();
+      return selected.filter(({ area }) => access.readable(area));
+    }
     const areas = await readableAreas(client, signal, (domain) => {
       const part = personnelDomain(domain);
       return part ? personnelCollection(part.id, part.facet) : null;
@@ -285,13 +289,10 @@ export function createProtectedPersonnel(
         throw new InvalidProtectedData();
       const search = addressText(data.search, false, 1000);
       const namesOnly = path === "users.list" && limit !== undefined;
-      const selected = (await requests(!namesOnly)).filter((request) => {
-        if (namesOnly) return request.area.facet === "master-data";
-        return (
-          path !== "users.get" ||
-          personnelDomain(request.area.domain)!.id === data.id
-        );
-      });
+      const requestedUser = path === "users.get" ? (data.id as string) : undefined;
+      const selected = (await requests(!namesOnly, requestedUser)).filter(
+        ({ area }) => !namesOnly || area.facet === "master-data",
+      );
       const result = await runtime.read(
         selected,
         (view) => {

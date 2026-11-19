@@ -258,6 +258,42 @@ test("an administrative role cannot bypass the encrypted organization's write pe
   }
 }, 30000);
 
+test("opening one personnel profile reads its facets without searching the catalogue", async () => {
+  const tenant = await fixture();
+  const calls = [];
+  const transport = {
+    ...tenant.client,
+    query(path, input, options) {
+      calls.push({ path, input });
+      return tenant.client.query(path, input, options);
+    },
+  };
+  const personnel = createProtectedPersonnel(transport, tenant.signal, duckDriver);
+  try {
+    const profile = await personnel.query("users.get", { id: "3" });
+    expect(profile.firstName).toBe("Person 3");
+    expect(profile.supervisorUserId).toBe("2");
+
+    const catalogueReads = calls.filter(({ path }) =>
+      ["zerotrust.access.page", "zerotrust.domains.list"].includes(path),
+    );
+    expect(catalogueReads).toEqual([]);
+    const inventories = calls.filter(
+      ({ path }) => path === "zerotrust.access.snapshot",
+    );
+    expect(inventories.length).toBeGreaterThan(0);
+    for (const { input } of inventories) {
+      expect(input.domains.length).toBeGreaterThan(0);
+      expect(
+        input.domains.every((domain) => /^personnel:(1|3):/.test(domain)),
+      ).toBe(true);
+    }
+  } finally {
+    personnel.close();
+    tenant.store.close();
+  }
+}, 30000);
+
 test("later personnel changes retain the configured fallback as a guarded prerequisite", async () => {
   const tenant = await fixture();
   const personnel = createProtectedPersonnel(

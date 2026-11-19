@@ -510,6 +510,19 @@ pub(super) async fn metadata_origins(
             )
             .await?
     };
+    visible_origins(origins, auth, generation, authority, subject, policy)
+}
+
+/// Authorize the canonical origin records that the read transaction observed.
+/// A catalogue scan and a targeted lookup share the same proof checks.
+pub(super) fn visible_origins(
+    origins: Vec<CreationOrigin>,
+    auth: &crate::auth::AuthResult,
+    generation: i64,
+    authority: &[u8],
+    subject: &str,
+    policy: &super::wire::SignedPolicy,
+) -> RpcResult<Vec<CreationOrigin>> {
     let mut visible = Vec::new();
     for origin in origins {
         if origin.tenant != auth.tenant || origin.capability.generation != generation.to_string() {
