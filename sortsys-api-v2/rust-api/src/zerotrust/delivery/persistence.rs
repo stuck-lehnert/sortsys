@@ -57,10 +57,11 @@ fn request_key(subject: &str, request: &str) -> sortsys_zerotrust::metadata::Rec
     key("delivery-requests", &format!("{subject}:{request}"))
 }
 async fn read(transaction: &mut Transaction, id: Id) -> RpcResult<Allocation> {
-    let record: Allocation = transaction
-        .read(allocation_key(id))
-        .await?
-        .ok_or_else(not_found)?;
+    validated_allocation(transaction.read(allocation_key(id)).await?, id)
+}
+
+fn validated_allocation(record: Option<Allocation>, id: Id) -> RpcResult<Allocation> {
+    let record = record.ok_or_else(not_found)?;
     record.result()?;
     if record.id != id.0 {
         return Err(invalid());
@@ -450,22 +451,35 @@ async fn references(
         return Err(invalid());
     }
     let mut context = metadata_context(service, request).await?;
-    let mut result = Vec::new();
+    let mut notes = Vec::with_capacity(input.objects.len());
     for object in input.objects {
         let selected = binding(&object)?.ok_or_else(invalid)?;
         if !matches!(selected.kind, Kind::Note) {
             return Err(invalid());
         }
         authorize(&context.security, selected.project, super::Action::Read)?;
-        let allocation = read(&mut context.transaction, selected.note.ok_or_else(invalid)?).await?;
-        if allocation.project != selected.project.0 {
-            return Err(conflict());
-        }
-        result.push(DeliveryReference {
-            object,
-            allocation: allocation.result()?,
-        });
+        let note = selected.note.ok_or_else(invalid)?;
+        notes.push((object, selected.project, note));
     }
+    let keys = notes
+        .iter()
+        .map(|(_, _, note)| allocation_key(*note))
+        .collect();
+    let allocations = context.transaction.many::<Allocation>(keys).await?;
+    let result = notes
+        .into_iter()
+        .zip(allocations)
+        .map(|((object, project, note), allocation)| {
+            let allocation = validated_allocation(allocation, note)?;
+            if allocation.project != project.0 {
+                return Err(conflict());
+            }
+            Ok(DeliveryReference {
+                object,
+                allocation: allocation.result()?,
+            })
+        })
+        .collect::<RpcResult<_>>()?;
     context.transaction.validate().await?;
     Ok(result)
 }

@@ -12,7 +12,76 @@ import {
   protectedCollection,
   required,
 } from "../app/lib/data/protectedObjects";
+import { mapConcurrent } from "../app/lib/data/runtime/concurrentReads";
 import type { DeliveryRequestHook } from "./test-native-delivery-deletion";
+
+export async function exerciseDeliveryReferenceBatch(
+  writer: Client,
+  reader: Client,
+) {
+  const signal = new AbortController().signal;
+  const project = await required(
+    writer.mutate("projects.create", {
+      title: "Sanierung Westfassade",
+    }),
+  );
+  const otherProject = await required(
+    writer.mutate("projects.create", {
+      title: "Neue Werkstatt",
+    }),
+  );
+  const requestIds = Array.from({ length: 8 }, () => crypto.randomUUID());
+  const allocations = await mapConcurrent(requestIds, 4, (requestId) =>
+    allocateDeliveryNote(writer, project.id, requestId, signal),
+  );
+  const expected = allocations
+    .slice()
+    .reverse()
+    .map((allocation) => ({
+      object: `delivery-note:${project.id}:${allocation.id}`,
+      allocation,
+    }));
+  const references = (objects: string[]) =>
+    reader.query(
+      "zerotrust.deliveryNotes.references",
+      { objects },
+      {
+        strategy: "network-only",
+      },
+    );
+  assert.deepEqual(
+    await required(references(expected.map(({ object }) => object))),
+    expected,
+  );
+  const [wrongProject, wrongProjectError] = await references([
+    expected[0]!.object,
+    `delivery-note:${otherProject.id}:${allocations[1]!.id}`,
+  ]);
+  assert.equal(wrongProject, null);
+  assert.equal(wrongProjectError?.code, "CONFLICT");
+  const [missingAllocation, missingError] = await references([
+    expected[0]!.object,
+    `delivery-note:${project.id}:${publicId(newProductRowId())}`,
+  ]);
+  assert.equal(missingAllocation, null);
+  assert.equal(missingError?.code, "NOT_FOUND");
+
+  const created = await required(
+    writer.mutate("deliveryNotes.create", {
+      requestId: requestIds[0]!,
+      projectId: project.id,
+      effectiveTimestamp: new Date("2026-11-01T07:30:00Z"),
+      specialRecords: [
+        { name: "Transport", amount: 1, unit: "pauschal", pricePerUnit: 4.25 },
+      ],
+    }),
+  );
+  const notes = await required(
+    writer.query("deliveryNotes.list", { projectId: project.id }),
+  );
+  assert.deepEqual(notes.map(({ id }) => id), [created.id]);
+  assert.equal(notes[0]!.specialRecords[0]!.pricePerUnit, 4.25);
+}
 
 export async function exerciseNativeDelivery(
   owner: Client,

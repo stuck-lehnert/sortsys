@@ -63,6 +63,12 @@ Lieferscheinkennung, ein zusätzliches Feld oder ein Preis im Mengenbereich
 verwirft die gesamte geladene Liste. Auch doppelte Positionskennungen und
 doppelte laufende Nummern im gelesenen Bestand werden zurückgewiesen.
 
+Für die Lieferscheinliste eines Projekts prüft der Browser die Freigaben für
+Mengen und Preise gemeinsam. Die Nummernzuordnungen liest die API in Paketen
+von bis zu 64 Einträgen aus DuckDB. Der Browser kann mehrere solcher Pakete
+in derselben HTTP-Anfrage anfordern. Die Prüfung jeder Projektfreigabe und
+Nummernzuordnung bleibt Bestandteil des Abrufs.
+
 Die lokale DuckDB prüft Beziehungen innerhalb des freigegebenen Mengenbestands.
 Die privaten Produkt-, Benutzer- und Projektgrunddaten gehören zu anderen
 Schlüsselbereichen und werden dafür nicht zusätzlich geöffnet. Beim Anlegen

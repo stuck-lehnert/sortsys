@@ -12,6 +12,9 @@ import { readVerifiedPolicy } from "../crypto/policy";
 import { addressId } from "./addressBook";
 import { decodeBusinessRow } from "./rowCodec";
 import type { OpenedObject } from "./protectedObjects";
+import { mapConcurrent } from "./runtime/concurrentReads";
+
+const ALLOCATIONS_PER_REQUEST = 64;
 const required = async <T>(
   request: Promise<[T | null, Error | null]>,
 ): Promise<T> => {
@@ -156,17 +159,23 @@ export async function checkDeliveryObjects(
       object.envelope.object.startsWith("delivery-note:") &&
       object.envelope.format !== TOMBSTONE_FORMAT,
   );
-  for (let offset = 0; offset < selected.length; offset += 64) {
-    const chunk = selected.slice(offset, offset + 64),
-      result = await required(
-        client.query(
-          "zerotrust.deliveryNotes.references",
-          {
-            objects: chunk.map((object) => object.envelope.object),
-          },
-          { strategy: "network-only" },
-        ),
-      );
+  const chunks: OpenedObject[][] = [];
+  for (
+    let offset = 0;
+    offset < selected.length;
+    offset += ALLOCATIONS_PER_REQUEST
+  ) {
+    chunks.push(selected.slice(offset, offset + ALLOCATIONS_PER_REQUEST));
+  }
+  await mapConcurrent(chunks, 4, async (chunk) => {
+    live();
+    const result = await required(
+      client.query(
+        "zerotrust.deliveryNotes.references",
+        { objects: chunk.map((object) => object.envelope.object) },
+        { strategy: "network-only" },
+      ),
+    );
     live();
     if (
       !Array.isArray(result) ||
@@ -200,7 +209,7 @@ export async function checkDeliveryObjects(
         throw new InvalidProtectedData();
       }
     }
-  }
+  });
 }
 export async function deliveryRequestFingerprint(
   dataKey: CryptoKey,

@@ -86,6 +86,44 @@ pub(super) async fn measured_store(config: &QuackConfig) -> (CipherStore, ReadPr
 }
 
 #[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn delivery_number_proofs_share_one_store_read() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    assert!(config.control_url.starts_with("http://127.0.0.1:"));
+    assert!(config.token.starts_with("sortsys-disposable-"));
+    let (store, probe, _proxy) = measured_store(&config).await;
+    let unmeasured = CipherStore::new(config.clone()).unwrap();
+    let mut settings = configuration(config);
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    let (reader, _reader_api) = api(auth_service(&settings, Repository::system(store))).await;
+    let (writer, _writer_api) = api(auth_service(&settings, Repository::system(unmeasured))).await;
+    browser("owner-delivery-batching", &root, Some(&[reader, writer])).await;
+
+    let allocation_reads = probe
+        .take_reads()
+        .into_iter()
+        .map(|records| {
+            records
+                .into_iter()
+                .filter(|record| record.collection == "delivery-allocations")
+                .count()
+        })
+        .filter(|count| *count > 0)
+        .collect::<Vec<_>>();
+    // The eight valid references cross the store boundary together. The
+    // wrong-project and missing-allocation probes each read two records.
+    assert_eq!(allocation_reads, vec![8, 2, 2]);
+    eprintln!("Lieferscheinnummern: acht geprüfte Zuordnungen in einem Datendienstaufruf");
+}
+
+#[tokio::test]
 #[ignore = "scripts/test-native-auth provides disposable DuckDB and loopback listeners"]
 async fn collection_ranges_share_one_request_before_and_after_content_restore() {
     use crate::control::ScanRange;

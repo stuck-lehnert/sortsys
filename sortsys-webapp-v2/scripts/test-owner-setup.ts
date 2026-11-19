@@ -338,6 +338,13 @@ try {
       createClient(endpoints[0], "owner-restore-tool-member"),
       rpcTransmissions,
     );
+  } else if (mode === "owner-delivery-batching") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseDeliveryReferenceBatch } =
+      await import("./test-duckdb-delivery");
+    await exerciseDeliveryReferenceBatch(owner, peer);
   } else if (mode === "owner-bootstrap") {
     const { exerciseTenantInitialization } =
       await import("./test-tenant-initialization");

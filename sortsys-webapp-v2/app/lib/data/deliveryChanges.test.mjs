@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { createClient } from "@sortsys/v2-client";
+import superjson from "superjson";
 import { deliveryChanges } from "./deliveryChanges";
 import {
   checkDeliveryObjects,
@@ -6,6 +8,8 @@ import {
   deliveryRequestFingerprint,
 } from "./deliveryRegistry";
 import { createAccountDataKey } from "@sortsys/zerotrust/sortsys";
+import { publicId } from "./products";
+import { ramCache } from "./ramCache";
 import { businessSchema } from "./schema";
 
 test("delivery creation normalizes only allowed values before any request", () => {
@@ -118,7 +122,7 @@ test("creation receipts use a private purpose-bound fingerprint, not a public pr
     }),
   ).not.toBe(first);
 });
-test("private delivery numbers must match the independently fetched registry", async () => {
+function deliveryObject(id, number) {
   const value = {
     format: "sortsys-delivery-note-v1",
     note: {
@@ -126,9 +130,9 @@ test("private delivery numbers must match the independently fetched registry", a
       schema: businessSchema.fingerprint,
       table: "product_delivery_notes",
       values: {
-        id: "3",
+        id,
         project_id: "2",
-        auto_id: "7",
+        auto_id: number,
         created_by_user_id: null,
         comment: null,
         created_at: "2026-11-11T00:00:00Z",
@@ -138,14 +142,18 @@ test("private delivery numbers must match the independently fetched registry", a
     records: [],
     specialRecords: [],
   };
-  const object = {
+  return {
     envelope: {
-      object: "delivery-note:2:3",
+      object: `delivery-note:2:${publicId(id)}`,
       scope: "project:2:delivery-notes",
       facet: "master-data",
     },
     value,
   };
+}
+
+test("private delivery numbers must match the independently fetched registry", async () => {
+  const object = deliveryObject("3", "7");
   let allocation = { id: "3", projectId: "2", number: "7" };
   const client = {
     query: async () => [[{ object: object.envelope.object, allocation }], null],
@@ -161,4 +169,65 @@ test("private delivery numbers must match the independently fetched registry", a
   }
   expect(() => deliveryAllocation({ ...allocation, number: 7 })).toThrow();
   expect(() => deliveryAllocation({ ...allocation, extra: true })).toThrow();
+});
+
+test("delivery number checks share one HTTP batch even across registry chunk boundaries", async () => {
+  const objects = Array.from({ length: 130 }, (_, index) => {
+    const id = String(index + 1);
+    return deliveryObject(id, id);
+  });
+  const notes = new Map(
+    objects.map(({ envelope, value }) => [
+      envelope.object,
+      {
+        id: publicId(value.note.values.id),
+        projectId: "2",
+        number: value.note.values.auto_id,
+      },
+    ]),
+  );
+  const transmissions = [];
+  let corruptNumber = false;
+  const client = createClient("https://delivery-batch.test", "delivery-batch", {
+    cache: ramCache(),
+    async fetch(input, options) {
+      const url = new URL(String(input));
+      const paths = url.pathname.slice(1).split(",");
+      const wire = JSON.parse(options.body ?? url.searchParams.get("input"));
+      const selections = paths.map((_, index) => {
+        return superjson.deserialize(wire[index]).objects;
+      });
+      transmissions.push({
+        paths,
+        lengths: selections.map((part) => part.length),
+      });
+      return Response.json(
+        selections.map((part) => {
+          const rows = part.map((object) => {
+            const allocation = notes.get(object);
+            return {
+              object,
+              allocation:
+                corruptNumber && allocation.number === "130"
+                  ? { ...allocation, number: "131" }
+                  : allocation,
+            };
+          });
+          return { result: { data: superjson.serialize(rows) } };
+        }),
+      );
+    },
+  });
+  client.setToken("disposable-delivery-session");
+  await checkDeliveryObjects(client, objects, () => {});
+  expect(transmissions).toEqual([
+    {
+      paths: Array(3).fill("zerotrust.deliveryNotes.references"),
+      lengths: [64, 64, 2],
+    },
+  ]);
+  corruptNumber = true;
+  await expect(
+    checkDeliveryObjects(client, objects, () => {}),
+  ).rejects.toThrow();
 });

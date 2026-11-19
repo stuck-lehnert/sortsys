@@ -14,9 +14,12 @@ import {
   type DeliveryPrices,
 } from "./deliveryNoteData";
 import { PRICE_COLLECTION, publicId } from "./products";
-import { protectedCollection, required } from "./protectedObjects";
+import {
+  protectedCollection,
+  protectedCollections,
+  required,
+} from "./protectedObjects";
 import { deliveryAllocation } from "./deliveryRegistry";
-import { readableAreas } from "./readableAreas";
 import { acquireDataRuntime } from "./runtime/session";
 import { effectivePrice } from "./stockObjects";
 
@@ -37,20 +40,18 @@ export function createProtectedDeliveryNotes(
     priceRevisions: Map<string, string>;
   };
   async function load(projectId?: string): Promise<Loaded> {
-    const areas = (
-      await Promise.all(
-        [false, true].map((prices) =>
-          readableAreas(client, signal, (domain) => {
-            const area = deliveryDomain(domain);
-            return area &&
-              area.prices === prices &&
-              (!projectId || area.projectId === projectId)
-              ? deliveryCollection(area.projectId, prices)
-              : null;
-          }),
-        ),
-      )
-    ).flat();
+    const domains =
+      projectId === undefined
+        ? undefined
+        : [
+            deliveryCollection(projectId).domain,
+            deliveryCollection(projectId, true).domain,
+          ];
+    const inventory = await protectedCollections(client, signal, domains);
+    const areas = inventory.areas((domain) => {
+      const area = deliveryDomain(domain);
+      return area ? deliveryCollection(area.projectId, area.prices) : null;
+    });
     live();
     const quantities = areas.filter((area) => area.facet === "master-data"),
       quantityProjects = new Set(
