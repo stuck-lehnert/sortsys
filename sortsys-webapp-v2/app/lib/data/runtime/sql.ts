@@ -79,35 +79,45 @@ async function validateConstraint(
 
 /** The in-memory availability map remains authoritative. SQL NULL is only a
  * projection placeholder; callers must declare every field their SQL reads. */
-export async function projectRuntimeRows(
+export function projectRuntimeRows(
   database: BusinessDatabase,
   previous: DataTables,
   tables: DataTables,
   documents: Iterable<DataDocument<unknown>>,
+  options?: { rollback?: boolean },
 ): Promise<void> {
   const external = new Map<DataDocument<unknown>, Set<string>>();
   for (const document of documents)
     external.set(document, new Set(document.model.externalReferences));
-  await database.transaction(async (tx) => {
-    for (const name of new Set([...previous.keys(), ...tables.keys()]))
-      await tx.exec(`DELETE FROM ${quoted(name)}`);
+  return database.transaction(async (tx) => {
+    const names = new Set([...previous.keys(), ...tables.keys()]);
+    if (names.size) {
+      const deletes = [...names].map((name) => `DELETE FROM ${quoted(name)}`);
+      await tx.exec(deletes.join(";\n"));
+    }
     for (const [name, rows] of tables) {
-      const table = tableDefinition(name),
-        columns = table.columns.map((column) => column.name);
-      const values = [...rows.values()],
-        batchSize = Math.min(
-          128,
-          Math.max(1, Math.floor(4096 / columns.length)),
-        );
+      const table = tableDefinition(name);
+      const columns = table.columns.map((column) => column.name);
+      const target = `${quoted(name)}(${columns.map(quoted).join(",")})`;
+      const values = [...rows.values()];
+      const batchSize = Math.min(
+        128,
+        Math.max(1, Math.floor(4096 / columns.length)),
+      );
       for (let offset = 0; offset < values.length; offset += batchSize) {
-        const batch = values.slice(offset, offset + batchSize),
-          parameters = batch.flatMap((row) =>
-            columns.map((column) =>
-              Object.hasOwn(row.values, column) ? row.values[column] : null,
-            ),
-          );
+        const batch = values.slice(offset, offset + batchSize);
+        const parameters = batch.flatMap((row) =>
+          columns.map((column) =>
+            Object.hasOwn(row.values, column) ? row.values[column] : null,
+          ),
+        );
+        const placeholders = batch.map((_, index) => {
+          const start = index * columns.length + 1;
+          const bindings = columns.map((_, column) => `$${start + column}`);
+          return `(${bindings.join(",")})`;
+        });
         await tx.query(
-          `INSERT INTO ${quoted(name)}(${columns.map(quoted).join(",")}) VALUES${batch.map((_, row) => `(${columns.map((_, column) => `$${row * columns.length + column + 1}`).join(",")})`).join(",")}`,
+          `INSERT INTO ${target} VALUES ${placeholders.join(",")}`,
           parameters,
         );
       }
@@ -125,5 +135,5 @@ export async function projectRuntimeRows(
       // Unknown fields never count as an observed NULL in the public row API.
       await assertUniqueIndexes(tx, table);
     }
-  });
+  }, options);
 }

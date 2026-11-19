@@ -53,22 +53,23 @@ export function quoted(name: string): string {
   return `"${name}"`;
 }
 
+const duckTypes = new Map([
+  ["int8", "BIGINT"],
+  ["int4", "INTEGER"],
+  ["int2", "SMALLINT"],
+  ["float8", "DOUBLE"],
+  ["bool", "BOOLEAN"],
+  ["text", "VARCHAR"],
+  ["varchar", "VARCHAR"],
+  ["jsonb", "VARCHAR"],
+  ["date", "DATE"],
+  ["timestamptz", "TIMESTAMPTZ"],
+]);
+
 export function duckType(column: BusinessColumn): string {
   const array = column.type.startsWith("_");
   const type = array ? column.type.slice(1) : column.type;
-  const builtin = new Map([
-    ["int8", "BIGINT"],
-    ["int4", "INTEGER"],
-    ["int2", "SMALLINT"],
-    ["float8", "DOUBLE"],
-    ["bool", "BOOLEAN"],
-    ["text", "VARCHAR"],
-    ["varchar", "VARCHAR"],
-    ["jsonb", "VARCHAR"],
-    ["date", "DATE"],
-    ["timestamptz", "TIMESTAMPTZ"],
-  ]);
-  let mapped = builtin.get(type);
+  let mapped = duckTypes.get(type);
   if (
     type === "numeric" &&
     column.precision &&
@@ -76,7 +77,7 @@ export function duckType(column: BusinessColumn): string {
     column.scale !== null
   )
     mapped = `DECIMAL(${column.precision},${column.scale})`;
-  if (businessSchema.enums[type]) mapped = builtin.get("varchar");
+  if (businessSchema.enums[type]) mapped = "VARCHAR";
   if (!mapped) throw new Error(`Unsupported business type: ${type}`);
   return `${mapped}${array ? "[]" : ""}`;
 }
@@ -87,14 +88,18 @@ export async function installBusinessSchema(
   tx: BusinessTransaction,
   partial = false,
 ): Promise<void> {
-  await tx.exec(
+  const statements = [
     "CREATE MACRO btrim(value) AS trim(value); CREATE MACRO num_nonnulls(a,b,c,d) AS (CAST(a IS NOT NULL AS INTEGER)+CAST(b IS NOT NULL AS INTEGER)+CAST(c IS NOT NULL AS INTEGER)+CAST(d IS NOT NULL AS INTEGER))",
-  );
+  ];
   for (const table of businessSchema.tables) {
-    const fields = table.columns.map(
-      (column) =>
-        `${quoted(column.name)} ${duckType(column)}${partial || column.nullable ? "" : " NOT NULL"}${column.maxLength === null ? "" : ` CHECK(length(${quoted(column.name)})<=${column.maxLength})`}`,
-    );
+    const fields = table.columns.map((column) => {
+      const name = quoted(column.name);
+      let field = `${name} ${duckType(column)}`;
+      if (!partial && !column.nullable) field += " NOT NULL";
+      if (column.maxLength !== null)
+        field += ` CHECK(length(${name})<=${column.maxLength})`;
+      return field;
+    });
     for (const constraint of table.constraints.filter(
       (c) => c.kind === "p" || c.kind === "u",
     )) {
@@ -102,8 +107,9 @@ export async function installBusinessSchema(
         `${constraint.kind === "p" ? "PRIMARY KEY" : "UNIQUE"}(${constraint.columns.map(quoted).join(",")})`,
       );
     }
-    await tx.exec(`CREATE TABLE ${quoted(table.name)}(${fields.join(",")})`);
+    statements.push(`CREATE TABLE ${quoted(table.name)}(${fields.join(",")})`);
   }
+  await tx.exec(statements.join(";\n"));
 }
 
 export function primaryColumns(table: BusinessTable): string[] {

@@ -12,8 +12,16 @@ async function database() {
 }
 
 test("DuckDB preserves exact identifiers and decimals without external file access", async () => {
-  const db = await database();
+  const driver = await duckDriver();
+  const query = driver.connection.query.bind(driver.connection);
+  let startupQueries = 0;
+  driver.connection.query = (sql) => {
+    startupQueries++;
+    return query(sql);
+  };
+  const db = await createBusinessDatabase(driver);
   try {
+    expect(startupQueries).toBeLessThan(10);
     expect(
       (await db.query("SELECT fingerprint FROM __client_schema")).rows[0]
         .fingerprint,

@@ -46,6 +46,14 @@ test("many rows keep their checks while using a bounded number of database reque
       (await database.query("SELECT count(*) AS total FROM users")).rows[0]
         .total,
     ).toBe(260n);
+    const preview = tables("users", [
+      { id: "1", username: "renamed-worker", contract_type: "internal" },
+    ]);
+    await projectRuntimeRows(database, original, preview, [], { rollback: true });
+    expect(
+      (await database.query("SELECT username FROM users WHERE id=1")).rows,
+    ).toEqual([{ username: "worker-0" }]);
+
     const invalid = tables(
       "users",
       values.map((value, index) =>

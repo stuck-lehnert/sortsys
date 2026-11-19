@@ -14,12 +14,19 @@ Referenzen und SQL-Bedingungen stammen aus
 Prüfsumme. Dafür wird keine Datenbank gestartet.
 Zusätzliche Fachregeln bleiben in der Modellprüfung oder im Fachbefehl.
 
+Sobald die Leserechte für eine tabellarische Ansicht geprüft sind, kann der
+DuckDB-Worker das leere Schema aufbauen. Die Tabellendefinitionen gehen dabei
+als ein SQL-Skript an den Worker. Die Ansicht übernimmt ihre Daten erst nach
+der Prüfung der entschlüsselten Inhalte und ihrer Versionsstände.
+
 Die lokale SQL-Prüfung bündelt Zeilen je Bedingung in begrenzte Pakete. Dadurch
 benötigt etwa eine Angebotsübersicht weniger Aufrufe des Datenbank-Workers.
 Geprüft werden nur Zeilen mit den dafür geladenen Feldern. Ausdrücklich externe
 Referenzen behalten ihre Ausnahme; fehlt eine andere erforderliche Referenz,
 scheitert die gesamte lokale Transaktion. Auch ein Fehler in einem späteren
-Paket verwirft die neue Projektion.
+Paket verwirft die neue Projektion. Bei einem Schreibvorgang setzt ein Rollback
+die lokale Vorschau nach der Prüfung zurück. Erst danach sendet der Browser die
+verschlüsselte Änderung an die API.
 
 Der gemeinsame Lesepfad prüft vor der Entschlüsselung, ob der Absender unter der
 im Chiffrat genannten Rechteregel schreiben durfte. Dafür werden historische

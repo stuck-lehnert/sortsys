@@ -140,17 +140,25 @@ export class BusinessDatabase {
 
   exec(sql: string): Promise<void> { return this.queue(async () => { await this.run(sql); }); }
 
-  transaction<T>(operation: (tx: BusinessTransaction) => Promise<T>): Promise<T> {
+  transaction<T>(
+    operation: (tx: BusinessTransaction) => Promise<T>,
+    { rollback = false }: { rollback?: boolean } = {},
+  ): Promise<T> {
     return this.queue(async () => {
       await this.run("BEGIN TRANSACTION");
+      let result: T;
       try {
-        const result = await operation({
+        result = await operation({
           query: <R>(sql: string, parameters?: unknown[]) => this.run<R>(sql, parameters),
           exec: async (sql: string) => { await this.run(sql); },
         });
-        await this.run("COMMIT");
-        return result;
-      } catch (error) { await this.run("ROLLBACK"); throw error; }
+        if (!rollback) await this.run("COMMIT");
+      } catch (error) {
+        await this.run("ROLLBACK");
+        throw error;
+      }
+      if (rollback) await this.run("ROLLBACK");
+      return result;
     });
   }
 

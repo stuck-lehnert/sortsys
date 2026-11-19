@@ -786,6 +786,14 @@ export class DataRuntime {
           supplied ??
           (await this.storage.open(this.controller.signal, domains, initial));
       }
+      const needsDatabase = requests.some(
+        ({ area, model }) =>
+          modelTables(model, area)?.length && open?.readable?.(area),
+      );
+      // Prepare the empty schema while authorized objects are being verified.
+      // The projection below still waits for their final snapshot checks.
+      const database = needsDatabase ? this.db() : undefined;
+      void database?.catch(() => undefined);
       await open?.prefetch?.(initial);
       for (const [key, resource] of next)
         if (open?.readable && !open.readable(resource.request.area))
@@ -909,7 +917,7 @@ export class DataRuntime {
       const tables = changed ? projectDataRows(documents, project) : this.tables;
       if (changed && (this.tables.size || tables.size))
         await projectRuntimeRows(
-          await this.db(),
+          await (database ?? this.db()),
           this.tables,
           tables,
           documents,
@@ -1139,21 +1147,10 @@ export class DataRuntime {
       const tables = projectDataRows(documents, this.project);
       // Validate the prospective state; rollback the local projection before
       // network publication. Nothing speculative is visible to other callers.
-      if (this.tables.size || tables.size) {
-        const database = await this.db();
-        try {
-          await projectRuntimeRows(database, this.tables, tables, documents);
-        } finally {
-          await projectRuntimeRows(
-            database,
-            tables,
-            this.tables,
-            [...this.projectedResources.values()].flatMap(
-              (resource) => resource.documents,
-            ),
-          );
-        }
-      }
+      if (this.tables.size || tables.size)
+        await projectRuntimeRows(await this.db(), this.tables, tables, documents, {
+          rollback: true,
+        });
       this.live();
       if (generation !== this.generation) throw new ProtectedWriteConflict();
       const grouped = new Map<string, PreparedWrites>();
