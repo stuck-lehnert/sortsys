@@ -403,6 +403,7 @@ export type QueryInputs = {
   "zerotrust.members.list": { after: Id | null, };
   "zerotrust.members.status": { id: Id, };
   "zerotrust.objects.get": { id: string, };
+  "zerotrust.objects.getMany": { domain: string, ids: Array<string>, };
   "zerotrust.objects.list": { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, };
   "zerotrust.objects.pages": { selections: Array<ListInput>, };
   "zerotrust.objects.recipientAccess": { objects: Array<string>, };
@@ -557,6 +558,7 @@ export type QueryOutputs = {
   "zerotrust.members.list": { rows: Array<Member>, after: Id | null, };
   "zerotrust.members.status": { username: string, id: Id, version: string, atMicros: string, deactivatedMicros: string | null, archivedMicros: string | null, deletedMicros: string | null, };
   "zerotrust.objects.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
+  "zerotrust.objects.getMany": Array<{ tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, } | null>;
   "zerotrust.objects.list": { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, };
   "zerotrust.objects.pages": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, }>;
   "zerotrust.objects.recipientAccess": Array<{ domain: string, access: ResourceAccessState, recipientKey: RecipientKey | null, } | null>;
@@ -1137,6 +1139,7 @@ const queryProcedures = new Set<string>([
   "zerotrust.members.list",
   "zerotrust.members.status",
   "zerotrust.objects.get",
+  "zerotrust.objects.getMany",
   "zerotrust.objects.list",
   "zerotrust.objects.pages",
   "zerotrust.objects.recipientAccess",

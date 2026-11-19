@@ -114,13 +114,28 @@ export async function exerciseNativeStockBatching(
               const objectBatches = transmissions
                 .slice(selectedStart)
                 .map((paths) =>
-                  paths.filter((path) => path === "zerotrust.objects.get"),
+                  paths.filter((path) => path === "zerotrust.objects.getMany"),
                 )
                 .filter((paths) => paths.length > 0);
               assert.deepEqual(
-                objectBatches.map((paths) => paths.length),
-                Array(10).fill(32),
-                "320 selected records fill ten transport batches instead of twenty half-full batches",
+                objectBatches,
+                Array.from({ length: 10 }, () => ["zerotrust.objects.getMany"]),
+                "Each group of up to 32 ciphertexts uses one authorized store operation",
+              );
+              assert.equal(
+                transmissions
+                  .slice(selectedStart)
+                  .flat()
+                  .includes("zerotrust.objects.get"),
+                false,
+              );
+              const withMissing = await reader.selected([
+                "product:missing",
+                selectedIds[0]!,
+              ]);
+              assert.deepEqual(
+                withMissing.map(({ envelope }) => envelope.object),
+                [selectedIds[0]],
               );
               assert.deepEqual(await reader.selected(["product:missing"]), []);
               verified = true;
@@ -135,7 +150,7 @@ export async function exerciseNativeStockBatching(
     );
     assert.equal(verified, true);
     console.log(
-      "Native stock batching: 320 encrypted products cross API replicas in ten selected-read HTTP requests, with individually verified stock proofs in two metadata requests",
+      "Native stock batching: 320 encrypted products cross API replicas in ten getMany calls, with individually verified stock proofs",
     );
   } finally {
     collection.close();

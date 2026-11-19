@@ -2,6 +2,7 @@
 use super::super::access::{
     MetadataContext, MetadataRequest, metadata_context, metadata_context_for_domains,
 };
+use super::super::documents::{BlobId, DocumentHead, blob};
 use super::*;
 use crate::{
     auth::AuthService,
@@ -44,52 +45,107 @@ pub(in crate::zerotrust) async fn raw_object(
     transaction: &mut Transaction,
     id: &str,
 ) -> RpcResult<Option<ObjectRecord>> {
-    identifier(id)?;
-    if let Some(blob) = super::super::documents::blob(id)?
-        && blob.scope.starts_with("commercial:")
-    {
-        let witness = key("documents", blob.id);
-        let head: Option<super::super::documents::DocumentHead> =
-            transaction.read(witness.clone()).await?;
-        if let Some(head) = head.filter(|head| head.locked) {
-            if head.id != blob.id || head.scope != blob.scope {
-                return Err(invalid());
-            }
-            let owner = if blob.facet == "opaque" {
-                "scope"
-            } else {
-                blob.facet
-            };
-            let domain = format!("{}:{owner}", blob.scope);
-            let records = vec![record_key(&domain, id)];
-            let record: Option<ObjectRecord> = transaction
-                .many_at_retained_epoch(&witness, records)
-                .await?
-                .pop()
-                .flatten();
-            if record
-                .as_ref()
-                .is_some_and(|record| record.object != id || record.domain != domain)
-            {
-                return Err(invalid());
-            }
-            return Ok(record);
+    Ok(raw_objects(transaction, &[id], None).await?.pop().flatten())
+}
+
+async fn raw_objects(
+    transaction: &mut Transaction,
+    ids: &[&str],
+    selected_domain: Option<&str>,
+) -> RpcResult<Vec<Option<ObjectRecord>>> {
+    let mut documents = BTreeMap::<&str, Vec<(usize, BlobId<'_>)>>::new();
+    let mut current = Vec::new();
+    let mut records = vec![None; ids.len()];
+    for (index, id) in ids.iter().enumerate() {
+        identifier(id)?;
+        if let Some(blob) = blob(id)?
+            && blob.scope.starts_with("commercial:")
+        {
+            documents.entry(blob.id).or_default().push((index, blob));
+        } else {
+            current.push(index);
         }
     }
-    let Some(domain) = transaction
-        .read::<String>(key("object-locations", id))
-        .await?
-    else {
-        return Ok(None);
-    };
-    let record: ObjectRecord = transaction
-        .read(key(&collection(&domain), id))
-        .await?
-        .ok_or_else(invalid)?;
+    let heads = transaction
+        .many::<DocumentHead>(documents.keys().map(|id| key("documents", id)).collect())
+        .await?;
+    for ((id, parts), head) in documents.into_iter().zip(heads) {
+        if let Some(head) = head.filter(|head| head.locked) {
+            let mut keys = Vec::with_capacity(parts.len());
+            let mut locations = Vec::with_capacity(parts.len());
+            for (index, part) in parts {
+                if head.id != part.id || head.scope != part.scope {
+                    return Err(invalid());
+                }
+                let facet = if part.facet == "opaque" {
+                    "scope"
+                } else {
+                    part.facet
+                };
+                let domain = format!("{}:{facet}", part.scope);
+                if selected_domain.is_some_and(|selected| selected != domain) {
+                    continue;
+                }
+                keys.push(record_key(&domain, ids[index]));
+                locations.push((index, domain));
+            }
+            if keys.is_empty() {
+                continue;
+            }
+            let retained = transaction
+                .many_at_retained_epoch::<ObjectRecord>(&key("documents", id), keys)
+                .await?;
+            for ((index, domain), record) in locations.into_iter().zip(retained) {
+                if let Some(record) = record {
+                    check_record_location(&record, ids[index], &domain)?;
+                    records[index] = Some(record);
+                }
+            }
+        } else {
+            current.extend(parts.into_iter().map(|(index, _)| index));
+        }
+    }
+
+    let locations = transaction
+        .many::<String>(
+            current
+                .iter()
+                .map(|index| key("object-locations", ids[*index]))
+                .collect(),
+        )
+        .await?;
+    let located: Vec<_> = current
+        .into_iter()
+        .zip(locations)
+        .filter_map(|(index, domain)| {
+            let domain = domain?;
+            if selected_domain.is_some_and(|selected| selected != domain) {
+                return None;
+            }
+            Some((index, domain))
+        })
+        .collect();
+    let found = transaction
+        .many::<ObjectRecord>(
+            located
+                .iter()
+                .map(|(index, domain)| record_key(domain, ids[*index]))
+                .collect(),
+        )
+        .await?;
+    for ((index, domain), record) in located.into_iter().zip(found) {
+        let record = record.ok_or_else(invalid)?;
+        check_record_location(&record, ids[index], &domain)?;
+        records[index] = Some(record);
+    }
+    Ok(records)
+}
+
+fn check_record_location(record: &ObjectRecord, id: &str, domain: &str) -> RpcResult<()> {
     if record.object != id || record.domain != domain {
         return Err(invalid());
     }
-    Ok(Some(record))
+    Ok(())
 }
 pub(in crate::zerotrust) fn record_key(
     domain: &str,
@@ -147,8 +203,7 @@ pub(in crate::zerotrust) async fn object(
         return Ok(None);
     };
     let mut records = vec![record];
-    super::super::stock::metadata_apply_visibility(transaction, &mut records).await?;
-    super::super::delivery::metadata_apply_visibility(transaction, &mut records).await?;
+    apply_visibility(transaction, &mut records).await?;
     Ok(records.pop())
 }
 pub(in crate::zerotrust) async fn read(
@@ -156,7 +211,11 @@ pub(in crate::zerotrust) async fn read(
     reference: &str,
 ) -> RpcResult<EncryptedObject> {
     let data = repository.ciphertext(reference).await?;
-    let envelope: EncryptedObject = serde_json::from_str(&data).map_err(|_| invalid())?;
+    decode_envelope(&data)
+}
+
+fn decode_envelope(data: &str) -> RpcResult<EncryptedObject> {
+    let envelope: EncryptedObject = serde_json::from_str(data).map_err(|_| invalid())?;
     envelope.frame()?;
     Ok(envelope)
 }
@@ -188,6 +247,7 @@ pub(super) fn register(
     service: Arc<AuthService>,
 ) -> ProcedureRegistryBuilder {
     let get = Arc::clone(&service);
+    let get_many = Arc::clone(&service);
     let list = Arc::clone(&service);
     let pages = Arc::clone(&service);
     let save = Arc::clone(&service);
@@ -217,6 +277,13 @@ pub(super) fn register(
                 Ok(envelope)
             }
         })
+        .query(
+            "zerotrust.objects.getMany",
+            move |ctx, input: ObjectSelection| {
+                let service = Arc::clone(&get_many);
+                async move { get_selected_objects(&service, &ctx, input).await }
+            },
+        )
         .query("zerotrust.objects.list", move |ctx, input: ListInput| {
             let service = Arc::clone(&list);
             async move { list_objects(&service, &ctx, input).await }
@@ -258,6 +325,72 @@ fn require_read(guard: &Security, area: &registry::DomainRecord) -> RpcResult<()
     }
     Ok(())
 }
+
+async fn apply_visibility(
+    transaction: &mut Transaction,
+    records: &mut [ObjectRecord],
+) -> RpcResult<()> {
+    super::super::stock::metadata_apply_visibility(transaction, records).await?;
+    super::super::delivery::metadata_apply_visibility(transaction, records).await
+}
+
+async fn get_selected_objects(
+    service: &AuthService,
+    request: &RequestContext,
+    input: ObjectSelection,
+) -> RpcResult<Vec<Option<EncryptedObject>>> {
+    identifier(&input.domain)?;
+    if input.ids.is_empty()
+        || input.ids.len() > 32
+        || input.ids.iter().collect::<BTreeSet<_>>().len() != input.ids.len()
+    {
+        return Err(invalid());
+    }
+    let mut context =
+        metadata_context_for_domains(service, request, Some(std::slice::from_ref(&input.domain)))
+            .await?;
+    let area = registry::domain(&mut context.transaction, &input.domain).await?;
+    require_read(&context.security, &area)?;
+
+    let ids: Vec<_> = input.ids.iter().map(String::as_str).collect();
+    let records = raw_objects(&mut context.transaction, &ids, Some(&area.id)).await?;
+    let (positions, mut records): (Vec<_>, Vec<_>) = records
+        .into_iter()
+        .enumerate()
+        .filter_map(|(index, record)| record.map(|record| (index, record)))
+        .unzip();
+    apply_visibility(&mut context.transaction, &mut records).await?;
+    let visible: Vec<_> = positions
+        .into_iter()
+        .zip(records)
+        .filter(|(_, record)| !record.deleted)
+        .collect();
+    let mut result = vec![None; ids.len()];
+    if !visible.is_empty() {
+        let references = visible
+            .iter()
+            .map(|(_, record)| record.reference.clone())
+            .collect();
+        let ciphertexts = context.repository.ciphertexts(references).await?;
+        if ciphertexts.len() != visible.len() {
+            return Err(invalid());
+        }
+        for ((index, record), ciphertext) in visible.into_iter().zip(ciphertexts) {
+            let envelope = decode_envelope(&ciphertext)?;
+            check_read(
+                &envelope,
+                &record,
+                &context.auth.tenant,
+                &area.scope,
+                area.facet,
+            )?;
+            result[index] = Some(envelope);
+        }
+    }
+    context.transaction.validate().await?;
+    Ok(result)
+}
+
 pub(in crate::zerotrust) fn check_read(
     envelope: &EncryptedObject,
     record: &ObjectRecord,
@@ -505,13 +638,7 @@ async fn scan_object_pages(
             }
             references.push(record);
         }
-        super::super::stock::metadata_apply_visibility(&mut context.transaction, &mut references)
-            .await?;
-        super::super::delivery::metadata_apply_visibility(
-            &mut context.transaction,
-            &mut references,
-        )
-        .await?;
+        apply_visibility(&mut context.transaction, &mut references).await?;
         references.retain(|record| !record.deleted);
         read.references = references;
         read.after = page.after;
@@ -537,8 +664,7 @@ async fn finish_object_page(
     }
     let mut objects = Vec::with_capacity(data.len());
     for (record, data) in references.iter().zip(data) {
-        let envelope: EncryptedObject = serde_json::from_str(&data).map_err(|_| invalid())?;
-        envelope.frame()?;
+        let envelope = decode_envelope(&data)?;
         check_read(
             &envelope,
             record,

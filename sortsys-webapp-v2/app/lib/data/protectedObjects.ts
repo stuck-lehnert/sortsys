@@ -118,6 +118,8 @@ export type OpenedObject = {
   >;
 };
 
+type SelectedEnvelopes = QueryResult<"zerotrust.objects.getMany">;
+
 /** Only signed, explicitly bound domains may supply collection keys. Names and
  * query text never leave the browser. A complete page walk is published once. */
 export async function protectedCollection(
@@ -1023,22 +1025,40 @@ function openCollection(
       )
         throw new InvalidProtectedData();
       const objects: OpenedObject[] = [];
-      // Fill a complete transport batch before opening its ciphertexts. Crypto
-      // work must not delay peers entering the same four-millisecond window.
-      for (let offset = 0; offset < ids.length; offset += 32) {
-        const selectedIds = ids.slice(offset, offset + 32);
-        const envelopes = await mapConcurrent(selectedIds, 32, async (id) => {
+      async function fetchSelected(ids: string[]): Promise<SelectedEnvelopes> {
+        live();
+        if (ids.length === 1) {
           const [value, error] = await client.query(
             "zerotrust.objects.get",
-            { id },
+            { id: ids[0]! },
             { strategy: "network-only" },
           );
           live();
-          if (error && error.code === "NOT_FOUND") return null;
+          if (error?.code === "NOT_FOUND") return [null];
           if (error) throw error;
           if (!value) throw new InvalidProtectedData();
-          return value;
-        });
+          return [value];
+        }
+        const [values, error] = await client.query(
+          "zerotrust.objects.getMany",
+          { domain: collection.domain, ids },
+          { strategy: "network-only" },
+        );
+        live();
+        if (error instanceof RpcClientError && error.data?.httpCode === 413) {
+          const middle = Math.ceil(ids.length / 2);
+          const first = await fetchSelected(ids.slice(0, middle));
+          const last = await fetchSelected(ids.slice(middle));
+          return [...first, ...last];
+        }
+        if (error) throw error;
+        if (!Array.isArray(values) || values.length !== ids.length)
+          throw new InvalidProtectedData();
+        return values;
+      }
+      for (let offset = 0; offset < ids.length; offset += 32) {
+        const selectedIds = ids.slice(offset, offset + 32);
+        const envelopes = await fetchSelected(selectedIds);
         const part = await mapConcurrent(envelopes, 16, (envelope, index) => {
           live();
           if (envelope === null) return Promise.resolve(null);

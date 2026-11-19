@@ -124,6 +124,11 @@ where
 fn storage(error: StoreError) -> RpcError {
     match error {
         StoreError::Conflict => conflict(),
+        StoreError::BatchTooLarge => RpcError::new(
+            ErrorCode::BadRequest,
+            "Ciphertext batch exceeds the response limit",
+        )
+        .with_http_code(413),
         error => {
             // StoreError exposes fixed operation labels, never SQL, tokens,
             // request bodies or decrypted application content.
@@ -365,6 +370,12 @@ impl Repository {
             .await
             .map_err(storage)
     }
+    pub async fn ciphertexts(&self, references: Vec<String>) -> RpcResult<Vec<String>> {
+        self.store
+            .get_many(self.ciphertext_tenant()?, references)
+            .await
+            .map_err(storage)
+    }
     pub async fn ciphertext_prefix(
         &self,
         references: Vec<String>,
@@ -390,14 +401,7 @@ impl Repository {
                 total_budget,
             )
             .await
-            .map_err(|error| match error {
-                StoreError::BatchTooLarge => RpcError::new(
-                    ErrorCode::BadRequest,
-                    "Ciphertext batch exceeds the response limit",
-                )
-                .with_http_code(413),
-                error => storage(error),
-            })
+            .map_err(storage)
     }
 
     pub fn transaction(&self) -> RpcResult<Transaction> {

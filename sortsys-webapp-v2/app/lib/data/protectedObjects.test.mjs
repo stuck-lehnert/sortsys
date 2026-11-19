@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { RpcClientError } from "@sortsys/v2-client";
 import {
   base64,
   bytes,
@@ -146,9 +147,10 @@ async function fixture(extraReader = false, suspended = false) {
     bundledOpenings: false,
     head: "1",
     beforeKey: async () => {},
-    beforeObject: async () => {},
     transformObject: (object) => object,
     objectRequests: [],
+    objectBatches: [],
+    beforeObjectBatch: async () => {},
     transformOpenings: (openings) => openings,
     transformPage: (page) => page,
     pages: [],
@@ -216,7 +218,6 @@ async function fixture(extraReader = false, suspended = false) {
       }
       if (path === "zerotrust.objects.get") {
         state.objectRequests.push(input.id);
-        await state.beforeObject(input.id);
         const object = objects.find((object) => object.object === input.id);
         if (!object) {
           return [
@@ -225,6 +226,19 @@ async function fixture(extraReader = false, suspended = false) {
           ];
         }
         return [state.transformObject(object), null];
+      }
+      if (path === "zerotrust.objects.getMany") {
+        expect(input.domain).toBe(AREA.domain);
+        state.objectBatches.push(input.ids);
+        const error = await state.beforeObjectBatch(input.ids);
+        if (error) return [null, error];
+        return [
+          input.ids.map((id) => {
+            const object = objects.find((object) => object.object === id);
+            return object ? state.transformObject(object) : null;
+          }),
+          null,
+        ];
       }
       if (path === "zerotrust.objects.list") {
         state.pages.push(input.snapshot);
@@ -376,14 +390,14 @@ test("parallel object decryption shares one combined opening request across page
   }
 });
 
-test("selected reads fill the transport batch before opening ciphertexts and preserve selection order", async () => {
+test("selected reads fetch grouped ciphertexts and preserve selection order", async () => {
   const { state, collection } = await fixture();
   const ids = Array.from(
     { length: 48 },
     (_, index) => `item:${String(47 - index).padStart(3, "0")}`,
   );
   state.beforeKey = async () => {
-    expect(state.objectRequests).toEqual(ids.slice(0, 32));
+    expect(state.objectBatches).toEqual([ids.slice(0, 32)]);
   };
   try {
     expect(await collection.selected([])).toEqual([]);
@@ -393,7 +407,11 @@ test("selected reads fill the transport batch before opening ciphertexts and pre
     expect(objects.map((object) => object.value.index)).toEqual(
       Array.from({ length: 48 }, (_, index) => 47 - index),
     );
-    expect(state.objectRequests).toEqual([...ids, "item:missing"]);
+    expect(state.objectBatches).toEqual([
+      ids.slice(0, 32),
+      [...ids.slice(32), "item:missing"],
+    ]);
+    expect(state.objectRequests).toEqual([]);
     expect(state.openingRequests).toBe(1);
     expect(state.keyRequests).toBe(0);
     expect(state.pages).toEqual([]);
@@ -402,18 +420,15 @@ test("selected reads fill the transport batch before opening ciphertexts and pre
   }
 });
 
-test("a failed selected read drains its in-flight batch and starts neither crypto nor another batch", async () => {
+test("a failed selected batch starts neither crypto nor another batch", async () => {
   const { state, collection } = await fixture();
   let release;
   const held = new Promise((resolve) => {
     release = resolve;
   });
-  let active = 0;
-  state.beforeObject = async (id) => {
-    if (id === "item:000") throw new Error("Selected read failed");
-    active++;
+  state.beforeObjectBatch = async () => {
     await held;
-    active--;
+    throw new Error("Selected read failed");
   };
   const ids = Array.from(
     { length: 48 },
@@ -432,18 +447,39 @@ test("a failed selected read drains its in-flight batch and starts neither crypt
   try {
     await Promise.resolve();
     await Promise.resolve();
-    expect(state.objectRequests).toEqual(ids.slice(0, 32));
-    expect(active).toBe(31);
+    expect(state.objectBatches).toEqual([ids.slice(0, 32)]);
     expect(settled).toBe(false);
     expect(state.openingRequests).toBe(0);
     release();
     expect((await failed).message).toBe("Selected read failed");
-    expect(active).toBe(0);
-    expect(state.objectRequests).toHaveLength(32);
+    expect(state.objectBatches).toHaveLength(1);
+    expect(state.objectRequests).toEqual([]);
     expect(state.openingRequests).toBe(0);
   } finally {
     release();
     await failed;
+    collection.close();
+  }
+});
+
+test("selected reads split only a batch that exceeds the response budget", async () => {
+  const { state, collection } = await fixture();
+  const ids = ["item:001", "item:003", "item:006", "item:007"];
+  state.beforeObjectBatch = async (selected) => {
+    if (selected.length > 2)
+      return new RpcClientError({
+        code: -32600,
+        message: "Ciphertext batch exceeds the response limit",
+        data: { httpCode: 413 },
+      });
+  };
+  try {
+    expect(
+      (await collection.selected(ids)).map(({ value }) => value.index),
+    ).toEqual([1, 3, 6, 7]);
+    expect(state.objectBatches).toEqual([ids, ids.slice(0, 2), ids.slice(2)]);
+    expect(state.objectRequests).toEqual([]);
+  } finally {
     collection.close();
   }
 });
@@ -456,6 +492,7 @@ test("selected reads reject duplicate or foreign identifiers before making reque
         InvalidProtectedData,
       );
     }
+    expect(state.objectBatches).toEqual([]);
     expect(state.objectRequests).toEqual([]);
   } finally {
     collection.close();
@@ -472,9 +509,9 @@ test("selected batches authenticate each returned object and reject signed chang
       (object) => ({ ...object, object: "item:other" }),
     ]) {
       f.state.transformObject = substitute;
-      await expect(f.collection.selected(["item:007"])).rejects.toBeInstanceOf(
-        InvalidProtectedData,
-      );
+      await expect(
+        f.collection.selected(["item:007", "item:missing"]),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
     }
     f.state.transformObject = (object) => object;
     expect((await f.collection.selected(["item:007"]))[0].value).toEqual({

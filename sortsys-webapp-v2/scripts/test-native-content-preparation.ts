@@ -298,6 +298,16 @@ async function issueInvoiceAfterBackup(
   const published = await required(
     peer.query("commercial.documents.get", document, fresh),
   );
+  const scope = `commercial:${id}`;
+  const lockedHead = await required(
+    peer.query("zerotrust.documents.get", { scope, id: document.id }, fresh),
+  );
+  assert.equal(lockedHead.locked, true);
+  const billingPart = lockedHead.parts.find((part) => part.facet === "billing");
+  assert.ok(billingPart);
+  const publishedPart = await required(
+    peer.query("zerotrust.objects.get", { id: billingPart.object }, fresh),
+  );
   const detail = await required(
     peer.query("commercial.cases.get", { id }, fresh),
   );
@@ -348,6 +358,17 @@ async function issueInvoiceAfterBackup(
       assert.equal(recovered.xml, published.xml);
       assert.equal(recovered.version, published.version);
       assert.equal(recovered.canEdit, false);
+      const selected = await required(
+        peer.query(
+          "zerotrust.objects.getMany",
+          {
+            domain: commercialCollection(id, "billing").domain,
+            ids: ["billing:absent", billingPart.object],
+          },
+          fresh,
+        ),
+      );
+      assert.deepEqual(selected, [null, publishedPart]);
     },
     async settle() {
       const payment = {
@@ -677,13 +698,17 @@ async function exerciseGaebBlockBatches(
     );
     const download = transmissions.length;
     assert.deepEqual(await reader.read(part), original);
-    const get = "zerotrust.objects.get";
+    const reads = new Set(["zerotrust.objects.get", "zerotrust.objects.getMany"]);
     assert.deepEqual(
       transmissions
         .slice(download)
-        .map((paths) => paths.filter((path) => path === get).length)
-        .filter((count) => count > 0),
-      [1, 4, 3],
+        .map((paths) => paths.filter((path) => reads.has(path)))
+        .filter((paths) => paths.length > 0),
+      [
+        ["zerotrust.objects.get"],
+        ["zerotrust.objects.getMany"],
+        ["zerotrust.objects.getMany"],
+      ],
     );
     console.log("GAEB block batching: 3 uploads and 3 downloads for 7 blocks and their manifest");
   } finally {
@@ -1443,6 +1468,23 @@ export async function exerciseContentPreparation(
     );
     assert.equal(packet, null);
     assert.equal(error?.data?.httpCode, 403);
+    const ids = [invoiceBillingObject(id), "billing:absent"];
+    const [deniedObjects, deniedRead] = await transport.query(
+      "zerotrust.objects.getMany",
+      { domain: commercialCollection(id, "billing").domain, ids },
+      { strategy: "network-only" },
+    );
+    assert.equal(deniedObjects, null);
+    assert.equal(deniedRead?.code, "FORBIDDEN");
+    assert.deepEqual(
+      await required(
+        transport.query("zerotrust.objects.getMany", {
+          domain: commercialCollection(id, "master-data").domain,
+          ids,
+        }),
+      ),
+      [null, null],
+    );
   });
   await invoice.settle();
   await rejectInvoiceWithoutContract(tenant, owner, peer, operator);

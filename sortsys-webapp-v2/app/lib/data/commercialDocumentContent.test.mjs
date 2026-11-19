@@ -146,8 +146,7 @@ test("large document parts group writes and reads and recover a lost batch ackno
   const fixture = await protectedTenant([first, scope]);
   const { mutate, query } = fixture.client;
   const writes = [];
-  let readsInFlight = 0;
-  let parallelReads = 0;
+  const readBatches = [];
   fixture.client.mutate = async (path, input) => {
     const result = await mutate(path, input);
     if (path !== "zerotrust.objects.batch") return result;
@@ -157,14 +156,8 @@ test("large document parts group writes and reads and recover a lost batch ackno
     return result;
   };
   fixture.client.query = async (path, input) => {
-    if (path !== "zerotrust.objects.get") return query(path, input);
-    readsInFlight++;
-    parallelReads = Math.max(parallelReads, readsInFlight);
-    try {
-      return await query(path, input);
-    } finally {
-      readsInFlight--;
-    }
+    if (path === "zerotrust.objects.getMany") readBatches.push(input.ids);
+    return query(path, input);
   };
   const store = await commercialDocumentStore(
     fixture.client,
@@ -176,11 +169,11 @@ test("large document parts group writes and reads and recover a lost batch ackno
     const part = await store.stage("3", "scope", original);
     expect(writes.map((group) => group.length)).toEqual([3, 3, 2]);
     expect(writes.at(-1).at(-1)).toBe(part.object);
-    expect(parallelReads).toBe(3);
+    expect(readBatches).toEqual([writes[0]]);
 
-    parallelReads = 0;
+    readBatches.length = 0;
     expect(await store.read(part)).toEqual(original);
-    expect(parallelReads).toBe(4);
+    expect(readBatches.map((batch) => batch.length)).toEqual([4, 3]);
 
     fixture.objects.delete(writes[1][0]);
     await expect(store.read(part)).rejects.toThrow();

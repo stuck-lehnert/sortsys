@@ -188,6 +188,28 @@ export async function exerciseBatchedReads(
     assert.equal(page.openings[0]!.definition.id, area.domain);
   }
 
+  const left = pages[0]!.objects[0]!;
+  const right = pages[1]!.objects[0]!;
+  const ids = [right.object, "staged:absent", left.object];
+  assert.deepEqual(
+    await required(
+      peer.query("zerotrust.objects.getMany", { domain: area.domain, ids }),
+    ),
+    [right, null, left],
+  );
+  for (const invalidIds of [
+    [],
+    [left.object, left.object],
+    Array.from({ length: 33 }, (_, index) => `staged:${index}`),
+  ]) {
+    const [objects, error] = await peer.query("zerotrust.objects.getMany", {
+      domain: area.domain,
+      ids: invalidIds,
+    });
+    assert.equal(objects, null);
+    assert.equal(error?.code, "BAD_REQUEST");
+  }
+
   const head = await required(
     peer.query("zerotrust.objects.pages", {
       selections: [{ ...first, headOnly: true }],

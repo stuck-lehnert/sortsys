@@ -136,6 +136,13 @@ impl DomainDefinition {
 struct IdInput {
     id: String,
 }
+
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct ObjectSelection {
+    domain: String,
+    ids: Vec<String>,
+}
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct KeyInput {
@@ -516,6 +523,7 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         .query_stub::<ListInput, ObjectPage>("zerotrust.objects.list")
         .query_stub::<ListBatchInput, Vec<ObjectPage>>("zerotrust.objects.pages")
         .query_stub::<IdInput, EncryptedObject>("zerotrust.objects.get")
+        .query_stub::<ObjectSelection, Vec<Option<EncryptedObject>>>("zerotrust.objects.getMany")
         .query_stub::<(), Vec<IdentityInfo>>("zerotrust.identities.list")
         .query_stub::<IdentityInput, Option<IdentityCertificate>>("zerotrust.identities.get")
         .mutation_stub::<IdentityCertificate, Success>("zerotrust.identities.certify")

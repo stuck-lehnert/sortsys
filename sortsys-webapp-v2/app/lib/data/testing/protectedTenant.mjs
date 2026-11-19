@@ -301,6 +301,16 @@ export async function protectedTenant(
                 null,
                 Object.assign(new Error("Missing"), { code: "NOT_FOUND" }),
               ];
+        case "zerotrust.objects.getMany":
+          return [
+            input.ids.map((id) => {
+              const object = objects.get(id);
+              return object && `${object.scope}:${object.facet}` === input.domain
+                ? structuredClone(object)
+                : null;
+            }),
+            null,
+          ];
         case "zerotrust.fileChunks.get":
         case "zerotrust.fileChunks.getMany":
         case "zerotrust.fileChunks.findMany": {

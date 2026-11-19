@@ -1499,6 +1499,10 @@ export type QueryInputs = {
     "zerotrust.objects.get": {
         id: string;
     };
+    "zerotrust.objects.getMany": {
+        domain: string;
+        ids: Array<string>;
+    };
     "zerotrust.objects.list": {
         domain: string;
         prefix: string;
@@ -3198,6 +3202,21 @@ export type QueryOutputs = {
         wrappedKey: string;
         signature: string;
     };
+    "zerotrust.objects.getMany": Array<{
+        tenant: string;
+        scope: string;
+        facet: Facet;
+        object: string;
+        revision: string;
+        generation: string;
+        policyVersion: string;
+        author: string;
+        format: string;
+        nonce: string;
+        ciphertext: string;
+        wrappedKey: string;
+        signature: string;
+    } | null>;
     "zerotrust.objects.list": {
         snapshot: string;
         keyGeneration: string;
