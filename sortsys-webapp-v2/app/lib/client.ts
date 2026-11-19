@@ -26,6 +26,7 @@ const businessClient = createBusinessClient(baseClient, {
 });
 
 export const projectFiles = businessClient.files;
+export const assistant = businessClient.assistant;
 export const dataSession = businessClient.dataSession;
 export const gaebDocuments = businessClient.documents;
 export const toolResources = businessClient.toolResources;

@@ -47,6 +47,18 @@ export type FolderPayload = {
   folder: BusinessRow | null;
 };
 export type ProjectFile = QueryResult<"projects.files.list">[number];
+
+export function currentDocumentText(values: BusinessRow["values"]): string | null {
+  if (
+    values.text_extraction_status === "ready" &&
+    values.text_extraction_version === values.office_version &&
+    typeof values.extracted_text === "string"
+  ) {
+    return values.extracted_text;
+  }
+  return null;
+}
+
 export function fileCollection(project: string): Collection {
   return {
     ...projectFacetArea(project, "attachment"),

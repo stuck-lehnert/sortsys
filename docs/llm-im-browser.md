@@ -197,6 +197,29 @@ diesen persönlichen Bereich. Weitere Chat-Werkzeuge brauchen zuerst ihre
 geschützten Fachadapter. Ein gespeicherter Vorschlag bleibt lesbar, wenn sein
 Fachadapter nicht verfügbar ist; er erhält dadurch keine Ausführungsfreigabe.
 
+## Projektdateien im Chat
+
+Mit **Projektdateien für diese Anfrage freigeben** kann der Chat beispielsweise
+einen Montageplan anhand eines Bauteils finden und auf die Fundstelle
+verweisen. Die Auswahl gilt für eine Nachricht und wird beim Senden
+zurückgesetzt. Die Schnittstelle für Mandantenskripte kann diese Freigabe nicht
+setzen. Bei weiteren Nachrichten kann die bisherige Chatantwort als Teil
+des Verlaufs erneut an den Modellanbieter gelangen.
+
+Die Dokumentwerkzeuge durchsuchen die zu Beginn der Anfrage lesbaren
+Projektdateien. Jede Suche und jeder Textabruf prüft die aktuellen Freigaben.
+Das Modell erhält bei Bedarf Dateinamen, Fundstellen oder eine begrenzte
+Textseite. Es erhält eine Projektbezeichnung nur mit der entsprechenden
+Lesefreigabe. Textseiten gehören zu einer geprüften Dateirevision. Ändert sich
+die Datei zwischen zwei Abrufen, muss der Text erneut ab dem Anfang gelesen
+werden. Ein Scan ohne ausgelesenen Text bleibt über den Dateinamen auffindbar.
+Die Werkzeuge öffnen keine Originaldateien und starten keine Texterkennung.
+
+Suche und Entschlüsselung laufen im Browser. Das Modell ruft die Werkzeuge über
+denselben authentifizierten Live-MCP-Kanal auf wie die Katalogsuche. Für den
+separaten Einlesen-Dialog stehen weiterhin nur die Katalogwerkzeuge bereit.
+Siehe [Dokumentensuche](verschluesselte-dokumentensuche.md).
+
 ## Übernahme und Prüfung
 
 Altdaten gelangen bei der

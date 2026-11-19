@@ -29,6 +29,7 @@ export type LiveLlmRequest =
 export type LiveLlmTools = {
   queries: readonly string[];
   mutations: readonly string[];
+  documents?: boolean;
   execute(
     name: string,
     arguments_: unknown,
@@ -58,7 +59,8 @@ export async function runLiveLlm(
     request.kind === "document_import" &&
     (tools.queries.length !== 1 ||
       tools.queries[0] !== "products.list" ||
-      tools.mutations.length)
+      tools.mutations.length ||
+      tools.documents)
   )
     throw new InvalidProtectedData();
   const history = await trustedHistory(client);
@@ -70,6 +72,7 @@ export async function runLiveLlm(
       chatId: request.kind === "chat" ? request.chatId : null,
       queries: [...tools.queries],
       mutations: [...tools.mutations],
+      ...(tools.documents ? { documents: true } : {}),
     },
     { signal },
   );
@@ -219,6 +222,8 @@ export async function runLiveLlm(
               !tools.queries.includes("products.list")
             )
               throw new InvalidProtectedData();
+          } else if (name === "sortsys_search_documents" || name === "sortsys_read_document") {
+            if (!tools.documents) throw new InvalidProtectedData();
           } else throw new InvalidProtectedData();
         }
         void Promise.resolve()

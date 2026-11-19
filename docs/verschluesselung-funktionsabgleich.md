@@ -468,6 +468,12 @@ persönlichem Verlauf. Weitere Chat-Werkzeuge und die Übernahme in weitere
 Fachabläufe sind noch zu ergänzen. Die Klartextausnahme bleibt auf den
 freigegebenen Kontext der laufenden Anfrage begrenzt.
 
+Im Chat kann eine einzelne Nachricht für die [Projektdateisuche](llm-im-browser.md#projektdateien-im-chat)
+freigegeben werden. MCP liefert Suchausschnitte und Textseiten mit Quellenlinks.
+Der Browser liest nur aktuelle Extraktionen und prüft vor jedem Abruf erneut die
+Dateifreigabe. Der Einlesen-Dialog verwendet weiterhin ausschließlich die
+Produktsuche.
+
 **Laufende LLM-Anfragen beim Seitenwechsel.** Eine gemeinsame Laufzeitverwaltung
 hält Anfragen im geöffneten Tab. Beim Einlesen bleibt der nicht schließbare
 Dialog bis zum geprüften und verschlüsselt gespeicherten Ergebnis offen. Neue

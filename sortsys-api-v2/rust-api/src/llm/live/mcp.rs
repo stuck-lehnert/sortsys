@@ -202,6 +202,7 @@ fn definitions(ticket: &Ticket) -> Vec<Value> {
             "sortsys_query" => !ticket.queries.is_empty(),
             "sortsys_propose_change" => !ticket.mutations.is_empty(),
             "sortsys_search" => ticket.queries.iter().any(|path| path == "products.list"),
+            "sortsys_search_documents" | "sortsys_read_document" => ticket.documents,
             _ => false,
         });
         for tool in &mut tools {
@@ -332,6 +333,24 @@ mod tests {
             .await
             .is_err()
         );
+        for name in ["sortsys_search_documents", "sortsys_read_document"] {
+            assert!(
+                !definitions(&session.ticket)
+                    .iter()
+                    .any(|entry| entry["name"] == name)
+            );
+            assert!(tool(&session, name, json!({})).await.is_err());
+        }
+        let mut enabled = session.ticket.clone();
+        enabled.queries.clear();
+        enabled.documents = true;
+        for name in ["sortsys_search_documents", "sortsys_read_document"] {
+            assert!(
+                definitions(&enabled)
+                    .iter()
+                    .any(|entry| entry["name"] == name)
+            );
+        }
         let import = super::super::tests::ticket(LiveKind::DocumentImport);
         assert_eq!(
             definitions(&import)

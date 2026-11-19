@@ -765,7 +765,7 @@ export type MutationInputs = {
   "zerotrust.invitations.revoke": { id: string, proof: string, };
   "zerotrust.keyAuthorities.register": { authorities: Array<KeyAuthority<Facet>>, };
   "zerotrust.keys.grant": { domain: string, generation: string, envelope: SealedBox, keyAuthority?: KeyAuthority<Facet>, };
-  "zerotrust.llm.open": { kind: LiveKind, chatId: Id | null, queries: Array<string>, mutations: Array<string>, };
+  "zerotrust.llm.open": { kind: LiveKind, chatId: Id | null, queries: Array<string>, mutations: Array<string>, documents?: boolean, };
   "zerotrust.members.create": { tenant: string, generation: string, author: string, id: string, username: string, source?: InitialMemberState, proof: string, };
   "zerotrust.objects.batch": { objects: Array<SaveInput>, heads?: Array<DomainHead>, documents?: Array<DocumentHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
   "zerotrust.objects.commit": { parts: Array<string>, heads: Array<DomainHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };

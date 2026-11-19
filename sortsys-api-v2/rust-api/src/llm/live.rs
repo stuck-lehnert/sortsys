@@ -70,6 +70,9 @@ struct OpenInput {
     chat_id: Option<Id>,
     queries: Vec<String>,
     mutations: Vec<String>,
+    #[serde(default)]
+    #[ts(optional)]
+    documents: Option<bool>,
 }
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
@@ -93,6 +96,7 @@ struct Ticket {
     chat_id: Option<Id>,
     queries: Vec<String>,
     mutations: Vec<String>,
+    documents: bool,
     exp: u64,
 }
 impl Ticket {
@@ -358,11 +362,12 @@ async fn open(
         chat_id: input.chat_id,
         queries: input.queries,
         mutations: input.mutations,
+        documents: input.documents.unwrap_or_default(),
         exp: now() + 60,
     };
     ticket.scope()?;
     if ticket.kind == LiveKind::DocumentImport
-        && (ticket.queries != ["products.list"] || !ticket.mutations.is_empty())
+        && (ticket.queries != ["products.list"] || !ticket.mutations.is_empty() || ticket.documents)
     {
         return Err(invalid());
     }
@@ -438,6 +443,7 @@ mod tests {
             },
             queries: vec!["products.list".into()],
             mutations: vec![],
+            documents: false,
             exp: now() + 60,
         }
     }

@@ -25,6 +25,7 @@ import { processImport } from "../app/lib/importProcessing";
 import { llmActivity } from "../app/lib/llmActivity";
 import { chatModelFixture, testLiveChats } from "./test-live-chats";
 import { memberModelFixture, testMemberLlm } from "./test-member-llm";
+import { documentModelFixture, testChatDocuments } from "./test-chat-documents";
 import type { DuckDriver } from "../app/lib/data/database";
 
 export async function testLiveLlm(
@@ -60,6 +61,7 @@ export async function testLiveLlm(
   const model = "sortsys-live-llm-fixture";
   const chatFixture = chatModelFixture();
   const memberFixture = memberModelFixture();
+  const documentsFixture = documentModelFixture();
   const server = Bun.serve({
     hostname: "0.0.0.0",
     port: 0,
@@ -98,6 +100,8 @@ export async function testLiveLlm(
           checkedProviderOriginals++;
         }
       }
+      const documentReply = documentsFixture.reply(body);
+      if (documentReply) return documentReply;
       const chat = await chatFixture.reply(body);
       if (chat) return chat;
       const member = memberFixture.reply(body);
@@ -239,6 +243,17 @@ export async function testLiveLlm(
           chatId: "1",
           queries: ["zerotrust.keys.get"],
           mutations: [],
+        }),
+      ),
+    );
+    await assert.rejects(() =>
+      required(
+        client.mutate("zerotrust.llm.open", {
+          kind: "document_import",
+          chatId: null,
+          queries: ["products.list"],
+          mutations: [],
+          documents: true,
         }),
       ),
     );
@@ -567,6 +582,7 @@ export async function testLiveLlm(
     }
 
     await testLiveChats(client, business, ownerEndpoint, driver, chatFixture);
+    await testChatDocuments(client, ownerEndpoint, driver, documentsFixture);
 
     const controller = new AbortController();
     const interrupted = runLiveLlm(

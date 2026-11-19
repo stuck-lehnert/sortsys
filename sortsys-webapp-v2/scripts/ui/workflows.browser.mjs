@@ -1517,6 +1517,33 @@ for (const [layout, viewport] of [
   });
 }
 
+test("chat document access requires a fresh opt-in for each message", async () => {
+  await openApplication("/llm/k", "en");
+  const label = "Allow project files for this request";
+  const consent = page.getByRole("checkbox", { name: label });
+  const composer = page.getByRole("textbox", { name: "Message", exact: true });
+  await consent.waitFor();
+  assert.equal(await consent.isChecked(), false);
+  await page.getByText(label, { exact: true }).click();
+  assert.equal(await consent.isChecked(), true);
+  await page.getByText(/The model provider may receive text/).waitFor();
+  await composer.fill("Find the installation drawing.");
+  await composer.press("Enter");
+  const reply = page.getByRole("log").getByRole("link", { name: "source" });
+  await reply.first().waitFor();
+  assert.equal(await consent.isChecked(), false);
+  await composer.fill("Can you help with another task?");
+  await page.getByRole("button", { name: "Send message", exact: true }).click();
+  await reply.nth(1).waitFor();
+  const submissions = api.requests.filter(
+    ({ path }) => path === "llm.messages.send",
+  );
+  assert.deepEqual(
+    submissions.map(({ input }) => input.includeProjectDocuments),
+    [true, undefined],
+  );
+});
+
 test("actual restricted roles cannot use administration or the LLM composer", async () => {
   api.setRoles([]);
   await openApplication("/admin");

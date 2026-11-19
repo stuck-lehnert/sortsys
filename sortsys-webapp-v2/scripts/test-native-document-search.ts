@@ -4,6 +4,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { createClient } from "@sortsys/v2-client";
 import { signPolicy } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
+import { openChatDocuments } from "../app/lib/data/chatDocuments";
 import { createProtectedProjectFiles } from "../app/lib/data/projectFiles";
 import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 import {
@@ -314,6 +315,39 @@ try {
     excluded.map((result) => result.id),
     [sparse],
   );
+  const scopedFiles = createProtectedProjectFiles(member, signal, async () => {
+    throw new Error("A file-only reader must not request project master data");
+  }, duckDriver);
+  try {
+    const tools = await openChatDocuments(member, scopedFiles.searchScoped, signal);
+    assert.ok(tools);
+    const first = await tools.search({ query, limit: 1 }, signal);
+    assert.deepEqual(first.documents.map(({ id }) => id), [dense]);
+    assert.equal(first.nextOffset, 1);
+    const next = await tools.search({ query, limit: 1, offset: 1 }, signal);
+    assert.deepEqual(next.documents.map(({ id }) => id), [sparse]);
+    assert.equal(next.nextOffset, null);
+    await assert.rejects(() => tools.search({ query, projectId: hidden.id }, signal));
+    await assert.rejects(() => tools.read({ projectId: hidden.id, fileId: forbidden }, signal));
+
+    const args = { projectId: visible.id, fileId: dense };
+    const page = await tools.read({ ...args, limit: 4 }, signal);
+    assert.ok("text" in page);
+    assert.equal(page.text, "Vorb");
+    assert.equal(page.nextOffset, 4);
+    await assert.rejects(() => tools.read({ ...args, offset: 4 }, signal));
+    const stale = await tools.read({ projectId: visible.id, fileId: staleVersion }, signal);
+    assert.ok("revision" in stale);
+    assert.equal(stale.contentAvailable, false);
+    assert.equal(stale.text, null);
+    assert.equal(stale.unavailableReason, "stale_or_missing_extraction");
+    assert.deepEqual(
+      await tools.read({ ...args, revision: stale.revision, offset: 4 }, signal),
+      { contentAvailable: false, unavailableReason: "document_changed" },
+    );
+  } finally {
+    await scopedFiles.close();
+  }
 
   memberBusiness.dispose();
   await acceptVaultWithKey(
@@ -375,6 +409,8 @@ try {
     },
     duckDriver,
   );
+  const openTools = await openChatDocuments(member, titleRace.searchScoped, signal);
+  assert.ok(openTools);
   try {
     const found = (await titleRace.query("projects.files.search", searchInput)) as {
       id: string;
@@ -389,6 +425,8 @@ try {
     await titleRace.close();
   }
   await required(owner.mutate("zerotrust.policy.replace", fileRevocation));
+  await assert.rejects(() => openTools.read({ projectId: visible.id, fileId: dense }, signal));
+  assert.equal(await openChatDocuments(member, titleRace.searchScoped, signal), null);
   const emptyFiles = createProtectedProjectFiles(
     member,
     signal,

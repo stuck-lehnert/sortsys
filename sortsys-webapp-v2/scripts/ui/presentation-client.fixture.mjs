@@ -6,6 +6,7 @@ import { ramCache } from "../../app/lib/data/ramCache";
 import { errorHttpStatus } from "../../app/lib/errorTelemetry";
 import {
   API_ENDPOINT,
+  assistant,
   client,
   dashboardPreferences,
   gaebDocuments,
@@ -83,6 +84,15 @@ export async function installPresentationClient() {
       }),
     );
   client.mutate = transport.mutate;
+  assistant.sendWithProjectDocuments = async (input, signal) => {
+    const [reply, error] = await transport.mutateDynamic(
+      "llm.messages.send",
+      { ...input, includeProjectDocuments: true },
+      { signal },
+    );
+    if (error) throw error;
+    return reply;
+  };
   client.mutateDynamic = transport.mutateDynamic;
   client.invalidate = transport.invalidate;
   client.invalidateCascading = transport.invalidateCascading;

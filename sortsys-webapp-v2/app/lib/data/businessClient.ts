@@ -1,6 +1,6 @@
 import { contractProcedureKind } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
-import type { Client } from "@sortsys/v2-client";
+import type { Client, MutateInput } from "@sortsys/v2-client";
 import { revision } from "@sortsys/zerotrust/sortsys";
 import { Observable } from "rxjs";
 import {
@@ -793,6 +793,7 @@ export function createBusinessClient(
         options.endpoint ?? "/api/v2",
         signal,
         options.productDriver,
+        (...args) => fileWork((store) => store.searchScoped(...args)),
       ),
     );
     const result = await chats;
@@ -2039,12 +2040,29 @@ export function createBusinessClient(
       notify((path) => COMMON_COST_QUERIES.has(path));
     },
   };
+  const assistantActions = {
+    // Document consent belongs to the chat composer. Generic mutations are
+    // also callable by tenant scripts and cannot enable this scope.
+    async sendWithProjectDocuments(
+      input: MutateInput<"llm.messages.send">,
+      cancellation?: AbortSignal,
+    ) {
+      await synchronized();
+      const signal = controller.signal;
+      cancellation?.throwIfAborted();
+      const result = await (await assistant()).send(input, cancellation, true);
+      if (closed || signal.aborted) throw unavailable();
+      notify();
+      return result;
+    },
+  };
   const facade: Client & {
     context: typeof contentContext;
     dataSession: typeof dataSession;
     commonCosts: typeof commonCostActions;
     dashboard: typeof dashboardActions;
     access: typeof contentAccess;
+    assistant: typeof assistantActions;
     files: typeof fileActions;
     documents: typeof documentActions;
     toolResources: typeof toolResourceActions;
@@ -2059,6 +2077,7 @@ export function createBusinessClient(
     commonCosts: commonCostActions,
     dashboard: dashboardActions,
     access: contentAccess,
+    assistant: assistantActions,
     files: fileActions,
     documents: documentActions,
     toolResources: toolResourceActions,

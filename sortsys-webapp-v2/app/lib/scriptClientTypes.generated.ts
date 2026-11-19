@@ -4552,6 +4552,7 @@ export type MutationInputs = {
         chatId: Id | null;
         queries: Array<string>;
         mutations: Array<string>;
+        documents?: boolean;
     };
     "zerotrust.members.create": {
         tenant: string;

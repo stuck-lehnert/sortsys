@@ -23,6 +23,7 @@ import {
 } from "./productOperations";
 import type { DuckDriver } from "./database";
 import { PRODUCT_COLLECTION, PRICE_COLLECTION } from "./products";
+import { openChatDocuments, type ScopedDocumentSearch } from "./chatDocuments";
 
 const PRODUCT_QUERIES = [
   "products.list",
@@ -38,6 +39,7 @@ export function createProtectedChats(
   endpoint: string,
   lifetime: AbortSignal,
   driver?: () => Promise<DuckDriver>,
+  searchFiles?: ScopedDocumentSearch,
 ) {
   const account = unlockedAccount();
   const live = (signal = lifetime) => {
@@ -127,10 +129,14 @@ export function createProtectedChats(
     continuation: ChatProposal | null,
     signal: AbortSignal,
     locale?: "de" | "en",
+    includeProjectDocuments = false,
   ) {
     live(signal);
     const before = await get(id),
       access = await capabilities(signal);
+    const documents = includeProjectDocuments && searchFiles
+      ? await openChatDocuments(transport, searchFiles, signal)
+      : null;
     live(signal);
     const messageId = newAssistantId(),
       proposed: ChatProposal[] = [];
@@ -170,8 +176,13 @@ export function createProtectedChats(
       { kind: "chat", chatId: id, turns, locale },
       {
         ...access,
+        documents: documents !== null,
         async execute(name, input, cancellation) {
           live(cancellation);
+          if (documents && name === "sortsys_search_documents")
+            return documents.search(input, cancellation);
+          if (documents && name === "sortsys_read_document")
+            return documents.read(input, cancellation);
           if (name === "sortsys_query") {
             const request = input as Record<string, unknown>;
             if (
@@ -382,7 +393,11 @@ export function createProtectedChats(
         store.close();
       }
     },
-    async send(input: MutateInput<"llm.messages.send">, parent?: AbortSignal) {
+    async send(
+      input: MutateInput<"llm.messages.send">,
+      parent?: AbortSignal,
+      includeProjectDocuments = false,
+    ) {
       if (
         input.locale != null &&
         input.locale !== "de" &&
@@ -425,6 +440,7 @@ export function createProtectedChats(
           null,
           signal,
           input.locale ?? undefined,
+          includeProjectDocuments,
         );
         await data.invalidate("llm.status");
         return result;

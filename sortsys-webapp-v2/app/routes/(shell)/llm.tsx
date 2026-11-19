@@ -3,7 +3,7 @@ import { Loading } from "@sortsys/react-components";
 import { Button as UIAction } from "@sortsys/react-components";
 import { TextArea as UITextArea } from "@heroui/react";
 import type { MutateInput, QueryResult } from "@sortsys/v2-client";
-import { Heading, Modal, TextArea } from "@sortsys/react-components";
+import { Checkbox, Heading, Modal, TextArea } from "@sortsys/react-components";
 import { useNavigate, useParams } from "react-router";
 import {
   Fragment,
@@ -29,7 +29,7 @@ import {
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useProtectedState } from "~/hooks/useProtectedState";
-import { client, protectedContent } from "~/lib/client";
+import { assistant, client, protectedContent } from "~/lib/client";
 import { createChatRequests } from "~/lib/chatRequests";
 import type { ProjectFileTarget } from "~/lib/projectFileLinks";
 import { Icons } from "~/lib/icons";
@@ -485,6 +485,7 @@ export default function LlmPage() {
   const canCreate = session.canAccess(privateScope, "master-data", "create");
   const canReview = session.canAccess(privateScope, "master-data", "update");
   const canSend = canCreate && canReview;
+  const canSearchFiles = session.canSearchProjectFiles();
   const [status, statusErr] = useClientStream(
     () =>
       client.streamQuery("llm.status", undefined, {
@@ -495,6 +496,8 @@ export default function LlmPage() {
   const [detail, setDetail, contentContext] =
     useProtectedState<ChatDetail | null>(null);
   const [content, setContent] = useProtectedState("");
+  const [includeFiles, setIncludeFiles] = useProtectedState(false);
+  const documentHintId = useId();
   const [isStartingNewChat, setIsStartingNewChat] = useState(false);
   const [previewTarget, setPreviewTarget] =
     useProtectedState<ProjectFileTarget | null>(null);
@@ -504,6 +507,7 @@ export default function LlmPage() {
 
   useEffect(() => {
     setPreviewTarget(null);
+    setIncludeFiles(false);
   }, [selectedId]);
 
   useEffect(() => {
@@ -686,7 +690,7 @@ export default function LlmPage() {
     setError(null);
   }
 
-  async function sendMessage(message = content) {
+  async function sendMessage(message = content, withDocuments = false) {
     const normalizedMessage = message.trim();
 
     if (!normalizedMessage || !canSend || isSending || isStartingNewChat) {
@@ -696,6 +700,8 @@ export default function LlmPage() {
     setPending("send");
     setError(null);
     setContent("");
+    const includeProjectDocuments = canSearchFiles && withDocuments;
+    setIncludeFiles(false);
 
     const submission = {
       content: normalizedMessage,
@@ -717,6 +723,7 @@ export default function LlmPage() {
         if (mountedRef.current && selectedIdRef.current === originChatId) {
           setPending(null);
           setContent(normalizedMessage);
+          setIncludeFiles(includeProjectDocuments);
           setError(createError.message);
         }
 
@@ -728,23 +735,21 @@ export default function LlmPage() {
 
     const chatId = targetChatId;
     void chatRequests.start(chatId, submission, async (signal) => {
-      const [updated, sendError] = await client.mutate(
-        "llm.messages.send",
-        {
-          chatId,
-          content: normalizedMessage,
-          locale,
-        },
-        { signal },
-      );
-
-      void client.invalidate("llm.chats.list");
-
-      if (sendError) {
-        throw sendError;
+      const input = { chatId, content: normalizedMessage, locale };
+      try {
+        if (includeProjectDocuments) {
+          return await assistant.sendWithProjectDocuments(input, signal);
+        }
+        const [updated, sendError] = await client.mutate(
+          "llm.messages.send",
+          input,
+          { signal },
+        );
+        if (sendError) throw sendError;
+        return updated;
+      } finally {
+        void client.invalidate("llm.chats.list");
       }
-
-      return updated;
     });
 
     if (mountedRef.current && selectedIdRef.current === originChatId) {
@@ -767,7 +772,7 @@ export default function LlmPage() {
       return;
 
     event.preventDefault();
-    void sendMessage();
+    void sendMessage(content, includeFiles);
   }
 
   async function decline(proposal: Proposal) {
@@ -1145,7 +1150,7 @@ export default function LlmPage() {
             className="mx-auto w-full max-w-3xl shrink-0 space-y-2"
             onSubmit={(event) => {
               event.preventDefault();
-              void sendMessage();
+              void sendMessage(content, includeFiles);
             }}
           >
             <div className="flex items-end gap-2">
@@ -1185,6 +1190,30 @@ export default function LlmPage() {
                 <span className="sr-only sm:not-sr-only">{t("llm.send")}</span>
               </UIAction>
             </div>
+            {canSearchFiles && (
+              <div>
+                <Checkbox
+                  checked={includeFiles}
+                  disabled={!canSend || isSending || isStartingNewChat || !status?.available}
+                  labelText={uiText(
+                    "Projektdateien für diese Anfrage freigeben",
+                    "Allow project files for this request",
+                  )}
+                  aria-describedby={includeFiles ? documentHintId : undefined}
+                  onChange={(event: ChangeEvent<HTMLInputElement>) => {
+                    setIncludeFiles(event.currentTarget.checked);
+                  }}
+                />
+                {includeFiles && (
+                  <p id={documentHintId} className="px-1 text-xs leading-relaxed text-muted">
+                    {uiText(
+                      "Der Modellanbieter kann Text aus den für dieses Konto lesbaren Projektdateien erhalten.",
+                      "The model provider may receive text from project files readable by this account.",
+                    )}
+                  </p>
+                )}
+              </div>
+            )}
             <p className="px-1 text-xs leading-relaxed text-muted">
               {t("llm.composerHint")}
             </p>

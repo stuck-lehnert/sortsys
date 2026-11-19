@@ -58,6 +58,7 @@ import { mapConcurrent } from "./runtime/concurrentReads";
 import { searchDocuments, type SearchDocument } from "../search/documentSearch";
 import { createDocumentMatcher } from "../search/documentQuery";
 import {
+  currentDocumentText,
   fileCollection,
   fileDomainId,
   fileObject,
@@ -82,6 +83,10 @@ type Store = {
   folders: Map<string, FolderPayload>;
 };
 type Project = QueryResult<"projects.get">;
+type DocumentSearchScope = {
+  projects: ReadonlySet<string>;
+  offset: number;
+};
 type Inspection = {
   thumbnail?: Blob;
   width?: number;
@@ -833,7 +838,11 @@ export function createProtectedProjectFiles(
       return { version: update.version, savedAt: update.savedAt };
     });
   }
-  async function search(input: unknown, active: AbortSignal) {
+  async function search(
+    input: unknown,
+    active: AbortSignal,
+    scope?: DocumentSearchScope,
+  ) {
     const data = partialAddressRecord(input, ["query", "projectId", "limit"]);
     const query = addressText(data.query, true, 1000)!;
     const limit = data.limit === undefined ? 50 : Number(data.limit);
@@ -847,7 +856,7 @@ export function createProtectedProjectFiles(
     for (let attempt = 0; ; attempt++) {
       active.throwIfAborted();
       try {
-        return await searchSnapshot(query, projectId, limit, active);
+        return await searchSnapshot(query, projectId, limit, active, scope);
       } catch (error) {
         active.throwIfAborted();
         if (attempt >= 2 || !isWriteConflict(error)) throw error;
@@ -860,14 +869,20 @@ export function createProtectedProjectFiles(
     projectId: string | null,
     limit: number,
     active: AbortSignal,
+    scope?: DocumentSearchScope,
   ) {
     const access = await protectedCollections(client, active);
-    if (projectId !== null && !access.readable(fileCollection(projectId))) {
+    if (
+      projectId !== null &&
+      (!access.readable(fileCollection(projectId)) ||
+        (scope && !scope.projects.has(projectId)))
+    ) {
       throw new InvalidProtectedData();
     }
-    const ids =
-      projectId === null ? readableProjectsWithFiles(access) : [projectId];
-    await reload(ids, projectId === null ? new Set(ids) : undefined, access);
+    const readable = projectId === null ? readableProjectsWithFiles(access) : [projectId];
+    const inScope = (id: string) => !scope || scope.projects.has(id);
+    const ids = readable.filter(inScope);
+    await reload(ids, projectId === null ? new Set(readable) : undefined, access);
     const documents: SearchDocument[] = [];
     const entries = new Map<
       string,
@@ -888,12 +903,7 @@ export function createProtectedProjectFiles(
         documents.push({
           id: key,
           name,
-          text:
-            values.text_extraction_status === "ready" &&
-            values.text_extraction_version === values.office_version &&
-            typeof values.extracted_text === "string"
-              ? values.extracted_text
-              : null,
+          text: currentDocumentText(values),
         });
         entries.set(key, {
           id: fileId,
@@ -906,6 +916,7 @@ export function createProtectedProjectFiles(
       }
     }
     const matches = await searchDocuments(documents, query, active);
+    const offset = scope?.offset ?? 0;
     const ranked = matches
       .map(({ id, rank, excerpt }) => ({ ...entries.get(id)!, rank, excerpt }))
       .sort(
@@ -915,7 +926,7 @@ export function createProtectedProjectFiles(
           a.id.localeCompare(b.id) ||
           a.projectId.localeCompare(b.projectId),
       )
-      .slice(0, limit);
+      .slice(offset, offset + limit);
 
     // Only the displayed matches need a project title. File-only grants
     // neither request the master-data keys nor reveal a title.
@@ -938,11 +949,11 @@ export function createProtectedProjectFiles(
     // change. Compare every searched head, including collections with no
     // matches, before returning a ranked result for this snapshot.
     const current = await protectedCollections(client, active);
-    const currentIds = new Set(
+    const currentReadable =
       projectId === null
         ? readableProjectsWithFiles(current)
-        : ids.filter((id) => current.readable(fileCollection(id))),
-    );
+        : ids.filter((id) => current.readable(fileCollection(id)));
+    const currentIds = new Set(currentReadable.filter(inScope));
     const removed = [...stores.keys()].filter(
       (id) => !current.readable(fileCollection(id)),
     );
@@ -989,6 +1000,13 @@ export function createProtectedProjectFiles(
   }
   return {
     close,
+    searchScoped(
+      input: { query: string; projectId?: string; limit: number },
+      scope: DocumentSearchScope,
+      cancellation: AbortSignal,
+    ) {
+      return queue(() => search(input, AbortSignal.any([signal, cancellation]), scope));
+    },
     async refresh(domains?: Record<string, string | null>) {
       return queue(async () => {
         if (!domains) {
