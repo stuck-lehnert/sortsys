@@ -25,7 +25,10 @@ use serde_json::Value;
 use std::{
     collections::HashMap,
     net::SocketAddr,
-    sync::{Arc, Mutex, OnceLock},
+    sync::{
+        Arc, Mutex, OnceLock,
+        atomic::{AtomicBool, Ordering},
+    },
     time::Duration,
 };
 use tokio::sync::{Semaphore, mpsc, oneshot};
@@ -138,18 +141,36 @@ struct Call {
 }
 type Reply = RpcResult<Value>;
 struct Session {
-    closed: std::sync::atomic::AtomicBool,
+    closed: AtomicBool,
     ticket: Ticket,
     outgoing: mpsc::Sender<Call>,
     pending: Mutex<HashMap<String, oneshot::Sender<Reply>>>,
 }
+
+struct PendingCall<'a> {
+    session: &'a Session,
+    id: &'a str,
+}
+
+impl Drop for PendingCall<'_> {
+    fn drop(&mut self) {
+        if let Ok(mut pending) = self.session.pending.lock() {
+            pending.remove(self.id);
+        }
+    }
+}
+
 impl Session {
+    fn is_open(&self) -> bool {
+        !self.closed.load(Ordering::Acquire)
+    }
+
     async fn call(&self, name: &str, arguments: Value) -> Reply {
         let id = random()?;
         let (tx, rx) = oneshot::channel();
         {
             let mut pending = self.pending.lock().map_err(|_| unavailable())?;
-            if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            if !self.is_open() {
                 return Err(unavailable());
             }
             if pending.len() >= 8 {
@@ -157,38 +178,30 @@ impl Session {
             }
             pending.insert(id.clone(), tx);
         }
-        if self
-            .outgoing
+        let _pending = PendingCall {
+            session: self,
+            id: &id,
+        };
+        self.outgoing
             .try_send(Call {
                 id: id.clone(),
                 name: name.into(),
                 arguments,
             })
-            .is_err()
-        {
-            self.pending.lock().map_err(|_| unavailable())?.remove(&id);
-            return Err(busy());
-        }
-        let result = tokio::time::timeout(Duration::from_secs(60), rx).await;
-        self.pending.lock().map_err(|_| unavailable())?.remove(&id);
-        result
+            .map_err(|_| busy())?;
+        tokio::time::timeout(Duration::from_secs(60), rx)
+            .await
             .map_err(|_| unavailable())?
             .map_err(|_| unavailable())?
     }
-    fn reply(&self, id: &str, output: Reply) -> RpcResult<()> {
-        let sender = self
-            .pending
-            .lock()
-            .map_err(|_| unavailable())?
-            .remove(id)
-            .ok_or_else(invalid)?;
-        let _ = sender.send(output);
-        Ok(())
+    fn reply(&self, id: &str, output: Reply) -> RpcResult<bool> {
+        let sender = self.pending.lock().map_err(|_| unavailable())?.remove(id);
+        // A cancelled tool call can still have a reply on the browser socket.
+        Ok(sender.is_some_and(|sender| sender.send(output).is_ok()))
     }
     fn close(&self) {
+        self.closed.store(true, Ordering::Release);
         if let Ok(mut pending) = self.pending.lock() {
-            self.closed
-                .store(true, std::sync::atomic::Ordering::Release);
             for (_, sender) in pending.drain() {
                 let _ = sender.send(Err(unavailable()));
             }
@@ -331,8 +344,7 @@ async fn open(
     mut input: OpenInput,
 ) -> RpcResult<OpenOutput> {
     let auth = state.auth.authenticate(&context.headers).await?;
-    authorize(state, &auth, input.kind).await?;
-    let (subject, generation) = crate::zerotrust::live_identity(&state.auth, &auth).await?;
+    let ((subject, generation), _) = authorize(state, &auth, input.kind).await?;
     for (paths, kind) in [
         (&mut input.queries, ProcedureKind::Query),
         (&mut input.mutations, ProcedureKind::Mutation),
@@ -377,8 +389,12 @@ async fn open(
         generation,
     })
 }
-async fn authorize(state: &Runtime, auth: &AuthResult, kind: LiveKind) -> RpcResult<()> {
-    persistence::authorize(&state.auth, auth, kind).await?;
+async fn authorize(
+    state: &Runtime,
+    auth: &AuthResult,
+    kind: LiveKind,
+) -> RpcResult<((String, String), super::ProviderConfiguration)> {
+    let identity = persistence::authorize(&state.auth, auth, kind).await?;
     let use_case = match kind {
         LiveKind::Chat => super::CHAT_USE_CASE,
         LiveKind::DocumentImport => super::DOCUMENT_IMPORT_USE_CASE,
@@ -391,7 +407,7 @@ async fn authorize(state: &Runtime, auth: &AuthResult, kind: LiveKind) -> RpcRes
     {
         return Err(unavailable());
     }
-    Ok(())
+    Ok((identity, configuration))
 }
 
 fn random() -> RpcResult<String> {
@@ -469,12 +485,12 @@ mod tests {
     async fn tool_replies_are_request_scoped_and_close_releases_waiters() {
         let (outgoing, mut calls) = mpsc::channel(8);
         let session = Arc::new(Session {
-            closed: std::sync::atomic::AtomicBool::new(false),
+            closed: AtomicBool::new(false),
             ticket: ticket(LiveKind::DocumentImport),
             outgoing,
             pending: Mutex::new(HashMap::new()),
         });
-        assert!(session.reply("forged-id", Ok(json!({}))).is_err());
+        assert!(!session.reply("unmatched-id", Ok(json!({}))).unwrap());
         let first = Arc::clone(&session);
         let caller = tokio::spawn(async move {
             first
@@ -485,7 +501,7 @@ mod tests {
         assert_eq!(call.arguments["query"], "Putz");
         session.reply(&call.id, Ok(json!({"records":[]}))).unwrap();
         assert_eq!(caller.await.unwrap().unwrap(), json!({"records":[]}));
-        assert!(session.reply(&call.id, Ok(json!({}))).is_err());
+        assert!(!session.reply(&call.id, Ok(json!({}))).unwrap());
         let second = Arc::clone(&session);
         let caller =
             tokio::spawn(async move { second.call("sortsys_search_products", json!({})).await });
@@ -499,5 +515,43 @@ mod tests {
                 .await
                 .is_err()
         );
+    }
+
+    #[tokio::test]
+    async fn cancelling_a_tool_call_releases_its_slot_and_discards_a_late_reply() {
+        let (outgoing, mut calls) = mpsc::channel(8);
+        let session = Arc::new(Session {
+            closed: AtomicBool::new(false),
+            ticket: ticket(LiveKind::DocumentImport),
+            outgoing,
+            pending: Mutex::new(HashMap::new()),
+        });
+        let caller = Arc::clone(&session);
+        let request = tokio::spawn(async move {
+            caller
+                .call("sortsys_search_products", json!({"query":"Putz"}))
+                .await
+        });
+        let abandoned = calls.recv().await.unwrap();
+        assert_eq!(session.pending.lock().unwrap().len(), 1);
+        request.abort();
+        assert!(request.await.unwrap_err().is_cancelled());
+        assert!(session.pending.lock().unwrap().is_empty());
+
+        let caller = Arc::clone(&session);
+        let request = tokio::spawn(async move {
+            caller
+                .call("sortsys_search_products", json!({"query":"Kalk"}))
+                .await
+        });
+        let current = calls.recv().await.unwrap();
+        assert!(!session.reply(&abandoned.id, Ok(json!({}))).unwrap());
+        assert!(
+            session
+                .reply(&current.id, Ok(json!({"records":[]})))
+                .unwrap()
+        );
+        assert_eq!(request.await.unwrap().unwrap(), json!({"records":[]}));
+        assert!(session.is_open());
     }
 }

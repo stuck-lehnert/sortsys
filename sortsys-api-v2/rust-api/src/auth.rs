@@ -238,10 +238,11 @@ impl AuthService {
     pub(crate) async fn authenticate_mcp(
         &self,
         headers: &HeaderMap,
+        run: &str,
     ) -> RpcResult<(AuthResult, McpScope)> {
         let token = bearer(headers)?;
         let claims = self.decode(token)?;
-        let scope = McpScope::from_claims(claims.purpose.as_deref(), claims.chat_id)?;
+        let scope = claims.mcp_scope(run)?;
         let auth = self.authenticate_claims(claims).await?;
 
         Ok((auth, scope))
@@ -338,6 +339,7 @@ impl AuthService {
                 admin_for: None,
                 purpose: None,
                 chat_id: None,
+                mcp_run: None,
                 iat: now,
                 exp: now + USER_TOKEN_TTL_SECONDS,
             },
@@ -345,10 +347,11 @@ impl AuthService {
         )
     }
 
-    pub(crate) fn issue_mcp_token(
+    pub(crate) fn issue_live_mcp_token(
         &self,
         auth: &AuthResult,
         scope: McpScope,
+        run: &str,
     ) -> jsonwebtoken::errors::Result<String> {
         let now = unix_time();
         let (purpose, chat_id) = match scope {
@@ -364,6 +367,7 @@ impl AuthService {
                 admin_for: None,
                 purpose: Some(purpose.to_owned()),
                 chat_id,
+                mcp_run: Some(run.to_owned()),
                 iat: now,
                 exp: now + MCP_TOKEN_TTL_SECONDS,
             },
@@ -381,6 +385,7 @@ impl AuthService {
                 admin_for: Some(admin_for.to_owned()),
                 purpose: None,
                 chat_id: None,
+                mcp_run: None,
                 iat: now,
                 exp: now + ADMIN_TOKEN_TTL_SECONDS,
             },
@@ -438,13 +443,26 @@ struct Claims {
     purpose: Option<String>,
     #[serde(rename = "chatId")]
     chat_id: Option<i64>,
+    #[serde(rename = "mcpRun", skip_serializing_if = "Option::is_none")]
+    mcp_run: Option<String>,
     iat: usize,
     exp: usize,
 }
 
+impl Claims {
+    fn mcp_scope(&self, run: &str) -> RpcResult<McpScope> {
+        if run.is_empty() || self.mcp_run.as_deref() != Some(run) {
+            return Err(unauthorized(
+                "This MCP delegation belongs to another request",
+            ));
+        }
+        McpScope::from_claims(self.purpose.as_deref(), self.chat_id)
+    }
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{AuthService, AuthUser, McpScope, accounts};
+    use super::{AuthService, AuthUser, Claims, McpScope, accounts};
     use jsonwebtoken::{Algorithm, DecodingKey, EncodingKey, Header, Validation, decode, encode};
     use std::sync::Arc;
 
@@ -562,5 +580,24 @@ mod tests {
         ] {
             assert!(McpScope::from_claims(purpose, chat_id).is_err());
         }
+    }
+
+    #[test]
+    fn live_mcp_claims_require_the_matching_request() {
+        let mut claims: Claims = serde_json::from_value(serde_json::json!({
+            "purpose": "llm-document-import-mcp",
+            "tenant": "fixture",
+            "sessionId": "1",
+            "iat": 1,
+            "exp": 2,
+        }))
+        .unwrap();
+        assert!(claims.mcp_scope("request-a").is_err());
+        claims.mcp_run = Some("request-a".into());
+        assert_eq!(
+            claims.mcp_scope("request-a").unwrap(),
+            McpScope::DocumentImport
+        );
+        assert!(claims.mcp_scope("request-b").is_err());
     }
 }

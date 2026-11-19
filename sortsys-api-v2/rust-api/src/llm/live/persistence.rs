@@ -54,11 +54,9 @@ async fn allowed(
     if !options.enabled {
         return Err(forbidden());
     }
-    let used = control::used_tokens(transaction).await?;
     if check_quota
-        && options
-            .monthly_token_quota
-            .is_some_and(|limit| used >= limit)
+        && let Some(limit) = options.monthly_token_quota
+        && control::used_tokens(transaction).await? >= limit
     {
         return Err(RpcError::new(
             ErrorCode::TooManyRequests,
@@ -72,23 +70,28 @@ pub(super) async fn authorize(
     service: &AuthService,
     auth: &AuthResult,
     kind: LiveKind,
-) -> RpcResult<()> {
+) -> RpcResult<(String, String)> {
     crate::control::read_snapshot(|| async {
         let mut transaction = service.records()?.tenant(&auth.tenant)?.transaction()?;
-        allowed(&mut transaction, auth, kind, true).await?;
-        transaction.validate().await
+        let identity = allowed(&mut transaction, auth, kind, true).await?;
+        transaction.validate().await?;
+        Ok(identity)
     })
     .await
 }
 
-pub(super) async fn authorize_completion(
+pub(super) async fn authorize_current_run(
     service: &AuthService,
     auth: &AuthResult,
     kind: LiveKind,
+    generation: &str,
 ) -> RpcResult<()> {
     crate::control::read_snapshot(|| async {
         let mut transaction = service.records()?.tenant(&auth.tenant)?.transaction()?;
-        allowed(&mut transaction, auth, kind, false).await?;
+        let (_, current) = allowed(&mut transaction, auth, kind, false).await?;
+        if current != generation {
+            return Err(forbidden());
+        }
         transaction.validate().await
     })
     .await

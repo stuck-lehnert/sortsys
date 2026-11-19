@@ -51,6 +51,7 @@ export async function testLiveLlm(
     (_, index) => index % 251,
   );
   let checkedProviderOriginals = 0;
+  let abortedBeforeProvider = 0;
   let turns = 0,
     toolReplies = 0,
     cancelled = false,
@@ -83,6 +84,9 @@ export async function testLiveLlm(
       assert.equal(new URL(request.url).pathname, "/v1/chat/completions");
       const body = await request.json();
       turns++;
+      if (JSON.stringify(body.messages).includes("LIVE_IMPORT_CANCEL_BEFORE_MODEL")) {
+        abortedBeforeProvider++;
+      }
       for (const message of body.messages) {
         if (!Array.isArray(message.content)) continue;
         for (const part of message.content) {
@@ -318,6 +322,7 @@ export async function testLiveLlm(
     };
     const uploadFrames: number[] = [];
     let cancelUpload: AbortController | undefined;
+    let cancelPreparedImport: AbortController | undefined;
     const browserSocket = globalThis.WebSocket;
     globalThis.WebSocket = new Proxy(browserSocket, {
       construct(target, arguments_, newTarget) {
@@ -332,6 +337,12 @@ export async function testLiveLlm(
           if (message instanceof ArrayBuffer) {
             uploadFrames.push(message.byteLength);
             cancelUpload?.abort();
+          } else if (
+            cancelPreparedImport &&
+            typeof message === "string" &&
+            JSON.parse(message)?.type === "import"
+          ) {
+            cancelPreparedImport.abort();
           }
         };
         return socket;
@@ -358,6 +369,21 @@ export async function testLiveLlm(
       );
       assert.deepEqual(uploadFrames, [blockBytes]);
       assert.equal(turns, callsBeforeCancellation);
+
+      cancelUpload = undefined;
+      cancelPreparedImport = new AbortController();
+      uploadFrames.length = 0;
+      await assert.rejects(
+        runLiveLlm(
+          client,
+          ownerEndpoint,
+          { ...importRequest, text: "LIVE_IMPORT_CANCEL_BEFORE_MODEL" },
+          tools,
+          cancelPreparedImport.signal,
+        ),
+        { name: "AbortError" },
+      );
+      assert.deepEqual(uploadFrames, [blockBytes, blockBytes, 13]);
     } finally {
       globalThis.WebSocket = browserSocket;
     }
@@ -610,6 +636,7 @@ export async function testLiveLlm(
       true,
       "Closing the browser-owned request must drop the model HTTP response",
     );
+    assert.equal(abortedBeforeProvider, 0, "An already cancelled import must not enter the model");
 
     // A stolen session ticket alone cannot present the browser's signing proof.
     const account = unlockedAccount()!,

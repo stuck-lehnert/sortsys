@@ -162,8 +162,16 @@ export async function runLiveLlm(
     if (value.type !== type) throw new InvalidProtectedData();
     return value;
   };
-  const abort = () =>
+  const abort = () => {
+    try {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.send(JSON.stringify({ type: "cancel" }));
+      }
+    } catch {
+      // The connection may have closed before the cancellation frame.
+    }
     failed(new DOMException("Processing interrupted", "AbortError"));
+  };
   controller.signal.addEventListener("abort", abort, { once: true });
   socket.onmessage = (event) => {
     try {

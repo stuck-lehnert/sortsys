@@ -72,19 +72,6 @@ pub(crate) fn register_native(
     opaque::register_account_auth(builder, service)
 }
 
-pub(crate) async fn live_identity(
-    service: &crate::auth::AuthService,
-    auth: &crate::auth::AuthResult,
-) -> crate::error::RpcResult<(String, String)> {
-    crate::control::read_snapshot(|| async {
-        let mut transaction = service.records()?.tenant(&auth.tenant)?.transaction()?;
-        let identity = live_session(&mut transaction, auth, false).await?;
-        transaction.validate().await?;
-        Ok(identity)
-    })
-    .await
-}
-
 pub(crate) async fn live_session(
     transaction: &mut crate::control::Transaction,
     auth: &crate::auth::AuthResult,

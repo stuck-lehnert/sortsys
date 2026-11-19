@@ -55,10 +55,10 @@ struct Registration {
 }
 impl Drop for Registration {
     fn drop(&mut self) {
+        self.session.close();
         if let Ok(mut sessions) = self.hub.sessions.lock() {
             sessions.remove(&self.run);
         }
-        self.session.close();
         let auth = Arc::clone(&self.auth);
         let tenant = self.tenant.clone();
         let run = self.run.clone();
@@ -116,7 +116,7 @@ async fn serve_inner(
     let owner = state.live_llm.owner(state, &ticket)?;
     let (outgoing, mut calls) = mpsc::channel(8);
     let session = Arc::new(Session {
-        closed: std::sync::atomic::AtomicBool::new(false),
+        closed: AtomicBool::new(false),
         ticket: ticket.clone(),
         outgoing,
         pending: Mutex::new(HashMap::new()),
@@ -158,34 +158,26 @@ async fn serve_inner(
         *stage = "preparation";
         let request = prepare(socket, ticket.kind).await?;
         *stage = "provider_setup";
-        let auth = authenticate(state, &ticket).await?;
-        authorize(state, &auth, ticket.kind).await?;
-        if crate::zerotrust::live_identity(&state.auth, &auth).await?.1 != ticket.generation {
-            return Err(forbidden());
-        }
-        let configuration = match ticket.kind {
-            LiveKind::Chat => {
-                super::super::control::configuration(
-                    &state.auth,
-                    &state.settings,
-                    super::super::CHAT_USE_CASE,
-                )
-                .await?
+        let setup = async {
+            let auth = authenticate(state, &ticket).await?;
+            let ((_, generation), configuration) = authorize(state, &auth, ticket.kind).await?;
+            if generation != ticket.generation {
+                return Err(forbidden());
             }
-            LiveKind::DocumentImport => {
-                super::super::control::configuration(
-                    &state.auth,
-                    &state.settings,
-                    super::super::DOCUMENT_IMPORT_USE_CASE,
-                )
-                .await?
-            }
-        }
-        .ok_or_else(unavailable)?;
+            Ok((auth, configuration))
+        };
+        let (auth, configuration) = tokio::select! {
+            biased;
+            incoming = receive::<Input>(socket) => match incoming? {
+                Input::Cancel => return Err(unavailable()),
+                _ => return Err(invalid()),
+            },
+            configured = setup => configured?,
+        };
         let scope = ticket.scope()?;
         let token = state
             .auth
-            .issue_mcp_token(&auth, scope)
+            .issue_live_mcp_token(&auth, scope, &ticket.run)
             .map_err(|_| unavailable())?;
         let base_url = match &state.settings.mcp_url {
             Some(url) => url.to_string(),
@@ -228,26 +220,40 @@ async fn serve_inner(
         tokio::pin!(provider);
         let result: RpcResult<(String, TokenUsage)> = loop {
             tokio::select! {
-                result = &mut provider => break result,
-                call = calls.recv() => {
-                    let call = call.ok_or_else(unavailable)?;
-                    send(socket, json!({"type":"tool","id":call.id,"name":call.name,"arguments":call.arguments})).await?;
-                }
+                biased;
                 incoming = receive::<Input>(socket) => match incoming? {
                     Input::ToolResult { id, result, error } => {
-                        if id.len() > 128 { return Err(invalid()); }
-                        let reply = if error == Some(true) { Err(forbidden()) } else {
+                        if id.len() > 128 {
+                            return Err(invalid());
+                        }
+                        let reply = if error == Some(true) {
+                            Err(forbidden())
+                        } else {
                             let value = result.ok_or_else(invalid)?;
-                            if serde_json::to_vec(&value).map_err(|_| invalid())?.len() > MAX_TOOL_REPLY { return Err(invalid()); }
+                            let encoded = serde_json::to_vec(&value).map_err(|_| invalid())?;
+                            if encoded.len() > MAX_TOOL_REPLY {
+                                return Err(invalid());
+                            }
                             Ok(value)
                         };
                         session.reply(&id, reply)?;
                     }
                     Input::Cancel => return Err(unavailable()),
                     _ => return Err(invalid()),
+                },
+                result = &mut provider => break result,
+                call = calls.recv() => {
+                    let call = call.ok_or_else(unavailable)?;
+                    send(socket, json!({
+                        "type": "tool",
+                        "id": call.id,
+                        "name": call.name,
+                        "arguments": call.arguments,
+                    })).await?;
                 }
             }
         };
+        session.close();
         let (content, usage) = match result {
             Ok(result) => result,
             Err(error) => {
@@ -259,14 +265,8 @@ async fn serve_inner(
         *stage = "usage";
         record(state, &ticket, &configuration, &usage, false).await?;
         let current = authenticate(state, &ticket).await?;
-        persistence::authorize_completion(&state.auth, &current, ticket.kind).await?;
-        if crate::zerotrust::live_identity(&state.auth, &current)
-            .await?
-            .1
-            != ticket.generation
-        {
-            return Err(forbidden());
-        }
+        persistence::authorize_current_run(&state.auth, &current, ticket.kind, &ticket.generation)
+            .await?;
         send(socket, json!({"type":"complete","content":content,"usage":{
             "inputTokens":usage.input_tokens,"outputTokens":usage.output_tokens,"totalTokens":usage.total_tokens}})).await
     };
@@ -278,10 +278,7 @@ async fn serve_inner(
                 changed = access.changed() => {
                     changed?;
                     let current = authenticate(state, &ticket).await?;
-                    persistence::authorize_completion(&state.auth, &current, ticket.kind).await?;
-                    if crate::zerotrust::live_identity(&state.auth, &current).await?.1 != ticket.generation {
-                        return Err(forbidden());
-                    }
+                    persistence::authorize_current_run(&state.auth, &current, ticket.kind, &ticket.generation).await?;
                 }
             }
         }
@@ -404,6 +401,7 @@ async fn prepare(socket: &mut WebSocket, kind: LiveKind) -> RpcResult<Request> {
                     file_names,
                 }));
             }
+            Input::Cancel => return Err(unavailable()),
             _ => return Err(invalid()),
         }
     }

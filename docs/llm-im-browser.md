@@ -43,22 +43,26 @@ Modell.
 
 OpenAI und Anthropic verwenden weiterhin ihre MCP-Anbindung. Der
 OpenRouter-Adapter ruft dieselbe authentifizierte HTTP-MCP-Schnittstelle auf.
-MCP-Werkzeuge beziehen Fachinhalte aus dem verbundenen Browser; sie lesen dafür
-keine alten Klartexttabellen. Beim Einlesen ist ausschließlich die Produktsuche
-freigegeben. Allgemeine Chat-Abfragen und Änderungsvorschläge müssen in den vom
-Browser angegebenen Umfang passen. Ein Vorschlag führt keine Änderung aus.
+MCP-Werkzeuge beziehen Fachinhalte aus dem verbundenen Browser. Jede Delegation
+gilt für genau eine Live-Anfrage, ihre Sitzung und den gewählten Zweck. Vor der
+Rückgabe eines Werkzeugergebnisses prüft die API die Freigabe erneut. Beim
+Einlesen ist ausschließlich die Produktsuche freigegeben. Allgemeine
+Chat-Abfragen und Änderungsvorschläge müssen in den vom Browser angegebenen
+Umfang passen. Ein Vorschlag führt keine Änderung aus.
 
 Ein MCP-Aufruf darf auf einer anderen API-Instanz eintreffen. Eine signierte
 Routingangabe führt ihn zur Instanz mit der Browser-Verbindung zurück. Dabei
 gibt es höchstens eine Weiterleitung, keine Weiterleitung von HTTP-Redirects und
 keine Ablage des Kontextes in einer gemeinsamen Datenbank. Die Instanzen müssen
-einander direkt erreichen können. Standardmäßig verwendet die API ihre zur
+einander direkt erreichen können. Standardmäßig verwendet die API ihre zum
 DuckDB-Dienst gerichtete Netzwerkadresse und den gebundenen Port.
 `LLM_LIVE_INTERNAL_URL` kann bei anderer Netzführung eine eindeutige Adresse
 dieser Instanz vorgeben. Eine gemeinsame Load-Balancer-Adresse eignet sich dafür
 nicht.
 
-Ein Verbindungsabbruch verwirft die laufende Provider-Anfrage und offene
+Beim Abbruch sendet der Browser nach Möglichkeit eine Abbruchnachricht. Die API
+beachtet sie bereits beim Vorbereiten der Modellanfrage nach dem Upload. Ein
+Verbindungsabbruch verwirft die laufende Provider-Anfrage und offene
 MCP-Rückfragen. Die Gesamtlaufzeit ist auf zehn Minuten begrenzt. Ob ein
 externer Modellanbieter seine Berechnung oder Abrechnung daraufhin ebenfalls
 beendet, hängt von dessen Dienst ab. Dauerhaft gespeichert werden nur technische
@@ -236,9 +240,10 @@ ist in einer reinen Mandantensicherung nicht enthalten.
 
 Der Integrationstest mit einem lokalen Modell-Testdienst prüft den Transport,
 Produktsuche aus dem entschlüsselnden Client, Originaldateien in mehreren
-Blöcken, Abbruch bis zur HTTP-Verbindung des Providers sowie die Abweisung
-falscher Signaturen und wiederverwendeter Eintrittskarten. Für Einlesen prüft er
-außerdem den Ergebnisablauf mit verschlüsselter Speicherung,
+Blöcken, Abbruch während des Uploads und nach seinem letzten Block sowie das
+Schließen einer bereits laufenden HTTP-Verbindung zum Anbieter. Er prüft auch
+die Abweisung falscher Signaturen und wiederverwendeter Eintrittskarten. Für
+Einlesen prüft er außerdem den Ergebnisablauf mit verschlüsselter Speicherung,
 Listenaktualisierung und erneutem Öffnen sowie eine fehlende Bestätigung nach
 dem Speichern. Der echte XLSX-Worker wird zusätzlich im Browser geprüft. Beim
 Chat kommen Annahme nach verlorener Bestätigung, gleichzeitige Änderungen,

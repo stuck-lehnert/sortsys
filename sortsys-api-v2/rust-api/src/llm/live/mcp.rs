@@ -15,11 +15,12 @@ pub(in crate::llm) async fn handle(
     let id = request.id.clone().unwrap_or(Value::Null);
     let checked = async {
         super::super::validate_mcp_headers(&headers, state.settings.mcp_url.as_deref())?;
-        let (auth, scope) = state.auth.authenticate_mcp(&headers).await?;
         let owner: Owner = state.auth.verify_challenge_token(route)?;
-        if owner.purpose != "llm-live-owner-v1"
-            || owner.exp <= now()
-            || owner.tenant != auth.tenant
+        if owner.purpose != "llm-live-owner-v1" || owner.exp <= now() {
+            return Err(forbidden());
+        }
+        let (auth, scope) = state.auth.authenticate_mcp(&headers, &owner.run).await?;
+        if owner.tenant != auth.tenant
             || owner.session != auth.session.id
             || owner.user != auth.user.id
         {
@@ -33,8 +34,8 @@ pub(in crate::llm) async fn handle(
         if scope != expected {
             return Err(forbidden());
         }
-        authorize(&state, &auth, owner.kind).await?;
-        if crate::zerotrust::live_identity(&state.auth, &auth).await?.1 != owner.generation {
+        let ((_, generation), _) = authorize(&state, &auth, owner.kind).await?;
+        if generation != owner.generation {
             return Err(forbidden());
         }
         Ok((owner, auth, scope))
@@ -89,7 +90,9 @@ pub(in crate::llm) async fn handle(
         .ok()
         .and_then(|sessions| sessions.get(&owner.run).cloned());
     let Some(session) = session.filter(|session| {
-        session.ticket.matches(&auth, scope) && session.ticket.generation == owner.generation
+        session.is_open()
+            && session.ticket.matches(&auth, scope)
+            && session.ticket.generation == owner.generation
     }) else {
         return (
             StatusCode::FORBIDDEN,
@@ -127,7 +130,22 @@ pub(in crate::llm) async fn handle(
                 .get("arguments")
                 .cloned()
                 .unwrap_or_else(|| json!({}));
-            super::super::mcp_tool_result(tool(&session, name, arguments).await)
+            let result = async {
+                let output = tool(&session, name, arguments).await?;
+                persistence::authorize_current_run(
+                    &state.auth,
+                    &auth,
+                    owner.kind,
+                    &owner.generation,
+                )
+                .await?;
+                if owner.exp <= now() || !session.is_open() {
+                    return Err(forbidden());
+                }
+                Ok(output)
+            }
+            .await;
+            super::super::mcp_tool_result(result)
         }
         _ => Err(invalid()),
     };
