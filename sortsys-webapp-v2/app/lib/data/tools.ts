@@ -58,9 +58,9 @@ import type { createProtectedProjects } from "./projects";
 import { createProtectedPersonnel } from "./personnel";
 import {
   deleteToolUsage,
+  preparePriorToolUsage,
   syncToolUsage,
   toolUsageRequest,
-  toolUsageRequests,
 } from "./projectToolUsage";
 
 type Projects = ReturnType<typeof createProtectedProjects>;
@@ -369,8 +369,10 @@ export function createProtectedTools(
         row: { table: "tool_trackings", values: row },
       };
     });
-    const usage = toolUsageRequests(active.row, ["master-data"]);
-    await persist([master, booking, tracking, transfers, ...usage], (tx) => {
+    const usage = await preparePriorToolUsage(client, [active.row], signal, [
+      "master-data",
+    ]);
+    await persist([master, booking, tracking, transfers, ...usage.requests], (tx) => {
       checkTool(tx);
       const prior = document(tx, tracking)!.value;
       checkToolReturnBinding(tx, resource, prior);
@@ -386,18 +388,20 @@ export function createProtectedTools(
           modified_at: now,
         },
       );
-      syncToolUsage(
-        tx,
-        { table: "tool_trackings", values: values(tx, tracking) },
-        ["master-data"],
-        prior.returnKey?.verificationKey,
-      );
+      const returned = { table: "tool_trackings", values: values(tx, tracking) };
+      if (!usage.closed(returned))
+        syncToolUsage(
+          tx,
+          returned,
+          ["master-data"],
+          prior.returnKey?.verificationKey,
+        );
       tx.edit(transfers, transfers.area.prefix, (value) => {
         for (const row of value.rows)
           if (row.values.status === "open") row.values.status = "denied";
       });
       setActiveToolBooking(tx, resource, null);
-    });
+    }, usage.guards);
   }
 
   async function returnOwnTool(trackingId: string, actorId: string) {
@@ -1104,13 +1108,10 @@ export function createProtectedTools(
             : Object.hasOwn(changes, "usage_cost_per_day") &&
                 basis.tracking.has(part.id);
         });
-        const usage =
-          typeof changes.usage_cost_per_day === "number"
-            ? basis.unpriced.flatMap((row) =>
-                toolUsageRequests(row, ["procurement"]),
-              )
-            : [];
-        await persist([...selected, ...usage], (tx) => {
+        const usage = await preparePriorToolUsage(client, basis.unpriced, signal, [
+          "procurement",
+        ]);
+        await persist([...selected, ...usage.requests], (tx) => {
           if (tx.head(master).sequence !== basis.head.sequence)
             throw new ProtectedWriteConflict();
           values(tx, master);
@@ -1157,17 +1158,15 @@ export function createProtectedTools(
                   { id: addressId(value.id) },
                   { tool_usage_cost_per_day: changes.usage_cost_per_day },
                 );
-                syncToolUsage(
-                  tx,
-                  {
-                    table: "tool_trackings",
-                    values: { ...values(tx, request), ...values(tx, price) },
-                  },
-                  ["procurement"],
-                );
+                const updated = {
+                  table: "tool_trackings",
+                  values: { ...values(tx, request), ...values(tx, price) },
+                };
+                if (!usage.closed(updated))
+                  syncToolUsage(tx, updated, ["procurement"]);
               }
             }
-        });
+        }, usage.guards);
         return { success: true };
       }
       if (path === "tools.untrack") {
@@ -1226,9 +1225,9 @@ export function createProtectedTools(
             ? part.id === resource
             : basis.tracking.has(part.id);
         });
-        const usage = basis.rows.flatMap((row) => toolUsageRequests(row));
+        const usage = await preparePriorToolUsage(client, basis.rows, signal);
         await persist(
-          [toolIndexRequest, toolBookingRequest(resource), ...related, ...usage],
+          [toolIndexRequest, toolBookingRequest(resource), ...related, ...usage.requests],
           (tx) => {
             if (tx.head(master).sequence !== basis.head.sequence)
               throw new ProtectedWriteConflict();
@@ -1248,11 +1247,13 @@ export function createProtectedTools(
             )
               throw new InvalidProtectedData();
             setActiveToolBooking(tx, resource, null);
-            for (const request of tracking)
-              deleteToolUsage(tx, {
+            for (const request of tracking) {
+              const previous = {
                 table: "tool_trackings",
                 values: values(tx, request),
-              });
+              };
+              if (!usage.closed(previous)) deleteToolUsage(tx, previous);
+            }
             const trackingIds = new Set(
               tracking.map((request) => document(tx, request)!.value.id),
             );
@@ -1275,6 +1276,7 @@ export function createProtectedTools(
               );
             });
           },
+          usage.guards,
         );
         return { success: true };
       }
@@ -1421,6 +1423,7 @@ export function createProtectedTools(
           toolId: publicId(tracking.tool_id),
           request: found.request,
           head: view.head(found.request),
+          trackingHead: view.head(found.tracking),
           canManage: view.can(found.tracking, "update"),
         };
       });
@@ -1429,31 +1432,37 @@ export function createProtectedTools(
         baseline.source.transfer_to_user_id !== actorId
       )
         throw new InvalidProtectedData();
+      const accepting = path.endsWith("accept");
+      const previous = { table: "tool_trackings", values: baseline.tracking };
+      const priorUsage = await preparePriorToolUsage(
+        client,
+        accepting ? [previous] : [],
+        signal,
+        ["master-data"],
+      );
+      const priorProject = priorUsage.closed(previous)
+        ? null
+        : baseline.tracking.project_id;
       const targetProject =
-        p.projectId ??
-        id(baseline.source.project_id ?? baseline.tracking.project_id);
-      const guards = path.endsWith("accept")
-        ? await reference(targetProject)
-        : [];
+        p.projectId ?? id(baseline.source.project_id ?? priorProject);
+      const guards = accepting ? await reference(targetProject) : [];
+      guards.push(...priorUsage.guards);
       const nextId = publicId(newProductRowId());
       const next = CREATION_FACETS["tool-tracking"].map((facet) =>
         toolRequest("tool-tracking", nextId, facet),
       );
-      if (path.endsWith("accept"))
+      if (accepting)
         await provision(
           "tool-tracking",
           nextId,
           `user:${publicId(baseline.source.transfer_to_user_id)}`,
         );
-      const returnKeyFor = path.endsWith("accept")
+      const returnKeyFor = accepting
         ? await prepareToolReturnKeys(client, baseline.source.transfer_to_user_id as string, signal)
         : undefined;
-      const usage = path.endsWith("accept")
+      const usage = accepting
         ? [
-            ...toolUsageRequests(
-              { table: "tool_trackings", values: baseline.tracking },
-              ["master-data"],
-            ),
+            ...priorUsage.requests,
             ...(targetProject
               ? [
                   toolUsageRequest(targetProject as string, "master-data"),
@@ -1469,7 +1478,7 @@ export function createProtectedTools(
           publicId(baseline.tracking.id),
           "master-data",
         ),
-        ...(path.endsWith("accept")
+        ...(accepting
           ? [
               toolRequest("tool", baseline.toolId, "master-data"),
               toolBookingRequest(baseline.toolId),
@@ -1485,6 +1494,8 @@ export function createProtectedTools(
           if (tx.head(baseline.request).sequence !== baseline.head.sequence)
             throw new ProtectedWriteConflict();
           const found = lookupTransfer(tx, [baseline.request], transferId);
+          if (accepting && tx.head(found.tracking).sequence !== baseline.trackingHead.sequence)
+            throw new ProtectedWriteConflict();
           const current = values(tx, found.tracking);
           const prior = document(tx, found.tracking)!.value;
           const returned = await loadToolReturns(
@@ -1498,11 +1509,11 @@ export function createProtectedTools(
           if (
             found.row.values.status !== "open" ||
             returned.size !== 0 ||
-            (current.ended_at !== null && path.endsWith("accept"))
+            (current.ended_at !== null && accepting)
           )
             throw new ProtectedWriteConflict();
           tx.require(found.request, "update");
-          if (path.endsWith("accept")) {
+          if (accepting) {
             const tool = toolRequest("tool", baseline.toolId, "master-data");
             const price = toolRequest("tool", baseline.toolId, "procurement");
             checkToolReturnBinding(tx, baseline.toolId, prior);
@@ -1515,10 +1526,7 @@ export function createProtectedTools(
             const row = toolRow("tool_trackings", {
               id: addressId(nextId),
               tool_id: current.tool_id,
-              project_id:
-                p.projectId != null
-                  ? addressId(p.projectId)
-                  : (found.row.values.project_id ?? current.project_id),
+              project_id: targetProject == null ? null : addressId(targetProject),
               responsible_user_id: found.row.values.transfer_to_user_id,
               started_by_user_id: actorId,
               ended_by_user_id: null,
@@ -1540,12 +1548,17 @@ export function createProtectedTools(
               { id: current.id },
               { ended_at: now, ended_by_user_id: actorId, modified_at: now },
             );
-            syncToolUsage(
-              tx,
-              { table: "tool_trackings", values: values(tx, found.tracking) },
-              ["master-data"],
-              prior.returnKey?.verificationKey,
-            );
+            const previousBooking = {
+              table: "tool_trackings",
+              values: values(tx, found.tracking),
+            };
+            if (!priorUsage.closed(previousBooking))
+              syncToolUsage(
+                tx,
+                previousBooking,
+                ["master-data"],
+                prior.returnKey?.verificationKey,
+              );
             setActiveToolBooking(tx, baseline.toolId, nextId, returnKey?.verificationKey);
             for (const request of next)
               replace(
@@ -1566,7 +1579,7 @@ export function createProtectedTools(
           tx.patch(
             "tool_tracking_transfer_requests",
             { id: addressId(transferId) },
-            { status: path.endsWith("accept") ? "accepted" : "denied" },
+            { status: accepting ? "accepted" : "denied" },
           );
         },
         guards,

@@ -124,10 +124,9 @@ async fn assignments(context: &mut MetadataContext) -> RpcResult<()> {
                     .strip_suffix(":planning")
                     .ok_or_else(invalid)?;
                 let parent = record(context, project).await?;
-                if parent.is_tombstone()
-                    || parent.scope != project
-                    || parent.facet != Facet::MasterData
-                {
+                // A retained assignment in a closed project stays inaccessible.
+                // Its signed pointer must still match the archived object.
+                if parent.scope != project || parent.facet != Facet::MasterData {
                     return Err(conflict());
                 }
             }

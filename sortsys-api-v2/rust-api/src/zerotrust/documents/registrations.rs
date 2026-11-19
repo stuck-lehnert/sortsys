@@ -220,14 +220,7 @@ pub(super) async fn list(
     ) {
         return Err(forbidden());
     }
-    if let Some(prepared) = &input.prepared {
-        context = super::super::content::select_for_inspection(
-            context,
-            &prepared.operation,
-            &prepared.approval,
-        )
-        .await?;
-    }
+    context = super::super::content::select_read_view(context, input.prepared.as_ref()).await?;
     let number = super::super::content::content_number(&mut context.transaction).await?;
     if let Some(sequence) = &input.sequence {
         revision(sequence)?;

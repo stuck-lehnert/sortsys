@@ -66,11 +66,12 @@ export async function watchEncryptedEvents(
   ) {
     try {
       live();
-      const history = await trustedHistory(client);
-      live();
-      const opened = await required(
-        client.mutate("zerotrust.events.open", undefined, { signal }),
-      );
+      // A ticket is independently authenticated. Fetch it while verifying
+      // trust history, then bind it to that history before opening the socket.
+      const [history, opened] = await Promise.all([
+        trustedHistory(client),
+        required(client.mutate("zerotrust.events.open", undefined, { signal })),
+      ]);
       live();
       if (opened.generation !== history.current.generation)
         throw new InvalidProtectedData();

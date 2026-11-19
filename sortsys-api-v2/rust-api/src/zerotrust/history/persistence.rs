@@ -140,12 +140,13 @@ async fn change(
 }
 async fn list(service: &AuthService, request: &RequestContext, input: List) -> RpcResult<Page> {
     let mut context = metadata_context(service, request).await?;
-    let areas = metadata_catalog(&mut context.transaction)
-        .await?
-        .into_iter()
-        .filter(|area| allowed(&context.security, area).is_ok())
-        .map(|area| (area.id.clone(), area))
-        .collect::<BTreeMap<_, _>>();
+    let areas = metadata_catalog(&mut context.transaction, |area| {
+        allowed(&context.security, area).is_ok()
+    })
+    .await?
+    .into_iter()
+    .map(|area| (area.id.clone(), area))
+    .collect::<BTreeMap<_, _>>();
     let query = JournalQuery {
         streams: areas.keys().cloned().collect(),
         prefixes: input.prefixes,

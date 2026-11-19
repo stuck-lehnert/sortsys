@@ -14,16 +14,14 @@ import {
   projectFileEntries,
   type FileContent,
 } from "../data/projectFileData";
-import type { protectedReadView } from "../data/protectedObjects";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
-
-type ReadView = Awaited<ReturnType<typeof protectedReadView>>;
+import type { ContentReadView } from "./readContentAreas";
 
 export class RestoreProjectFileConflict extends Error {}
 
 export async function inspectRestoredFiles(
   client: Client,
-  view: ReadView,
+  view: ContentReadView,
   projectIds: ReadonlySet<string>,
   signal: AbortSignal,
 ) {
@@ -76,9 +74,9 @@ export async function inspectRestoredFiles(
           )
             images.add(id);
         }
-        // File blocks are immutable across content epochs. The manifest above
-        // came from the prepared view, and its blocks use current permissions.
-        await verifyFileContents(client, project, renditions, signal);
+        // Immutable blocks still need the same approved view as their
+        // manifest when the corresponding area is closed in the live view.
+        await verifyFileContents(client, project, renditions, signal, view);
       } catch (error) {
         if (
           error instanceof InvalidProtectedData ||

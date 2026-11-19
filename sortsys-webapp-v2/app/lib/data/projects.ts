@@ -1,5 +1,9 @@
 import type { Client } from "@sortsys/v2-client";
-import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import {
+  InvalidProtectedData,
+  record,
+  TOMBSTONE_FORMAT,
+} from "@sortsys/zerotrust/sortsys";
 import { trustedHistory } from "../crypto/session";
 import { buildPrefixSearch } from "../search/prefixQuery";
 import {
@@ -15,7 +19,7 @@ import {
   type createProtectedAddressBook,
 } from "./addressBook";
 import type { DuckDriver } from "./database";
-import { required } from "./protectedObjects";
+import { protectedCollection, required } from "./protectedObjects";
 import { newProductRowId, publicId } from "./products";
 import {
   PROJECT_MODEL,
@@ -43,6 +47,7 @@ import {
   projectCommercialCollection,
 } from "./projectCommercial";
 import { acquireDataRuntime } from "./runtime/session";
+import { announceDataChanges } from "./runtime/changes";
 import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
 import { preparePlanningTitle } from "./planningTitlePublication";
 
@@ -58,6 +63,49 @@ function document(view: DataView, selected: DataRequest<ProjectPayload>) {
   if (documents.length !== 1 || !documents[0]!.value.project)
     throw new InvalidProtectedData();
   return documents[0]!;
+}
+
+/** The signed master tombstone closes all of the project's areas. Reading
+ * loaded dependents is unnecessary and would require unrelated grants. */
+export async function deleteProtectedProject(
+  client: Client,
+  input: unknown,
+  signal: AbortSignal,
+) {
+  const { id } = record(input, ["id"]);
+  addressId(id);
+  const project = id as string;
+  const area = projectCollection(project);
+  const collection = await protectedCollection(client, area, signal);
+  try {
+    await collection.inspect();
+    const original = await collection.get(area.prefix);
+    if (!projectPayload(original.value, area.prefix, project).project)
+      throw new InvalidProtectedData();
+    const packet = await collection.tombstone(area.prefix, original.envelope);
+    await commitProtectedWrites(
+      client,
+      [{
+        head: { domain: area.domain, sequence: collection.snapshot() },
+        packets: [packet],
+        async verify() {
+          const saved = await collection.get(area.prefix);
+          return saved.value === null &&
+            saved.envelope.format === TOMBSTONE_FORMAT &&
+            saved.envelope.signature === packet.envelope.signature;
+        },
+        close: collection.close,
+      }],
+      signal,
+    );
+    const dependents = PROJECT_ACCESS_KEYS
+      .filter((key) => key !== "master-data")
+      .map((key) => projectAccessArea(project, key).domain);
+    announceDataChanges(client, new Set(dependents), { control: true });
+    return { success: true as const };
+  } finally {
+    collection.close();
+  }
 }
 
 const projectSearch = Symbol("project search");
@@ -334,6 +382,8 @@ export function createProtectedProjects(
           for (const group of prepared.groups) group.close();
         }
       }
+      if (path === "projects.delete")
+        return deleteProtectedProject(client, input, signal);
       const linking = path.startsWith("projects.contacts."),
         now = new Date().toISOString();
       const data = linking
@@ -412,11 +462,8 @@ export function createProtectedProjects(
         live();
         return { success: true };
       }
-      const finishing =
-          path === "projects.finish" || path === "projects.resume",
-        deleting = path === "projects.delete";
-      const changes =
-        finishing || deleting ? {} : projectChanges(data.data, false);
+      const finishing = path === "projects.finish" || path === "projects.resume";
+      const changes = finishing ? {} : projectChanges(data.data, false);
       const baseline =
         changes.customer_id != null ||
         changes.responsible_project_leader_user_id != null
@@ -440,10 +487,6 @@ export function createProtectedProjects(
           tx.expect(selected, selected.area.prefix, {
             signature: baseline.signature,
           });
-        if (deleting) {
-          tx.delete(selected, selected.area.prefix);
-          return false;
-        }
         if (finishing) {
           tx.require(selected, "update");
           const finish = path === "projects.finish";

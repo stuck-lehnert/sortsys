@@ -34,10 +34,22 @@ for (const scenario of ["unchanged", "changed", "failed admission"]) {
   test(`reconnecting resynchronizes data with ${scenario} event authorization`, async () => {
     const failFirst = scenario === "failed admission";
     const fixture = await protectedTenant([]);
-    fixture.client.mutate = async () => [
-      { ticket: "disposable-test-ticket", subject: "user:1", generation: "1" },
-      null,
-    ];
+    let releaseHistory;
+    const historyGate = new Promise((resolve) => { releaseHistory = resolve; });
+    const query = fixture.client.query;
+    fixture.client.query = async (path, ...args) => {
+      if (scenario === "unchanged" && path === "zerotrust.trust.history")
+        await historyGate;
+      return query(path, ...args);
+    };
+    let ticketRequested = false;
+    fixture.client.mutate = async () => {
+      ticketRequested = true;
+      return [
+        { ticket: "disposable-test-ticket", subject: "user:1", generation: "1" },
+        null,
+      ];
+    };
     const original = globalThis.WebSocket;
     const sockets = [];
     const fingerprint = base64(new Uint8Array(32).fill(8));
@@ -88,6 +100,11 @@ for (const scenario of ["unchanged", "changed", "failed admission"]) {
       () => admissions++,
     );
     try {
+      if (scenario === "unchanged") {
+        await until(() => ticketRequested);
+        expect(sockets).toHaveLength(0);
+        releaseHistory();
+      }
       await until(() => admissions === 1);
       expect(changes).toEqual([]);
       if (!failFirst) {
@@ -125,6 +142,7 @@ for (const scenario of ["unchanged", "changed", "failed admission"]) {
       expect(last.control).toBe(scenario !== "unchanged");
       expect(last.domains).toEqual({});
     } finally {
+      releaseHistory();
       controller.abort();
       await watched;
       globalThis.WebSocket = original;

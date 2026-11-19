@@ -877,8 +877,20 @@ async fn commit_batch_inner(
     }
     let mut areas = BTreeMap::new();
     let mut rotation = registry::RotationChecks::new(&context.security);
+    let closing_projects: BTreeSet<_> = input
+        .objects
+        .iter()
+        .filter_map(super::project_lifecycle::deletion)
+        .collect();
     for domain in guarded_domains {
         let area = registry::domain(&mut context.transaction, &domain).await?;
+        if super::project_lifecycle::dependent_project(&area.scope, area.facet)
+            .is_some_and(|project| closing_projects.contains(project))
+        {
+            // A batch cannot close a project and publish new dependent state
+            // against the earlier view, regardless of packet order.
+            return Err(conflict());
+        }
         areas.insert(domain, area);
     }
     for scope in &shape.opaque_scopes {
@@ -1029,12 +1041,22 @@ async fn commit_batch_inner(
             .await?;
         wrote = true;
     }
-    if changed_access {
+    let closed_projects: Vec<_> = written_packets
+        .iter()
+        .filter_map(|packet| super::project_lifecycle::deletion(packet))
+        .collect();
+    if changed_access || !closed_projects.is_empty() {
         super::super::setup::advance_catalog(&mut context.transaction, &context.auth.tenant)
             .await?;
         context.transaction.notify(
             "access",
             &serde_json::json!({"policy": context.security.policy.version}),
+        )?;
+    }
+    for project in closed_projects {
+        context.transaction.notify(
+            "project-closure",
+            &serde_json::json!({ "project": project }),
         )?;
     }
     for domain in &changed_domains {

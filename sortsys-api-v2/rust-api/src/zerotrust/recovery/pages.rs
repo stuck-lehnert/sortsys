@@ -144,7 +144,8 @@ async fn domain_page(
     transaction.prefetch(heads).await?;
     for row in page.records {
         let descriptor = row.value.ok_or_else(invalid)?;
-        let domain = super::super::objects::registry::domain(transaction, &descriptor.id).await?;
+        let domain =
+            super::super::objects::registry::retained_domain(transaction, &descriptor.id).await?;
         if domain.id != descriptor.id
             || domain.scope != descriptor.scope
             || domain.facet != descriptor.facet
@@ -212,7 +213,8 @@ async fn key_page(
             .await?
             .ok_or_else(invalid)?;
         let domain =
-            super::super::objects::registry::domain(transaction, &reference.domain).await?;
+            super::super::objects::registry::retained_domain(transaction, &reference.domain)
+                .await?;
         if definition.tenant != root.profile.authority.tenant
             || definition.id != reference.domain
             || definition.generation != reference.generation

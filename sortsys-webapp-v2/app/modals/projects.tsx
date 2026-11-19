@@ -482,13 +482,15 @@ export function showModifyProjectModal(
 export function showDeleteProjectModal(
   modals: MyModalsInterface,
   project: Project,
+  onDeleted: () => void,
 ) {
   modals.showForm({
     content: () => (
       <>
         <p className="light">
           {uiText(
-            "Alle mit diesem Projekt in Verbindung stehenden Daten werden damit ebenfalls gelöscht.",
+            "Das Projekt verschwindet aus der Übersicht. Seine Anhänge, Berichte und weiteren Projektbereiche sind danach gesperrt.",
+            "The project is removed from the overview. Its attachments, reports, and other project areas are then closed.",
           )}{" "}
           <b>{uiText("Diese Aktion kann nicht rückgängig gemacht werden.")}</b>
         </p>
@@ -501,14 +503,14 @@ export function showDeleteProjectModal(
         />
       </>
     ),
-    onSubmit: async ({ hide, pathname, navigate }) => {
+    onSubmit: async ({ hide }) => {
       const [data, err] = await client.mutate("projects.delete", {
         id: project.id,
       });
       if (err) throw err;
       if (!data) return;
 
-      if (pathname === `/projects/${project.id}`) navigate("/projects");
+      onDeleted();
       hide();
     },
     modalProps: () => ({

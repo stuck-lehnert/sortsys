@@ -11,6 +11,7 @@ import {
   signContentEpoch,
   signContentReview,
   signPolicyContinuation,
+  TOMBSTONE_FORMAT,
   verifyContentEpoch,
 } from "@sortsys/zerotrust/sortsys";
 import { administratorContext } from "../crypto/administration";
@@ -435,7 +436,7 @@ export async function inspectPreparedContent(
       throw new InvalidProtectedData();
   };
   const check = { operation, approval };
-  const { stamp } = await required(
+  const { domains, stamp } = await required(
     client.query(
       "zerotrust.content.inspect",
       { ...check, start: true },
@@ -444,6 +445,7 @@ export async function inspectPreparedContent(
   );
   const view = await protectedReadView(client, signal, {
     view: check,
+    domains,
     async pages(pages) {
       const response = await required(
         client.query(
@@ -495,21 +497,29 @@ export async function inspectPreparedContent(
     return id ? projectCollection(id) : null;
   });
   const projectIds = new Set<string>();
-  await readContentAreas(view, projects, (area, { envelope, value }) => {
-    const id = projectDomainId(area.domain);
-    if (!id) throw new InvalidProtectedData();
-    const { project, contacts: links } = projectPayload(
-      value,
-      envelope.object,
-      id,
-    );
-    if (!project) return;
-    projectIds.add(id);
-    if (project.values.customer_id !== null)
-      checkReference(customers, project.values.customer_id);
-    for (const link of links) checkReference(contacts, link.values.contact_id);
-  });
-  const uncheckedBookings = await verifyActiveBookings(client, view, projectIds, signal);
+  const projectReferences = new Set<string>();
+  await readContentAreas(
+    view,
+    projects,
+    (area, { envelope, value }) => {
+      const id = projectDomainId(area.domain);
+      if (!id || envelope.object !== area.prefix)
+        throw new InvalidProtectedData();
+      if (envelope.format === TOMBSTONE_FORMAT) {
+        projectReferences.add(id);
+        return;
+      }
+      const { project, contacts: links } = projectPayload(value, envelope.object, id);
+      if (!project) return;
+      projectIds.add(id);
+      projectReferences.add(id);
+      if (project.values.customer_id !== null)
+        checkReference(customers, project.values.customer_id);
+      for (const link of links) checkReference(contacts, link.values.contact_id);
+    },
+    { includeTombstones: true },
+  );
+  const uncheckedBookings = await verifyActiveBookings(client, view, projectReferences, signal);
   const planning = await inspectPlanning(view, projectIds);
   const restoredMaterial = await inspectRestoredMaterial(
     view,
@@ -562,7 +572,7 @@ export async function inspectPreparedContent(
     client,
     view,
     dependencies.sealedInvoiceScopes,
-    projectIds,
+    projectReferences,
   );
   const context = await administratorContext(client, signal);
   live();

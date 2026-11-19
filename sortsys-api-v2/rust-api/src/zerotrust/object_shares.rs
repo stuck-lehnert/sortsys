@@ -125,6 +125,27 @@ fn reader_collection(generation: &str, recipient: &str) -> String {
     )
 }
 
+pub(super) async fn has_project_assignment(
+    transaction: &mut Transaction,
+    guard: &Security,
+    project: &str,
+) -> RpcResult<bool> {
+    if !allows_recipient(
+        guard,
+        &guard.subject,
+        &format!("{project}:planning"),
+        Facet::MasterData,
+    ) {
+        return Ok(false);
+    }
+    let id = project.strip_prefix("project:").ok_or_else(invalid)?;
+    let collection = reader_collection(&guard.root.generation.to_string(), &guard.subject);
+    let page = transaction
+        .scan_prefix::<RecipientAccess>(&collection, &format!("schedule:{id}:deployment:"), None, 1)
+        .await?;
+    Ok(!page.records.is_empty())
+}
+
 pub(super) fn allows_recipient(
     guard: &Security,
     recipient: &str,
@@ -357,6 +378,10 @@ async fn shared_page(
         .scan_prefix::<RecipientAccess>(&collection, &input.prefix, input.after, PAGE_SIZE)
         .await?;
     let title_version = planning_titles::version(&mut context.transaction).await?;
+    let catalog_version =
+        super::setup::metadata_root(&mut context.transaction, &context.auth.tenant)
+            .await?
+            .catalog_version;
     let snapshot = encode(&Sha256::digest(frame(
         "sortsys/object-recipient-page/v1",
         &[
@@ -368,6 +393,7 @@ async fn shared_page(
             &input.prefix,
             &page.version,
             &title_version,
+            &catalog_version,
         ],
     )));
     if input
@@ -408,7 +434,11 @@ async fn shared_page(
         .prefetch(
             domains
                 .into_iter()
-                .flat_map(registry::domain_keys)
+                .flat_map(|domain| {
+                    registry::domain_keys(domain)
+                        .into_iter()
+                        .chain(super::objects::project_root_record_for_domain(domain))
+                })
                 .collect(),
         )
         .await?;
@@ -423,7 +453,16 @@ async fn shared_page(
         {
             return Err(conflict());
         }
-        let area = registry::domain(&mut context.transaction, &record.domain).await?;
+        let area = registry::retained_domain(&mut context.transaction, &record.domain).await?;
+        if !super::objects::project_lifecycle::is_active(
+            &mut context.transaction,
+            &area.scope,
+            area.facet,
+        )
+        .await?
+        {
+            continue;
+        }
         if !allows_recipient(
             &context.security,
             &context.security.subject,

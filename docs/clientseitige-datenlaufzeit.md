@@ -135,6 +135,9 @@ besuchten Seite startet deshalb keine Projektliste neu; eine Änderung an den
 Projektdaten oder Berechtigungen löst weiterhin eine neue Prüfung aus.
 Eine WebSocket-Meldung stößt die betroffenen Abfragen einmal an. Diese warten
 mit dem Lesen, bis der lokale Datenstand aktualisiert ist.
+Beim Verbindungsaufbau laufen Ticketabruf und Prüfung der Vertrauenskette
+parallel. Der Browser öffnet den Socket erst, wenn das Ticket zur geprüften
+Schlüsselgeneration gehört.
 
 Bei verbundenem WebSocket teilen Suchabfragen das geprüfte Verzeichnis der
 freigegebenen Bereiche für bis zu 15 Sekunden. Das spart beim Weiterfiltern
@@ -250,20 +253,10 @@ Ausgangsversionen, keinen eigenen dauerhaft gepflegten Datenbestand.
 
 ## Löschen mit eigenem Recht
 
-Eine Projektlöschung benötigt Lesen und Löschen, aber kein Bearbeitungsrecht.
-Der Fachadapter markiert das Objekt in derselben Transaktion wie andere Änderungen:
-
-```ts
-await runtime.transaction([projectRequest], tx => {
-  tx.delete(projectRequest, projectRequest.area.prefix);
-});
-```
-
-Die Laufzeit entfernt dessen Zeilen aus dem geplanten Datenbestand und prüft die
-verbleibenden bekannten Beziehungen. Sie veröffentlicht anschließend einen
-signierten Löschdatensatz im Format `sortsys-object-tombstone-v1`. Sein
-verschlüsselter Inhalt ist leer. Die Signatur bindet auch dieses Format;
-ein gewöhnlicher Datensatz lässt sich nicht ohne neue Signatur umetikettieren.
+Eine Projektlöschung benötigt die Freigaben Lesen und Löschen. Der Browser
+prüft den aktuellen Projektstand und veröffentlicht einen signierten
+Löschdatensatz im Format `sortsys-object-tombstone-v1`. Sein verschlüsselter
+Inhalt ist leer. Die Signatur bindet auch das Format.
 Die API verlangt für dieses Format genau einen 16 Byte langen GCM-Tag und prüft
 das Löschrecht, die vorhandene Objektkennung und die erwartete Version. Sie
 entschlüsselt dabei weder den alten noch den neuen Inhalt.
@@ -274,6 +267,12 @@ Erst das Zurücklesen desselben signierten Löschdatensatzes bestätigt die Akti
 auch nach einer verlorenen Speicherantwort. Neue Änderungen dürfen eine bereits
 gelöschte Kennung nicht wiederverwenden. Bei einer normalen erneuten Anlage
 entsteht eine neue Kennung.
+
+Der Projekt-Löschdatensatz sperrt auch die abhängigen Bereiche. Lesezugriffe
+und Schreibvorgänge beziehen den Projektstand in ihre Transaktion ein. Damit
+scheitert auch ein bereits vorbereitetes Paket, wenn die Löschung vor seiner
+Veröffentlichung bestätigt wurde. Browser mit Zugriff auf die betroffenen
+Bereiche verwerfen ihre geladenen Ansichten nach dem Änderungshinweis.
 
 Projekte, Kunden, Ansprechpartner, Bautagesberichte, Regieberichte sowie
 Projektdateien und leere Ordner verwenden diesen Pfad. Unfreigegebene Kosten,

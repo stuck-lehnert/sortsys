@@ -121,11 +121,27 @@ Bearbeitungsstand der Grunddaten; Aktivitäten aus Berichten, Dateien oder
 anderen geschützten Bereichen werden erst mit deren Adaptern und der
 bereichsübergreifenden Auswertung einbezogen.
 
-Löschen veröffentlicht einen signierten, inhaltsleeren Löschdatensatz. Die
-Freigaben Lesen und Löschen genügen; Bearbeiten wird dafür nicht verlangt. Das
-Projekt verschwindet aus den normalen Listen, seine früheren verschlüsselten
-Fassungen und abhängigen Datensätze werden dadurch noch nicht physisch entfernt.
-Der Löschdatensatz sperrt die abhängigen Bereiche bisher nicht automatisch.
+## Projekt löschen
+
+Die Freigaben Lesen und Löschen reichen, um das Projekt zu entfernen. Der
+signierte Löschdatensatz sperrt zugleich die Projektbereiche für Anhänge,
+Berichte, Einsatzplanung und weitere abhängige Daten. Geöffnete Ansichten
+verlieren den Zugriff auch dann, wenn sie über eine andere API-Instanz
+verbunden sind. Eigene kaufmännische Vorgänge mit separaten Schlüsseln behalten
+ihren Stand.
+
+Eine Werkzeugbuchung bleibt im Werkzeugbestand erhalten. Wer die Buchung
+bearbeiten und den signierten Projektabschluss lesen darf, kann das Werkzeug
+auch nach der Löschung zurückgeben oder einem offenen Projekt zuordnen.
+Die abgeschlossene Projektansicht ändert sich dabei nicht.
+
+Frühere Fassungen und Dateien bleiben verschlüsselt gespeichert. Eine
+Sicherung aus der Zeit vor der Löschung enthält weiterhin den damaligen
+Projektstand. Bei einer Wiederherstellung per Seed-Phrase werden auch die
+Schlüssel für diese Sicherungen auf das wiederhergestellte Konto übertragen.
+Im laufenden Bestand bleibt das Projekt gesperrt. Bereits lokal gespeicherte
+Kopien können nachträglich nicht zurückgerufen werden.
+
 Ein früheres PostgreSQL-Archiv ist eine optionale Quelle für die
 [Einrichtung eines neuen Mandanten](bestandsumstellung.md).
 

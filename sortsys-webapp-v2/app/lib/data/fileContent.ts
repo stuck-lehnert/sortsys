@@ -1,4 +1,4 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryInput } from "@sortsys/v2-client";
 import {
   base64,
   digest,
@@ -9,7 +9,11 @@ import {
   signedPacketFrame,
   unbase64,
 } from "@sortsys/zerotrust/sortsys";
-import { protectedCollection, required } from "./protectedObjects";
+import {
+  protectedCollection,
+  required,
+  type protectedReadView,
+} from "./protectedObjects";
 import {
   chunkCollection,
   content,
@@ -28,6 +32,10 @@ type FileSource = { file: string; blob: Blob; version: string };
 type PendingFile = FileSource & { parts: FileContent["parts"] };
 type PendingBlock = { source: PendingFile; index: number; id: string };
 type StoreOptions = { resume?: boolean; verifyStoredBytes?: boolean };
+type PreparedRead = Pick<
+  Awaited<ReturnType<typeof protectedReadView>>,
+  "prepared" | "openCiphertext"
+>;
 
 function* fileBlockGroups(
   namespace: string,
@@ -56,12 +64,13 @@ async function fetchFileBlocks(
   domain: string,
   ids: string[],
   signal: AbortSignal,
+  prepared?: QueryInput<"zerotrust.fileChunks.getMany">["prepared"],
 ) {
   signal.throwIfAborted();
   const packets = await required(
     client.query(
       "zerotrust.fileChunks.getMany",
-      { domain, ids },
+      { domain, ids, prepared },
       {
         strategy: "network-only",
       },
@@ -344,9 +353,12 @@ async function readFileBlocks<T>(
   manifests: readonly FileContent[],
   signal: AbortSignal,
   consume: (raw: Uint8Array<ArrayBuffer>, index: number) => Promise<T>,
+  view?: PreparedRead,
 ): Promise<T[]> {
   const area = chunkCollection(namespace);
-  const collection = await protectedCollection(client, area, signal);
+  const collection = view
+    ? view.openCiphertext(area)
+    : await protectedCollection(client, area, signal);
   try {
     const result: T[] = [];
     for (const group of manifestBlockGroups(manifests)) {
@@ -355,6 +367,7 @@ async function readFileBlocks<T>(
         area.domain,
         group.map(({ part }) => part.id),
         signal,
+        view?.prepared,
       );
       const consumed = await mapConcurrent(
         group,
@@ -429,6 +442,7 @@ export async function verifyFileContents(
   namespace: string,
   files: readonly { id: string; manifest: FileContent }[],
   signal: AbortSignal,
+  view: PreparedRead,
 ): Promise<void> {
   if (!files.length) return;
   const unique = new Map<string, FileContent>();
@@ -454,5 +468,6 @@ export async function verifyFileContents(
     [...unique.values()],
     signal,
     async () => undefined,
+    view,
   );
 }

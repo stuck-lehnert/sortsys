@@ -106,10 +106,17 @@ unterbrochener Auftrag lässt sich mit derselben Kennung über jede
 API-Instanz fortsetzen.
 
 Der Browser prüft die Signaturen und das Datenmodell der lesbaren Projekte
-und Adressdaten. Er zeigt deren Anzahl sowie fehlende Verknüpfungen zu Kunden
-oder Kontakten an, soweit deren Kataloge lesbar sind. Bei lesbaren laufenden
-Werkzeugbuchungen prüft er auch, ob Werkzeug, Buchung und Projekt zusammenpassen.
-Für erhaltene Auftragsbestätigungen prüft er den Bezugsauftrag in der
+und Adressdaten. Die Projektbereiche stammen aus dem ausgewählten Stand. So
+kann die Vorschau auch die Datensätze und verschlüsselten Dateiblöcke eines
+inzwischen gelöschten Projekts prüfen. Die API verlangt für diese Abrufe den
+signierten Nachweis für den vorbereiteten Stand und prüft die aktuellen
+Leserechte. Ein verifizierter Löschdatensatz bleibt bei älteren Rechnungen und
+Werkzeugbuchungen als Bezug zum früheren Projekt erhalten.
+
+Die Vorschau zeigt die Anzahl aktiver Projekte und fehlende Verknüpfungen zu
+Kunden oder Kontakten an, soweit deren Kataloge lesbar sind. Bei laufenden
+Werkzeugbuchungen prüft der Browser, ob Werkzeug, Buchung und Projekt
+zusammenpassen. Für erhaltene Auftragsbestätigungen prüft er den Bezugsauftrag in der
 Sicherung. Für ausgestellte Rechnungen prüft er das Projekt, den angenommenen
 Auftrag und die benötigte Version des Bezugsdokuments, soweit diese Daten
 lesbar sind. Bei einer fehlenden Verknüpfung oder einer zu alten Version

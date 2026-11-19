@@ -13,7 +13,9 @@ mod creation_renewals;
 mod domain_access;
 pub(super) use domain_access::version as metadata_domain_access_version;
 pub(super) mod invoice_case;
+pub(super) mod project_lifecycle;
 pub(super) use access_inventory::check_snapshot as metadata_check_inventory_snapshot;
+pub(super) use project_lifecycle::root_record_for_domain as project_root_record_for_domain;
 pub(super) mod registry;
 
 use serde::{Deserialize, Serialize};
@@ -155,6 +157,8 @@ struct KeyInput {
 struct KeyHistoryInput {
     domain: String,
     generations: Vec<String>,
+    #[ts(optional)]
+    prepared: Option<super::content::PreparedView>,
 }
 #[derive(Serialize, TS)]
 #[serde(deny_unknown_fields)]

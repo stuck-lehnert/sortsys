@@ -49,6 +49,8 @@ struct Get {
 struct GetMany {
     domain: String,
     ids: Vec<String>,
+    #[ts(optional)]
+    prepared: Option<super::content::PreparedView>,
 }
 #[derive(Deserialize, Serialize, PartialEq)]
 #[serde(deny_unknown_fields)]
@@ -239,6 +241,7 @@ async fn get_chunk(
     let input = GetMany {
         domain: input.domain,
         ids: vec![input.id],
+        prepared: None,
     };
     get_chunks(service, ctx, input)
         .await?
@@ -278,6 +281,7 @@ async fn lookup_chunks(
     let mut context =
         metadata_context_for_domains(service, ctx, Some(std::slice::from_ref(&input.domain)))
             .await?;
+    context = super::content::select_read_view(context, input.prepared.as_ref()).await?;
     let area = registry::domain(&mut context.transaction, &input.domain).await?;
     let prefix = chunk_prefix(&input.domain, &area.scope)?;
     if area.facet != Facet::Attachment

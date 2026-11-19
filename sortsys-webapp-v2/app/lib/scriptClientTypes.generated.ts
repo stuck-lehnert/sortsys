@@ -1458,6 +1458,7 @@ export type QueryInputs = {
     "zerotrust.fileChunks.findMany": {
         domain: string;
         ids: Array<string>;
+        prepared?: PreparedView;
     };
     "zerotrust.fileChunks.get": {
         domain: string;
@@ -1466,6 +1467,7 @@ export type QueryInputs = {
     "zerotrust.fileChunks.getMany": {
         domain: string;
         ids: Array<string>;
+        prepared?: PreparedView;
     };
     "zerotrust.history.get": {
         id: string;
@@ -1509,6 +1511,7 @@ export type QueryInputs = {
     "zerotrust.keys.history": {
         domain: string;
         generations: Array<string>;
+        prepared?: PreparedView;
     };
     "zerotrust.keys.inspect": {
         keys: Array<KeyRecipientInput>;
@@ -2900,6 +2903,7 @@ export type QueryOutputs = {
     };
     "zerotrust.content.inspect": {
         pages: Array<ObjectPage>;
+        domains: Array<DomainInfo>;
         stamp: string;
         restoredDocumentScopes: Array<string>;
         sealedInvoiceScopes: Array<string>;

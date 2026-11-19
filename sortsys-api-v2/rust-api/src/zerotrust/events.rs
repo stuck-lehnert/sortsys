@@ -39,6 +39,7 @@ enum Event {
     Objects(String, i64, bool),
     ObjectRecipient(String, String),
     Domain(String),
+    ProjectClosure(String),
     Access,
     ToolReturn,
     Account(String),
@@ -55,6 +56,7 @@ struct PendingChanges {
     tool_returns: bool,
     domains: HashMap<String, Option<i64>>,
     recipient_domains: HashSet<String>,
+    closed_projects: Vec<String>,
     document_messages: HashSet<Room>,
 }
 impl PendingChanges {
@@ -65,6 +67,10 @@ impl PendingChanges {
             }
             Event::Access => {
                 self.refresh = true;
+            }
+            Event::ProjectClosure(project) => {
+                self.refresh = true;
+                self.closed_projects.push(project);
             }
             Event::ToolReturn => {
                 self.tool_returns = true;
@@ -267,6 +273,11 @@ fn parse_hint(channel: &str, input: &str) -> Option<Event> {
     let data: Value = serde_json::from_str(input).ok()?;
     match channel {
         "access" => Some(Event::Access),
+        "project-closure" => {
+            let project = data.get("project")?.as_str()?;
+            (super::objects::project_lifecycle::project_scope(project) == Some(project))
+                .then(|| Event::ProjectClosure(project.to_owned()))
+        }
         "tool-return" if data.as_object()?.is_empty() => Some(Event::ToolReturn),
         "account" => Some(Event::Account(data.get("subject")?.as_str()?.to_owned())),
         "domain" => {
@@ -546,6 +557,7 @@ impl Snapshot {
             .iter()
             .any(|(scope, mask)| next.capabilities.get(scope).copied().unwrap_or(0) & mask != *mask)
             || self.roles.iter().any(|role| !next.roles.contains(role))
+            || !self.allowed.is_subset(&next.allowed)
     }
 
     fn resets_for(&self, next: &Self) -> bool {
@@ -553,9 +565,24 @@ impl Snapshot {
     }
 }
 async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcResult<Snapshot> {
+    Ok(snapshot_after_changes(service, auth, &[]).await?.0)
+}
+
+async fn snapshot_after_changes(
+    service: &crate::auth::AuthService,
+    auth: &AuthResult,
+    closed_projects: &[String],
+) -> RpcResult<(Snapshot, bool)> {
     let repository = service.records()?.tenant(&auth.tenant)?;
     let mut transaction = repository.transaction()?;
     let guard = metadata_security(&mut transaction, auth).await?;
+    let mut assignment_closed = false;
+    for project in closed_projects {
+        if super::object_shares::has_project_assignment(&mut transaction, &guard, project).await? {
+            assignment_closed = true;
+            break;
+        }
+    }
     // Content restores and key changes can happen while a socket is closed
     // even when the member's effective rights have not changed.
     let content = transaction
@@ -563,25 +590,23 @@ async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcR
         .await?
         .map(|head| head.fingerprint())
         .transpose()?;
-    let domains = super::objects::metadata_catalog(&mut transaction).await?;
     let key_version = super::objects::metadata_domain_access_version(&mut transaction).await?;
     // Hash scope/facet pairs and combine action bits once. The small retained
     // masks distinguish revocation from an added right without rescanning rules.
     let capabilities = capabilities(&guard.policy, &guard.subject, &guard.inherited);
-    let allowed = domains
-        .into_iter()
-        .filter_map(|area| {
-            let actions = capabilities
-                .get(&scope_key(&area.scope, area.facet.name()))
-                .copied()
-                .unwrap_or(0);
-            if actions & action_bit(Action::Read) == 0 {
-                None
-            } else {
-                Some(area.id)
-            }
-        })
-        .collect();
+    let allowed: HashSet<_> = super::objects::metadata_catalog(&mut transaction, |area| {
+        let actions = capabilities
+            .get(&scope_key(&area.scope, area.facet.name()))
+            .copied()
+            .unwrap_or(0);
+        actions & action_bit(Action::Read) != 0
+    })
+    .await?
+    .into_iter()
+    .map(|area| area.id)
+    .collect();
+    let mut visible_domains: Vec<_> = allowed.iter().collect();
+    visible_domains.sort();
     let mut roles = auth.roles.clone();
     roles.sort();
     let mut rights = capabilities
@@ -601,21 +626,25 @@ async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcR
             &content,
             rights,
             &roles,
+            visible_domains,
         ))
         .map_err(internal)?,
     ));
     transaction.validate().await?;
-    Ok(Snapshot {
-        subject: guard.subject,
-        generation: guard.root.generation.to_string(),
-        version: guard.root.policy_version,
-        content,
-        fingerprint,
-        capabilities,
-        roles,
-        allowed,
-        signing_key: guard.signing_key,
-    })
+    Ok((
+        Snapshot {
+            subject: guard.subject,
+            generation: guard.root.generation.to_string(),
+            version: guard.root.policy_version,
+            content,
+            fingerprint,
+            capabilities,
+            roles,
+            allowed,
+            signing_key: guard.signing_key,
+        },
+        assignment_closed,
+    ))
 }
 async fn send(socket: &mut WebSocket, value: Value) -> RpcResult<()> {
     tokio::time::timeout(
@@ -743,15 +772,21 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             tool_returns,
             mut domains,
             recipient_domains,
+            closed_projects,
             document_messages,
         } = pending;
         let mut reset = false;
         if refresh {
-            let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
-            let changed = !current.same_access(&next);
+            let (next, assignment_closed) = snapshot_after_changes(
+                &state.auth,
+                &authenticate(state, &ticket).await?,
+                &closed_projects,
+            )
+            .await?;
+            let changed = !current.same_access(&next) || assignment_closed;
             all |= changed;
             control |= changed;
-            reset = current.resets_for(&next);
+            reset = current.resets_for(&next) || assignment_closed;
             current = next;
             if current.generation != ticket.generation {
                 return Err(forbidden());

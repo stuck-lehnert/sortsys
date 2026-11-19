@@ -451,14 +451,8 @@ pub(crate) fn register_metadata(
                         return Err(invalid());
                     }
                     let mut context = super::access::metadata_context(&service, &ctx).await?;
-                    if let Some(prepared) = &input.prepared {
-                        context = super::content::select_for_inspection(
-                            context,
-                            &prepared.operation,
-                            &prepared.approval,
-                        )
-                        .await?;
-                    }
+                    context =
+                        super::content::select_read_view(context, input.prepared.as_ref()).await?;
                     let mut object_keys = Vec::new();
                     for object in &input.objects {
                         let kind = kind(object)?.ok_or_else(invalid)?;

@@ -4,15 +4,13 @@ import { verifyFileContents } from "../data/fileContent";
 import { LOGO_COLLECTION, logoPayload } from "../data/logoData";
 import { PRINT_COLLECTION } from "../data/organizationData";
 import { printTemplatePayload } from "../data/printTemplateData";
-import type { protectedReadView } from "../data/protectedObjects";
-
-type ReadView = Awaited<ReturnType<typeof protectedReadView>>;
+import type { ContentReadView } from "./readContentAreas";
 
 export class RestorePrintFileConflict extends Error {}
 
 export async function inspectRestoredPrintFiles(
   client: Client,
-  view: ReadView,
+  view: ContentReadView,
   signal: AbortSignal,
 ) {
   if (!view.readable(PRINT_COLLECTION)) return null;
@@ -38,7 +36,7 @@ export async function inspectRestoredPrintFiles(
     }
     // Print assets and the logo use the same immutable block namespace. Verify
     // the manifests from the prepared view in one bounded stream.
-    await verifyFileContents(client, PRINT_COLLECTION.scope, files, signal);
+    await verifyFileContents(client, PRINT_COLLECTION.scope, files, signal, view);
     return {
       files: files.length,
       incompleteLogo: logo?.issue === "legacy-incomplete",

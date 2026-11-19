@@ -390,9 +390,9 @@ export type QueryInputs = {
   "zerotrust.domains.list": void;
   "zerotrust.domains.proof": { domain: string, generation: string, };
   "zerotrust.editors.config": void;
-  "zerotrust.fileChunks.findMany": { domain: string, ids: Array<string>, };
+  "zerotrust.fileChunks.findMany": { domain: string, ids: Array<string>, prepared?: PreparedView, };
   "zerotrust.fileChunks.get": { domain: string, id: string, };
-  "zerotrust.fileChunks.getMany": { domain: string, ids: Array<string>, };
+  "zerotrust.fileChunks.getMany": { domain: string, ids: Array<string>, prepared?: PreparedView, };
   "zerotrust.history.get": { id: string, revision: string | null, };
   "zerotrust.history.list": { prefixes: Array<string>, before: string | null, snapshot: string | null, known: string | null, knownTotal: string | null, };
   "zerotrust.identities.get": { subject: string, };
@@ -404,7 +404,7 @@ export type QueryInputs = {
   "zerotrust.keyAuthorities.forAreas": { areas: Array<KeyAuthorityAreaInput>, };
   "zerotrust.keyAuthorities.get": { signature: string, };
   "zerotrust.keys.get": { domain: string, generation: string, };
-  "zerotrust.keys.history": { domain: string, generations: Array<string>, };
+  "zerotrust.keys.history": { domain: string, generations: Array<string>, prepared?: PreparedView, };
   "zerotrust.keys.inspect": { keys: Array<KeyRecipientInput>, };
   "zerotrust.members.changeReceipt": { requestId: string, };
   "zerotrust.members.creation": { id: Id, };
@@ -530,7 +530,7 @@ export type QueryOutputs = {
   "users.vacations.list": { id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: "vacation" | "other"; label: null | string; status: "denied" | "requested" | "approved"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[];
   "zerotrust.access.page": { snapshot: string, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, after: string | null, };
   "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, pages?: Array<ObjectPage>, };
-  "zerotrust.content.inspect": { pages: Array<ObjectPage>, stamp: string, restoredDocumentScopes: Array<string>, sealedInvoiceScopes: Array<string>, uncheckedDocuments: number, };
+  "zerotrust.content.inspect": { pages: Array<ObjectPage>, domains: Array<DomainInfo>, stamp: string, restoredDocumentScopes: Array<string>, sealedInvoiceScopes: Array<string>, uncheckedDocuments: number, };
   "zerotrust.content.snapshots": { rows: Array<TenantSnapshot>, after: string | null, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
   "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, returned?: ResourceCommand, }>;

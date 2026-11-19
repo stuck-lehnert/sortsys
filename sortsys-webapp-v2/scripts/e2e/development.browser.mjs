@@ -3508,6 +3508,95 @@ try {
       fullPage: true,
     });
   });
+  await scenario("project-deletion-closes-open-attachment", async (page) => {
+    // The final scenario removes a seeded project in this disposable tenant.
+    const projectTitle = "Fenstersanierung Pirckheimer-Gymnasium";
+    const fileName = "Lageplan für Löschtest 479561.pdf";
+    const project = seeded.projectId;
+    const projectPath = "/projects/" + project;
+    const filesPath = projectPath + "/files";
+    await login(page, "john.doe");
+    await expect(page.getByRole("link", { name: "Einstellungen", exact: true })).toBeVisible();
+    await page.goto(server.origin + filesPath);
+    const pdf = await readFile(new URL(
+      "../../../sortsys-api-v2/seed-assets/materialfreigabe.pdf",
+      import.meta.url,
+    ));
+    await page.locator('input[type="file"]').setInputFiles({
+      name: fileName,
+      mimeType: "application/pdf",
+      buffer: pdf,
+    });
+    await expect(page.getByRole("button", { name: fileName, exact: true })).toBeVisible();
+
+    const permissions = await openMemberPermissions(page);
+    const access = permissions.getByRole("heading", { name: "Projektzugriff" })
+      .locator("xpath=ancestor::section[1]");
+    await access.getByRole("combobox", { name: "Projekt", exact: true }).fill(projectTitle);
+    await page.getByRole("option", { name: projectTitle, exact: true }).click();
+    await selectAccess(page, access, "Projektgrunddaten", "Lesen");
+    await selectAccess(page, access, "Projektdateien", "Lesen");
+    await saveResourceAccess(access, "Projektzugriff speichern", "Projektdateien", 60_000);
+
+    const memberServer = await applicationServer(applicationBuild, endpoints[0]);
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    const audit = auditPage(member);
+    const release = Promise.withResolvers();
+    const committed = Promise.withResolvers();
+    try {
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(member.getByRole("link", { name: "Einstellungen", exact: true })).toBeVisible();
+      await member.goto(memberServer.origin + filesPath);
+      await member.getByRole("button", { name: fileName, exact: true }).click();
+      const preview = member.getByRole("dialog", { name: "PDF ansehen" });
+      await expect(preview).toBeVisible();
+      const attachmentUrl = member.url();
+
+      await page.goto(server.origin + projectPath);
+      await page.getByRole("button", { name: "Aktionen", exact: true }).click();
+      await page.getByRole("menuitem", { name: "Löschen", exact: true }).click();
+      const deleting = page.getByRole("dialog", { name: "Projekt löschen" });
+      const confirmation = deleting.getByRole("checkbox");
+      await confirmation.press("Space");
+      await expect(confirmation).toBeChecked();
+      await page.route("**/api/v2/**", async (route) => {
+        const deletesProject = rpcInputs(route.request(), "zerotrust.objects.batch")
+          .some((input) => input?.objects?.some(({ envelope }) =>
+            envelope.object === `project:${project}` &&
+            envelope.format === "sortsys-object-tombstone-v1",
+          ));
+        if (!deletesProject) return route.continue();
+        const response = await route.fetch();
+        committed.resolve(await response.json());
+        await release.promise;
+        await route.fulfill({ response });
+      });
+      await deleting.getByRole("button", { name: "Löschen", exact: true }).click();
+      await expect(preview).toBeHidden({ timeout: 40_000 });
+      const result = await committed.promise;
+      assert.ok(result.some((reply) => reply.result?.data?.json?.success === true));
+      const readBack = page.waitForResponse(
+        (response) => response.ok() &&
+          rpcInputs(response.request(), "zerotrust.objects.get")
+            .some((input) => input?.id === `project:${project}`),
+      );
+      release.resolve();
+      await readBack;
+      await expect(deleting).toBeHidden();
+      await expect(page).toHaveURL(new URL("/projects", server.origin).href);
+      await member.goto(attachmentUrl);
+      await expect(member.getByRole("heading", { name: "404", exact: true })).toBeVisible();
+      await expect(preview).toBeHidden();
+      await expect(page.getByText(projectTitle, { exact: true })).toHaveCount(0);
+      audit.assertClean();
+    } finally {
+      release.resolve();
+      await memberContext.close();
+      await memberServer.close();
+    }
+  });
   assert.ok(results.length > 0, "The selected browser scenario must exist");
   for (const name of selectedScenarios) {
     assert.ok(

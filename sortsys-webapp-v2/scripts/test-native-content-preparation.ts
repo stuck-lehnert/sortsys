@@ -655,10 +655,8 @@ async function checkPlanningReview(
       reason: "Gerüstabbau im Innenhof",
     }),
   );
-  await required(owner.mutate("projects.delete", { id: project }));
-
   const signal = new AbortController().signal;
-  async function inspectSnapshot() {
+  async function prepareSnapshot() {
     const backup = await required(
       operator.mutate("admin.storage.snapshots.create", {
         tenant,
@@ -671,13 +669,11 @@ async function checkPlanningReview(
         operation: crypto.randomUUID(),
       }),
     );
-    const approval = await approvePreparedContent(peer, prepared, signal);
-    return inspectPreparedContent(peer, approval, signal);
+    return approvePreparedContent(peer, prepared, signal);
   }
-
-  const report = await inspectSnapshot();
-  assert.equal(report.missingPlanningReferences, 1);
-  assert.equal(report.uncheckedPlanningReferences, 0);
+  async function inspectSnapshot() {
+    return inspectPreparedContent(peer, await prepareSnapshot(), signal);
+  }
 
   const area = await protectedCollection(
     owner,
@@ -706,6 +702,42 @@ async function checkPlanningReview(
   } finally {
     area.close();
   }
+  const beforeDeletion = await prepareSnapshot();
+  await required(owner.mutate("projects.delete", { id: project }));
+  await assert.rejects(() => protectedCollection(owner, scheduleCollection(project), signal));
+  const archived = await preparedReadView(peer, beforeDeletion, signal);
+  assert.ok((await archived.read(scheduleCollection(project))).some(
+    ({ envelope }) => envelope.object === scheduleObject(project, "unavailability", closure.id),
+  ));
+  const report = await inspectSnapshot();
+  assert.equal(report.missingPlanningReferences, 0);
+  assert.equal(report.uncheckedPlanningReferences, 0);
+}
+
+async function preparedReadView(
+  client: Client,
+  view: Parameters<typeof inspectPreparedContent>[1],
+  signal: AbortSignal,
+) {
+  const { operation, approval } = view;
+  const { domains, stamp } = await required(client.query(
+    "zerotrust.content.inspect",
+    { operation, approval, start: true },
+    { strategy: "network-only" },
+  ));
+  return protectedReadView(client, signal, {
+    view: { operation, approval },
+    domains,
+    async pages(pages) {
+      const result = await required(client.query(
+        "zerotrust.content.inspect",
+        { operation, approval, pages },
+        { strategy: "network-only" },
+      ));
+      assert.equal(result.stamp, stamp);
+      return result.pages;
+    },
+  });
 }
 
 async function rejectSnapshotWithoutLockedCase(
@@ -1416,23 +1448,7 @@ export async function exerciseContentPreparation(
   );
   assert.equal(reportPreview.retainedDocuments, 2);
   assert.equal(reportPreview.uncheckedDocuments, 0);
-  const preview = await protectedReadView(peer, previewSignal, {
-    view: { operation, approval },
-    pages: async (pages) =>
-      (
-        await required(
-          peer.query(
-            "zerotrust.content.inspect",
-            {
-              operation,
-              approval,
-              pages,
-            },
-            { strategy: "network-only" },
-          ),
-        )
-      ).pages,
-  });
+  const preview = await preparedReadView(peer, { operation, approval }, previewSignal);
   const [olderProject] = await preview.read(projectArea);
   assert.ok(olderProject);
   const older = projectPayload(

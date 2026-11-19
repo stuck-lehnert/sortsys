@@ -61,12 +61,35 @@ pub(in crate::zerotrust) fn recovery_key(
     ))
 }
 
-pub(in crate::zerotrust) async fn catalog(
+pub(in crate::zerotrust) async fn retained_catalog(
     transaction: &mut Transaction,
 ) -> RpcResult<Vec<DomainDescriptor>> {
     transaction
         .all("domain-catalog", DEFAULT_RECOVERY_LIMITS.domains as usize)
         .await
+}
+
+pub(in crate::zerotrust) async fn catalog(
+    transaction: &mut Transaction,
+    readable: impl FnMut(&DomainDescriptor) -> bool,
+) -> RpcResult<Vec<DomainDescriptor>> {
+    let areas: Vec<_> = retained_catalog(transaction)
+        .await?
+        .into_iter()
+        .filter(readable)
+        .collect();
+    let closed = super::project_lifecycle::closed(
+        transaction,
+        areas.iter().map(|area| (area.scope.as_str(), area.facet)),
+    )
+    .await?;
+    Ok(areas
+        .into_iter()
+        .filter(|area| {
+            super::project_lifecycle::dependent_project(&area.scope, area.facet)
+                .is_none_or(|project| !closed.contains(project))
+        })
+        .collect())
 }
 pub(in crate::zerotrust) async fn has_key(
     transaction: &mut Transaction,
@@ -125,6 +148,16 @@ pub(in crate::zerotrust) fn envelope_key(
     ))
 }
 pub(in crate::zerotrust) async fn domain(
+    transaction: &mut Transaction,
+    id: &str,
+) -> RpcResult<DomainRecord> {
+    let record = retained_domain(transaction, id).await?;
+    super::project_lifecycle::require_active(transaction, &record.scope, record.facet).await?;
+    Ok(record)
+}
+
+/// Recovery and technical catalogue verification retain every key reference.
+pub(in crate::zerotrust) async fn retained_domain(
     transaction: &mut Transaction,
     id: &str,
 ) -> RpcResult<DomainRecord> {
@@ -395,7 +428,7 @@ pub(in crate::zerotrust) async fn check_encryption_recipient(
 
 /// Both the standalone inventory and the combined access snapshot retain the
 /// same visibility and key-rotation checks, inside their caller's transaction.
-pub(super) async fn list_domains(
+pub(in crate::zerotrust) async fn list_domains(
     context: &mut super::super::access::MetadataContext,
     selected: Option<&[String]>,
 ) -> RpcResult<Vec<DomainInfo>> {
@@ -431,7 +464,17 @@ pub(super) async fn list_domains(
                 .collect(),
         )
         .await?;
+    let closed = super::project_lifecycle::closed(
+        &mut context.transaction,
+        areas.iter().map(|area| (area.scope.as_str(), area.facet)),
+    )
+    .await?;
     for area in areas {
+        if super::project_lifecycle::dependent_project(&area.scope, area.facet)
+            .is_some_and(|project| closed.contains(project))
+        {
+            continue;
+        }
         super::domain_access::check(&mut context.transaction, &area).await?;
         if context.auth.is_admin()
             || context.security.allows(
@@ -1030,6 +1073,7 @@ async fn read_key_history(
     let mut context =
         metadata_context_for_domains(service, request, Some(std::slice::from_ref(&input.domain)))
             .await?;
+    context = super::super::content::select_read_view(context, input.prepared.as_ref()).await?;
     let area = domain(&mut context.transaction, &input.domain).await?;
     let guard = &context.security;
     if !guard.allows(&guard.subject, &area.scope, area.facet, Action::Read) {
@@ -1562,6 +1606,8 @@ async fn put_domain_in_transaction(
     context: &mut MetadataContext,
     input: DomainDefinition,
 ) -> RpcResult<bool> {
+    super::project_lifecycle::require_active(&mut context.transaction, &input.scope, input.facet)
+        .await?;
     if let Some(certificate) = &input.key_authority {
         validate_key_authority_actor(context, certificate).await?;
     }

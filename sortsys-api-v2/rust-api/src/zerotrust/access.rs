@@ -80,6 +80,7 @@ async fn metadata_security_for_selection(
             records.push(key(&origins, domain));
             if matches!(domain_reads, DomainReads::WithHeads) {
                 records.extend(super::objects::registry::domain_keys(domain));
+                records.extend(super::objects::project_root_record_for_domain(domain));
             }
         }
     }

@@ -368,7 +368,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
     if grant.nonce != input.transition.challenge {
         return Err(conflict());
     }
-    let descriptors = registry::catalog(&mut transaction).await?;
+    let descriptors = registry::retained_catalog(&mut transaction).await?;
     if descriptors.len() != input.domains.len() {
         return Err(conflict());
     }
@@ -387,7 +387,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         .collect::<BTreeMap<_, _>>();
     let mut domains = BTreeMap::new();
     for descriptor in descriptors {
-        let current = registry::domain(&mut transaction, &descriptor.id).await?;
+        let current = registry::retained_domain(&mut transaction, &descriptor.id).await?;
         let next = next_domains.get(current.id.as_str()).ok_or_else(conflict)?;
         if current.scope != descriptor.scope
             || current.facet != descriptor.facet

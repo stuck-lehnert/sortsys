@@ -1376,6 +1376,27 @@ export function createBusinessClient(
       }
       if (PROJECT_MUTATIONS.has(path)) {
         options?.signal?.throwIfAborted();
+        if (path === "projects.delete") {
+          const expected = account;
+          const lifetime = new AbortController();
+          const stopAuth = base.listenAuthState(() => lifetime.abort());
+          const signal = options?.signal
+            ? AbortSignal.any([lifetime.signal, options.signal])
+            : lifetime.signal;
+          try {
+            const { deleteProtectedProject } = await import("./projects");
+            if (closed || !expected || expected !== unlockedAccount())
+              throw unavailable();
+            // The project closure can reset the current data view before the
+            // mutation's signed tombstone is read back. Keep that verification
+            // bound to the authenticated account, not to the retired view.
+            const value = await deleteProtectedProject(base, input, signal);
+            if (closed || expected !== unlockedAccount()) throw unavailable();
+            return [value, null];
+          } finally {
+            stopAuth();
+          }
+        }
         const signal = controller.signal,
           value = await (await projectStore()).mutate(path, input);
         if (closed || signal.aborted) throw unavailable();

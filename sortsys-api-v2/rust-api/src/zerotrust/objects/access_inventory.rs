@@ -57,7 +57,7 @@ async fn inventory_page(
     let domains: Vec<String> = descriptors.iter().map(|area| area.id.clone()).collect();
     let mut context = request.authorize(Some(&domains)).await?;
     for descriptor in descriptors {
-        let area = registry::domain(&mut context.transaction, &descriptor.id).await?;
+        let area = registry::retained_domain(&mut context.transaction, &descriptor.id).await?;
         if area.scope != descriptor.scope || area.facet != descriptor.facet {
             return Err(invalid());
         }
@@ -88,6 +88,12 @@ async fn snapshot(
             ))
             .await?
     };
+    let content = context
+        .transaction
+        .content_epoch()
+        .await?
+        .map(|head| head.fingerprint())
+        .transpose()?;
     let identity = serde_json::to_string(&(
         "sortsys/access-inventory/v1",
         &context.auth.tenant,
@@ -99,6 +105,7 @@ async fn snapshot(
         &root.profile.authority.signature,
         &context.security.policy.signature,
         source_version,
+        content,
         include_domains,
         selected,
     ))

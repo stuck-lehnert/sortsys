@@ -4,7 +4,9 @@ mod checks;
 
 use super::{
     crypto::{identifier, invalid, revision, sized},
-    objects::{AuthorityHistory, ListBatchInput, ObjectPage, conflict, persistence, registry},
+    objects::{
+        AuthorityHistory, DomainInfo, ListBatchInput, ObjectPage, conflict, persistence, registry,
+    },
     wire::{AuthorityCertificate, SignedPolicy},
 };
 use crate::{
@@ -74,6 +76,7 @@ pub(in crate::zerotrust) struct PreparedView {
 #[serde(rename_all = "camelCase")]
 struct Inspection {
     pages: Vec<ObjectPage>,
+    domains: Vec<DomainInfo>,
     stamp: String,
     restored_document_scopes: Vec<String>,
     sealed_invoice_scopes: Vec<String>,
@@ -265,6 +268,11 @@ async fn inspect(
     verify_signed_view(&context, &input.operation, &input.approval)?;
     select_ready_view(&mut context, &input.operation, &input.approval).await?;
     let stamp = review_stamp(&mut context, &input.operation, &input.approval).await?;
+    let domains = if start {
+        registry::list_domains(&mut context, None).await?
+    } else {
+        Vec::new()
+    };
     let mut documents = checks::RestoredDocuments::default();
     let pages = if let Some(pages) = input.pages {
         persistence::selected_pages(&mut context, pages).await?
@@ -278,6 +286,7 @@ async fn inspect(
     context.transaction.validate().await?;
     Ok(Inspection {
         pages,
+        domains,
         stamp,
         restored_document_scopes: documents.scopes,
         sealed_invoice_scopes: documents.invoices,
@@ -285,14 +294,18 @@ async fn inspect(
     })
 }
 
-pub(super) async fn select_for_inspection(
+/// Optional reads of an archived stand share the same administrator
+/// admission and signed view verification. Ordinary reads keep their live view.
+pub(super) async fn select_read_view(
     context: super::access::MetadataContext,
-    operation: &str,
-    approval: &ContentEpoch,
+    prepared: Option<&PreparedView>,
 ) -> RpcResult<super::access::MetadataContext> {
+    let Some(prepared) = prepared else {
+        return Ok(context);
+    };
     let mut context = require_admin(context)?;
-    verify_signed_view(&context, operation, approval)?;
-    select_ready_view(&mut context, operation, approval).await?;
+    verify_signed_view(&context, &prepared.operation, &prepared.approval)?;
+    select_ready_view(&mut context, &prepared.operation, &prepared.approval).await?;
     Ok(context)
 }
 

@@ -323,7 +323,12 @@ export default function ProjectDetailShell() {
                   "master-data",
                   "delete",
                 ),
-                onClick: () => showDeleteProjectModal(modals, project),
+                onClick: () => showDeleteProjectModal(modals, project, () => {
+                  const current = window.location.pathname;
+                  const projectPath = `/projects/${project.id}`;
+                  if (current === projectPath || current.startsWith(`${projectPath}/`))
+                    void navigate("/projects", { replace: true });
+                }),
               },
             ]}
           />

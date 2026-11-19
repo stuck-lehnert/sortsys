@@ -409,9 +409,45 @@ try {
       await import("./test-live-project-module-permissions");
     const member = createClient(endpoints[0], "project-access-member");
     try {
-      const privateValues = await exerciseProjectAccess(owner, member);
+      const { closedProject, privateValues } = await exerciseProjectAccess(
+        owner, member, operator, endpoints[0],
+      );
       for (const value of privateValues)
         assert.ok(requests.every((body) => !body.includes(value)));
+
+      const { commitRecovery, recoveryDraft, recoveryPlan } =
+        await import("../app/lib/crypto/recovery");
+      const { signIn } = await import("../app/lib/crypto/session");
+      const recovered = createClient(endpoints[0], "closed-project-recovery");
+      const recovery = await recoveryDraft(
+        recovered, draft.link.tenant, draft.phrase, draft.password,
+        { restoreAdministrator: true },
+      );
+      const plan = await recoveryPlan(recovered, recovery);
+      const closedAttachment = `project:${closedProject}:attachment`;
+      const restoredDomain = plan.domains.find(({ id }) => id === closedAttachment);
+      assert.ok(restoredDomain);
+      await commitRecovery(recovered, plan);
+      await signIn(recovered, {
+        tenant: draft.link.tenant,
+        username: plan.username,
+        password: draft.password,
+      });
+      const [deleted, error] = await recovered.query("zerotrust.objects.get", {
+        id: `project:${closedProject}`,
+      }, { strategy: "network-only" });
+      assert.equal(error, null);
+      assert.equal(deleted?.format, "sortsys-object-tombstone-v1");
+      const [domain, forbidden] = await recovered.query(
+        "zerotrust.domains.get",
+        { domain: closedAttachment, generation: restoredDomain.generation },
+        { strategy: "network-only" },
+      );
+      assert.equal(domain, null);
+      assert.equal(forbidden?.code, "FORBIDDEN");
+      currentRecoveryPhrase = recovery.newPhrase;
+      recovered.setToken(null);
+      console.log("Seed-Phrase stellt alte Projektschlüssel wieder her und lässt das Projekt im laufenden Stand gesperrt");
     } finally {
       member.setToken(null);
     }

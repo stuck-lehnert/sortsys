@@ -1,10 +1,18 @@
-import { InvalidProtectedData, record, sized } from "@sortsys/zerotrust/sortsys";
+import type { Client } from "@sortsys/v2-client";
+import {
+  InvalidProtectedData,
+  record,
+  sized,
+  TOMBSTONE_FORMAT,
+} from "@sortsys/zerotrust/sortsys";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { publicId } from "./products";
+import { projectCollection } from "./projectData";
 import { projectModuleArea, projectModuleDomain } from "./projectScope";
-import type { Collection } from "./protectedObjects";
+import { protectedCollections, type Collection } from "./protectedObjects";
 import { decodeBusinessFields, type BusinessFields } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
+import { mapConcurrent } from "./runtime/concurrentReads";
 import type { DataTransaction } from "./runtime/runtime";
 import { tableDefinition } from "./schema";
 
@@ -145,6 +153,72 @@ export function toolUsageRequests(
     ? facets.map((facet) => toolUsageRequest(projectId, facet))
     : [];
 }
+
+/** Booking records live independently from their project projections. Keep
+ * the latter intact after closure, and bind the decision to the signed root
+ * and its checked head so a concurrent restore cannot reopen it unnoticed. */
+export async function preparePriorToolUsage(
+  client: Client,
+  trackings: readonly BusinessFields[],
+  signal: AbortSignal,
+  facets: readonly ToolUsageFacet[] = TOOL_USAGE_FACETS,
+) {
+  const projects = new Set<string>();
+  for (const tracking of trackings) {
+    const project = trackingProject(tracking);
+    if (project) projects.add(project);
+  }
+  const areas = [...projects].map((project) => ({
+    project,
+    root: projectCollection(project),
+    usage: facets.map((facet) => toolUsageRequest(project, facet)),
+  }));
+  const retired = new Set<string>();
+  const guards: { domain: string; sequence: string }[] = [];
+  if (areas.length) {
+    const domains = areas.flatMap(({ root, usage }) => [
+      root.domain,
+      ...usage.map(({ area }) => area.domain),
+    ]);
+    const access = await protectedCollections(
+      client,
+      signal,
+      domains.length <= 16 ? domains : undefined,
+    );
+    const unavailable = areas.filter(({ root, usage }) =>
+      access.readable(root) && usage.some(({ area }) => !access.readable(area)),
+    );
+    const proofs = await mapConcurrent(unavailable, 4, async ({ project, root }) => {
+      const source = access(root);
+      try {
+        const sequence = await source.inspect();
+        const current = await source.get(root.prefix);
+        if (current.envelope.format !== TOMBSTONE_FORMAT || current.value !== null)
+          return null;
+        await source.inspect(sequence);
+        return { project, domain: root.domain, sequence };
+      } finally {
+        source.close();
+      }
+    });
+    for (const proof of proofs) {
+      if (!proof) continue;
+      retired.add(proof.project);
+      guards.push({ domain: proof.domain, sequence: proof.sequence });
+    }
+  }
+  return {
+    guards,
+    requests: areas
+      .filter(({ project }) => !retired.has(project))
+      .flatMap(({ usage }) => usage),
+    closed(tracking: BusinessFields) {
+      const project = trackingProject(tracking);
+      return project !== null && retired.has(project);
+    },
+  };
+}
+
 export function syncToolUsage(
   transaction: DataTransaction,
   tracking: BusinessFields,

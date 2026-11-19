@@ -97,11 +97,10 @@ API-Instanzen hinweg.
 
 Kann der Schreiber die Projektgrunddaten lesen, prüft er zusätzlich den dortigen
 Projektstand und bindet ihn an dieselbe Speichertransaktion. Bei einer reinen
-Dateifreigabe bleibt diese fachliche Prüfung über Bereichsgrenzen hinweg aus.
-Die signierte Bereichszuordnung gilt weiterhin. Eine öffentlich prüfbare
-Projektlöschung, die abhängige Bereiche verbindlich sperrt, steht noch aus.
-Diese Grenze gehört zur vereinbarten
-[clientseitigen Datenprüfung](verschluesselung-datenpruefung.md).
+Dateifreigabe prüft die API den öffentlichen Status des Projekts. Nach einer
+Projektlöschung sperrt sie Verzeichnis, Schlüsselabrufe, Dateiübertragung und
+die Zusammenarbeit an den Anhängen. Projektgrunddaten bleiben bei einer reinen
+Dateifreigabe verschlüsselt.
 
 ## Vorhandene Dateien aus einer Sicherung übernehmen
 

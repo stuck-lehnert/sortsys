@@ -212,15 +212,12 @@ async fn browser_with_tenant(
             | "owner-access-publications"
             | "owner-backup"
             | "owner-backup-archive"
+            | "owner-project-access"
     ) {
         Duration::from_secs(300)
     } else if matches!(
         mode,
-        "invitations"
-            | "member-renames"
-            | "member-deletion"
-            | "owner-bootstrap"
-            | "owner-project-access"
+        "invitations" | "member-renames" | "member-deletion" | "owner-bootstrap"
     ) {
         Duration::from_secs(180)
     } else {

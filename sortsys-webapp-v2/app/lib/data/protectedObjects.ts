@@ -83,6 +83,7 @@ export type CollectionPageRequest = {
 type ObjectPage = QueryResult<"zerotrust.objects.list">;
 type PreparedPageSource = {
   view: NonNullable<QueryInput<"zerotrust.stock.references">["prepared"]>;
+  domains: QueryResult<"zerotrust.access.snapshot">["domains"];
   pages(request: QueryInput<"zerotrust.objects.pages">): Promise<ObjectPage[]>;
 };
 
@@ -183,15 +184,30 @@ export async function protectedReadView(
   signal: AbortSignal,
   source: PreparedPageSource,
 ) {
+  if (
+    !Array.isArray(source.domains) ||
+    source.domains.length > 2000 ||
+    new Set(source.domains.map(({ id }) => id)).size !== source.domains.length
+  )
+    throw new InvalidProtectedData();
   const open = await bindCollections(client, signal, undefined, source);
   return {
+    prepared: source.view,
     areas: open.areas,
     readable: open.readable,
     prefetch: open.prefetch,
-    async read(area: Collection) {
+    openCiphertext(area: Collection) {
+      const collection = open(area);
+      return {
+        open: collection.open,
+        can: collection.can,
+        close: collection.close,
+      };
+    },
+    async read(area: Collection, options?: { includeTombstones?: boolean }) {
       const collection = open(area);
       try {
-        return await collection.read();
+        return await collection.read(undefined, options);
       } finally {
         collection.close();
       }
@@ -330,7 +346,8 @@ async function collectionContext(
   source?: PreparedPageSource,
   initialRequests: QueryInput<"zerotrust.objects.list">[] = [],
 ) {
-  let options: QueryInput<"zerotrust.access.snapshot"> = {};
+  let options: QueryInput<"zerotrust.access.snapshot"> =
+    source ? { includeDomains: false } : {};
   if (typeof selection === "string") {
     options = { domain: selection };
   } else if (selection !== undefined) {
@@ -343,11 +360,12 @@ async function collectionContext(
     subject,
     rootPolicy,
     permissions,
-    domains,
+    domains: currentDomains,
     origins,
     pages: initialPages,
     live,
   } = await verifiedAccessContext(client, signal, options);
+  const domains = source?.domains ?? currentDomains;
   const author = createObjectAuthorVerifier(
     client,
     { account, history, live },
@@ -451,7 +469,11 @@ function openCollection(
     const entries = await required(
       client.query(
         "zerotrust.keys.history",
-        { domain: collection.domain, generations: [generation] },
+        {
+          domain: collection.domain,
+          generations: [generation],
+          prepared: context.source?.view,
+        },
         { strategy: "network-only" },
       ),
     );
@@ -1158,10 +1180,14 @@ function openCollection(
       await checkPlanningRecipients(client, [object], history, live);
       return object;
     },
-    async read(prefix = collection.prefix): Promise<OpenedObject[]> {
-      return (await readSnapshot(prefix)).objects.filter(
-        (object) => object.envelope.format !== TOMBSTONE_FORMAT,
-      );
+    async read(
+      prefix = collection.prefix,
+      options?: { includeTombstones?: boolean },
+    ): Promise<OpenedObject[]> {
+      const { objects } = await readSnapshot(prefix);
+      return options?.includeTombstones
+        ? objects
+        : objects.filter(({ envelope }) => envelope.format !== TOMBSTONE_FORMAT);
     },
     // Pass the last verified projection's head, never a write acknowledgement
     // whose new contents have not been read and checked yet.
