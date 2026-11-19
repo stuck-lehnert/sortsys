@@ -520,6 +520,45 @@ try {
       fullPage: true,
     });
   });
+  await scenario("local-database-worker-startup-and-recovery", async (page) => {
+    const workerAsset = /\/assets\/duckdb-browser-(eh|mvp)\.worker-[^/]+\.js$/;
+    const context = page.context();
+    let failedWorkerRequests = 0;
+    const failWorker = async (route) => {
+      failedWorkerRequests++;
+      await route.fulfill({ status: 404, body: "Worker asset unavailable" });
+    };
+    await context.route(workerAsset, failWorker);
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
+    await page.goto(`${server.origin}/products`);
+    const failure = page
+      .getByRole("main")
+      .getByRole("alert")
+      .filter({ hasText: "Einträge konnten nicht geladen werden." });
+    await expect(failure).toBeVisible();
+    await expect(
+      page.getByRole("grid", { name: "Einträge" }),
+    ).not.toHaveAttribute("aria-busy", "true");
+    await expect(
+      page.getByText("Einträge werden geladen …", { exact: true }),
+    ).toHaveCount(0);
+    assert.ok(failedWorkerRequests > 0);
+    const product = page.getByText("Haftgrund, manuell angepasst", {
+      exact: true,
+    });
+    await expect(product).toHaveCount(0);
+
+    await context.unroute(workerAsset, failWorker);
+    await page.getByRole("link", { name: "Dashboard", exact: true }).click();
+    await page.locator('nav a[href="/products"]').click();
+    await expect(product).toBeVisible();
+    await expect(failure).toHaveCount(0);
+    await page.reload();
+    await expect(product).toBeVisible();
+  });
   await scenario("product-prefix-search", async (page) => {
     await login(page, "john.doe");
     await expect(

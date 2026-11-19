@@ -172,7 +172,7 @@ export function MyTable<
     return (
       <section
         {...props}
-        aria-busy={loading}
+        aria-busy={loading && !error}
         className={`space-y-4 ${props.className ?? ""}`}
       >
         <div id={cardsId} className="space-y-3">
@@ -217,7 +217,7 @@ export function MyTable<
       <HeroTable.ScrollContainer id={gridId}>
         <HeroTable.Content
           aria-label={props["aria-label"] ?? uiText("Einträge", "Entries")}
-          aria-busy={loading}
+          aria-busy={loading && !error}
           className={tableClassName}
           sortDescriptor={
             activeColumn?.sortKey

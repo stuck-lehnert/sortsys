@@ -247,6 +247,27 @@ function fixture(lateDriver = false) {
   };
 }
 
+test("a failed database startup leaves the next read free to reopen the local database", async () => {
+  const f = fixture(true);
+  let attempts = 0;
+  const failure = new Error("The worker did not start");
+  f.runtime.configureDriver(async () => {
+    attempts++;
+    if (attempts === 1) throw failure;
+    return f.driverFactory();
+  });
+  const read = () => f.runtime.read([first], (view) => view.documents(first));
+  try {
+    await expect(read()).rejects.toBe(failure);
+    expect(await read()).toHaveLength(1);
+    expect(await read()).toHaveLength(1);
+    expect(attempts).toBe(2);
+    expect(f.calls.drivers).toBe(1);
+  } finally {
+    await f.runtime.close();
+  }
+});
+
 test("a caller's verified inventory can supply its read and a conflicting read opens a fresh context", async () => {
   const current = fixture();
   const original = current.storage.open;

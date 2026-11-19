@@ -523,8 +523,14 @@ export class DataRuntime {
     return result;
   }
   private db(): Promise<BusinessDatabase> {
-    return (this.database ??= (async () =>
-      createBusinessDatabase(await this.driver?.(), true))());
+    if (this.database) return this.database;
+    const opening = (async () =>
+      createBusinessDatabase(await this.driver?.(), true))();
+    this.database = opening;
+    void opening.catch(() => {
+      if (this.database === opening) this.database = undefined;
+    });
+    return opening;
   }
   read<T>(
     requests: readonly DataRequest[],

@@ -432,6 +432,12 @@ Abmeldung, Kontowechsel und ein ersetztes Anmeldetoken sperren die alte Laufzeit
 Bei einer Änderung der Freigaben werden die bisherigen Projektionen verworfen.
 Klartext wird weder in IndexedDB noch in OPFS abgelegt.
 
+Scheitert der Start des Datenbank-Workers im Browser, erhält die wartende
+Ansicht einen Ladefehler. Die Laufzeit gibt den fehlgeschlagenen Start frei,
+damit der nächste Abruf erneut starten kann. Ein Chromium-Test unterbricht
+gezielt den Abruf der Worker-Datei und prüft den Produktkatalog nach dem
+erneuten Öffnen.
+
 Die bisherigen Adapter für Produkte, Lieferanten, Preisaufzeichnungen und
 Preisimporte, Ansichtseinstellungen, Organisation, Kunden, Kontakte, Personal, Projekte
 und kaufmännische Vorgänge nutzen diesen Kern für ihre Änderungen. Auch
