@@ -4,6 +4,15 @@ use std::panic::{AssertUnwindSafe, resume_unwind};
 use tokio::{io::AsyncBufReadExt, process::Child};
 
 pub(super) async fn run_browser(settings: &Config, root: &Path, mode: &str) {
+    run_browser_sequence(settings, root, &[mode], None).await;
+}
+
+pub(super) async fn run_browser_sequence(
+    settings: &Config,
+    root: &Path,
+    modes: &[&str],
+    tenant: Option<&str>,
+) {
     let mut first = ApiProcess::start(settings, root, "first").await;
     let mut second = ApiProcess::start(settings, root, "second").await;
     assert_ne!(first.pid, second.pid);
@@ -17,9 +26,13 @@ pub(super) async fn run_browser(settings: &Config, root: &Path, mode: &str) {
         "stopped": false,
     });
     std::fs::write(&path, report.to_string()).unwrap();
-    let result = AssertUnwindSafe(browser(mode, root, Some(&endpoints)))
-        .catch_unwind()
-        .await;
+    let result = AssertUnwindSafe(async {
+        for mode in modes {
+            browser_with_tenant(mode, root, Some(&endpoints), tenant).await;
+        }
+    })
+    .catch_unwind()
+    .await;
     first.stop().await;
     second.stop().await;
     report["stopped"] = serde_json::json!(true);

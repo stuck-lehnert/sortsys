@@ -212,10 +212,15 @@ lesbar.
 Die Fachtests prüfen getrennt davon die Bindung an Antragssignatur und
 Unterzeichner, die Kontingentberechnung und die wiederholbare Bestandsübernahme.
 Für die automatischen Freigaben prüfen sie zusätzlich ganze Vorgesetztenzweige,
-manuelle Ausnahmen, verlorene Antworten und konkurrierende Quelländerungen. Die
-automatischen Freigaben entlang ganzer Vorgesetztenzweige sind damit noch nicht
-vollständig im Mehrinstanzlauf geprüft; ein Administratorrecht auf dem Server
-ersetzt weder Leseschlüssel noch eine signierte Freigabe.
+manuelle Ausnahmen, verlorene Antworten und konkurrierende Quelländerungen.
+Ein weiterer Mehrinstanzlauf verwendet vier Mitarbeiterkonten und zwei
+getrennte API-Prozesse. Eine höhere Leitung genehmigt den Antrag der zweiten
+Ebene. Danach wechselt die Kolonnenleitung zu einer anderen Leitung. Für
+beide nachgeordneten Konten wechseln die Schlüssel ihrer Antrags- und
+Entscheidungsbereiche. Die bisherige Leitung kann neue Entscheidungen auch mit
+einem zuvor gespeicherten Schlüssel nicht entschlüsseln. Eine ausdrücklich
+erteilte Personalfreigabe bleibt bestehen. Eine manuelle Sperre wirkt auch
+gegenüber dem neu abgeleiteten Entscheidungsrecht.
 
 Der Browserlauf ergänzt die Standardzuordnung: Ein normales Konto stellt
 zunächst einen automatisch genehmigten Antrag. Nach dem Setzen des Standards

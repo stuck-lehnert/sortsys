@@ -177,8 +177,10 @@ Entscheidungen entlang aller Vorgesetztenebenen sind angeschlossen.
 Vorgesetztenwechsel erhalten manuelle Ausnahmen und sichern Personal und Rechte
 gemeinsam ab. Der native Fachadapterlauf prüft Bestandsübernahme, Anträge,
 konkurrierende Entscheidungen, Rücknahmen und Zeitnachweise über zwei getrennte
-API-Instanzen. Zwei Recoveries erhalten die Daten; die vollständige Prüfung aller
-automatischen Vorgesetztenfreigaben steht noch aus. Siehe
+API-Instanzen. Zwei Recoveries erhalten die Daten. Ein weiterer Test wechselt
+die Leitung über den zweiten API-Prozess. Er prüft abgeleitete Rechte über zwei
+Vorgesetztenebenen, manuelle Ausnahmen, vier Schlüsselwechsel und den Zugriff
+mit einem zuvor gespeicherten Schlüssel. Siehe
 [Abwesenheiten](abwesenheiten-protokoll.md).
 
 ## Angebote, Projekte und Baustellenabläufe
