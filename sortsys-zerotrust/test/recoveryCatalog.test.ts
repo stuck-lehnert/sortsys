@@ -57,6 +57,15 @@ test("empty and short catalogs need no external storage", async () => {
   expect(f.pages.size).toBe(0);
 });
 
+test("a full branch is promoted without an empty page at the root", async () => {
+  const { pages, sealing, opening } = await fixture();
+  const input = keys(64 * 64);
+  const root = await createRecoveryCatalog(input, sealing);
+
+  expect(pages.size).toBe(65);
+  expect(await collect(root, opening)).toEqual(input);
+});
+
 test("changed or missing pages and an unrelated root context fail closed", async () => {
   const f = await fixture();
   const root = await createRecoveryCatalog(keys(129), f.sealing);

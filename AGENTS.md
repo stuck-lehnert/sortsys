@@ -17,6 +17,7 @@
 
 # Code readability
 
+- Give each shared rule one implementation. Reuse the existing code or extract the smallest common operation when it removes duplicate decisions from real callers.
 - Write readable source code, including test fixtures. Use descriptive names and separate statements instead of compressing control flow onto one line.
 - Prefer explicit conditions and named helpers over nested ternaries for comparisons, permissions and business rules. Keep the order of checks apparent to a reviewer.
 - Format changed code consistently with its surroundings. Formatting alone does not replace simplifying an unnecessarily complicated expression.
