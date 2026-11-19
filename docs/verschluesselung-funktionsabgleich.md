@@ -98,7 +98,8 @@ den Bericht bearbeiten. Die Löschaktion blieb gesperrt. Nach dem Entzug
 verschwand der Bericht aus der laufenden Sitzung. Siehe
 [Projektfreigaben](menues-und-datenfreigaben.md#freigabevorlagen-für-projekte).
 
-Die Rollen Büro und Einkauf decken gemeinsame Kataloge ab. Ihre Zuordnung
+Die Rollen Büro und Einkauf decken gemeinsame Kataloge ab. Die Verwaltung
+kann sie mit der Einladung vergeben oder später ändern. Ihre Zuordnung
 ist Teil der signierten Regel. Im Chromium-Test blieb der Produktkatalog
 nach dem Entzug von Einkauf über Büro erreichbar. Eine ausdrückliche
 Produktsperre blendete den Katalog auch bei aktiver Bürorolle aus.
@@ -157,8 +158,8 @@ prüfbar. Ein nativer Mehrinstanztest prüft auch manipulierte und unvollständi
 Befehle, konkurrierende Änderungen, verlorene Antworten, einen gültig signierten
 Wiederanlegeversuch und die Kontosperre nach Seed-Recovery. Direkte und
 Standardvorgesetztenzuordnungen müssen vor der Löschung geändert werden.
-Browsertests prüfen Sichtbarkeit und Bestätigungsdialog. Rollenänderungen fehlen
-noch. Abwesenheiten haben einen eigenen Adapter;
+Browsertests prüfen Sichtbarkeit und Bestätigungsdialog. Die Verwaltung ändert
+Fachrollen über die Freigaben des Kontos. Abwesenheiten haben einen eigenen Adapter.
 Vorgesetzten- und Vertragswechsel verbinden die Personaländerung mit ihren
 automatisch abgeleiteten Freigaben. Der native Fachadapterlauf prüft
 Profiländerungen und zwei Recoveries über getrennte API-Instanzen. Vollständige

@@ -6,15 +6,16 @@ import { mapConcurrent } from "../data/runtime/concurrentReads";
 import {
   ACTIONS,
   InvalidProtectedData,
-  allows,
   base64,
   certifyIdentity,
   claimInvitation,
+  compilePolicy,
   createDomain,
   createInvitation,
   frame,
   invitationApprovalFrame,
   invitationClaimHash,
+  isOrganizationRole,
   readInvitationLink,
   record,
   sign,
@@ -26,6 +27,7 @@ import {
 import type {
   IdentityCertificate,
   InvitationLink,
+  OrganizationRole,
   Rule,
 } from "@sortsys/zerotrust/sortsys";
 import {
@@ -41,8 +43,11 @@ import { administratorContext as admin } from "./administration";
 import { privateLlmCollection } from "../data/privateLlm";
 import { preferenceCollection } from "../data/preferenceData";
 import { provisionOwnedCollections } from "../data/prepareCollections";
-import { PRODUCT_COLLECTION } from "../data/products";
-import { protectedCollection, required } from "../data/protectedObjects";
+import {
+  protectedCollection,
+  required,
+  type Collection,
+} from "../data/protectedObjects";
 import { commitProtectedWrites } from "../data/atomicWrites";
 import {
   MASTER_DATA_AREAS,
@@ -54,9 +59,15 @@ import {
 } from "./accessProfiles";
 import { MEMBER_ORGANIZATION_AREAS } from "../data/organizationData";
 import { absenceCollection } from "../data/absenceData";
+import {
+  editOrganizationRoles,
+  organizationRoles,
+} from "./organizationRoleAccess";
 import type { DuckDriver } from "../data/database";
 
-export type InvitationAccess = ManagedAccess;
+export type InvitationAccess = ManagedAccess & {
+  roles?: readonly OrganizationRole[];
+};
 export type AdminInvitation = {
   format: "sortsys-admin-invitation-v1";
   link: InvitationLink;
@@ -66,8 +77,27 @@ export type PendingInvitation = AdminInvitation & {
   entry: QueryResult<"zerotrust.invitations.list">[number] | null;
 };
 const PREFIX = "enrolment:";
-function access(input: unknown): InvitationAccess {
-  return managedAccess(input);
+function invitationAccess(input: unknown): InvitationAccess {
+  if (!input || typeof input !== "object" || !Object.hasOwn(input, "roles")) {
+    return managedAccess(input);
+  }
+  const { roles, ...individual } = record(input, [
+    ...MASTER_DATA_FIELDS,
+    "assistant",
+    "roles",
+  ]);
+  if (
+    !Array.isArray(roles) ||
+    roles.length > organizationRoles.length ||
+    new Set(roles).size !== roles.length ||
+    roles.some((role) => typeof role !== "string" || !isOrganizationRole(role))
+  ) {
+    throw new InvalidProtectedData();
+  }
+  return {
+    ...managedAccess(individual),
+    roles: organizationRoles.filter((role) => roles.includes(role)),
+  };
 }
 function savedInvitation(input: unknown): AdminInvitation {
   const data = record(input, ["format", "link", "access"]);
@@ -76,7 +106,7 @@ function savedInvitation(input: unknown): AdminInvitation {
   return {
     format: data.format,
     link: readInvitationLink(data.link),
-    access: access(data.access),
+    access: invitationAccess(data.access),
   };
 }
 export async function invitationMembers(client: Client, signal: AbortSignal) {
@@ -159,8 +189,8 @@ export async function createMemberInvitation(
   permissions: InvitationAccess,
   signal: AbortSignal,
 ): Promise<AdminInvitation> {
-  const context = await admin(client, signal),
-    selected = access(permissions);
+  const selected = invitationAccess(permissions);
+  const context = await admin(client, signal);
   const draft = await createInvitation(
     {
       tenant: context.account.tenant,
@@ -349,6 +379,8 @@ export async function approveMemberInvitation(
       BigInt(Math.floor(Date.now() / 1000))
   )
     throw new InvalidProtectedData();
+  if (saved.entry.completed) return;
+
   const signed = saved.link.invitation,
     claim = await verifyInvitationClaim(
       saved.entry.claim,
@@ -452,9 +484,9 @@ async function grantInvitationAccess(
   context.live();
   const { permissions } = await readVerifiedPolicy(client, context);
   const personal = privateLlmCollection(recipient.user);
-  const requested: Rule[] = [],
-    rules = [...permissions.rules];
-  const granted: (typeof PRODUCT_COLLECTION)[] = [];
+  const requested: Rule[] = [];
+  let rules = [...permissions.rules];
+  const granted: Collection[] = [];
   requested.push({
     subject: recipient.user,
     scope: preferences.scope,
@@ -551,6 +583,10 @@ async function grantInvitationAccess(
     });
   // Invitations add explicit grants. Existing rights and explicit denials need
   // their own change-and-rotation workflow and must not be silently removed.
+  const individualAccess = compilePolicy(
+    { ...permissions, rules: permissions.rules.filter((rule) => !rule.origin) },
+    [recipient.user],
+  );
   for (const rule of requested) {
     if (
       permissions.rules.some(
@@ -565,18 +601,23 @@ async function grantInvitationAccess(
       throw new InvalidProtectedData();
     if (
       !rule.actions.every((action) =>
-        allows(permissions, {
-          tenant: permissions.tenant,
-          version: permissions.version,
-          subjects: [recipient.user],
-          scope: rule.scope,
-          facet: rule.facet,
-          action,
-        }),
+        individualAccess.allows(rule.scope, rule.facet, action),
       )
     )
       rules.push(rule);
   }
+  if (saved.access.roles?.length) {
+    const enabledRoles = Object.fromEntries(
+      saved.access.roles.map((role) => [role, true]),
+    );
+    const assignment = editOrganizationRoles(rules, recipient.user, enabledRoles);
+    rules = assignment.rules;
+    const effective = compilePolicy({ ...permissions, rules }, [recipient.user]);
+    for (const area of assignment.areas) {
+      if (effective.allows(area.scope, area.facet, "read")) granted.push(area);
+    }
+  }
+
   let policyVersion = permissions.version;
   if (JSON.stringify(rules) !== JSON.stringify(permissions.rules)) {
     policyVersion = (BigInt(policyVersion) + 1n).toString();
@@ -628,7 +669,8 @@ async function grantInvitationAccess(
       granted.push(personal);
     }
   }
-  const historicalGrants = await mapConcurrent(granted, 4, async (area) => {
+  const uniqueAreas = [...new Map(granted.map((area) => [area.domain, area])).values()];
+  const historicalGrants = await mapConcurrent(uniqueAreas, 4, async (area) => {
     const definition = known.find((domain) => domain.id === area.domain);
     if (!definition) throw new InvalidProtectedData();
     return prepareHistoricalKeyGrants(client, {

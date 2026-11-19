@@ -183,7 +183,8 @@ async fn list_members(
                     &account,
                     &context.security,
                 )?
-                .is_some();
+                .is_some()
+                    && account.credential()?.pending_invitation.is_none();
                 rows.push(Member {
                     id: Id(id),
                     username: account.username,
@@ -452,7 +453,12 @@ async fn approve(
         return Err(conflict());
     }
     if row.accepted_at.is_some() {
-        if credential.certificate != serde_json::to_value(&input.certificate).map_err(internal)? {
+        if credential.certificate != serde_json::to_value(&input.certificate).map_err(internal)?
+            || credential
+                .pending_invitation
+                .as_ref()
+                .is_some_and(|id| id != &input.id)
+        {
             return Err(conflict());
         }
         context.transaction.validate().await?;
@@ -461,10 +467,22 @@ async fn approve(
     if credential.revision.to_string() != claim.revision {
         return Err(conflict());
     }
+    if let Some(previous) = credential.pending_invitation.as_deref()
+        && previous != input.id
+    {
+        let previous = stored(&mut context.transaction, previous).await?;
+        if previous.invitation.user != row.invitation.user {
+            return Err(invalid());
+        }
+        if previous.accepted_at.is_some() && previous.live(&row.invitation.generation).is_ok() {
+            return Err(conflict());
+        }
+    }
     super::super::objects::metadata_install_identity(
         &mut context.transaction,
         &context.security,
         &input.certificate,
+        Some(&input.id),
     )
     .await?;
     let mut row = row;
@@ -553,7 +571,43 @@ async fn complete(
             ],
         ),
     )?;
-    row.completed_at.get_or_insert_with(Utc::now);
+    if row.completed_at.is_some() {
+        context.transaction.validate().await?;
+        return Ok(Success { success: true });
+    }
+    let user = subject(&row.invitation.user)?;
+    let account_key = accounts::account_key(user.0);
+    let mut account: accounts::Account = context
+        .transaction
+        .read(account_key.clone())
+        .await?
+        .ok_or_else(conflict)?;
+    let current = super::super::objects::registry::certified_identity(&account, &context.security)?;
+    let claim = row.claim.as_ref().ok_or_else(conflict)?;
+    if !account.active(Utc::now())
+        || !current.is_some_and(|certificate| {
+            certificate.encryption_key == claim.encryption_key
+                && certificate.signing_key == claim.signing_key
+        })
+    {
+        return Err(conflict());
+    }
+    let credential = account.credential_mut()?;
+    if let Some(pending) = &credential.pending_invitation {
+        if pending != &input.id {
+            return Err(conflict());
+        }
+        credential.pending_invitation = None;
+        context
+            .transaction
+            .put_protected(account_key, &account)
+            .await?;
+        context.transaction.notify(
+            "account",
+            &serde_json::json!({"subject": row.invitation.user}),
+        )?;
+    }
+    row.completed_at = Some(Utc::now());
     context
         .transaction
         .put(record_key(&input.id)?, &row)

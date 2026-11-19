@@ -466,6 +466,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
     account.roles = vec![":admin".into()];
     account.modified_at = now;
     account.credential = Some(accounts::Credential {
+        pending_invitation: None,
         revision: credential_revision,
         record: encode(&validate_registration(&input.registration_record)?),
         vault: input.vault.clone(),
@@ -492,6 +493,7 @@ pub(super) async fn begin(service: &AuthService, input: RecoveryPlan) -> RpcResu
         account.roles.clear();
         account.modified_at = now;
         account.credential = Some(accounts::Credential {
+            pending_invitation: None,
             revision: account
                 .credential()?
                 .revision

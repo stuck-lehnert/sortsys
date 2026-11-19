@@ -147,13 +147,13 @@ for (const file of walk(ROOT)) {
     }
 
     if (
-      (file.endsWith("userActions.tsx") || file.endsWith("roleModel.ts"))
+      file.endsWith("userActions.tsx")
       && ts.isPropertyAssignment(node)
       && ts.isIdentifier(node.name)
       && node.name.text === "description"
       && ts.isStringLiteral(node.initializer)
     ) {
-      report(file, sourceFile, node.initializer, "raw action or role description");
+      report(file, sourceFile, node.initializer, "raw action description");
     }
 
     ts.forEachChild(node, visit);

@@ -2646,11 +2646,41 @@ test("an accepted invitation opens the workspace action when approval arrives wi
     await page
       .getByRole("button", { name: "Freigabe prüfen", exact: true })
       .waitFor();
+    assert.equal(
+      await page.getByRole("button", { name: "Arbeitsbereich öffnen", exact: true }).count(),
+      0,
+    );
     await page.evaluate(() => window.cryptoFixture.completeInvitation());
     await page
       .getByRole("button", { name: "Arbeitsbereich öffnen", exact: true })
       .waitFor();
     assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("business roles can be selected for a new invitation and stay with the selected account", async () => {
+  const { context, page } = await open();
+  try {
+    await page.evaluate(() => window.cryptoFixture.showUserAccess());
+    const people = page.getByRole("combobox", { name: "Benutzerkonto" });
+    await people.fill("neues");
+    await page.getByRole("option", { name: "neues.konto", exact: true }).click();
+    await waitForClosedListboxes(page);
+    const roles = page.getByRole("group", { name: "Fachrollen", exact: true });
+    const purchasing = roles.getByRole("checkbox", { name: /^Einkauf/ });
+    await purchasing.press("Space");
+    assert.equal(await purchasing.isChecked(), true);
+    assert.equal(
+      await page.getByRole("button", { name: "Einladung erstellen", exact: true }).isEnabled(),
+      true,
+    );
+
+    await people.fill("recovery");
+    await page.getByRole("option", { name: "konto.nach.recovery", exact: true }).click();
+    await waitForClosedListboxes(page);
+    assert.equal(await purchasing.isChecked(), false);
   } finally {
     await context.close();
   }

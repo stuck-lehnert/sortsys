@@ -171,13 +171,13 @@ pub(crate) fn register_root_queries(
                 let repository = service.records()?.tenant(&auth.tenant)?;
                 let mut transaction = repository.transaction()?;
                 let (account, _) = accounts::checked_session(&mut transaction, &auth).await?;
+                let credential = account.credential()?;
                 let root = metadata_root(&mut transaction, &auth.tenant).await?;
                 let generation = super::crypto::revision(&root.profile.authority.generation)?;
                 let certified = AccountCertification {
-                    identity_certificate: account.credential()?.certificate.clone(),
-                    encryption_key: sized::<32>(&account.credential()?.vault.encryption_key)?
-                        .to_vec(),
-                    signing_key: sized::<32>(&account.credential()?.vault.signing_key)?.to_vec(),
+                    identity_certificate: credential.certificate.clone(),
+                    encryption_key: sized::<32>(&credential.vault.encryption_key)?.to_vec(),
+                    signing_key: sized::<32>(&credential.vault.signing_key)?.to_vec(),
                     authority_key: Some(
                         sized::<32>(&root.profile.authority.authority_signing_key)?.to_vec(),
                     ),
@@ -202,7 +202,7 @@ pub(crate) fn register_root_queries(
                     catalog_version: root.catalog_version,
                     account_enrolled: true,
                     account_certified: certified,
-                    access_ready: certified,
+                    access_ready: certified && credential.pending_invitation.is_none(),
                     can_initialize,
                     initialization,
                     profile: Some(root.profile),

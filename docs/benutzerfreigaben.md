@@ -15,7 +15,9 @@ Verlauf**. Für die fünf Fachdatenbereiche stehen feste Profile und eine Auswah
 **Individuell** bereit. Damit lassen sich Lesen, Anlegen, Bearbeiten und Löschen
 einzeln erlauben. Lieferanten und Preise verwenden voneinander unabhängige
 Schlüssel; eine reine Preisfreigabe öffnet keine Produkt- oder
-Lieferantenbeschreibungen. Für bestätigte Konten lassen sich außerdem
+Lieferantenbeschreibungen. Die Fachrollen **Büro** und **Einkauf** lassen sich
+schon in der Einladung auswählen. Beide gelten zusätzlich zu den Einzelrechten.
+Ein ausdrückliches Verbot hat Vorrang. Für bestätigte Konten lassen sich außerdem
 [einzelne Projekte freigeben](verschluesselte-projekte.md) und
 [Personaldaten getrennt von internen Stundensätzen öffnen](verschluesselte-personaldaten.md).
 
@@ -102,9 +104,13 @@ zugänglich.
 
 Identitätsbestätigung und fertiger Zugang sind getrennte Zustände. Fehlt nach
 einem Verbindungsabbruch noch eine Schlüsselhülle, meldet die Oberfläche keinen
-fertigen Zugang. Derselbe Freigabevorgang kann fortgesetzt werden. Die API
-koordiniert diese Zustände über Datenbanktransaktionen, auch bei Anfragen an
-verschiedene Instanzen.
+fertigen Zugang. Bis zum signierten Abschluss bleibt der Arbeitsbereich auch
+bei direkter Anmeldung gesperrt. Dieselbe Freigabe lässt sich fortsetzen.
+Die API bestätigt den Abschluss und öffnet das Konto gemeinsam in einer
+Transaktion. Der Mehrinstanztest unterbricht die Freigabe nach der
+Schlüsselverteilung und prüft den Zugang vor und nach dem Wiederanlauf.
+Nach Abschluss hat eine Wiederholung keine Wirkung auf die inzwischen
+vergebenen oder entzogenen Fachrollen.
 
 ## Bestehenden Zugang ändern
 
@@ -307,7 +313,8 @@ Anmeldenamen lassen sich durch die Administration ändern; der technische
 Namensindex und das verschlüsselte Personalprofil werden dabei gemeinsam
 gespeichert. Das Löschen entfernt die drei privaten Profilbereiche und sperrt das
 Konto dauerhaft; noch vorhandene Vorgesetztenzuordnungen müssen vorher geändert
-werden. Rollenänderungen benötigen noch einen geschützten Ablauf. Eine Einladung
+werden. Für Projekte und Personaldaten vergibt die Verwaltung Freigaben für
+das einzelne Projekt oder Profil. Eine Einladung
 ersetzt kein bereits registriertes Passwort und keinen vorhandenen Kontotresor.
 
 Die vollständige Bestandsumstellung bleibt bis zum Anschluss der übrigen

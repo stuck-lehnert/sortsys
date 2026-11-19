@@ -945,7 +945,7 @@ async fn certify_identity(
 ) -> RpcResult<Success> {
     let mut context = context(service, request).await?;
     admin(&context.auth)?;
-    install_identity(&mut context.transaction, &context.security, &input).await?;
+    install_identity(&mut context.transaction, &context.security, &input, None).await?;
     context.transaction.commit().await?;
     Ok(Success { success: true })
 }
@@ -954,6 +954,7 @@ pub(in crate::zerotrust) async fn install_identity(
     transaction: &mut Transaction,
     guard: &Security,
     input: &IdentityCertificate,
+    invitation: Option<&str>,
 ) -> RpcResult<()> {
     input.verify(&guard.authority)?;
     if input.tenant != guard.policy.tenant || input.generation != guard.root.generation.to_string()
@@ -974,10 +975,17 @@ pub(in crate::zerotrust) async fn install_identity(
     }
     // Reapproval under a new tenant authority does not renew roles granted by
     // its predecessor. Reissuing a current certificate preserves current roles.
-    if certified_identity(&account, guard)?.is_none() {
+    let first_certificate = certified_identity(&account, guard)?.is_none();
+    if first_certificate {
         account.roles.clear();
     }
-    account.credential_mut()?.certificate = serde_json::to_value(input).map_err(internal)?;
+    let credential = account.credential_mut()?;
+    if (first_certificate || credential.pending_invitation.is_some())
+        && let Some(invitation) = invitation
+    {
+        credential.pending_invitation = Some(invitation.to_owned());
+    }
+    credential.certificate = serde_json::to_value(input).map_err(internal)?;
     transaction
         .put_protected(accounts::account_key(user.0), &account)
         .await?;

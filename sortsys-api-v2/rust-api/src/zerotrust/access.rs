@@ -62,6 +62,10 @@ async fn metadata_security_for_selection(
 ) -> RpcResult<Security> {
     use crate::control::{accounts, key};
     let (account, _) = accounts::checked_session(transaction, auth).await?;
+    let credential = account.credential()?;
+    if credential.pending_invitation.is_some() {
+        return Err(forbidden());
+    }
     let stored = super::setup::metadata_root(transaction, &auth.tenant).await?;
     let certificate = &stored.profile.authority;
     super::content::verify_view(transaction, &auth.tenant, certificate).await?;
@@ -81,14 +85,13 @@ async fn metadata_security_for_selection(
     transaction.prefetch(records).await?;
     let subject = format!("user:{}", Id(account.id).encode());
     let identity: IdentityCertificate =
-        serde_json::from_value(account.credential()?.certificate.clone())
-            .map_err(|_| forbidden())?;
+        serde_json::from_value(credential.certificate.clone()).map_err(|_| forbidden())?;
     identity.verify(&authority)?;
     if identity.tenant != auth.tenant
         || identity.user != subject
         || identity.generation != certificate.generation
-        || identity.signing_key != account.credential()?.vault.signing_key
-        || identity.encryption_key != account.credential()?.vault.encryption_key
+        || identity.signing_key != credential.vault.signing_key
+        || identity.encryption_key != credential.vault.encryption_key
     {
         return Err(forbidden());
     }

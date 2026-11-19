@@ -256,6 +256,7 @@ async fn finish(
         archived_at: None,
         deleted_at: None,
         credential: Some(accounts::Credential {
+            pending_invitation: None,
             revision: 1,
             record: encode(&record),
             vault: input.vault,

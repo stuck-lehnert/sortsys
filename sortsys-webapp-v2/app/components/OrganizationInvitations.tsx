@@ -20,6 +20,7 @@ import {
 } from "~/lib/crypto/permissions";
 import type { OrganizationRole } from "@sortsys/zerotrust/sortsys";
 import {
+  emptyOrganizationRoles,
   organizationRoles,
   type OrganizationRolePatch,
   type OrganizationRoleState,
@@ -114,19 +115,22 @@ export default function OrganizationInvitations({
   const [roleDraft, setRoleDraft] = useState<{
     original: OrganizationRoleState;
     value: OrganizationRoleState;
-  } | null>(null);
+  }>(() => {
+    const roles = emptyOrganizationRoles();
+    return { original: roles, value: roles };
+  });
   const roleEdits: OrganizationRolePatch = {};
   for (const role of organizationRoles) {
-    if (roleDraft && roleDraft.value[role] !== roleDraft.original[role])
+    if (roleDraft.value[role] !== roleDraft.original[role])
       roleEdits[role] = roleDraft.value[role];
   }
   const rolesChanged = Object.keys(roleEdits).length > 0;
 
-  function loadAccess(access: InvitationAccess, roles?: OrganizationRoleState) {
+  function loadAccess(access: InvitationAccess, roles = emptyOrganizationRoles()) {
     setPermissions(access);
     setOriginalAssistant(access.assistant);
     setDrafts(accessDrafts(MASTER_DATA_FIELDS, (key) => access[key]));
-    setRoleDraft(roles ? { original: roles, value: roles } : null);
+    setRoleDraft({ original: roles, value: roles });
   }
   const controller = useRef<AbortController | null>(null);
   async function refreshMemberAccess(member: Member, signal: AbortSignal) {
@@ -199,7 +203,7 @@ export default function OrganizationInvitations({
   }
 
   function saveAccess() {
-    if (!selected) return;
+    if (!selected || (selected.certified && !editing)) return;
     const member = selected;
     const access: InvitationAccess = {
       ...permissions,
@@ -208,8 +212,9 @@ export default function OrganizationInvitations({
       ),
     };
     if (!editing) {
+      const roles = organizationRoles.filter((role) => roleDraft.value[role]);
       return act((signal) =>
-        createMemberInvitation(client, member, access, signal),
+        createMemberInvitation(client, member, { ...access, roles }, signal),
       );
     }
     return act(
@@ -309,17 +314,19 @@ export default function OrganizationInvitations({
           />
         </div>
       )}
-      {editing && roleDraft && (
+      {selected && (!selected.certified || editing) && (
         <fieldset className="space-y-2">
           <legend className="font-medium">
             {uiText("Fachrollen", "Business roles")}
           </legend>
-          <p className="text-sm text-muted">
-            {uiText(
-              "Ausdrückliche Sperren in den Einzelfreigaben gelten auch mit Fachrolle.",
-              "Explicit denials in individual permissions also apply to role members.",
-            )}
-          </p>
+          {editing && (
+            <p className="text-sm text-muted">
+              {uiText(
+                "Ausdrückliche Sperren in den Einzelfreigaben gelten auch mit Fachrolle.",
+                "Explicit denials in individual permissions also apply to role members.",
+              )}
+            </p>
+          )}
           {organizationRoles.map((role) => (
             <Checkbox
               key={role}
@@ -328,13 +335,10 @@ export default function OrganizationInvitations({
               disabled={busy || loadingAccess}
               onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
                 const checked = event.target.checked;
-                setRoleDraft(
-                  (current) =>
-                    current && {
-                      ...current,
-                      value: { ...current.value, [role]: checked },
-                    },
-                );
+                setRoleDraft((current) => ({
+                  ...current,
+                  value: { ...current.value, [role]: checked },
+                }));
               }}
             />
           ))}
@@ -373,6 +377,7 @@ export default function OrganizationInvitations({
             !selected ||
             busy ||
             loadingAccess ||
+            (selected.certified && !editing) ||
             (editing &&
               !rolesChanged &&
               !MASTER_DATA_FIELDS.some((key) => accessChanged(drafts[key])) &&
@@ -381,7 +386,7 @@ export default function OrganizationInvitations({
           loading={busy || loadingAccess}
           onClick={saveAccess}
         >
-          {editing
+          {selected?.certified
             ? uiText("Berechtigungen speichern", "Save permissions")
             : uiText("Einladung erstellen", "Create invitation")}
         </MyButton>
@@ -457,6 +462,14 @@ export default function OrganizationInvitations({
                   {saved.link.invitation.username}
                 </div>
                 <div className="text-sm text-muted">{status}</div>
+                {!expired &&
+                  !saved.entry?.revoked &&
+                  !saved.entry?.completed &&
+                  saved.access.roles?.map((role) => (
+                    <div key={role} className="text-sm">
+                      {roleLabels[role]()}
+                    </div>
+                  ))}
               </div>
               <div className="flex flex-wrap gap-2">
                 {!expired &&

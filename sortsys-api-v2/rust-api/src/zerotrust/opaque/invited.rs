@@ -152,6 +152,7 @@ async fn finish(
         record: encode(&record),
         vault: input.vault.clone(),
         certificate: json!({"format": "pending"}),
+        pending_invitation: Some(row.invitation.id.clone()),
     });
     account.epoch = account.epoch.checked_add(1).ok_or_else(denied)?;
     transaction

@@ -449,6 +449,7 @@ async fn browser_password_changes_revoke_peer_sessions_without_postgres() {
         archived_at: None,
         deleted_at: None,
         credential: Some(Credential {
+            pending_invitation: None,
             revision: 1,
             record: vector["registrationRecord"].as_str().unwrap().into(),
             vault,

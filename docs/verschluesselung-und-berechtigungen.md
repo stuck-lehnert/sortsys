@@ -36,14 +36,12 @@ Schlüssel. Der Draft bildet den gewohnten Ablauf noch nicht vollständig ab.
 
 ## Welche Rechte welche Inhalte öffnen
 
-Das bestehende Rollenmodell unterscheidet `view:*`, `manage:*` und `delete:*`.
-`manage:*` schließt Lesen ein; Löschen ist ein eigenes Recht. `:admin` erlaubt
-derzeit alle Aktionen. Angebote, Kalkulation, Aufmaße und andere kaufmännische
-Vorgänge verwenden überwiegend `view:projects` beziehungsweise
-`manage:projects`. Die Umsetzung steht in
-[auth.rs](../sortsys-api-v2/rust-api/src/auth.rs),
-[Vorgangsadapter](../sortsys-webapp-v2/app/lib/data/commercial.ts) und im
-[Rollenmodell der Oberfläche](../sortsys-webapp-v2/app/lib/roleModel.ts).
+Die PostgreSQL-Version kannte mandantenweite Rollen wie `view:projects` und
+`manage:projects`. Im verschlüsselten Arbeitsbereich stehen Zugriffe auf einzelne
+Projekte und Teilinhalte in der signierten Richtlinie. Fachrollen fassen
+bestimmte Katalogrechte zusammen. Die technische Rolle `:admin` öffnet Aufgaben
+der Organisationsverwaltung. Für vertrauliche Inhalte gelten zusätzlich deren
+eigene Regeln und Schlüssel. [Fachrollen und Freigaben](menues-und-datenfreigaben.md)
 
 Für verschlüsselte Inhalte braucht jede Erlaubnis zusätzlich einen
 Geltungsbereich und einen Inhaltsbereich. Eine Freigabe beschreibt

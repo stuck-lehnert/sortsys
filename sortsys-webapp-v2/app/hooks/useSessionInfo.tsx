@@ -24,8 +24,8 @@ import { type Facet } from "@sortsys/zerotrust/sortsys";
 import { MyCallout } from "~/components/MyCallout";
 import { sessionUser, type SessionUser } from "~/lib/sessionUser";
 import type { Observable } from "rxjs";
+import type { Role } from "~/type-helpers";
 
-type Role = QueryResult<"auth.sessionInfo">["roles"][number];
 type RawSession = QueryResult<"auth.sessionInfo">;
 type SessionInfo = Omit<RawSession, "user"> & {
   user: SessionUser;

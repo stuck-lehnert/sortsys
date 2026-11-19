@@ -16,14 +16,17 @@ export const organizationRoles = Object.keys(
 export type OrganizationRoleState = Record<OrganizationRole, boolean>;
 export type OrganizationRolePatch = Partial<OrganizationRoleState>;
 
+export function emptyOrganizationRoles(): OrganizationRoleState {
+  return Object.fromEntries(
+    organizationRoles.map((role) => [role, false]),
+  ) as OrganizationRoleState;
+}
+
 export function memberOrganizationRoles(
   rules: readonly Rule[],
   subject: string,
 ): OrganizationRoleState {
-  const state: OrganizationRoleState = {
-    "organization-office": false,
-    "organization-procurement": false,
-  };
+  const state = emptyOrganizationRoles();
   for (const rule of rules) {
     if (
       rule.subject === subject &&

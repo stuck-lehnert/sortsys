@@ -3604,16 +3604,7 @@ window.cryptoFixture = {
     function OpenPermissions() {
       const modals = useMyModals();
       return (
-        <button
-          onClick={() =>
-            showUserAccessModal(modals, {
-              id: "2",
-              username: "frank.doe",
-              firstName: "Frank",
-              lastName: "Doe",
-            })
-          }
-        >
+        <button onClick={() => showUserAccessModal(modals, "2")}>
           Zugriff bearbeiten
         </button>
       );
@@ -3764,7 +3755,7 @@ window.cryptoFixture = {
             throw new Error("Unexpected invitation subscription");
           }
           subscribers.add(subscriber);
-          subscriber.next([{ accessReady: approved }, null]);
+          subscriber.next([{ accountCertified: true, accessReady: approved }, null]);
           return () => subscribers.delete(subscriber);
         });
       window.cryptoFixture.completeInvitation = () => {

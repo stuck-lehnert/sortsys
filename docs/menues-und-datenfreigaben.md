@@ -140,11 +140,13 @@ und Kataloginhalte müssen daraufhin aus seiner Oberfläche verschwinden.
 
 ## Fachrollen für Büro und Einkauf
 
-Unter **Berechtigungen verwalten → Fachrollen** kann die Verwaltung einem
-Benutzerkonto die Rollen **Büro** und **Einkauf** zuweisen. Im Büro lassen
-sich Kunden und Ansprechpartner anlegen und bearbeiten sowie Produkte
-nachschlagen. Im Einkauf lassen sich Produkte, Lieferanten und Preisaufzeichnungen
-pflegen. Die Rollen gelten auch für neue Einträge in diesen Katalogen.
+Die Verwaltung kann **Büro** und **Einkauf** schon beim Erstellen einer
+Einladung auswählen. Die Rollen stehen bis zur Freigabe in der Einladungsliste.
+Für bestätigte Konten lassen sie sich unter **Berechtigungen verwalten →
+Fachrollen** ändern. Im Büro lassen sich Kunden und Ansprechpartner pflegen
+und Produkte nachschlagen. Im Einkauf lassen sich Produkte,
+Lieferanten und Preisaufzeichnungen pflegen. Die Rollen gelten auch für neue
+Einträge in diesen Katalogen.
 
 Beide Rollen können gleichzeitig vergeben werden. Eine ausdrückliche Sperre
 in einer Einzelfreigabe hat Vorrang. Beim Entzug einer Rolle bleiben die

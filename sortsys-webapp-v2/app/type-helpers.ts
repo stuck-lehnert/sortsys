@@ -16,7 +16,7 @@ export type BidirectionalMerge<Target, Source> = Pick<
 > &
   Pick<Source, BidirectionalKeys<Target, Source>>;
 
-export type Role = QueryResult<"users.roles.list">[number];
+export type Role = QueryResult<"auth.sessionInfo">["roles"][number];
 export type Address = NonNullable<Project["address"]>;
 
 export type Tool = QueryResult<"tools.get">;

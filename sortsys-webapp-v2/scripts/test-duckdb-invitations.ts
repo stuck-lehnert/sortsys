@@ -14,6 +14,10 @@ import { acquireDataRuntime } from "../app/lib/data/runtime/session";
 import { preparePrivateLlm } from "../app/lib/data/privateLlm";
 import { provisionOwnedCollections } from "../app/lib/data/prepareCollections";
 import { MEMBER_ORGANIZATION_AREAS } from "../app/lib/data/organizationData";
+import { MASTER_DATA_AREAS } from "../app/lib/crypto/accessProfiles";
+import { administratorPolicyContext } from "../app/lib/crypto/administration";
+import { publishVerifiedPolicy } from "../app/lib/crypto/policy";
+import { changeMemberAccess, memberAccessState } from "../app/lib/crypto/permissions";
 import {
   acceptVaultWithKey,
   lockCryptoSession,
@@ -43,6 +47,7 @@ const password = "New-member-only-knows-this-password-2026!";
 const originalFetch = globalThis.fetch;
 const bodies: string[] = [];
 const requests: { paths: string[]; grantCount: number }[] = [];
+let pauseCompletion = false;
 globalThis.fetch = new Proxy(originalFetch, {
   apply(target, receiver, args) {
     const url = new URL(
@@ -63,6 +68,9 @@ globalThis.fetch = new Proxy(originalFetch, {
       }
     }
     requests.push({ paths, grantCount });
+    if (pauseCompletion && paths.includes("zerotrust.invitations.complete")) {
+      return Promise.reject(new Error("Connection interrupted before completing the invitation"));
+    }
     return Reflect.apply(target, receiver, args).then(
       async (response: Response) => {
         const reply = await response.clone().json();
@@ -105,7 +113,7 @@ try {
   await provisionOwnedCollections(
     administrator,
     subject,
-    MEMBER_ORGANIZATION_AREAS,
+    [...MEMBER_ORGANIZATION_AREAS, ...Object.values(MASTER_DATA_AREAS)],
     signal,
   );
   await preparePrivateLlm(administrator, subject, signal);
@@ -124,6 +132,7 @@ try {
   };
   console.log("Native invitation: creating personnel profile");
   const created = await required(business.mutate("users.create", input));
+  const memberSubject = `user:${created.id}`;
   assert.equal(created.id, input.operationId);
   assert.equal(
     (await required(business.mutate("users.create", input))).id,
@@ -135,7 +144,29 @@ try {
     )?.enrolled,
     false,
   );
+  const product = await required(business.mutate("products.create", {
+    customId: 98172,
+    name: "Primer für mineralischen Untergrund",
+    baseUnit: "l",
+  }));
+  const vendor = await required(business.mutate("products.vendors.create", {
+    name: "Vertraulicher Lieferant 98172",
+  }));
+  const priceArea = MASTER_DATA_AREAS.prices;
+  const policyContext = await administratorPolicyContext(administrator, signal);
+  await publishVerifiedPolicy(administrator, policyContext, {
+    ...policyContext.permissions,
+    version: String(BigInt(policyContext.permissions.version) + 1n),
+    rules: [...policyContext.permissions.rules, {
+      subject: memberSubject,
+      scope: priceArea.scope,
+      facet: priceArea.facet,
+      actions: ["read"],
+      effect: "deny",
+    }],
+  });
   console.log("Native invitation: publishing invitation");
+  const beforeInvitation = bodies.length;
   const invitation = await createMemberInvitation(
     administrator,
     {
@@ -143,15 +174,17 @@ try {
       username: input.username,
     },
     {
-      catalogue: "none",
+      catalogue: "read",
       customers: "none",
       contacts: "none",
       vendors: "none",
       prices: "none",
       assistant: true,
+      roles: ["organization-office", "organization-procurement"],
     },
     signal,
   );
+  assert.doesNotMatch(bodies.slice(beforeInvitation).join("\n"), /organization-office|organization-procurement/);
   assert.deepEqual(
     await inspectMemberInvitation(newcomer, invitation.link, signal),
     { enrolled: false },
@@ -208,12 +241,16 @@ try {
   try {
     const firstRequest = requests.length;
     console.log("Native invitation: approving and granting access");
-    await approveMemberInvitation(
-      administrator,
-      invitation.link.invitation.id,
-      signal,
-    );
+    pauseCompletion = true;
+    try {
+      await assert.rejects(() =>
+        approveMemberInvitation(administrator, invitation.link.invitation.id, signal),
+      );
+    } finally {
+      pauseCompletion = false;
+    }
     const approvalRequests = requests.slice(firstRequest);
+    assert.ok(approvalRequests.some(({ paths }) => paths.includes("zerotrust.invitations.complete")));
     const publications = approvalRequests.filter(
       (request) => request.grantCount > 0,
     );
@@ -234,6 +271,12 @@ try {
     console.log(
       `Native invitation: ${publications.reduce((count, request) => count + request.grantCount, 0)} encrypted grants in ${publications.length} bounded publication request(s)`,
     );
+    const waiting = await required(newcomer.query("zerotrust.status", undefined, { strategy: "network-only" }));
+    assert.equal(waiting.accountCertified, true);
+    assert.equal(waiting.accessReady, false);
+    assert.ok((await newcomer.query("zerotrust.domains.list", undefined, { strategy: "network-only" }))[1]);
+    console.log("Native invitation: certificate and published keys alone do not open the workspace");
+
     console.log("Native invitation: approving and granting access");
     await approveMemberInvitation(
       administrator,
@@ -243,6 +286,7 @@ try {
   } finally {
     lease.close();
   }
+  await signIn(newcomer, { tenant: "new-tenant", username: input.username, password });
   await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
   console.log("Native invitation: reading own personnel profile");
   const reader = createBusinessClient(newcomer, { productDriver: duckDriver });
@@ -258,6 +302,13 @@ try {
         .accessReady,
       true,
     );
+    assert.equal((await required(reader.query("products.get", { id: product.id }))).id, product.id);
+    assert.equal((await required(reader.query("products.vendors.get", { id: vendor.id }))).id, vendor.id);
+    const customer = await required(reader.mutate("customers.create", {
+      name: "Über Büro freigegebener Kunde 98172",
+    }));
+    assert.ok(customer.id);
+    assert.ok((await reader.query("products.priceRecords.list", { productId: product.id }))[1]);
     assert.ok(
       (
         await newcomer.mutate(
@@ -271,6 +322,36 @@ try {
   }
   // Reactivation restores the individual grants, but never the old sessions.
   await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
+  const access = await memberAccessState(administrator, memberSubject, signal);
+  assert.ok(access);
+  assert.deepEqual(access.roles, {
+    "organization-office": true,
+    "organization-procurement": true,
+  });
+  await changeMemberAccess(administrator, memberSubject, access.access, signal, {
+    actions: {},
+    roles: { "organization-office": false, "organization-procurement": false },
+  });
+  await approveMemberInvitation(administrator, invitation.link.invitation.id, signal);
+  const afterReplay = await memberAccessState(administrator, memberSubject, signal);
+  assert.deepEqual(afterReplay?.roles, {
+    "organization-office": false,
+    "organization-procurement": false,
+  });
+  assert.equal(afterReplay?.access.catalogue, "read");
+  assert.equal(afterReplay?.access.customers, "none");
+  assert.equal(afterReplay?.access.vendors, "none");
+
+  await signIn(newcomer, { tenant: "new-tenant", username: input.username, password });
+  const afterRevocation = createBusinessClient(newcomer, { productDriver: duckDriver });
+  try {
+    assert.equal((await required(afterRevocation.query("products.get", { id: product.id }))).id, product.id);
+    assert.ok((await afterRevocation.query("products.vendors.get", { id: vendor.id }))[1]);
+  } finally {
+    afterRevocation.dispose();
+    await acceptVaultWithKey(owner.dataKey, owner.vault, owner.username, false);
+  }
+
   let accountWriteMode: "normal" | "discard" | "lose-reply" = "normal";
   let capturedChange: MutateInput<"zerotrust.objects.batch"> | null = null;
   const lifecycle: Client = {

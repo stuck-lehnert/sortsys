@@ -36,6 +36,9 @@ pub struct Credential {
     pub record: String,
     pub vault: AccountVault,
     pub certificate: Value,
+    /// The certificate may already receive keys while this invitation is pending.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_invitation: Option<String>,
 }
 
 #[derive(Clone, Serialize, Deserialize)]
