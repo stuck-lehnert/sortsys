@@ -40,6 +40,8 @@ export type LiveLlmResult = {
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
 };
 
+const MAX_UPLOAD_BLOCK_BYTES = 1024 * 1024;
+
 /** The socket owns only one live request. It never uploads to S3, creates a
  * background job, or persists decrypted context. Its caller encrypts results. */
 export async function runLiveLlm(
@@ -132,13 +134,15 @@ export async function runLiveLlm(
   };
   const send = (value: unknown) => {
     active();
-    const text = JSON.stringify(value);
+    const message = value instanceof ArrayBuffer ? value : JSON.stringify(value);
+    const size =
+      typeof message === "string" ? bytes(message).length : message.byteLength;
     if (
-      bytes(text).length > 2 * 1024 * 1024 ||
+      size > 2 * 1024 * 1024 ||
       socket.readyState !== WebSocket.OPEN
     )
       throw new InvalidProtectedData();
-    socket.send(text);
+    socket.send(message);
   };
   const receive = () => {
     active();
@@ -268,11 +272,16 @@ export async function runLiveLlm(
       if (signal.aborted || controller.signal.aborted) stop();
     });
     send({ ticket: opened.ticket, proof });
-    await expect("ready");
+    const ready = await expect("ready");
     if (request.kind === "chat")
       send({ type: "chat", turns: request.turns, locale: request.locale });
     else {
+      const blockBytes = ready.uploadBlockBytes;
       if (
+        typeof blockBytes !== "number" ||
+        !Number.isSafeInteger(blockBytes) ||
+        blockBytes < 1 ||
+        blockBytes > MAX_UPLOAD_BLOCK_BYTES ||
         request.files.length > 20 ||
         request.files.reduce((total, file) => total + file.blob.size, 0) >
           100 * 1024 * 1024
@@ -288,15 +297,13 @@ export async function runLiveLlm(
           size: file.blob.size,
         });
         await expect("uploadAck");
-        for (let offset = 0; offset < file.blob.size; offset += 65_536) {
+        for (let offset = 0; offset < file.blob.size; offset += blockBytes) {
           active();
           const part = new Uint8Array(
-            await file.blob.slice(offset, offset + 65_536).arrayBuffer(),
+            await file.blob.slice(offset, offset + blockBytes).arrayBuffer(),
           );
           try {
-            let binary = "";
-            for (const byte of part) binary += String.fromCharCode(byte);
-            send({ type: "chunk", data: btoa(binary) });
+            send(part.buffer);
             await expect("uploadAck");
           } finally {
             part.fill(0);

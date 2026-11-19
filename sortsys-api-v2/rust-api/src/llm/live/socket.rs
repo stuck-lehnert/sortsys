@@ -6,6 +6,8 @@ use axum::{
 };
 use serde_json::json;
 
+const UPLOAD_BLOCK_BYTES: usize = 512 * 1024;
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Admission {
@@ -25,9 +27,6 @@ enum Input {
         name: String,
         mime: String,
         size: usize,
-    },
-    Chunk {
-        data: String,
     },
     EndFile,
     Chat {
@@ -148,7 +147,13 @@ async fn serve_inner(
             domains,
         )
         .await?;
-    send(socket, json!({"type":"ready"})).await?;
+    let ready = match ticket.kind {
+        LiveKind::Chat => json!({"type":"ready"}),
+        LiveKind::DocumentImport => {
+            json!({"type":"ready","uploadBlockBytes":UPLOAD_BLOCK_BYTES})
+        }
+    };
+    send(socket, ready).await?;
     let operation = async {
         *stage = "preparation";
         let request = prepare(socket, ticket.kind).await?;
@@ -312,7 +317,17 @@ async fn prepare(socket: &mut WebSocket, kind: LiveKind) -> RpcResult<Request> {
     let mut partial: Option<(ScanOriginal, usize)> = None;
     let mut total = 0usize;
     loop {
-        match receive::<Input>(socket).await? {
+        let input = match receive_frame(socket).await? {
+            Message::Text(text) => decode(&text)?,
+            Message::Binary(bytes) => {
+                let (file, size) = partial.as_mut().ok_or_else(invalid)?;
+                append_upload_block(&mut file.bytes, *size, &bytes)?;
+                send(socket, json!({"type":"uploadAck"})).await?;
+                continue;
+            }
+            _ => return Err(unavailable()),
+        };
+        match input {
             Input::File { name, mime, size } if kind == LiveKind::DocumentImport => {
                 if partial.is_some()
                     || originals.len() >= 20
@@ -335,20 +350,6 @@ async fn prepare(socket: &mut WebSocket, kind: LiveKind) -> RpcResult<Request> {
                     },
                     size,
                 ));
-                send(socket, json!({"type":"uploadAck"})).await?;
-            }
-            Input::Chunk { data } => {
-                if data.len() > 88_000 {
-                    return Err(invalid());
-                }
-                let (file, size) = partial.as_mut().ok_or_else(invalid)?;
-                let bytes = base64::engine::general_purpose::STANDARD
-                    .decode(data)
-                    .map_err(|_| invalid())?;
-                if bytes.is_empty() || file.bytes.len().saturating_add(bytes.len()) > *size {
-                    return Err(invalid());
-                }
-                file.bytes.extend_from_slice(&bytes);
                 send(socket, json!({"type":"uploadAck"})).await?;
             }
             Input::EndFile => {
@@ -408,7 +409,29 @@ async fn prepare(socket: &mut WebSocket, kind: LiveKind) -> RpcResult<Request> {
     }
 }
 
+fn append_upload_block(file: &mut Vec<u8>, declared_size: usize, block: &[u8]) -> RpcResult<()> {
+    if block.is_empty()
+        || block.len() > UPLOAD_BLOCK_BYTES
+        || file.len().saturating_add(block.len()) > declared_size
+    {
+        return Err(invalid());
+    }
+    file.extend_from_slice(block);
+    Ok(())
+}
+
+fn decode<T: serde::de::DeserializeOwned>(text: &str) -> RpcResult<T> {
+    serde_json::from_str(text).map_err(|_| invalid())
+}
+
 async fn receive<T: serde::de::DeserializeOwned>(socket: &mut WebSocket) -> RpcResult<T> {
+    match receive_frame(socket).await? {
+        Message::Text(text) => decode(&text),
+        _ => Err(unavailable()),
+    }
+}
+
+async fn receive_frame(socket: &mut WebSocket) -> RpcResult<Message> {
     loop {
         match socket
             .recv()
@@ -416,7 +439,7 @@ async fn receive<T: serde::de::DeserializeOwned>(socket: &mut WebSocket) -> RpcR
             .ok_or_else(unavailable)?
             .map_err(|_| unavailable())?
         {
-            Message::Text(value) => return serde_json::from_str(&value).map_err(|_| invalid()),
+            frame @ (Message::Text(_) | Message::Binary(_)) => return Ok(frame),
             Message::Ping(value) => socket
                 .send(Message::Pong(value))
                 .await
@@ -444,4 +467,29 @@ async fn record(
     failed: bool,
 ) -> RpcResult<()> {
     persistence::record(&state.auth, ticket, configuration, usage, failed).await
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn upload_blocks_are_bounded_and_cannot_exceed_the_declared_file() {
+        let mut file = Vec::new();
+        let declared_size = UPLOAD_BLOCK_BYTES + 2;
+        let block = vec![0xa5; UPLOAD_BLOCK_BYTES];
+        append_upload_block(&mut file, declared_size, &block).unwrap();
+        assert_eq!(file, block);
+
+        assert!(append_upload_block(&mut file, declared_size, &[]).is_err());
+        assert!(append_upload_block(&mut file, declared_size, &[1, 2, 3]).is_err());
+        assert_eq!(file, block);
+        append_upload_block(&mut file, declared_size, &[1, 2]).unwrap();
+        assert_eq!(&file[UPLOAD_BLOCK_BYTES..], &[1, 2]);
+
+        let oversized = vec![0x5a; UPLOAD_BLOCK_BYTES + 1];
+        let mut file = Vec::new();
+        assert!(append_upload_block(&mut file, oversized.len(), &oversized).is_err());
+        assert!(file.is_empty());
+    }
 }

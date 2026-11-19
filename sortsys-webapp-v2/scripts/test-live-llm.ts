@@ -12,7 +12,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { openAuthority } from "../app/lib/crypto/setup";
 import { trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
-import { runLiveLlm } from "../app/lib/liveLlm";
+import { runLiveLlm, type LiveLlmRequest } from "../app/lib/liveLlm";
 import { required } from "../app/lib/data/protectedObjects";
 import {
   preparePrivateLlm,
@@ -43,6 +43,13 @@ export async function testLiveLlm(
   const { endpoint, ownerEndpoint } = options;
   const ip = "127.0.0.1";
   const marker = "LIVE_LLM_CONFIDENTIAL_BROWSER_ONLY_793821";
+  const documentName = "test.pdf";
+  const blockBytes = 512 * 1024;
+  const selectedOriginal = Uint8Array.from(
+    { length: 2 * blockBytes + 13 },
+    (_, index) => index % 251,
+  );
+  let checkedProviderOriginals = 0;
   let turns = 0,
     toolReplies = 0,
     cancelled = false,
@@ -74,6 +81,23 @@ export async function testLiveLlm(
       assert.equal(new URL(request.url).pathname, "/v1/chat/completions");
       const body = await request.json();
       turns++;
+      for (const message of body.messages) {
+        if (!Array.isArray(message.content)) continue;
+        for (const part of message.content) {
+          if (part.type !== "file" || part.file.filename !== documentName) {
+            continue;
+          }
+          const prefix = "data:application/pdf;base64,";
+          assert.ok(part.file.file_data.startsWith(prefix));
+          assert.ok(
+            Buffer.from(part.file.file_data.slice(prefix.length), "base64").equals(
+              selectedOriginal,
+            ),
+            "The model receives the original bytes in their original order",
+          );
+          checkedProviderOriginals++;
+        }
+      }
       const chat = await chatFixture.reply(body);
       if (chat) return chat;
       const member = memberFixture.reply(body);
@@ -265,25 +289,66 @@ export async function testLiveLlm(
     );
     assert.equal(response.content, marker);
     assert.equal(response.usage.totalTokens, 30);
-    const imported = await runLiveLlm(
-      client,
-      ownerEndpoint,
-      {
-        kind: "document_import",
-        text: "Einlesen aus ausgewähltem Original",
-        fileNames: ["test.pdf"],
-        files: [
-          {
-            name: "test.pdf",
-            mime: "application/pdf",
-            blob: new Blob(["%PDF-1.7\n", marker, "x".repeat(150_000)]),
-          },
-        ],
+    const importRequest: LiveLlmRequest = {
+      kind: "document_import",
+      text: "Einlesen aus ausgewähltem Original",
+      fileNames: [documentName],
+      files: [
+        {
+          name: documentName,
+          mime: "application/pdf",
+          blob: new Blob([selectedOriginal]),
+        },
+      ],
+    };
+    const uploadFrames: number[] = [];
+    let cancelUpload: AbortController | undefined;
+    const browserSocket = globalThis.WebSocket;
+    globalThis.WebSocket = new Proxy(browserSocket, {
+      construct(target, arguments_, newTarget) {
+        const socket: WebSocket = Reflect.construct(
+          target,
+          arguments_,
+          newTarget,
+        );
+        const send = socket.send.bind(socket);
+        socket.send = (message) => {
+          send(message);
+          if (message instanceof ArrayBuffer) {
+            uploadFrames.push(message.byteLength);
+            cancelUpload?.abort();
+          }
+        };
+        return socket;
       },
-      tools,
-      new AbortController().signal,
+    });
+    try {
+      const imported = await runLiveLlm(
+        client,
+        ownerEndpoint,
+        importRequest,
+        tools,
+        new AbortController().signal,
+      );
+      assert.equal(JSON.parse(imported.content).documentType, "deliveryNote");
+      assert.deepEqual(uploadFrames, [blockBytes, blockBytes, 13]);
+      assert.ok(checkedProviderOriginals > 0);
+
+      uploadFrames.length = 0;
+      cancelUpload = new AbortController();
+      const callsBeforeCancellation = turns;
+      await assert.rejects(
+        runLiveLlm(client, ownerEndpoint, importRequest, tools, cancelUpload.signal),
+        { name: "AbortError" },
+      );
+      assert.deepEqual(uploadFrames, [blockBytes]);
+      assert.equal(turns, callsBeforeCancellation);
+    } finally {
+      globalThis.WebSocket = browserSocket;
+    }
+    console.log(
+      "Live import sent the original in three bounded binary frames, verified the exact source bytes and stopped a cancelled upload before calling the model",
     );
-    assert.equal(JSON.parse(imported.content).documentType, "deliveryNote");
     assert.equal(turns, 4);
     assert.equal(toolReplies, 2);
 

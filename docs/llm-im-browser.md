@@ -36,7 +36,10 @@ Der [Live-Transport](../sortsys-api-v2/rust-api/src/llm/live.rs) verwendet eine
 WebSocket-Verbindung pro Anfrage. Der Browser bestätigt eine kurzlebige,
 einmalig verwendbare Eintrittskarte mit seiner Kontosignatur. Die API prüft
 Sitzung, LLM-Freigabe und aktuelle Wiederherstellungsgeneration. Ausgewählte
-Originale kommen in begrenzten Blöcken an und bleiben für diesen Aufruf im RAM.
+Originale kommen in Binärblöcken von bis zu 512 KiB an und bleiben für diesen
+Aufruf im RAM. Der Browser wartet nach jedem Block auf die Bestätigung. Die API
+prüft die Blockgröße und die angekündigte Dateigröße vor der Weitergabe an das
+Modell.
 
 OpenAI und Anthropic verwenden weiterhin ihre MCP-Anbindung. Der
 OpenRouter-Adapter ruft dieselbe authentifizierte HTTP-MCP-Schnittstelle auf.
