@@ -3,14 +3,14 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId } from "./addressBook";
 import { commonCostType, costNumber } from "./commonCostData";
 import { indexEffectiveHistory } from "./effectiveHistory";
-import { indexHistoricalPrices, wireHistoricalPrice } from "./historicalPrices";
+import type { HistoricalPriceLookup } from "./historicalPrices";
 import { wireFinancialEntry } from "./projectFinancialData";
 import { publicId } from "./products";
 import type { BusinessRow } from "./rowCodec";
 import type { DailyCosts, DailyPayload } from "./dailyReportData";
 import { wireDailyReport } from "./dailyReportData";
 import type { DeliveryPayload, DeliveryPrices } from "./deliveryNoteData";
-import { wireDelivery } from "./deliveryNoteData";
+import { calculateDeliveryCosts } from "./deliveryNoteData";
 import {
   timestampFromMicros,
   timestampInstant,
@@ -21,11 +21,9 @@ export type ProjectCosts = QueryResult<"projects.costs.get">;
 export type CostPeriod = { from: bigint | null; to: bigint | null };
 export type ProjectCostSources = {
   financial: readonly BusinessRow[];
-  deliveries: readonly { value: DeliveryPayload; prices: DeliveryPrices }[];
+  deliveries: readonly { value: DeliveryPayload; prices?: DeliveryPrices }[];
   daily: readonly { value: DailyPayload; costs: DailyCosts }[];
   tools: readonly BusinessRow[];
-  productPrices: readonly BusinessRow[];
-  commonCosts: readonly BusinessRow[];
 };
 type ProductCost = ProjectCosts["products"][number];
 type CostBucket = ProjectCosts["commonCosts"]["fgk"];
@@ -71,34 +69,38 @@ function optionalId(value: unknown): string | null {
   return value === null ? null : publicId(value);
 }
 
-/** A pure calculation over complete, authorized source sets. No missing
- * collection or missing cost fragment is treated as an empty data set. */
-export function calculateProjectCosts(
-  source: ProjectCostSources,
-  period: CostPeriod = { from: null, to: null },
-  now = new Date(),
-): ProjectCosts {
-  const nowMicros = timestampMicros(timestampInstant(now));
-  const priceAt = indexHistoricalPrices(source.productPrices);
+export function projectCostRates(
+  productAt: HistoricalPriceLookup,
+  commonCosts: readonly BusinessRow[],
+) {
   const commonAt = indexEffectiveHistory(
-    source.commonCosts.map((row) => ({
+    commonCosts.map((row) => ({
       group: commonCostType(row.values.type),
       instant: timestampMicros(row.values.effective_at as string),
       id: BigInt(row.values.id as string),
       value: row,
     })),
   );
-  function overhead(
-    type: "fgk" | "mgk" | "ngk",
-    instant: bigint,
-    base: number,
-  ): number {
-    const values = commonAt(type, instant)?.values;
-    if (!values) return 0;
-    return costNumber(
-      base * costNumber(values.relative_factor) + costNumber(values.constant),
-    );
-  }
+  return {
+    productAt,
+    overhead(type: "fgk" | "mgk" | "ngk", instant: bigint, base: number) {
+      const values = commonAt(type, instant)?.values;
+      if (!values) return 0;
+      return costNumber(
+        base * costNumber(values.relative_factor) + costNumber(values.constant),
+      );
+    },
+  };
+}
+
+/** Calculate from source collections the caller has verified and authorized. */
+export function calculateProjectCosts(
+  source: ProjectCostSources,
+  rates: ReturnType<typeof projectCostRates>,
+  period: CostPeriod = { from: null, to: null },
+  now = new Date(),
+): ProjectCosts {
+  const nowMicros = timestampMicros(timestampInstant(now));
 
   const financial = source.financial
     .filter((row) =>
@@ -133,62 +135,47 @@ export function calculateProjectCosts(
       compareRows(left.value.note, right.value.note, "effective_timestamp"),
     );
 
-  for (const entry of deliveries) {
-    const effective = timestampMicros(
-      entry.value.note.values.effective_timestamp as string,
-    );
-    const specialPrices = new Set(entry.prices.prices.map((price) => price.id));
-    if (
-      entry.value.specialRecords.some(
-        (row) => !specialPrices.has(publicId(row.values.id)),
-      )
-    )
-      throw new InvalidProtectedData();
-    const note = wireDelivery(entry.value, entry.prices);
-    noteInstants.set(note.id, effective);
-    let totalCost = 0;
-    for (const record of note.records) {
-      const row = priceAt(record.productId, effective, "earliest");
-      const priceRecord = row ? wireHistoricalPrice(row) : null;
-      const amount = costNumber(record.quantity * (priceRecord?.price ?? 0));
-      totalCost += amount;
-      const key = `${record.productId}:${priceRecord?.id ?? "none"}`;
+  for (const { value, prices } of deliveries) {
+    const costs = calculateDeliveryCosts(value, prices, rates.productAt);
+    const { noteId, autoId, effective, effectiveTimestamp, totalCost } = costs;
+    noteInstants.set(noteId, effective);
+    for (const record of costs.records) {
+      const { productId, priceRecord, priceInstant } = record;
+      const key = `${productId}:${priceRecord?.id ?? "none"}`;
       let product = products.get(key);
       if (!product) {
         product = {
-          productId: record.productId,
+          productId,
           quantity: 0,
           totalCost: 0,
           priceRecord,
         };
         products.set(key, product);
         productOrder.set(product, {
-          product: BigInt(addressId(record.productId)),
-          instant: row ? timestampMicros(row.values.timestamp as string) : null,
-          price: row ? BigInt(row.values.id as string) : 0n,
+          product: BigInt(addressId(productId)),
+          instant: priceInstant,
+          price: priceRecord ? BigInt(addressId(priceRecord.id)) : 0n,
         });
       }
       product.quantity += record.quantity;
-      product.totalCost += amount;
+      product.totalCost += record.totalCost;
     }
-    for (const record of note.specialRecords) {
-      const amount = costNumber(record.amount * (record.pricePerUnit ?? 0));
-      totalCost += amount;
+    for (const { recordId, ...record } of costs.specialRecords) {
       specialRecords.push({
         ...record,
-        noteId: note.id,
-        noteAutoId: note.autoId,
-        effectiveTimestamp: note.effectiveTimestamp,
-        totalCost: amount,
+        id: recordId,
+        noteId,
+        noteAutoId: autoId,
+        effectiveTimestamp,
       });
     }
     mgk.baseCost += totalCost;
-    if (note.records.length + note.specialRecords.length > 0)
-      mgk.overheadCost += overhead("mgk", effective, totalCost);
+    if (costs.records.length + costs.specialRecords.length > 0)
+      mgk.overheadCost += rates.overhead("mgk", effective, totalCost);
     deliveryNotes.push({
-      noteId: note.id,
-      autoId: note.autoId,
-      effectiveTimestamp: note.effectiveTimestamp,
+      noteId,
+      autoId,
+      effectiveTimestamp,
       totalCost,
     });
   }
@@ -250,9 +237,9 @@ export function calculateProjectCosts(
   for (const [day, amounts] of laborByDay) {
     const instant = timestampMicros(`${day}T00:00:00Z`);
     if (amounts.internal)
-      fgk.overheadCost += overhead("fgk", instant, amounts.fgk);
+      fgk.overheadCost += rates.overhead("fgk", instant, amounts.fgk);
     if (amounts.subcontractor)
-      ngk.overheadCost += overhead("ngk", instant, amounts.ngk);
+      ngk.overheadCost += rates.overhead("ngk", instant, amounts.ngk);
   }
   work.sort((left, right) =>
     compareIdDescending(

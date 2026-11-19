@@ -3,6 +3,7 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { ProtectedWriteConflict } from "./atomicWrites";
 import { commonCostRequest } from "./commonCostData";
+import { historicalPriceIndex } from "./historicalPrices";
 import type { DuckDriver } from "./database";
 import {
   DAILY_MODEL,
@@ -22,6 +23,7 @@ import {
 import {
   calculateProjectCosts,
   costPeriod,
+  projectCostRates,
   type ProjectCostSources,
 } from "./projectCostCalculation";
 import { financialRequest } from "./projectFinancialData";
@@ -34,7 +36,7 @@ import {
 } from "./projectData";
 import { toolUsageRequest } from "./projectToolUsage";
 import { loadToolReturns, toolReturnDate, type ToolReturns } from "./toolReturns";
-import { PRICE_MODEL, PRICE_COLLECTION, publicId } from "./products";
+import { priceRequest, publicId } from "./products";
 import { readableAreas } from "./readableAreas";
 import type { Collection } from "./protectedObjects";
 import { businessSchema } from "./schema";
@@ -71,7 +73,7 @@ export function projectCostRequests(projectId: string) {
     },
     tools: toolUsageRequest(projectId, "master-data"),
     toolPrices: toolUsageRequest(projectId, "procurement"),
-    productPrices: { model: PRICE_MODEL, area: PRICE_COLLECTION },
+    productPrices: priceRequest,
     commonCosts: commonCostRequest,
   };
   const labels = [
@@ -132,21 +134,10 @@ function sources(
         document.value.tracking,
       ]),
   );
-  const deliveries = view.documents(requests.deliveries).map((document) => {
-    const value = document.value;
-    const noteId = publicId(value.note.values.id);
-    let prices = specialPrices.get(noteId);
-    if (!prices) {
-      if (value.specialRecords.length) throw new InvalidProtectedData();
-      prices = {
-        format: "sortsys-delivery-prices-v1",
-        projectId: publicId(value.note.values.project_id),
-        noteId,
-        prices: [],
-      };
-    }
-    return { value, prices };
-  });
+  const deliveries = view.documents(requests.deliveries).map(({ value }) => ({
+    value,
+    prices: specialPrices.get(publicId(value.note.values.id)),
+  }));
   const daily = view
     .documents(requests.daily)
     .filter((document) => document.value.report)
@@ -203,13 +194,18 @@ function sources(
     deliveries,
     daily,
     tools,
-    productPrices: view
-      .documents(requests.productPrices)
-      .map((document) => document.value.price),
-    commonCosts: view
-      .documents(requests.commonCosts)
-      .map((document) => document.value.row),
   };
+}
+
+const costRates = Symbol("project cost rates");
+
+function ratesFromView(view: DataView) {
+  return view.derive(costRates, [priceRequest, commonCostRequest], () =>
+    projectCostRates(
+      historicalPriceIndex(view),
+      view.documents(commonCostRequest).map(({ value }) => value.row),
+    ),
+  );
 }
 
 function overviewInput(input: unknown) {
@@ -317,7 +313,12 @@ export function createProtectedProjectCosts(
           if (!view.documents(requests.project)[0]?.value.project)
             throw new InvalidProtectedData();
           const returned = await returns(view, [requests]);
-          return calculateProjectCosts(sources(view, requests, returned), period, now);
+          return calculateProjectCosts(
+            sources(view, requests, returned),
+            ratesFromView(view),
+            period,
+            now,
+          );
         });
         live();
         return result;
@@ -448,6 +449,7 @@ export function createProtectedProjectCosts(
             };
           const cost = calculateProjectCosts(
             sources(view, entry.requests, returned),
+            ratesFromView(view),
             undefined,
             now,
           );

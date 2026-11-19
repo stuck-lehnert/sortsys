@@ -195,10 +195,12 @@ export const PRICE_MODEL = defineDataModel({
     return value;
   },
 });
+export const priceRequest = { model: PRICE_MODEL, area: PRICE_COLLECTION };
+
 export function wirePrice(
-  payload: PricePayload,
+  price: BusinessRow,
 ): QueryResult<"products.priceRecords.list">[number] {
-  const p = payload.price.values;
+  const p = price.values;
   return {
     id: publicId(p.id),
     productId: publicId(p.product_id),
@@ -217,13 +219,12 @@ export async function readProtectedPrices(
   productId?: string,
   driver?: () => Promise<DuckDriver>,
 ): Promise<QueryResult<"products.priceRecords.list">> {
-  const lease = acquireDataRuntime(client, signal, driver),
-    request = { model: PRICE_MODEL, area: PRICE_COLLECTION };
+  const lease = acquireDataRuntime(client, signal, driver);
   try {
-    const result = await lease.runtime.read([request], (view) =>
+    const result = await lease.runtime.read([priceRequest], (view) =>
       view
-        .documents(request)
-        .map((document) => wirePrice(document.value))
+        .documents(priceRequest)
+        .map(({ value }) => wirePrice(value.price))
         .filter((price) => !productId || price.productId === productId)
         .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()),
     );

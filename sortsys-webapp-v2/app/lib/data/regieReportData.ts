@@ -8,8 +8,8 @@ import {
   calendarWeek,
   notFutureDay,
 } from "./calendarDays";
-import { historicalPrices, wireHistoricalPrice } from "./historicalPrices";
-import { publicId } from "./products";
+import type { HistoricalPriceLookup } from "./historicalPrices";
+import { publicId, wirePrice } from "./products";
 import { projectModuleArea, projectModuleDomain } from "./projectScope";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
@@ -238,17 +238,16 @@ export function wireRegie(
 }
 export function regieMaterialCosts(
   report: RegieReport,
-  prices: BusinessRow[],
+  priceAt?: HistoricalPriceLookup,
 ): QueryResult<"regieReports.costs.get"> {
-  const chosen = historicalPrices(
-    prices,
-    timestampMicros(`${addCalendarDays(calendarDay(report.day), 7)}T00:00:00Z`),
-    "none",
+  if (report.products.length && !priceAt) throw new InvalidProtectedData();
+  const cutoff = timestampMicros(
+    `${addCalendarDays(calendarDay(report.day), 7)}T00:00:00Z`,
   );
   let totalCost = 0;
   const products = report.products.map((line) => {
-    const price = chosen.get(line.productId),
-      priceRecord = price ? wireHistoricalPrice(price) : null;
+    const price = priceAt?.(line.productId, cutoff);
+    const priceRecord = price ? wirePrice(price) : null;
     totalCost += line.quantity * (priceRecord?.price ?? 0);
     return {
       recordId: line.id,

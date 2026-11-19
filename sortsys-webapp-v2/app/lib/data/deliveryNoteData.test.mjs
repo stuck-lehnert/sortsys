@@ -4,13 +4,15 @@ import { businessSchema } from "./schema";
 import {
   DELIVERY_MODEL,
   DELIVERY_PRICE_MODEL,
+  calculateDeliveryCosts,
   deliveryCollection,
-  deliveryCosts,
   deliveryDomain,
   deliveryPayload,
   deliveryPrices,
   wireDelivery,
+  wireDeliveryCosts,
 } from "./deliveryNoteData";
+import { indexHistoricalPrices } from "./historicalPrices";
 import { openDataDocument } from "./runtime/model";
 import { dailyCollection } from "./dailyReportData";
 import { regieCollection } from "./regieReportData";
@@ -22,6 +24,12 @@ const row = (table, values) => ({
   table,
   values,
 });
+
+function deliveryCosts(payload, specialPrices, productPrices) {
+  return wireDeliveryCosts(
+    calculateDeliveryCosts(payload, specialPrices, indexHistoricalPrices(productPrices)),
+  );
+}
 const date = "2026-11-11T11:12:13.000002Z";
 function fixture() {
   const payload = {

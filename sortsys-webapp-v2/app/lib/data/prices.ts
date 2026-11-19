@@ -6,7 +6,7 @@ import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import {
   newProductRowId,
   PRICE_COLLECTION,
-  PRICE_MODEL,
+  priceRequest,
   wirePrice,
   PRODUCT_MODEL,
   PRODUCT_COLLECTION,
@@ -60,7 +60,6 @@ export function priceChanges(input: unknown, creating: boolean) {
   return values;
 }
 
-const request = { model: PRICE_MODEL, area: PRICE_COLLECTION };
 export function createProtectedPrices(
   client: Client,
   signal: AbortSignal,
@@ -71,10 +70,10 @@ export function createProtectedPrices(
   return {
     async list(productId?: string) {
       lease.live();
-      const values = await runtime.read([request], (view) =>
+      const values = await runtime.read([priceRequest], (view) =>
         view
-          .documents(request)
-          .map((document) => wirePrice(document.value))
+          .documents(priceRequest)
+          .map(({ value }) => wirePrice(value.price))
           .filter((price) => !productId || price.productId === productId)
           .sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime()),
       );
@@ -91,7 +90,7 @@ export function createProtectedPrices(
           : record(input, deleting ? ["id"] : ["id", "data"]);
       const rawId = creating ? newProductRowId() : addressId(data!.id),
         id = PRICE_COLLECTION.prefix + publicId(rawId),
-        selected = { ...request, ids: [id] };
+        selected = { ...priceRequest, ids: [id] };
       if (deleting) {
         await runtime.removeStock(selected, id);
         lease.live();

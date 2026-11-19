@@ -3,22 +3,20 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId, partialAddressRecord } from "./addressBook";
 import type { DuckDriver } from "./database";
 import {
+  calculateDeliveryCosts,
   DELIVERY_MODEL,
   DELIVERY_PRICE_MODEL,
   deliveryCollection,
-  deliveryCosts,
   deliveryDomain,
   DELIVERY_QUERIES,
   wireDelivery,
+  wireDeliveryCosts,
   type DeliveryPayload,
   type DeliveryPrices,
 } from "./deliveryNoteData";
-import { PRICE_COLLECTION, publicId } from "./products";
-import {
-  protectedCollection,
-  protectedCollections,
-  required,
-} from "./protectedObjects";
+import { priceRequest, publicId } from "./products";
+import { protectedCollections, required } from "./protectedObjects";
+import { historicalPriceIndex } from "./historicalPrices";
 import { deliveryAllocation } from "./deliveryRegistry";
 import {
   deliveryFormRevision,
@@ -28,7 +26,7 @@ import {
 } from "./deliveryIdentity";
 import { ProtectedWriteConflict } from "./atomicWrites";
 import { acquireDataRuntime } from "./runtime/session";
-import { effectivePrice } from "./stockObjects";
+import type { DataView } from "./runtime/runtime";
 
 export function createProtectedDeliveryNotes(
   client: Client,
@@ -130,6 +128,37 @@ export function createProtectedDeliveryNotes(
         : {}),
     };
   }
+
+  async function readCosts(allocation: ReturnType<typeof deliveryAllocation>) {
+    const quantity = {
+      model: DELIVERY_MODEL,
+      area: deliveryCollection(allocation.projectId),
+      ids: [deliveryObject(allocation)],
+    };
+    const price = {
+      model: DELIVERY_PRICE_MODEL,
+      area: deliveryCollection(allocation.projectId, true),
+      ids: [deliveryObject(allocation, true)],
+    };
+    const requests = [quantity, price];
+
+    function costs(view: DataView, withCatalog: boolean) {
+      const note = view.documents(quantity)[0]?.value;
+      if (!note) throw new InvalidProtectedData();
+      if (note.records.length && !withCatalog) return null;
+
+      const special = view.documents(price)[0]?.value;
+      const lookup = withCatalog ? historicalPriceIndex(view) : undefined;
+      return wireDeliveryCosts(calculateDeliveryCosts(note, special, lookup));
+    }
+
+    const local = await runtime.read(requests, (view) => costs(view, false));
+    if (local) return local;
+
+    // Reopen the selected note with the price history so both use the same view.
+    return runtime.read([...requests, priceRequest], (view) => costs(view, true));
+  }
+
   return {
     async mutate(path: string, input: unknown, cancellation?: AbortSignal) {
       live();
@@ -250,6 +279,12 @@ export function createProtectedDeliveryNotes(
         ),
       );
       live();
+      if (path === "deliveryNotes.costs.get") {
+        const result = await readCosts(allocation);
+        live();
+        return result;
+      }
+
       const state = await load(allocation.projectId);
       live();
       const payload = state.payloads.find(
@@ -257,35 +292,7 @@ export function createProtectedDeliveryNotes(
       );
       if (!payload || state.placements.get(allocation.id) !== allocation.placement)
         throw new InvalidProtectedData();
-      const special = state.prices.get(publicId(payload.note.values.id));
-      if (path === "deliveryNotes.get") return wire(payload, state);
-      const projectId = publicId(payload.note.values.project_id);
-      if (!state.pricedProjects.has(projectId))
-        throw new InvalidProtectedData();
-      let productPrices: import("./rowCodec").BusinessRow[] = [];
-      if (payload.records.length) {
-        const collection = await protectedCollection(
-          client,
-          PRICE_COLLECTION,
-          signal,
-        );
-        try {
-          productPrices = (await collection.read()).map(effectivePrice);
-          live();
-        } finally {
-          collection.close();
-        }
-      }
-      return deliveryCosts(
-        payload,
-        special ?? {
-          format: "sortsys-delivery-prices-v1",
-          projectId,
-          noteId: publicId(payload.note.values.id),
-          prices: [],
-        },
-        productPrices,
-      );
+      return wire(payload, state);
     },
     async refresh() {
       live();

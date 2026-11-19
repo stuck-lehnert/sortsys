@@ -93,22 +93,27 @@ fachlich falsche, aber gültig signierte Geheimwerte weiterhin nicht erkennen.
 Die Kostenberechnung verwendet den letzten Preis vor oder zum Lieferdatum.
 Fehlt ein solcher Preis, gilt der erste spätere Preis. Bei identischen
 Zeitstempeln entscheidet die numerische Kennung. Die Auswahl berücksichtigt
-Mikrosekunden vor der Umwandlung in JavaScript-Datumswerte. Mengen und Preise
-bleiben Gleitkommazahlen; exakte kaufmännische Dezimalrechnung ist damit nicht
-umgesetzt.
+Mikrosekunden vor der Umwandlung in JavaScript-Datumswerte.
+
+Mengen und Beträge gehen als Gleitkommazahlen in die Berechnung ein. Ein
+Sonderposten ohne erfassten Preis zählt mit null Euro. Für die Kostenauskunft
+braucht es die Preisfreigabe des Projekts und bei Katalogpositionen zusätzlich
+Zugriff auf die Produktpreise.
 
 Der [native Lieferscheintest](../sortsys-webapp-v2/scripts/test-duckdb-delivery.ts)
 prüft Anlage und Bearbeitung mit echten verschlüsselten Datensätzen über zwei
 getrennte API-Prozesse. Der Projektwechseltest sichert einen verschobenen
 Lieferschein, verschiebt ihn erneut und löscht ihn. Anschließend prüft er die
-Vorschau und die Wiederherstellung der gespeicherten Zuordnung. Der
+Vorschau und die Wiederherstellung der gespeicherten Zuordnung. Vor und nach dem
+Verschieben sowie nach der Rücksicherung vergleicht er die Lieferscheinsumme
+mit den Materialkosten des jeweiligen Projekts. Der
 [Löschtest](../sortsys-webapp-v2/scripts/test-native-delivery-deletion.ts) ergänzt
 veraltete Bestätigungen, falsche und verlorene Antworten, wiederholte Löschungen,
 unverändert vergebene Nummern und abgewiesene Wiederbelebungsversuche. Er prüft
-außerdem eine Mengenfreigabe ohne Preiszugriff: Lesen allein erlaubt keine
-Löschung; ein zusätzliches Löschrecht benötigt weder Preis- noch
-Änderungsrechte. Auch ein korrekt verschlüsselter und vom Leser signierter
-Löschversuch direkt gegen die API wird abgewiesen. Der
+außerdem die Rechte bei reiner Mengenfreigabe. Für die Löschung ist ein eigenes
+Recht nötig, für die Kostenauskunft eine Preisfreigabe. Ein korrekt
+verschlüsselter und vom Leser signierter Löschversuch direkt gegen die API
+wird abgewiesen. Der
 [Seitentest](../sortsys-webapp-v2/scripts/test-native-delivery-pagination.ts)
 prüft 36 verschlüsselte Lieferscheine mit Preisobjekten: Nach 32 Löschungen ist
 die erste Preisseite vollständig ausgeblendet; die vier verbliebenen Datensätze

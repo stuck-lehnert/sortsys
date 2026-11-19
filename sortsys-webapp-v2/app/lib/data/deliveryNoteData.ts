@@ -1,11 +1,11 @@
 import type { QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { addressId } from "./addressBook";
-import { publicId } from "./products";
+import { publicId, wirePrice } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import type { Collection } from "./protectedObjects";
 import { defineDataModel } from "./runtime/model";
-import { historicalPrices, wireHistoricalPrice } from "./historicalPrices";
+import type { HistoricalPriceLookup } from "./historicalPrices";
 import { timestampMicros } from "./timestamps";
 import { projectModuleArea, projectModuleDomain } from "./projectScope";
 import { aggregateRows } from "./aggregateRows";
@@ -216,31 +216,37 @@ export function wireDelivery(
   };
 }
 
-export function deliveryCosts(
+export function calculateDeliveryCosts(
   payload: DeliveryPayload,
-  special: DeliveryPrices,
-  prices: BusinessRow[],
-): QueryResult<"deliveryNotes.costs.get"> {
-  const note = wireDelivery(payload, special),
-    effective = timestampMicros(
-      payload.note.values.effective_timestamp as string,
-    );
-  const chosen = historicalPrices(prices, effective, "earliest");
+  special: DeliveryPrices | undefined,
+  priceAt?: HistoricalPriceLookup,
+) {
+  const note = wireDelivery(payload, special);
+  const effective = timestampMicros(
+    payload.note.values.effective_timestamp as string,
+  );
+  if (note.records.length && !priceAt) throw new InvalidProtectedData();
+
   let totalCost = 0;
   const records = note.records.map((line) => {
-    const p = chosen.get(line.productId),
-      priceRecord = p ? wireHistoricalPrice(p) : null;
-    totalCost += line.quantity * (priceRecord?.price ?? 0);
+    const price = priceAt?.(line.productId, effective, "earliest");
+    const priceRecord = price ? wirePrice(price) : null;
+    const lineCost = line.quantity * (priceRecord?.price ?? 0);
+    totalCost += lineCost;
     return {
       recordId: line.id,
       productId: line.productId,
       quantity: line.quantity,
       priceRecord,
+      priceInstant: price
+        ? timestampMicros(price.values.timestamp as string)
+        : null,
+      totalCost: lineCost,
     };
   });
   const specialRecords = note.specialRecords.map((line) => {
-    const cost = line.amount * (line.pricePerUnit ?? 0);
-    totalCost += cost;
+    const lineCost = line.amount * (line.pricePerUnit ?? 0);
+    totalCost += lineCost;
     return {
       recordId: line.id,
       name: line.name,
@@ -248,13 +254,35 @@ export function deliveryCosts(
       amount: line.amount,
       pricePerUnit: line.pricePerUnit,
       comment: line.comment,
-      totalCost: cost,
+      totalCost: lineCost,
     };
   });
-  if (
-    !Number.isFinite(totalCost) ||
-    specialRecords.some((row) => !Number.isFinite(row.totalCost))
-  )
-    throw new InvalidProtectedData();
-  return { noteId: note.id, totalCost, records, specialRecords };
+  if (!Number.isFinite(totalCost)) throw new InvalidProtectedData();
+  return {
+    noteId: note.id,
+    autoId: note.autoId,
+    effectiveTimestamp: note.effectiveTimestamp,
+    effective,
+    totalCost,
+    records,
+    specialRecords,
+  };
+}
+
+export function wireDeliveryCosts(
+  costs: ReturnType<typeof calculateDeliveryCosts>,
+): QueryResult<"deliveryNotes.costs.get"> {
+  return {
+    noteId: costs.noteId,
+    totalCost: costs.totalCost,
+    records: costs.records.map(
+      ({ recordId, productId, quantity, priceRecord }) => ({
+        recordId,
+        productId,
+        quantity,
+        priceRecord,
+      }),
+    ),
+    specialRecords: costs.specialRecords,
+  };
 }

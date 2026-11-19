@@ -1,6 +1,7 @@
 import { expect, test } from "bun:test";
 import { row } from "./rowCodec.test.mjs";
 import { calendarDay, calendarWeek, addCalendarDays } from "./calendarDays";
+import { indexHistoricalPrices } from "./historicalPrices";
 import {
   regieCollection,
   regiePayload,
@@ -113,22 +114,21 @@ test("regie material costs use exact historical prices at the end-of-week cutoff
       timestamp,
       price: amount,
     });
-  const result = regieMaterialCosts(report, [
+  const prices = indexHistoricalPrices([
     price("10", "2026-08-31T00:00:00.000001Z", 999),
     price("11", "2026-08-31T00:00:00Z", 23.456789),
     price("12", "2026-08-31T01:00:00+01:00", 24.987654321),
   ]);
+  const result = regieMaterialCosts(report, prices);
   expect(result.products[0].priceRecord.id).toBe("c");
   expect(result.totalCost).toBe(2.375 * 24.987654321);
-  expect(
-    regieMaterialCosts(report, [price("10", "2026-09-01T00:00:00Z", 999)])
-      .products[0].priceRecord,
-  ).toBeNull();
-  expect(() =>
-    regieMaterialCosts(report, [
-      price("10", "2026-08-30T00:00:00Z", Number.MAX_VALUE),
-    ]),
-  ).toThrow();
+  const future = indexHistoricalPrices([price("10", "2026-09-01T00:00:00Z", 999)]);
+  expect(regieMaterialCosts(report, future).products[0].priceRecord).toBeNull();
+
+  const overflow = indexHistoricalPrices([
+    price("10", "2026-08-30T00:00:00Z", Number.MAX_VALUE),
+  ]);
+  expect(() => regieMaterialCosts(report, overflow)).toThrow();
 });
 test("regie patches distinguish omitted areas from clearing and reject unbound identities and numbers", () => {
   expect(regieChanges({ summary: " Noch abzudichten " }, false)).toEqual({

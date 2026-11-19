@@ -51,8 +51,10 @@ Schreibrechte auch in diesen Projektbereichen.
 Ein Lieferschein verwendet den letzten Produktpreis vor oder zum Belegzeitpunkt.
 Existiert noch kein früherer Preis, gilt der früheste spätere Datensatz. Bei
 gleichen Zeitpunkten entscheidet die numerische Datensatzkennung. Mikrosekunden
-bleiben dabei erhalten. Die Historien werden für einen Bericht einmal geordnet;
-weitere Preisabfragen durchsuchen nur die Einträge des jeweiligen Produkts.
+bleiben dabei erhalten. Lieferschein und Projektbericht verwenden dieselbe
+Materialkostenberechnung. Der Browser verwendet den Preisindex auch für
+Regieberichte und baut ihn neu auf, wenn sich der gelesene Katalogstand ändert.
+Eine Preisabfrage durchsucht nur die Einträge des angefragten Produkts.
 
 Materialgemeinkosten fallen einmal je Lieferschein mit Positionen an. Lohn- und
 Nachunternehmergemeinkosten verwenden die jeweilige Kostensumme des Arbeitstags;
@@ -67,10 +69,10 @@ gefilterten Auswertung zählt für überlappende Buchungen weiterhin die gesamte
 Buchungsdauer, einschließlich Anfangs- und Endtag in UTC. Die Dauer wird nicht
 auf den Filterzeitraum gekürzt.
 
-Die Auswertung bewahrt die bisherigen Gleitkommazahlen. Ein ausdrücklich nicht
-erfasster Preis bleibt als `null` erkennbar und wird bei der Summe wie bisher
-mit null Euro angesetzt. Ein fehlender oder nicht lesbarer Schlüsselbereich ist
-kein solcher Datensatz und führt zur beschriebenen Zugriffsmeldung.
+Die Auswertung verwendet Gleitkommazahlen. Ein Sonderposten ohne erfassten Preis
+bleibt sichtbar und geht mit null Euro in die Summe ein. Die Berechnung setzt
+voraus, dass sie den vollständigen, freigegebenen Preisbestand des Projekts
+lesen kann. Bei fehlender Preisfreigabe erscheint die Zugriffsmeldung.
 
 ## Finanzbeträge bearbeiten und übernehmen
 

@@ -31,16 +31,45 @@ export async function exerciseDeliveryMove(
 ) {
   const comment = "Korrigierte Baustellenzuordnung für Lieferung 58673";
   const item = { name: "Zwischentransport", unit: "Stk", amount: 2, pricePerUnit: 22.75 };
+  const unpricedItem = { name: "Montagehilfe", unit: "Std", amount: 3 };
+  const product = await required(owner.mutate("products.create", {
+    customId: 58673,
+    name: "Kantenschutz aus verzinktem Stahl",
+    baseUnit: "Stk",
+  }));
+  const purchase = await required(owner.mutate("products.priceRecords.create", {
+    productId: product.id,
+    pricePerBaseUnit: 9.25,
+    timestamp: new Date("2026-11-01T11:00:00Z"),
+    isRealPurchase: true,
+  }));
   const creation = {
     requestId: crypto.randomUUID(),
     projectId: from,
-    specialRecords: [item],
+    effectiveTimestamp: new Date("2026-11-02T07:30:00Z"),
+    records: [{ productId: product.id, quantity: 2 }],
+    specialRecords: [item, { ...unpricedItem, pricePerUnit: null }],
   };
   const created = await required(owner.mutate("deliveryNotes.create", creation));
   const read = (client: Client) => required(client.query(
     "deliveryNotes.get", { id: created.id }, { strategy: "network-only" },
   ));
+  const detailCosts = (client: Client) => required(client.query(
+    "deliveryNotes.costs.get", { id: created.id }, { strategy: "network-only" },
+  ));
+  async function projectDeliveryCost(client: Client, projectId: string) {
+    const costs = await required(client.query(
+      "projects.costs.get", { projectId }, { strategy: "network-only" },
+    ));
+    return costs.deliveryNotes.find((entry) => entry.noteId === created.id)?.totalCost;
+  }
   const source = await read(owner);
+  const initialCosts = await detailCosts(owner);
+  assert.equal(initialCosts.totalCost, 64);
+  assert.equal(initialCosts.records[0]?.priceRecord?.id, purchase.id);
+  assert.equal(initialCosts.specialRecords[1]?.pricePerUnit, null);
+  assert.equal(initialCosts.specialRecords[1]?.totalCost, 0);
+  assert.equal(await projectDeliveryCost(owner, from), initialCosts.totalCost);
   const sourceObject = deliveryObject({ id: created.id, projectId: from });
   const move = (client: Client, target: string, expected: Awaited<ReturnType<typeof read>>) =>
     client.mutate("deliveryNotes.update", {
@@ -58,7 +87,10 @@ export async function exerciseDeliveryMove(
       id: created.id,
       expectedRevision: source.revision,
       expectedPriceRevision: source.priceRevision,
-      data: { specialRecords: [{ ...item, id: source.specialRecords[0]!.id, pricePerUnit: 27.5 }] },
+      data: { specialRecords: [
+        { ...item, id: source.specialRecords[0]!.id, pricePerUnit: 27.5 },
+        { ...unpricedItem, id: source.specialRecords[1]!.id },
+      ] },
     }));
     return next();
   });
@@ -96,6 +128,10 @@ export async function exerciseDeliveryMove(
   assert.equal(destination.comment, comment);
   assert.equal(destination.specialRecords[0]?.id, source.specialRecords[0]?.id);
   assert.equal(destination.specialRecords[0]?.pricePerUnit, 27.5);
+  const movedCosts = await detailCosts(peer);
+  assert.equal(movedCosts.totalCost, 73.5);
+  assert.equal(await projectDeliveryCost(peer, to), movedCosts.totalCost);
+  assert.equal(await projectDeliveryCost(owner, from), undefined);
   assert.equal((await required(owner.query("deliveryNotes.list", { projectId: from })))
     .some(({ id }) => id === created.id), false);
   assert.ok((await owner.query("zerotrust.objects.get", { id: sourceObject }))[1]);
@@ -107,6 +143,14 @@ export async function exerciseDeliveryMove(
     tenant: backup.tenant,
     operation: crypto.randomUUID(),
   }));
+
+  await required(peer.mutate("products.priceRecords.update", {
+    id: purchase.id,
+    data: { pricePerBaseUnit: 10.5 },
+  }));
+  const updatedCosts = await detailCosts(peer);
+  assert.equal(updatedCosts.totalCost, 76);
+  assert.equal(await projectDeliveryCost(peer, to), updatedCosts.totalCost);
 
   await required(move(peer, from, destination));
   await owner.invalidate("deliveryNotes.list");
@@ -140,6 +184,9 @@ export async function exerciseDeliveryMove(
   assert.equal(restored.autoId, destination.autoId);
   assert.equal(restored.revision, destination.revision);
   assert.deepEqual(restored.specialRecords, destination.specialRecords);
+  assert.deepEqual(await detailCosts(peer), movedCosts);
+  assert.equal(await projectDeliveryCost(peer, to), movedCosts.totalCost);
+  assert.equal(await projectDeliveryCost(peer, from), undefined);
   console.log("Delivery restore verified: preview and activation use the saved placement, numbering and prices.");
   return comment;
 }

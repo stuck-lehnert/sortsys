@@ -455,6 +455,13 @@ export async function exerciseNativeDeliveryDeletion(
       ),
     );
     assert.equal(visible.specialRecords[0]!.pricePerUnit, null);
+    const [withheldCosts, priceAccessError] = await colleague.query(
+      "deliveryNotes.costs.get",
+      { id: second.id },
+      { strategy: "network-only" },
+    );
+    assert.equal(withheldCosts, null);
+    assert.ok(priceAccessError, "quantity access does not open delivery costs");
     await assertServerRejectsReaderDeletion(
       rawMember,
       projectId,

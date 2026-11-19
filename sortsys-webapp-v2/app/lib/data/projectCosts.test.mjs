@@ -7,7 +7,8 @@ import {
   createProtectedProjectCosts,
   projectCostRequests,
 } from "./projectCosts";
-import { calculateProjectCosts, costPeriod } from "./projectCostCalculation";
+import { calculateProjectCosts, costPeriod, projectCostRates } from "./projectCostCalculation";
+import { indexHistoricalPrices } from "./historicalPrices";
 import { createProtectedProjectFinance } from "./projectFinance";
 import { financialObject, financialPayload } from "./projectFinancialData";
 import { emptyProjectCommercial } from "./projectCommercial";
@@ -16,6 +17,14 @@ import { publicId } from "./products";
 import { createBusinessClient } from "./businessClient";
 
 afterEach(() => lockCryptoSession());
+
+function calculateCosts(source, period) {
+  const rates = projectCostRates(
+    indexHistoricalPrices(source.productPrices),
+    source.commonCosts,
+  );
+  return calculateProjectCosts(source, rates, period);
+}
 
 function sourceRows(project = "1") {
   const projectRow = row("projects", {
@@ -267,7 +276,7 @@ async function fixture(actions, second = false) {
 }
 
 test("project costs use one material constant per note and one labour constant per category and day", () => {
-  const cost = calculateProjectCosts(sourceRows().source);
+  const cost = calculateCosts(sourceRows().source);
   expect(cost.totalCosts).toEqual({
     offers: 1000,
     invoices: 250,
@@ -295,7 +304,7 @@ test("project costs use one material constant per note and one labour constant p
 
 test("date filtering keeps whole overlapping tool durations and UTC calendar work days", () => {
   const source = sourceRows().source;
-  const exact = calculateProjectCosts(
+  const exact = calculateCosts(
     source,
     costPeriod("2026-02-02T12:00:00Z", "2026-02-02T13:00:00Z"),
   );
@@ -304,7 +313,7 @@ test("date filtering keeps whole overlapping tool durations and UTC calendar wor
   expect(exact.totalCosts.toolTrackings).toBe(7.5);
   expect(exact.offers).toEqual([]);
   expect(exact.invoices).toEqual([]);
-  const offset = calculateProjectCosts(
+  const offset = calculateCosts(
     source,
     costPeriod("2026-02-03T00:30:00+02:00", "2026-02-03T01:00:00+02:00"),
   );
@@ -337,24 +346,33 @@ test("historical price lookup retains microseconds, tie IDs and the earliest fut
       price: 30.25,
     }),
   ];
-  expect(calculateProjectCosts(source).totalCosts.products).toBe(40.5);
+  expect(calculateCosts(source).totalCosts.products).toBe(40.5);
   source.deliveries[0].value.note.values.effective_timestamp =
     "2026-02-02T10:00:00.123455Z";
-  expect(calculateProjectCosts(source).totalCosts.products).toBe(20.5);
+  expect(calculateCosts(source).totalCosts.products).toBe(20.5);
   source.deliveries[0].value.note.values.effective_timestamp =
     "2026-02-02T10:00:00.123457Z";
-  expect(calculateProjectCosts(source).totalCosts.products).toBe(60.5);
+  expect(calculateCosts(source).totalCosts.products).toBe(60.5);
 });
 
-test("missing price fragments cannot become null rates while actual recorded nulls remain supported", () => {
+test("labour rates require a stored fragment and support explicit nulls", () => {
   const source = sourceRows().source;
   source.daily[0].costs.costs[0].costPerHour = null;
-  expect(calculateProjectCosts(source).commonCosts.fgk.baseCost).toBe(30);
+  expect(calculateCosts(source).commonCosts.fgk.baseCost).toBe(30);
   source.daily[0].costs.costs.shift();
-  expect(() => calculateProjectCosts(source)).toThrow();
-  const material = sourceRows().source;
-  material.deliveries[0].prices.prices = [];
-  expect(() => calculateProjectCosts(material)).toThrow();
+  expect(() => calculateCosts(source)).toThrow();
+});
+
+test("a special line without a recorded price contributes zero to project costs", () => {
+  const source = sourceRows().source;
+  source.deliveries[0].prices = undefined;
+
+  const cost = calculateCosts(source);
+  expect(cost.deliveryNotes[0].totalCost).toBe(20.5);
+  expect(cost.specialRecords[0]).toMatchObject({
+    pricePerUnit: null,
+    totalCost: 0,
+  });
 });
 
 test("authorized local reporting returns complete source costs and never calls a plaintext cost RPC", async () => {
@@ -362,7 +380,7 @@ test("authorized local reporting returns complete source costs and never calls a
   try {
     expect(
       await f.store.query("projects.costs.get", { projectId: "1" }),
-    ).toEqual(calculateProjectCosts(f.source));
+    ).toEqual(calculateCosts(f.source));
     const app = createBusinessClient(f.client, { productDriver: duckDriver });
     try {
       const [cost, error] = await app.query("projects.costs.get", {
@@ -377,6 +395,26 @@ test("authorized local reporting returns complete source costs and never calls a
       f.calls.some((call) => call.path.startsWith("projects.costs.")),
     ).toBe(false);
     expect(JSON.stringify(f.calls)).not.toContain("relative_factor");
+  } finally {
+    f.store.close();
+    f.finance.close();
+  }
+}, 30000);
+
+test("project costs use the new price after the catalog snapshot changes", async () => {
+  const f = await fixture();
+  const report = () => f.store.query("projects.costs.get", { projectId: "1" });
+
+  try {
+    expect((await report()).totalCosts.deliveryNotes).toBe(27.25);
+    const area = f.requests.productPrices.area;
+    const [previous] = f.source.productPrices;
+    await f.seed(area, area.prefix + publicId(previous.values.id), {
+      format: "sortsys-product-price-v1",
+      price: { ...previous, values: { ...previous.values, price: 11.5 } },
+    });
+    await f.store.refresh();
+    expect((await report()).totalCosts.deliveryNotes).toBe(29.75);
   } finally {
     f.store.close();
     f.finance.close();

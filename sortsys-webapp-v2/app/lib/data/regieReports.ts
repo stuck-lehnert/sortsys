@@ -5,11 +5,11 @@ import { existingAggregateRows } from "./aggregateRows";
 import { commitProtectedWrites, ProtectedWriteConflict } from "./atomicWrites";
 import { calendarDay } from "./calendarDays";
 import type { DuckDriver } from "./database";
+import { historicalPriceIndex } from "./historicalPrices";
 import { personnelRequest } from "./personnelData";
 import {
   newProductRowId,
-  PRICE_COLLECTION,
-  PRICE_MODEL,
+  priceRequest,
   PRODUCT_COLLECTION,
   PRODUCT_MODEL,
   publicId,
@@ -35,8 +35,7 @@ import { businessSchema } from "./schema";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataRequest, DataView } from "./runtime/runtime";
 
-const priceRequest = { model: PRICE_MODEL, area: PRICE_COLLECTION },
-  productRequest = { model: PRODUCT_MODEL, area: PRODUCT_COLLECTION };
+const productRequest = { model: PRODUCT_MODEL, area: PRODUCT_COLLECTION };
 const row = (table: string, values: Record<string, unknown>) =>
   decodeBusinessRow({
     format: "sortsys-row-v2",
@@ -235,7 +234,7 @@ export function createProtectedRegieReports(
       if (!current) throw new InvalidProtectedData();
       if (path === "regieReports.get") return current.wire;
       if (!current.wire.products.length)
-        return regieMaterialCosts(current.wire, []);
+        return regieMaterialCosts(current.wire);
       const result = await runtime.read(
         [...selected.all, priceRequest],
         (view) => {
@@ -243,12 +242,7 @@ export function createProtectedRegieReports(
             (item) => item.wire.id === data.id,
           );
           if (!report) throw new InvalidProtectedData();
-          return regieMaterialCosts(
-            report.wire,
-            view
-              .documents(priceRequest)
-              .map((document) => document.value.price),
-          );
+          return regieMaterialCosts(report.wire, historicalPriceIndex(view));
         },
       );
       live();
