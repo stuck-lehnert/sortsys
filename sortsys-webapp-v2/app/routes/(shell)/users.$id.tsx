@@ -145,7 +145,7 @@ export default function UserDetailPage() {
                   renderIcon: Icons.EditRole,
                   hideIf:
                     !sessionInfo.isAdmin() || user.id === sessionInfo.user.id,
-                  onClick: () => showUserAccessModal(modals, user),
+                  onClick: () => showUserAccessModal(modals, user.id),
                 },
                 {
                   label: uiText("Aktivieren"),

@@ -173,6 +173,9 @@ Kategorie. Der Suchindex liegt im Arbeitsspeicher und wird bei einer
 Änderung des zugehörigen Datenstands neu aufgebaut. Gleichzeitig wartende
 Kategorien bündeln ihre erste Datenprüfung. Ist ein Bereich gesperrt, kann
 die Suche die freigegebenen Bereiche einzeln prüfen und deren Treffer anzeigen.
+Listen ohne Suchbegriff brauchen keine aufbereiteten Suchtexte. Der
+Produktkatalog lädt seine Daten erstmals für die angeforderte Liste oder
+Aktion. Derselbe Leseschritt prüft den Datenstand und erstellt das Ergebnis.
 
 Vorgangslisten teilen auch dann die noch laufende Aufbereitung ihrer Grunddaten,
 wenn sich Suchtext oder Statusfilter unterscheiden. Jede Ansicht filtert und

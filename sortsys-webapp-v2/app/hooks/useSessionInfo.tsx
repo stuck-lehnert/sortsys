@@ -65,7 +65,7 @@ export function SessionInfoProvider({
     access.context,
   );
   const [loaded, setLoaded] = useState<{
-    context: AbortSignal;
+    client: typeof sessionClient;
     data: RawSession;
   } | null>(null);
   const [grants, setGrants] = useState<{
@@ -87,12 +87,7 @@ export function SessionInfoProvider({
     const subscription = sessionClient
       .streamQuery("auth.sessionInfo", undefined, { strategy: "network-only" })
       .subscribe(([data, error]) => {
-        if (
-          !active ||
-          accountContext.aborted ||
-          projectFiles.context() !== accountContext
-        )
-          return;
+        if (!active || !sessionClient.loggedIn()) return;
         const account = unlockedAccount();
         if (
           !data ||
@@ -100,7 +95,7 @@ export function SessionInfoProvider({
         ) {
           setLoaded((previous) => {
             if (
-              previous?.context === accountContext &&
+              previous?.client === sessionClient &&
               account?.vault.subject === `user:${previous.data.user.id}` &&
               RpcClientError.isUnavailable(error)
             )
@@ -112,13 +107,13 @@ export function SessionInfoProvider({
         // A login alias can change without replacing the unlocked identity.
         if (account) account.username = data.user.username;
         setLocale(data.user.locale);
-        setLoaded({ context: accountContext, data });
+        setLoaded({ client: sessionClient, data });
       });
     return () => {
       active = false;
       subscription.unsubscribe();
     };
-  }, [setLocale, sessionClient, accountContext]);
+  }, [setLocale, sessionClient]);
   useEffect(() => {
     if (!account) {
       setGrants(null);
@@ -150,8 +145,12 @@ export function SessionInfoProvider({
     };
   }, [access, accessContext, accountContext, account]);
 
+  // AppContent remounts this provider for a different authenticated session.
+  // Business invalidation below retires the grants without unmounting the shell.
   const data =
-    loaded?.context === accountContext && !accountContext.aborted
+    loaded?.client === sessionClient &&
+    sessionClient.loggedIn() &&
+    (!account || account.vault.subject === `user:${loaded.data.user.id}`)
       ? loaded.data
       : null;
   if (!data)

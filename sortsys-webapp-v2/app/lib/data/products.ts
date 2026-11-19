@@ -360,7 +360,7 @@ export const PRODUCT_MODEL = defineDataModel({
 const productRequest = { model: PRODUCT_MODEL, area: PRODUCT_COLLECTION };
 const productSearch = Symbol("product search");
 
-export async function openProtectedProducts(
+export function openProtectedProducts(
   client: Client,
   signal: AbortSignal,
   driver?: () => Promise<DuckDriver>,
@@ -414,13 +414,6 @@ export async function openProtectedProducts(
     );
     lease.live();
     return { success: true as const };
-  }
-  try {
-    await runtime.read([productRequest], () => undefined);
-    lease.live();
-  } catch (error) {
-    lease.close();
-    throw error;
   }
   return {
     async refresh(minimumSequence?: string) {

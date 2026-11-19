@@ -3175,6 +3175,10 @@ try {
   await scenario(
     "office-and-purchasing-roles",
     async (page) => {
+      let invitationReads = 0;
+      page.on("request", (request) => {
+        invitationReads += rpcInputs(request, "zerotrust.invitations.list").length;
+      });
       const memberServer = await applicationServer(applicationBuild, endpoints[0]);
       servers.add(memberServer);
       const memberContext = await applicationContext();
@@ -3195,11 +3199,21 @@ try {
           page.getByRole("link", { name: "Einstellungen", exact: true }),
         ).toBeVisible();
         const dialog = await openMemberPermissions(page);
+        const mountedDialog = await dialog.elementHandle();
         const roles = dialog.getByRole("group", { name: "Fachrollen", exact: true });
         const office = roles.getByRole("checkbox", { name: /^Büro/ });
         const purchasing = roles.getByRole("checkbox", { name: /^Einkauf/ });
-        const save = () =>
-          saveResourceAccess(dialog, "Berechtigungen speichern", "Produktkatalog", 60_000);
+        const save = async () => {
+          const previousReads = invitationReads;
+          await saveResourceAccess(
+            dialog,
+            "Berechtigungen speichern",
+            "Produktkatalog",
+            60_000,
+          );
+          assert.equal(invitationReads, previousReads);
+          assert.equal(await mountedDialog.evaluate((node) => node.isConnected), true);
+        };
 
         await expect(office).not.toBeChecked();
         await expect(purchasing).not.toBeChecked();
@@ -3231,6 +3245,7 @@ try {
         await expect(office).not.toBeChecked();
         await save();
         await expect(customers).toHaveCount(0);
+        await mountedDialog.dispose();
         memberAudit.assertClean();
       } finally {
         await memberContext.close();

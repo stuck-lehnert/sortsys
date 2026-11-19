@@ -124,3 +124,22 @@ test("distinguishes a blank query from a query without searchable words", () => 
   expect(createPrefixMatcher("   ")(["Farbe"])).toBe(true);
   expect(createPrefixMatcher("…")(["Farbe"])).toBe(false);
 });
+
+test("a list prepares search text only for eligible rows when a search starts", () => {
+  const prepared = [];
+  const search = buildPrefixSearch(entries.slice(0, 3), ({ id, fields }) => {
+    prepared.push(id);
+    return fields;
+  });
+  const eligible = ({ id }) => id !== "Verbund";
+
+  expect(search(" ", eligible).map(({ id }) => id)).toEqual([
+    "Getrennt",
+    "Umgekehrt",
+  ]);
+  expect(prepared).toEqual([]);
+
+  expect(search("Systembügel", eligible, 1)[0].id).toBe("Getrennt");
+  expect(search("Systembüg", eligible, 1)[0].id).toBe("Getrennt");
+  expect(prepared).toEqual(["Getrennt"]);
+});

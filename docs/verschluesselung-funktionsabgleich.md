@@ -695,18 +695,17 @@ bindet ihre Quellbelege und Zielstände. Die frühere Installation und ihre
 Originaldateien bleiben dabei unverändert. Verbleibende Unterschiede sind bei
 den jeweiligen Arbeitsabläufen aufgeführt.
 
-Der [Integrationstest](../sortsys-webapp-v2/scripts/test-live-products.ts)
-vergleicht Katalog und Beschreibungstreffer mit dem bisherigen Bestand. Er prüft
-außerdem einen neuen Leser nach einer Änderung, den Abbruch eines veralteten
-Seitenabrufs, den Rollback eines teilweise ausgeführten Schreibpakets,
-konkurrierende Schreibanfragen und getrennte Freigaben für Katalog und Preise in
-beiden Richtungen. Der
-[Rechtetest](../sortsys-webapp-v2/scripts/test-live-permissions.ts) prüft
-außerdem den Entzug mit unterbrochenem Schlüsselwechsel, neue Inhalte, die mit
-dem alten Schlüssel nicht mehr lesbar sind, sowie die erneute Freigabe mit einer
-verlorenen Bestätigung. Bereits bekannte Schlüssel lassen sich nicht
-zurückholen; neue Preisstände benötigen nach einem Rechteentzug eine
-Schlüsselrotation.
+Im [Chromium-Test](../sortsys-webapp-v2/scripts/e2e/development.browser.mjs)
+wird eine Produktbeschreibung geändert und anschließend über ein Wort aus
+dieser Beschreibung gefunden. Ein zweites Konto ohne Freigabe erhält keinen
+Treffer. Die Rollenprüfung öffnet und sperrt den Katalog bei laufender Sitzung
+über zwei API-Instanzen. Die Suche nach Produktkennungen, Wortanfängen und
+zusammengesetzten Begriffen ist gegen
+[Ergebnisse der früheren PostgreSQL-Abfrage](../sortsys-webapp-v2/app/lib/search/prefixQuery.test.mjs)
+geprüft. Der [native Test für Preise und Lieferanten](../sortsys-webapp-v2/scripts/test-stock-store.ts)
+prüft signierte Referenzen und konkurrierende Änderungen. Bereits bekannte
+Schlüssel lassen sich nicht zurückholen. Neue Preisstände benötigen nach
+einem Rechteentzug eine Schlüsselrotation.
 
 Der gemeinsame Browser-Client führt Fachaufrufe lokal aus und verweigert einen
 ungeprüften Netzwerkaufruf. Das gilt auch für dynamische Aufrufe und abonnierte

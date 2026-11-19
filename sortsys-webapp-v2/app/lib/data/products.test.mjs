@@ -1,6 +1,16 @@
 import { test, expect } from "bun:test";
+import { lockCryptoSession } from "../crypto/session";
 import { row } from "./rowCodec.test.mjs";
-import { createProductMatcher, pricePayload, productPayload, publicId } from "./products";
+import {
+  createProductMatcher,
+  openProtectedProducts,
+  pricePayload,
+  PRODUCT_COLLECTION,
+  productPayload,
+  publicId,
+} from "./products";
+import { duckDriver } from "./testing/duckDriver.mjs";
+import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 test("product objects bind their canonical identity and exclude price/personnel columns", () => {
   const product = row("products", { id: "9223372036854775807", custom_id: "17", name: "Anschlussprofil", description: "Fensterlaibung abdichten", base_unit: "m" });
@@ -40,6 +50,42 @@ test("local product search includes descriptions and combines word prefixes", ()
   expect(createProductMatcher("ÄUẞERE Fenst")(product)).toBe(true);
   expect(createProductMatcher("471 Pro")(product)).toBe(true);
   expect(createProductMatcher("Fenst Innen")(product)).toBe(false);
+});
+
+test("opening the catalogue leaves the first protected read to the requested operation", async () => {
+  const fixture = await protectedTenant([PRODUCT_COLLECTION]);
+  const product = row("products", {
+    id: "10",
+    custom_id: "17",
+    name: "Anschlussprofil",
+    description: "Fensterlaibung abdichten",
+  });
+  await fixture.seed(PRODUCT_COLLECTION, `product:${publicId("10")}`, {
+    format: "sortsys-product-v1",
+    product,
+    categories: [],
+  });
+  fixture.calls.length = 0;
+  const catalogue = openProtectedProducts(
+    fixture.client,
+    new AbortController().signal,
+    duckDriver,
+  );
+  try {
+    expect(fixture.calls).toEqual([]);
+    expect((await catalogue.list({})).map((item) => item.name)).toEqual([
+      "Anschlussprofil",
+    ]);
+    expect((await catalogue.list({ search: "Fensterl" }))[0].customId).toBe(17);
+    const snapshots = fixture.calls.filter(
+      ({ path }) => path === "zerotrust.access.snapshot",
+    );
+    expect(snapshots).toHaveLength(1);
+    expect(snapshots[0].input.domains).toEqual([PRODUCT_COLLECTION.domain]);
+  } finally {
+    await catalogue.close();
+    await lockCryptoSession();
+  }
 });
 
 test("a verified historical vendor deletion cannot erase a newly assigned vendor during a price patch", async () => {

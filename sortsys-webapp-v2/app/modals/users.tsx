@@ -620,14 +620,16 @@ export function showChangeOwnPasswordModal(
   });
 }
 
-export function showUserAccessModal(modals: MyModalsInterface, user: User) {
-  return modals.showDefault({
-    content: () => <OrganizationInvitations memberId={user.id} />,
-    onPrimaryAction: ({ hide }) => hide(),
-    modalProps: () => ({
-      modalHeading: uiText("Berechtigungen verwalten", "Manage permissions"),
-      modalLabel: userFullName(user),
-      primaryButtonText: uiText("Schließen", "Close"),
-    }),
-  });
+export function showUserAccessModal(modals: MyModalsInterface, memberId: string) {
+  return modals.showDefault(
+    {
+      content: () => <OrganizationInvitations memberId={memberId} />,
+      onPrimaryAction: ({ hide }) => hide(),
+      modalProps: () => ({
+        modalHeading: uiText("Berechtigungen verwalten", "Manage permissions"),
+        primaryButtonText: uiText("Schließen", "Close"),
+      }),
+    },
+    { lifetime: "session" },
+  );
 }

@@ -142,12 +142,12 @@ type Commercial = ReturnType<
   (typeof import("./commercial"))["createProtectedCommercial"]
 >;
 
-type Products = Awaited<ReturnType<typeof openProtectedProducts>>;
+type Products = ReturnType<typeof openProtectedProducts>;
 type Chats = ReturnType<(typeof import("./chats"))["createProtectedChats"]>;
 type ProductFactory = (
   client: Client,
   signal: AbortSignal,
-) => Promise<Products>;
+) => Products | Promise<Products>;
 const QUERIES = new Set([
   "products.list",
   "products.get",
@@ -779,17 +779,13 @@ export function createBusinessClient(
   async function catalog(): Promise<Products> {
     if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
       throw unavailable();
-    const expected = account,
-      signal = controller.signal;
-    products ??= (
-      options.openProducts ??
-      (async (client, cancellation) =>
-        (await import("./products")).openProtectedProducts(
-          client,
-          cancellation,
-          options.productDriver,
-        ))
-    )(base, signal).catch((error) => {
+    const expected = account;
+    const signal = controller.signal;
+    products ??= (async () => {
+      if (options.openProducts) return options.openProducts(base, signal);
+      const { openProtectedProducts } = await import("./products");
+      return openProtectedProducts(base, signal, options.productDriver);
+    })().catch((error) => {
       if (!signal.aborted) products = null;
       throw error;
     });

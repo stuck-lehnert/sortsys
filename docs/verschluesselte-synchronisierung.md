@@ -60,6 +60,11 @@ geprüfte Bestand wird dabei getrennt vom Rückgabestand einer laufenden
 Speicherung geführt, damit eigene Änderungen weiterhin vollständig nachgelesen
 werden.
 
+Ein Wechsel der Fachfreigaben verwirft die betroffenen Datenzugriffe. Die
+angemeldete Oberfläche und der Dialog zur Berechtigungsverwaltung bleiben dabei
+bestehen. Die Verwaltung prüft nach dem Speichern die Freigaben des bearbeiteten
+Kontos erneut. Fachdialoge mit abgelaufener Datenfreigabe schließen sich.
+
 ## Berechtigungen und laufende Arbeit
 
 Entzogene eigene Rechte verwerfen die lokalen Zugriffskontexte und deren
@@ -85,8 +90,9 @@ Die verschlüsselte gemeinsame GAEB-, Office- und Diagrammbearbeitung benötigt
 zusätzlich ihre Fachadapter und verschlüsselte Editor-Updates. Diese
 Dokumentbearbeitung ist durch den Ereigniskanal allein noch nicht umgesetzt.
 
-Der [Mehrinstanztest](../sortsys-webapp-v2/scripts/test-live-events.ts) prüft
-unter anderem gleichzeitige Ansichten, Verbindungsabbrüche, Wiederaufnahme und
-das Beenden des gemeinsamen Journalabrufs. Der
-[Rechtetest](../sortsys-webapp-v2/scripts/test-live-permissions.ts) prüft auch,
-dass ein privater Bereich keine Hinweise an ein anderes Konto liefert.
+Der [native Mehrinstanztest](../sortsys-webapp-v2/scripts/test-native-events.ts)
+prüft drei gleichzeitige Verbindungen, die Signatur bei der Anmeldung,
+Änderungshinweise, den Entzug und die erneute Vergabe von Leserechten sowie
+das Schließen einer abgemeldeten Sitzung. Der
+[Chromium-Test](../sortsys-webapp-v2/scripts/e2e/development.browser.mjs) prüft,
+dass ein erneuter Datenabgleich die Produktliste im geöffneten Zustand erhält.

@@ -129,6 +129,13 @@ export default function OrganizationInvitations({
     setRoleDraft(roles ? { original: roles, value: roles } : null);
   }
   const controller = useRef<AbortController | null>(null);
+  async function refreshMemberAccess(member: Member, signal: AbortSignal) {
+    const state = await memberAccessState(client, `user:${member.id}`, signal);
+    signal.throwIfAborted();
+    if (state) loadAccess(state.access, state.roles);
+    setEditing(state !== null);
+  }
+
   async function refresh(signal: AbortSignal) {
     const [people, pending] = await Promise.all([
       invitationMembers(client, signal),
@@ -142,21 +149,8 @@ export default function OrganizationInvitations({
       people.find((member) => member.id === selectedId) ?? null;
     setSelected(nextMember);
     setMemberSearch(nextMember?.username ?? "");
-    if (
-      selected &&
-      people.some((member) => member.id === selected.id && member.certified)
-    ) {
-      const state = await memberAccessState(
-        client,
-        `user:${selected.id}`,
-        signal,
-      );
-      signal.throwIfAborted();
-      if (state) {
-        loadAccess(state.access, state.roles);
-        setEditing(true);
-      } else setEditing(false);
-    }
+    if (nextMember?.certified && nextMember.id === selected?.id)
+      await refreshMemberAccess(nextMember, signal);
   }
   useEffect(() => {
     const current = new AbortController();
@@ -177,13 +171,7 @@ export default function OrganizationInvitations({
       return () => current.abort();
     }
     setLoadingAccess(true);
-    void memberAccessState(client, `user:${selected.id}`, current.signal)
-      .then((state) => {
-        if (!current.signal.aborted && state) {
-          loadAccess(state.access, state.roles);
-          setEditing(true);
-        }
-      })
+    void refreshMemberAccess(selected, current.signal)
       .catch(() => {
         if (!current.signal.aborted) setError(true);
       })
@@ -192,19 +180,53 @@ export default function OrganizationInvitations({
       });
     return () => current.abort();
   }, [selected?.id, selected?.certified]);
-  async function act(operation: (signal: AbortSignal) => Promise<unknown>) {
+  async function act(
+    operation: (signal: AbortSignal) => Promise<unknown>,
+    update: (signal: AbortSignal) => Promise<void> = refresh,
+  ) {
     const signal = controller.current?.signal;
     if (!signal || signal.aborted || busy) return;
     setBusy(true);
     setError(false);
     try {
       await operation(signal);
-      await refresh(signal);
+      await update(signal);
     } catch {
       if (!signal.aborted) setError(true);
     } finally {
       if (!signal.aborted) setBusy(false);
     }
+  }
+
+  function saveAccess() {
+    if (!selected) return;
+    const member = selected;
+    const access: InvitationAccess = {
+      ...permissions,
+      ...Object.fromEntries(
+        MASTER_DATA_FIELDS.map((key) => [key, drafts[key].value]),
+      ),
+    };
+    if (!editing) {
+      return act((signal) =>
+        createMemberInvitation(client, member, access, signal),
+      );
+    }
+    return act(
+      (signal) =>
+        changeMemberAccess(client, `user:${member.id}`, access, signal, {
+          actions: Object.fromEntries(
+            MASTER_DATA_FIELDS.filter((key) => accessChanged(drafts[key])).map(
+              (key) => [key, drafts[key].patch],
+            ),
+          ),
+          ...(permissions.assistant !== originalAssistant
+            ? { assistant: permissions.assistant }
+            : {}),
+          ...(rolesChanged ? { roles: roleEdits } : {}),
+        }),
+      (signal) => refreshMemberAccess(member, signal),
+    );
   }
   return (
     <section className="mt-8 max-w-3xl space-y-4">
@@ -357,35 +379,7 @@ export default function OrganizationInvitations({
               permissions.assistant === originalAssistant)
           }
           loading={busy || loadingAccess}
-          onClick={() =>
-            act((signal) => {
-              const intended: InvitationAccess = {
-                ...permissions,
-                ...Object.fromEntries(
-                  MASTER_DATA_FIELDS.map((key) => [key, drafts[key].value]),
-                ),
-              };
-              return editing
-                ? changeMemberAccess(
-                    client,
-                    `user:${selected!.id}`,
-                    intended,
-                    signal,
-                    {
-                      actions: Object.fromEntries(
-                        MASTER_DATA_FIELDS.filter((key) =>
-                          accessChanged(drafts[key]),
-                        ).map((key) => [key, drafts[key].patch]),
-                      ),
-                      ...(permissions.assistant !== originalAssistant
-                        ? { assistant: permissions.assistant }
-                        : {}),
-                      ...(rolesChanged ? { roles: roleEdits } : {}),
-                    },
-                  )
-                : createMemberInvitation(client, selected!, intended, signal);
-            })
-          }
+          onClick={saveAccess}
         >
           {editing
             ? uiText("Berechtigungen speichern", "Save permissions")
@@ -394,12 +388,7 @@ export default function OrganizationInvitations({
         <MyButton
           kind="secondary"
           disabled={busy}
-          onClick={() =>
-            act(async (signal) => {
-              await finishAccessChanges(client, signal);
-              await refresh(signal);
-            })
-          }
+          onClick={() => act((signal) => finishAccessChanges(client, signal))}
         >
           {uiText("Aktualisieren", "Refresh")}
         </MyButton>

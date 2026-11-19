@@ -75,7 +75,7 @@ function searchText(values: readonly unknown[]): SearchText {
 
 function compilePrefixQuery(search: string | null | undefined) {
   const query = search?.trim().toLowerCase();
-  if (!query) return () => true;
+  if (!query) return null;
   const sequences = query.split(" ").map(lexemes).filter((words) => words.length);
   if (!sequences.length) return () => false;
   const candidates = sequences.map((prefixes) =>
@@ -93,18 +93,19 @@ function compilePrefixQuery(search: string | null | undefined) {
 }
 
 export function createPrefixMatcher(search: string | null | undefined) {
-  if (!search?.trim()) return () => true;
   const matches = compilePrefixQuery(search);
-  return (values: readonly unknown[]) => matches(searchText(values));
+  return (values: readonly unknown[]) => !matches || matches(searchText(values));
 }
 
-/** Keep normalized fields and lazily computed lexemes for one verified snapshot.
+/** Prepare search text and lexemes on demand for one verified snapshot.
  * Return independent values so a consumer cannot edit the cached directory. */
 export function buildPrefixSearch<Row>(
   orderedRows: readonly Row[],
   fields: (row: Row) => readonly unknown[],
 ) {
-  const entries = orderedRows.map((row) => ({ row, text: searchText(fields(row)) }));
+  const entries = orderedRows.map<{ row: Row; text?: SearchText }>((row) => ({
+    row,
+  }));
   return (
     search: string | null | undefined,
     eligible: (row: Row) => boolean = () => true,
@@ -114,7 +115,12 @@ export function buildPrefixSearch<Row>(
     const rows: Row[] = [];
     for (const entry of entries) {
       if (rows.length === limit) break;
-      if (eligible(entry.row) && matches(entry.text)) rows.push(entry.row);
+      if (!eligible(entry.row)) continue;
+      if (matches) {
+        const text = (entry.text ??= searchText(fields(entry.row)));
+        if (!matches(text)) continue;
+      }
+      rows.push(entry.row);
     }
     return structuredClone(rows);
   };
