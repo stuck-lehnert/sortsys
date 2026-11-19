@@ -40,11 +40,10 @@ import {
 import { client } from "~/lib/client";
 import { attachmentPreviewKind } from "~/lib/attachmentPreview";
 import {
-  isDrawioAttachment,
   isGaebAttachment,
   isDwgAttachment,
-  isOnlyOfficeAttachment,
   isVideoAttachment,
+  projectFileEditor,
 } from "~/lib/projectFilePreview";
 import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
@@ -1109,10 +1108,7 @@ export default function ProjectFilesPage() {
       openDwgViewer(attachment);
     } else if (isVideoAttachment(attachment)) {
       openVideoViewer(attachment);
-    } else if (
-      isDrawioAttachment(attachment) ||
-      isOnlyOfficeAttachment(attachment)
-    ) {
+    } else if (projectFileEditor(attachment.fileName)) {
       openOfficeEditor(attachment);
     } else {
       setActiveFallbackFileId(attachment.id);
@@ -1646,7 +1642,7 @@ export default function ProjectFilesPage() {
           open
           passiveModal
           modalHeading={
-            isDrawioAttachment(activeOfficeFile)
+            projectFileEditor(activeOfficeFile.fileName) === "diagram"
               ? uiText("Diagramm", "Diagram")
               : uiText("Dokument", "Document")
           }

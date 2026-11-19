@@ -1,4 +1,5 @@
 import { attachmentPreviewKind } from "./attachmentPreview";
+import type { OfficeApplication } from "./cryptpadBridge";
 import { isGaebFile } from "@sortsys/gaeb";
 export { isGaebFile as isGaebAttachment } from "@sortsys/gaeb";
 
@@ -22,85 +23,35 @@ export function isDwgAttachment(file: FileMetadata) {
   );
 }
 
-export function isOnlyOfficeAttachment(file: FileMetadata) {
-  const extension = file.fileName.toLowerCase().split(".").pop();
+const spreadsheetExtensions = new Set([
+  "csv", "et", "ett", "fods", "numbers", "ods", "ots", "sxc",
+  "xls", "xlsb", "xlsm", "xlsx", "xlt", "xltm", "xltx",
+]);
 
-  return (
-    !!extension &&
-    new Set([
-      "csv",
-      "djvu",
-      "doc",
-      "docm",
-      "docx",
-      "dot",
-      "dotm",
-      "dotx",
-      "dps",
-      "dpt",
-      "epub",
-      "et",
-      "ett",
-      "fb2",
-      "fodp",
-      "fods",
-      "fodt",
-      "hml",
-      "htm",
-      "html",
-      "hwp",
-      "hwpx",
-      "key",
-      "md",
-      "mht",
-      "mhtml",
-      "numbers",
-      "odg",
-      "odp",
-      "ods",
-      "odt",
-      "otp",
-      "ots",
-      "ott",
-      "oxps",
-      "pages",
-      "pot",
-      "potm",
-      "potx",
-      "pps",
-      "ppsm",
-      "ppsx",
-      "ppt",
-      "pptm",
-      "pptx",
-      "rtf",
-      "stw",
-      "sxc",
-      "sxi",
-      "sxw",
-      "txt",
-      "vsdm",
-      "vsdx",
-      "vssm",
-      "vssx",
-      "vstm",
-      "vstx",
-      "wps",
-      "wpt",
-      "xls",
-      "xlsb",
-      "xlsm",
-      "xlsx",
-      "xlt",
-      "xltm",
-      "xltx",
-      "xps",
-    ]).has(extension)
-  );
-}
+const presentationExtensions = new Set([
+  "dps", "dpt", "fodp", "key", "odp", "otp", "pot", "potm", "potx",
+  "pps", "ppsm", "ppsx", "ppt", "pptm", "pptx", "sxi",
+]);
 
-export function isDrawioAttachment(file: FileMetadata) {
-  return file.fileName.toLocaleLowerCase().endsWith(".drawio");
+const documentExtensions = new Set([
+  "djvu", "doc", "docm", "docx", "dot", "dotm", "dotx", "epub", "fb2",
+  "fodt", "hml", "htm", "html", "hwp", "hwpx", "md", "mht", "mhtml",
+  "odg", "odt", "ott", "oxps", "pages", "rtf", "stw", "sxw", "txt",
+  "vsdm", "vsdx", "vssm", "vssx", "vstm", "vstx", "wps", "wpt", "xps",
+]);
+
+export function projectFileEditor(
+  fileName: string,
+): OfficeApplication | undefined {
+  const name = fileName.toLowerCase();
+  const extension = name.slice(name.lastIndexOf(".") + 1);
+
+  if (name.endsWith(".drawio")) return "diagram";
+  if (spreadsheetExtensions.has(extension)) return "sheet";
+  if (presentationExtensions.has(extension)) return "presentation";
+  if (documentExtensions.has(extension)) return "doc";
+
+  return undefined;
 }
 
 export function isVideoAttachment(file: FileMetadata) {
@@ -145,12 +96,9 @@ export function projectFilePreviewKind(file: FileMetadata) {
     return "video";
   }
 
-  if (isDrawioAttachment(file)) {
-    return "drawio";
-  }
-
-  if (isOnlyOfficeAttachment(file)) {
-    return "office";
+  const editor = projectFileEditor(file.fileName);
+  if (editor) {
+    return editor === "diagram" ? "drawio" : "office";
   }
 
   return file.kind === "image" ? "image" : null;

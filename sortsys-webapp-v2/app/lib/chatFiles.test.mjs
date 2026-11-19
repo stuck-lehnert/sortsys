@@ -9,8 +9,8 @@ import {
 } from "../components/AssistantMarkdown.tsx";
 import { projectFileHref, projectFileLinkTarget } from "./projectFileLinks.ts";
 import {
-  isOnlyOfficeAttachment,
   isVideoAttachment,
+  projectFileEditor,
   projectFilePreviewKind,
 } from "./projectFilePreview.ts";
 
@@ -307,11 +307,16 @@ test("shared office and video rules retain the project page's supported formats"
     "xltx",
     "xps",
   ]) {
-    assert.equal(
-      isOnlyOfficeAttachment({ fileName: `file.${extension}`, mimeType: "" }),
-      true,
-    );
+    assert.ok(projectFileEditor(`file.${extension}`), extension);
   }
+
+  assert.equal(projectFileEditor("Mengen.XLSX"), "sheet");
+  assert.equal(projectFileEditor("Mengen.fods"), "sheet");
+  assert.equal(projectFileEditor("Besprechung.PPTX"), "presentation");
+  assert.equal(projectFileEditor("Besprechung.fodp"), "presentation");
+  assert.equal(projectFileEditor("Protokoll.DOCX"), "doc");
+  assert.equal(projectFileEditor("Bauablauf.DRAWIO"), "diagram");
+  assert.equal(projectFileEditor("Plan.pdf"), undefined);
 
   for (const extension of [
     "3g2",

@@ -473,8 +473,11 @@ Lesen. Die API weist den alten Schreibvorgang ab, und ein berechtigtes Konto
 kann den Entwurf anschließend ausdrücklich übernehmen. Ein Chromium-Test
 mit dem echten Dienst prüft die Wiederverbindung nach einem API- und
 WebSocket-Abbruch und das automatische Speichern nach dem fehlgeschlagenen
-Upload. Weitere Office-Dateifunktionen brauchen noch einen Vergleich. Siehe
-[Editorprüfungen](editoren-ohne-klartextserver.md).
+Upload. Weitere Browserläufe prüfen bei XLSX eine blattübergreifende
+Neuberechnung und bei PPTX ein neu eingefügtes Textfeld. Sie prüfen für beide
+Formate das automatische Speichern im Editor und das erneute Öffnen mit
+Leserechten. Komplexere Tabellen und Präsentationslayouts sind noch zu
+prüfen. Siehe [Editorprüfungen](editoren-ohne-klartextserver.md).
 
 **diagrams.net.** Diagramme verwenden denselben geschützten Editorablauf und
 dieselbe verschlüsselte Projektablage wie Office-Dateien. Der echte Diensttest

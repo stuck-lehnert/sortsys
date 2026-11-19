@@ -10,28 +10,9 @@ import {
   readOfficeDraft,
 } from "~/lib/officeDraft";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
+import { projectFileEditor } from "~/lib/projectFilePreview";
 import { MyButton } from "./MyButton";
 import { MyCallout } from "./MyCallout";
-
-function application(
-  file: string,
-): "doc" | "sheet" | "presentation" | "diagram" {
-  const extension = file.toLowerCase().split(".").pop() ?? "";
-  if (extension === "drawio") return "diagram";
-  if (
-    /^(?:csv|xls[xbm]?|xlt[xm]?|ods|ots|fods|numbers|et|ett|sxc)$/.test(
-      extension,
-    )
-  )
-    return "sheet";
-  if (
-    /^(?:ppt[xm]?|pps[xm]?|pot[xm]?|odp|otp|fodp|key|dps|dpt|sxi)$/.test(
-      extension,
-    )
-  )
-    return "presentation";
-  return "doc";
-}
 
 /** File bytes, capabilities and saves stay in the browser. A policy reset
  * removes the iframe synchronously, before another room can receive data. */
@@ -239,6 +220,7 @@ export function ProtectedOfficeEditor({
       canEdit = session.canEdit;
       let content = session.document;
       let fileName = session.fileName;
+      const application = projectFileEditor(fileName) ?? "doc";
       let recovered: OfficeDraftRecovery | undefined;
       if (session.previousSession) {
         const useConfirmed =
@@ -269,16 +251,13 @@ export function ProtectedOfficeEditor({
             editorOrigin: session.editorOrigin,
             document: content,
             fileName,
-            application: application(fileName),
+            application,
             locale,
             viewKey: session.previousSession.viewKey,
             signal: AbortSignal.any([context, controller.signal]),
           });
           live();
-          fileName = officeDraftFormat(
-            fileName,
-            application(fileName),
-          ).fileName;
+          fileName = officeDraftFormat(fileName, application).fileName;
           recoveryFrame.remove();
           recoveryFrame = undefined;
         }
@@ -296,7 +275,7 @@ export function ProtectedOfficeEditor({
         editorOrigin: session.editorOrigin,
         document: content,
         fileName,
-        application: application(fileName),
+        application,
         locale,
         canEdit: session.canEdit && !review,
         accessKey: review ? undefined : session.accessKey,

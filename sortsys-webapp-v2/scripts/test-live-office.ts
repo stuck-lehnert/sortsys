@@ -13,6 +13,7 @@ import {
 } from "playwright";
 import { observeWorkerTraffic } from "./lib/workerTraffic";
 import { officeTestDocument, serveOfficeTestPage } from "./lib/officeTestPage";
+import { createBlankProjectFile } from "../app/lib/blankProjectFiles";
 
 if (process.env.SORTSYS_DISPOSABLE_OFFICE_TEST !== "1")
   throw new Error("A disposable Office test installation is required");
@@ -25,6 +26,8 @@ const edit = "_EDITED_IN_BROWSER";
 const peerEdit = "_SECOND_COLLABORATOR";
 const unconfirmedDraft = "_UNCONFIRMED_DRAFT_FOR_REKEY";
 const oldRoomEdit = "_OLD_ROOM_AFTER_REKEY";
+const presentationName = "Baustellenbesprechung.pptx";
+const presentationText = "VERTRAULICHER_FOLIENTEXT_73451";
 const diagramInitialA = "SORTSYS_PRIVATE_DIAGRAM_A";
 const diagramInitialB = "SORTSYS_PRIVATE_DIAGRAM_B";
 const diagramEditA = "SORTSYS_PRIVATE_DIAGRAM_EDIT_A";
@@ -44,6 +47,8 @@ const privateMarkers = [
   "Proof.docx",
   "MENGEN_PRIVATE_OFFICE",
   "Mengen.xlsx",
+  presentationName,
+  presentationText,
   diagramInitialA,
   diagramInitialB,
   diagramEditA,
@@ -60,10 +65,18 @@ function diagramImageCell(id: string, png: string) {
   </mxCell>`;
 }
 
-function diagramExport(page: Page) {
-  return page.evaluate(async () =>
-    (await window.officeTest.bridge!.export("drawio")).text(),
-  );
+async function waitForSharedDiagramExport(page: Page) {
+  // The graph frame can show remote edits before the room can export them.
+  const deadline = performance.now() + 15_000;
+  do {
+    const xml = await page.evaluate(async () =>
+      (await window.officeTest.bridge!.export("drawio")).text(),
+    );
+    if (xml.includes(diagramEditA) && xml.includes(diagramEditB)) return xml;
+    await Bun.sleep(250);
+  } while (performance.now() < deadline);
+
+  throw new Error("The native diagram export did not include both shared edits");
 }
 
 async function checkSharedDiagram(page: Page, xml: string) {
@@ -258,6 +271,58 @@ try {
   };
   observeEditorContext(context);
   const auxiliaries: BrowserContext[] = [];
+  type EditorSettings = NonNullable<Parameters<Window["startOffice"]>[2]>;
+
+  async function openOfficeFile(
+    bytes: number[],
+    settings: EditorSettings,
+    label: string,
+  ) {
+    const editorContext = await browser!.newContext({
+      viewport: { width: 1280, height: 900 },
+    });
+    auxiliaries.push(editorContext);
+    observeEditorContext(editorContext);
+    const editorPage = await editorContext.newPage();
+    observePage(editorPage, label);
+    await editorPage.goto(server.url.href);
+    await editorPage.waitForFunction(
+      () => typeof window.startOffice === "function",
+    );
+    await editorPage.evaluate(
+      ({ bytes, origin, settings }) =>
+        window.startOffice(bytes, origin, settings),
+      { bytes, origin, settings },
+    );
+    await editorPage.waitForFunction(
+      () => window.officeTest.ready || window.officeTest.errors > 0,
+      undefined,
+      { timeout: 120_000 },
+    );
+    assert.equal(
+      await editorPage.evaluate(() => window.officeTest.errors),
+      0,
+      label,
+    );
+    return editorPage;
+  }
+
+  function exportOfficeFile(page: Page, format: "xlsx" | "pptx" | "pdf") {
+    return page.evaluate(async (format) => {
+      const file = await window.officeTest.bridge!.export(format);
+      return Array.from(new Uint8Array(await file.arrayBuffer()));
+    }, format);
+  }
+
+  async function nextAutosave(page: Page, previousCount: number) {
+    await page.waitForFunction(
+      (count) => window.officeTest.saved.length > count,
+      previousCount,
+      { timeout: 35_000 },
+    );
+    return page.evaluate((index) => window.officeTest.saved[index]!, previousCount);
+  }
+
   const documentText = async (bytes: number[]) => {
     const saved = await JSZip.loadAsync(new Uint8Array(bytes));
     return (await saved.file("word/document.xml")!.async("string")).replace(
@@ -711,47 +776,32 @@ try {
       extension: "png",
     });
     sheet.addImage(image, "A5:B7");
+    workbook.addWorksheet("Übersicht").getCell("A1").value = {
+      formula: "Mengen!D2",
+      result: 15.23275,
+    };
     const spreadsheet = Array.from(
       new Uint8Array(await workbook.xlsx.writeBuffer()),
     );
-    const sheetContext = await browser.newContext();
-    auxiliaries.push(sheetContext);
-    observeEditorContext(sheetContext);
-    const sheetPage = await sheetContext.newPage();
-    await sheetPage.goto(server.url.href);
-    observePage(sheetPage, "Sheet");
-    await sheetPage.waitForFunction(
-      () => typeof window.startOffice === "function",
+    const sheetSettings: EditorSettings = {
+      fileName: "Mengen.xlsx",
+      application: "sheet",
+    };
+    const sheetPage = await openOfficeFile(
+      spreadsheet,
+      sheetSettings,
+      "Spreadsheet editor",
     );
-    await sheetPage.evaluate(
-      ({ bytes, origin }) =>
-        window.startOffice(bytes, origin, {
-          fileName: "Mengen.xlsx",
-          application: "sheet",
-        }),
-      { bytes: spreadsheet, origin },
-    );
-    await sheetPage.waitForFunction(
-      () => window.officeTest.ready || window.officeTest.errors > 0,
-      undefined,
-      { timeout: 120000 },
-    );
-    assert.equal(await sheetPage.evaluate(() => window.officeTest.errors), 0);
     console.log("Office proof: spreadsheet editor ready");
-    const exportedSheet = await sheetPage.evaluate(async () =>
-      Array.from(
-        new Uint8Array(
-          await (await window.officeTest.bridge!.export("xlsx")).arrayBuffer(),
-        ),
-      ),
+    async function readWorkbook(bytes: number[]) {
+      const exportedWorkbook = new ExcelJS.Workbook();
+      await exportedWorkbook.xlsx.load(new Uint8Array(bytes).buffer);
+      return exportedWorkbook;
+    }
+    const converted = await readWorkbook(
+      await exportOfficeFile(sheetPage, "xlsx"),
     );
-    const converted = new ExcelJS.Workbook();
-    await converted.xlsx.load(
-      new Uint8Array(exportedSheet) as unknown as Parameters<
-        typeof converted.xlsx.load
-      >[0],
-    );
-    const convertedSheet = converted.getWorksheet("Mengen")!;
+    const convertedSheet = converted.getWorksheet("Mengen");
     assert.ok(convertedSheet);
     assert.equal(convertedSheet.getCell("A1").value, "MENGEN_PRIVATE_OFFICE");
     assert.equal(convertedSheet.getCell("A1").font.bold, true);
@@ -768,14 +818,130 @@ try {
     console.log(
       "Office proof: spreadsheet formula, style, header and image round-trip verified",
     );
-    const pdf = await sheetPage.evaluate(async () =>
-      Array.from(
-        new Uint8Array(
-          await (await window.officeTest.bridge!.export("pdf")).arrayBuffer(),
-        ),
-      ),
-    );
+    const pdf = await exportOfficeFile(sheetPage, "pdf");
     assert.equal(Buffer.from(pdf).subarray(0, 5).toString(), "%PDF-");
+
+    await nextAutosave(sheetPage, 0);
+    const sheetSaveCount = await sheetPage.evaluate(
+      () => window.officeTest.saved.length,
+    );
+    const sheetFrame = sheetPage.frame({ url: /\/spreadsheeteditor\/main\// });
+    assert.ok(sheetFrame);
+    const selectedCell = sheetFrame.locator("#ce-cell-name");
+    await selectedCell.fill("B2");
+    await selectedCell.press("Enter");
+    const cellValue = sheetFrame.locator("#ce-cell-content");
+    assert.equal(await cellValue.inputValue(), "5.375");
+    await cellValue.selectText();
+    await cellValue.pressSequentially("6");
+    await cellValue.press("Enter");
+
+    function assertRecalculated(workbook: ExcelJS.Workbook) {
+      const quantities = workbook.getWorksheet("Mengen");
+      const overview = workbook.getWorksheet("Übersicht");
+      assert.ok(quantities && overview);
+      const product = quantities.getCell("D2");
+      const total = overview.getCell("A1");
+      assert.equal(quantities.getCell("B2").value, 6);
+      assert.equal(product.formula, "B2*C2");
+      assert.match(total.formula ?? "", /^(?:Mengen|'Mengen')!D2$/);
+      for (const cell of [product, total]) {
+        assert.ok(Math.abs(Number(cell.result) - 17.004) < 1e-9);
+      }
+    }
+    assertRecalculated(
+      await readWorkbook(await nextAutosave(sheetPage, sheetSaveCount)),
+    );
+    const sheetRoom = await sheetPage.evaluate(() => window.officeTest.session);
+    assert.ok(sheetRoom);
+    const sheetReader = await openOfficeFile(
+      spreadsheet,
+      { ...sheetSettings, canEdit: false, accessKey: sheetRoom.viewKey },
+      "Spreadsheet reader",
+    );
+    assertRecalculated(
+      await readWorkbook(await exportOfficeFile(sheetReader, "xlsx")),
+    );
+    assert.equal(
+      await sheetReader.evaluate(() => window.officeTest.saved.length),
+      0,
+    );
+    console.log(
+      "Office proof: XLSX keyboard autosave and cross-sheet totals seen by a reader",
+    );
+
+    const blankPresentation = await createBlankProjectFile(
+      "pptx",
+      presentationName,
+    );
+    const presentation = Array.from(
+      new Uint8Array(await blankPresentation.arrayBuffer()),
+    );
+    const slideSettings: EditorSettings = {
+      fileName: presentationName,
+      application: "presentation",
+    };
+    const slidePage = await openOfficeFile(
+      presentation,
+      slideSettings,
+      "Presentation editor",
+    );
+    await nextAutosave(slidePage, 0);
+    const slideSaveCount = await slidePage.evaluate(
+      () => window.officeTest.saved.length,
+    );
+    const slideFrame = slidePage.frame({ url: /\/presentationeditor\/main\// });
+    assert.ok(slideFrame);
+    const intro = slideFrame.getByText("Got it", { exact: true });
+    if (await intro.isVisible()) await intro.click();
+    await slideFrame
+      .locator('[id^="tlbtn-inserttext-"]:visible .inner-box-icon')
+      .click();
+    const slide = await slideFrame.locator("#id_viewer").boundingBox();
+    assert.ok(slide);
+    await slidePage.mouse.move(
+      slide.x + slide.width * 0.27,
+      slide.y + slide.height * 0.32,
+    );
+    await slidePage.mouse.down();
+    await slidePage.mouse.move(
+      slide.x + slide.width * 0.72,
+      slide.y + slide.height * 0.5,
+      { steps: 8 },
+    );
+    await slidePage.mouse.up();
+    await slidePage.keyboard.type(presentationText);
+    await slidePage.keyboard.press("Escape");
+
+    async function assertPresentation(bytes: number[]) {
+      const archive = await JSZip.loadAsync(Buffer.from(bytes));
+      const metadata = await archive.file("ppt/presentation.xml")!.async("string");
+      const slide = await archive.file("ppt/slides/slide1.xml")!.async("string");
+      assert.match(
+        metadata,
+        /<p:sldSz\b[^>]*\bcx="12192000"[^>]*\bcy="6858000"/,
+      );
+      assert.ok(slide.includes(`<a:t>${presentationText}</a:t>`));
+    }
+    await assertPresentation(await nextAutosave(slidePage, slideSaveCount));
+    const presentationRoom = await slidePage.evaluate(
+      () => window.officeTest.session,
+    );
+    assert.ok(presentationRoom);
+    const slideReader = await openOfficeFile(
+      presentation,
+      { ...slideSettings, canEdit: false, accessKey: presentationRoom.viewKey },
+      "Presentation reader",
+    );
+    await assertPresentation(await exportOfficeFile(slideReader, "pptx"));
+    assert.equal(
+      await slideReader.evaluate(() => window.officeTest.saved.length),
+      0,
+    );
+    console.log(
+      "Office proof: PPTX text box and slide dimensions preserved in autosave and read-only room",
+    );
+
     const detail = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
       ${diagramImageCell("detail-image", detailImage)}</root></mxGraphModel>`;
     const compressedDetail = deflateRawSync(encodeURIComponent(detail)).toString(
@@ -896,7 +1062,10 @@ try {
         .locator(".geDiagramContainer")
         .getByText(diagramEditB, { exact: true })
         .waitFor();
-      await checkSharedDiagram(editor.page, await diagramExport(editor.page));
+      await checkSharedDiagram(
+        editor.page,
+        await waitForSharedDiagramExport(editor.page),
+      );
       await waitForDiagramImage(editor.drawing, planImage);
       await editor.drawing
         .locator(".gePageTab")
@@ -923,7 +1092,7 @@ try {
     );
     await checkSharedDiagram(
       readOnlyDiagram.page,
-      await diagramExport(readOnlyDiagram.page),
+      await waitForSharedDiagramExport(readOnlyDiagram.page),
     );
     assert.equal(readOnlyDiagram.imageUploads.size, 0);
     assert.equal(
@@ -1025,7 +1194,18 @@ try {
       false,
       "The test must inspect every outbound payload within its capture budget",
     );
-    await assertPrivateBrowserState(sheetContext);
+    await assertPrivateBrowserState(sheetPage.context(), [
+      sheetRoom.editKey,
+      sheetRoom.viewKey,
+    ]);
+    await assertPrivateBrowserState(sheetReader.context(), [sheetRoom.viewKey]);
+    await assertPrivateBrowserState(slidePage.context(), [
+      presentationRoom.editKey,
+      presentationRoom.viewKey,
+    ]);
+    await assertPrivateBrowserState(slideReader.context(), [
+      presentationRoom.viewKey,
+    ]);
     for (const key of [
       result.session.editKey,
       result.session.viewKey,
@@ -1033,6 +1213,10 @@ try {
       replacementRoom.viewKey,
       diagramSession.editKey,
       diagramSession.viewKey,
+      sheetRoom.editKey,
+      sheetRoom.viewKey,
+      presentationRoom.editKey,
+      presentationRoom.viewKey,
     ]) {
       for (const secret of [key, key.split("/").filter(Boolean).at(-1)!]) {
         assert.ok(
@@ -1054,7 +1238,7 @@ try {
       }
     }
     console.log(
-      "Real private editors verified: DOCX and Drawio collaboration, native diagram draft recovery, read-only shared export, XLSX formulas/formats/header/image, local PDF conversion, encrypted-block uploads and blocked plaintext server routes.",
+      "Real private editors verified: DOCX and Drawio collaboration, XLSX and PPTX keyboard autosave and read-only rooms, cross-sheet calculations, diagram draft recovery, local PDF conversion and protected traffic.",
     );
     console.log(
       `Inspected ${sentFrames.length} outbound WebSocket frames (${sentFrameBytes} bytes)`,

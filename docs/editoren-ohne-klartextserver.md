@@ -292,13 +292,20 @@ Klartext-Download-, Callback- und Konvertierungswege werden getrennt auf ihre
 Sperre geprüft. Das ist keine vollständige Untersuchung aller Speicher- und
 Netzwerkwege beliebiger Dokumente.
 
-Eine erzeugte XLSX-Tabelle wurde ebenfalls im echten Editor geöffnet und wieder
-ausgelesen. Der Vergleich prüft eine Multiplikationsformel samt Ergebnis,
-Flächen- und Währungsformate, einen fett gesetzten Titel, eine Kopfzeile und ein
-eingebettetes PNG. Die anschließende PDF-Ausgabe verwendet den Druckpuffer des
-Editors und die WASM-Konvertierung im Browser. Ein Quellpatch verbindet diesen
-Druckweg mit CryptPads Integrationsschnittstelle; der Build bricht ab, wenn die
-erwarteten Stellen im festgelegten Quellstand fehlen.
+Bei XLSX ändert der Test eine Menge per Tastatur. Er prüft die automatische
+Speicherung und das neu berechnete Ergebnis, das auch ein zweites Tabellenblatt
+referenziert. Der Export enthält weiterhin die Formeln, Flächen- und
+Währungsformate, einen fett gesetzten Titel, eine Kopfzeile und ein eingebettetes
+PNG. Die PDF-Ausgabe verwendet den Druckpuffer des Editors und die
+WASM-Konvertierung im Browser. Ein Quellpatch verbindet diesen Druckweg mit
+CryptPads Integrationsschnittstelle. Der Build bricht ab, wenn die erwarteten
+Stellen im festgelegten Quellstand fehlen.
+
+Bei PPTX fügt der Test ein Textfeld in eine von sortsys erzeugte Präsentation
+ein. Text und Folienformat (16:9) bleiben beim automatischen Speichern erhalten.
+Für beide Formate öffnet ein zweiter Browserkontext den gleichen Raum mit
+Leserechten. Er kann den neuen Stand herunterladen und löst dabei keinen
+Speichervorgang aus.
 
 Das Skript [test-office](../scripts/test-office) baut einen eigenen Testdienst,
 wählt freie Loopback-Ports und führt den
@@ -320,9 +327,8 @@ TEST_OFFICE_PERMISSIONS=1 CONTAINER_RUNTIME=docker ./scripts/test-office
 
 Der weitere Funktionsabgleich muss mehr Formeln und Zahlenformate,
 Bildbearbeitung, komplexe Kopf- und Fußzeilen, Präsentationslayouts und
-gleichzeitige Änderungen derselben Inhalte abdecken. Auch die Wiederverbindung
-nach einem Verbindungsabbruch während des Schreibens ist noch zu prüfen. Vor der
-Ablösung sind außerdem die bisherigen Klartextkopien und Caches des
-Dokumentservers zu berücksichtigen.
+gleichzeitige Änderungen derselben Inhalte abdecken. Die Wiederverbindung
+während der Bearbeitung ist bisher für DOCX geprüft. Vor der Ablösung sind die
+bisherigen Klartextkopien und Caches des Dokumentservers zu berücksichtigen.
 Bereits angelegte Betreiberbackups werden durch einen neuen Editor nicht
 nachträglich verschlüsselt.

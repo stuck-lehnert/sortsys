@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import { build, serve } from "bun";
 import JSZip from "jszip";
+import type {
+  OfficeApplication,
+  OfficeSession,
+} from "../../app/lib/cryptpadBridge";
 
 export async function officeTestDocument(text: string) {
   const zip = new JSZip();
@@ -114,8 +118,8 @@ declare global {
   interface Window {
     publishOfficeRoom?: (
       previous: string | null,
-      proposed: { editKey: string; viewKey: string },
-    ) => Promise<{ editKey: string; viewKey: string }>;
+      proposed: OfficeSession,
+    ) => Promise<OfficeSession>;
     startOffice: (
       bytes: number[],
       origin: string,
@@ -124,7 +128,7 @@ declare global {
         accessKey?: string;
         viewKey?: string;
         fileName?: string;
-        application?: "doc" | "sheet" | "presentation" | "diagram";
+        application?: OfficeApplication;
       },
     ) => void;
     recoverOfficeDraft: (
@@ -133,7 +137,7 @@ declare global {
       viewKey: string,
       settings?: {
         fileName?: string;
-        application?: "doc" | "sheet" | "presentation" | "diagram";
+        application?: OfficeApplication;
       },
     ) => Promise<number[]>;
     officeTest: {
@@ -142,7 +146,7 @@ declare global {
       saved: number[][];
       holdSaves: boolean;
       pending: number[][];
-      session: { editKey: string; viewKey: string } | null;
+      session: OfficeSession | null;
       bridge?: ReturnType<
         (typeof import("../../app/lib/cryptpadBridge"))["openCryptPad"]
       >;

@@ -3,12 +3,14 @@
  * No source URL, server callback or document key is placed in an HTTP request.
  */
 export type OfficeSession = { editKey: string; viewKey: string };
+export type OfficeApplication = "doc" | "sheet" | "presentation" | "diagram";
+
 type Options = {
   iframe: HTMLIFrameElement;
   editorOrigin: string;
   document: Blob;
   fileName: string;
-  application: "doc" | "sheet" | "presentation" | "diagram";
+  application: OfficeApplication;
   locale: "de" | "en";
   canEdit: boolean;
   /** Project rooms must survive service restarts; unsaved exports are temporary. */
