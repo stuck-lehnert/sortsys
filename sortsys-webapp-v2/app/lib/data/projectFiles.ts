@@ -13,11 +13,7 @@ import {
 import { unlockedAccount } from "../crypto/session";
 import type { FileInspection } from "../fileInspection";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
-import {
-  createBusinessDatabase,
-  type BusinessDatabase,
-  type DuckDriver,
-} from "./database";
+import { createBusinessDatabase, type DuckDriver } from "./database";
 import {
   protectedCollection,
   protectedCollections,
@@ -128,7 +124,6 @@ export function createProtectedProjectFiles(
     throw new InvalidProtectedData();
   }
   let stores = new Map<string, Store>();
-  let database: BusinessDatabase | null = null;
   let closed = false;
   let pending: Promise<unknown> = Promise.resolve();
   let searchController: AbortController | null = null;
@@ -161,9 +156,6 @@ export function createProtectedProjectFiles(
       store.collection.close();
     }
     stores.clear();
-    const old = database;
-    database = null;
-    await old?.close();
   }
   const abort = () => {
     void close().catch(() => undefined);
@@ -181,11 +173,11 @@ export function createProtectedProjectFiles(
       ...projectFileEntries(id, objects),
     };
   }
-  async function projected(candidate: Map<string, Store>) {
-    const next = await createBusinessDatabase(await driver?.());
+  async function validateFileRows(candidate: Map<string, Store>) {
+    const database = await createBusinessDatabase(await driver?.());
     try {
       await projectFacetRows(
-        next,
+        database,
         [...candidate.values()].flatMap((store) => [
           ...[...store.files.values()].flatMap((payload) =>
             payload.file ? [payload.file] : [],
@@ -196,12 +188,10 @@ export function createProtectedProjectFiles(
         ]),
         EXTERNAL,
       );
-      live();
-      return next;
-    } catch (error) {
-      await next.close();
-      throw error;
+    } finally {
+      await database.close();
     }
+    live();
   }
   async function reload(
     ids: string[],
@@ -210,24 +200,19 @@ export function createProtectedProjectFiles(
   ) {
     const candidate = new Map(stores);
     const opened: Collection[] = [];
-    let changed = !database;
-    let next: BusinessDatabase | null = null;
+    let changed = false;
     try {
+      const pages = ids.map((id) => ({
+        area: fileCollection(id),
+        known: stores.get(id)?.head,
+      }));
+      const selectedDomains = pages.length > 0 && pages.length <= 16
+        ? pages.map(({ area }) => area.domain)
+        : undefined;
       const open =
         openedCollections ??
-        (await protectedCollections(
-          client,
-          signal,
-          ids.length > 0 && ids.length <= 16
-            ? ids.map((id) => fileCollection(id).domain)
-            : undefined,
-        ));
-      await open.prefetch(
-        ids.map((id) => ({
-          area: fileCollection(id),
-          known: stores.get(id)?.head,
-        })),
-      );
+        (await protectedCollections(client, signal, selectedDomains, pages));
+      await open.prefetch(pages);
       if (visible) {
         for (const id of candidate.keys()) {
           if (!visible.has(id)) {
@@ -262,27 +247,20 @@ export function createProtectedProjectFiles(
         }
       }
       if (changed) {
-        next = await projected(candidate);
+        await validateFileRows(candidate);
       }
       live();
       const previous = stores;
-      const old = changed ? database : null;
       stores = candidate;
-      if (changed) {
-        database = next;
-        next = null;
-      }
       for (const [id, store] of previous) {
         if (candidate.get(id) !== store) {
           store.collection.close();
         }
       }
-      await old?.close();
     } catch (error) {
       for (const collection of opened) {
         collection.close();
       }
-      await next?.close();
       throw error;
     }
   }
@@ -426,9 +404,7 @@ export function createProtectedProjectFiles(
     }
     const candidate = new Map(stores);
     candidate.set(projectId, decoded(store.collection, objects, projectId));
-    const check = await projected(candidate);
-    await check.close();
-    live();
+    await validateFileRows(candidate);
     const packets: MutateInput<"zerotrust.objects.save">[] = [];
     for (const [id, value] of changes) {
       const previous = store.objects.get(id)?.envelope;
@@ -1009,19 +985,19 @@ export function createProtectedProjectFiles(
         if (!domains) {
           const ids = await readableFileAreas(client, signal);
           await reload(ids, new Set(ids));
-        } else {
-          for (const [domain, minimum] of Object.entries(domains)) {
-            const id = fileDomainId(domain);
-            if (
-              id &&
-              (!stores.get(id) ||
-                !minimum ||
-                BigInt(stores.get(id)!.head) < BigInt(minimum))
-            ) {
-              await reload([id]);
-            }
+          return;
+        }
+
+        const ids: string[] = [];
+        for (const [domain, minimum] of Object.entries(domains)) {
+          const id = fileDomainId(domain);
+          if (!id) continue;
+          const current = stores.get(id);
+          if (!current || !minimum || BigInt(current.head) < BigInt(minimum)) {
+            ids.push(id);
           }
         }
+        if (ids.length) await reload(ids);
       });
     },
     blob(
