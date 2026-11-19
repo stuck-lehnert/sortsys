@@ -10,6 +10,7 @@ export * from "./recovery";
 export * from "./recoveryAccounts";
 export * from "./recoveryInventory";
 export * from "./policy";
+export * from "./organizationRoles";
 export * from "./vault";
 export * from "./passkeyVault";
 export * from "./webauthn";

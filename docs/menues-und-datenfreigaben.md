@@ -137,6 +137,21 @@ native Mehrinstanztest entzieht einem Mitarbeiter den Katalogzugriff, während
 sein Produktformular mit einem ungespeicherten Entwurf geöffnet ist. Formular
 und Kataloginhalte müssen daraufhin aus seiner Oberfläche verschwinden.
 
+## Fachrollen für Büro und Einkauf
+
+Unter **Berechtigungen verwalten → Fachrollen** kann die Verwaltung einem
+Benutzerkonto die Rollen **Büro** und **Einkauf** zuweisen. Im Büro lassen
+sich Kunden und Ansprechpartner anlegen und bearbeiten sowie Produkte
+nachschlagen. Im Einkauf lassen sich Produkte, Lieferanten und Preisaufzeichnungen
+pflegen. Die Rollen gelten auch für neue Einträge in diesen Katalogen.
+
+Beide Rollen können gleichzeitig vergeben werden. Eine ausdrückliche Sperre
+in einer Einzelfreigabe hat Vorrang. Beim Entzug einer Rolle bleiben die
+individuell erteilten Rechte und andere Rollenzuweisungen wirksam. Verliert das
+Konto dadurch seinen Lesezugriff, wechselt sortsys den Schlüssel für den
+betroffenen Bereich. Nach einer Mandantenwiederherstellung bestätigt die
+Verwaltung die Konten und weist ihnen ihre Fachrollen erneut zu.
+
 ## Freigabevorlagen für Projekte
 
 Unter **Berechtigungen verwalten → Projektzugriff** lässt sich für das

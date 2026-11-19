@@ -83,6 +83,9 @@ ersetzt diesen Vergleich nicht.
 
 Anwendungsspezifische Regelherkünfte können über `policy.validateRuleOrigin`
 geprüft werden. Ohne diese Erweiterung werden Regeln mit `origin` abgelehnt.
+`policy.validateRules` prüft anschließend die gesamte Liste, etwa wenn eine
+Rollenzuweisung mehrere vorgeschriebene Regeln gemeinsam enthalten muss.
+Die serverseitige Prüfung muss dieselben Bedingungen anwenden.
 `policy.validateSuspendedSubject` erlaubt zusätzliche Beschränkungen des
 Benutzerkennungsformats. Dieselben fachlichen Beschränkungen müssen auch auf
 der Serverseite gelten.

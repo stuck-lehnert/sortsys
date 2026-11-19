@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use std::collections::{HashMap, HashSet};
 use ts_rs::TS;
 
 use super::crypto::invalid;
@@ -71,10 +72,71 @@ pub(super) struct Rule {
     pub origin: Option<RuleOrigin>,
 }
 
-#[derive(Clone, Copy, Deserialize, Serialize, TS)]
+#[derive(Clone, Copy, PartialEq, Eq, Hash, Deserialize, Serialize, TS)]
+#[serde(rename_all = "kebab-case")]
 pub(super) enum RuleOrigin {
-    #[serde(rename = "absence-default")]
     AbsenceDefault,
+    OrganizationOffice,
+    OrganizationProcurement,
+}
+
+type RoleArea = (&'static str, Facet, &'static [Action]);
+
+impl RuleOrigin {
+    fn name(self) -> &'static str {
+        match self {
+            Self::AbsenceDefault => "absence-default",
+            Self::OrganizationOffice => "organization-office",
+            Self::OrganizationProcurement => "organization-procurement",
+        }
+    }
+
+    fn role_areas(self) -> Option<&'static [RoleArea]> {
+        const READ: &[Action] = &[Action::Read];
+        const EDIT: &[Action] = &[Action::Read, Action::Create, Action::Update];
+        match self {
+            Self::AbsenceDefault => None,
+            Self::OrganizationOffice => Some(&[
+                ("catalog:customers", Facet::MasterData, EDIT),
+                ("catalog:contacts", Facet::MasterData, EDIT),
+                ("catalog:products", Facet::MasterData, READ),
+            ]),
+            Self::OrganizationProcurement => Some(&[
+                ("catalog:products", Facet::MasterData, EDIT),
+                ("catalog:vendors", Facet::MasterData, EDIT),
+                ("catalog:products", Facet::Procurement, EDIT),
+            ]),
+        }
+    }
+}
+
+#[cfg(test)]
+mod role_tests {
+    use super::*;
+
+    #[test]
+    fn organization_roles_require_all_areas_and_only_fixed_actions() {
+        let origin = RuleOrigin::OrganizationOffice;
+        let role = origin.role_areas().unwrap();
+        let mut rules: Vec<_> = role
+            .iter()
+            .map(|(scope, facet, actions)| Rule {
+                subject: "user:4".into(),
+                scope: (*scope).into(),
+                facet: *facet,
+                actions: actions.to_vec(),
+                effect: Effect::Allow,
+                origin: Some(origin),
+            })
+            .collect();
+        assert!(validate_rule_origins(&rules).is_ok());
+        assert!(validate_rule_origins(&rules[..2]).is_err());
+        rules.push(rules[0].clone());
+        assert!(validate_rule_origins(&rules).is_err());
+        rules.pop();
+        rules[0].actions.push(Action::Delete);
+        assert!(validate_rule_origins(&rules).is_err());
+    }
 }
 
 pub(super) use sortsys_zerotrust::policy::PolicyTransaction;
@@ -105,17 +167,25 @@ impl Rule {
             facet: self.facet.name(),
             actions: &self.actions,
             effect: self.effect,
-            origin: self.origin.map(|origin| match origin {
-                RuleOrigin::AbsenceDefault => "absence-default",
-            }),
+            origin: self.origin.map(RuleOrigin::name),
         }
     }
 
     fn validate_application_origin(&self) -> RpcResult<()> {
-        if self.origin.is_none() {
+        let Some(origin) = self.origin else {
             return Ok(());
-        }
+        };
         let subject = self.subject.strip_prefix("user:").ok_or_else(invalid)?;
+        if self.effect != Effect::Allow {
+            return Err(invalid());
+        }
+        validate_rule_id(subject)?;
+        if let Some(areas) = origin.role_areas() {
+            let valid = areas.iter().any(|(scope, facet, actions)| {
+                *scope == self.scope && *facet == self.facet && *actions == self.actions
+            });
+            return if valid { Ok(()) } else { Err(invalid()) };
+        }
         let personnel_read = self.facet == Facet::Scope
             && self.actions.iter().all(|action| *action == Action::Read)
             && self.scope.starts_with("personnel:");
@@ -125,15 +195,7 @@ impl Rule {
             "absence:"
         };
         let target = self.scope.strip_prefix(scope_prefix).ok_or_else(invalid)?;
-        for value in [subject, target] {
-            let id = crate::ids::Id::decode(value).map_err(|_| invalid())?;
-            if id.0 <= 0 || id.encode() != value {
-                return Err(invalid());
-            }
-        }
-        if self.effect != Effect::Allow {
-            return Err(invalid());
-        }
+        validate_rule_id(target)?;
         for action in &self.actions {
             let permitted = match self.facet {
                 Facet::MasterData => {
@@ -149,6 +211,38 @@ impl Rule {
         }
         Ok(())
     }
+}
+
+fn validate_rule_id(value: &str) -> RpcResult<()> {
+    let id = crate::ids::Id::decode(value).map_err(|_| invalid())?;
+    if id.0 <= 0 || id.encode() != value {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
+fn validate_rule_origins(rules: &[Rule]) -> RpcResult<()> {
+    let mut assignments = HashMap::<_, (usize, HashSet<_>)>::new();
+    for rule in rules {
+        rule.validate_application_origin()?;
+        if let Some(origin) = rule.origin
+            && let Some(role_areas) = origin.role_areas()
+        {
+            let (_, actual) = assignments
+                .entry((&rule.subject, origin))
+                .or_insert_with(|| (role_areas.len(), HashSet::new()));
+            if !actual.insert((&rule.scope, rule.facet.name())) {
+                return Err(invalid());
+            }
+        }
+    }
+    if assignments
+        .values()
+        .any(|(expected, actual)| actual.len() != *expected)
+    {
+        return Err(invalid());
+    }
+    Ok(())
 }
 
 impl SignedPolicy {
@@ -194,9 +288,7 @@ impl SignedPolicy {
                 }
             }
         }
-        for rule in &self.rules {
-            rule.validate_application_origin()?;
-        }
+        validate_rule_origins(&self.rules)?;
         self.as_protocol().frame().map_err(Into::into)
     }
 

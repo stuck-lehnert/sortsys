@@ -3016,6 +3016,72 @@ try {
     }
   });
   await scenario(
+    "office-and-purchasing-roles",
+    async (page) => {
+      const memberServer = await applicationServer(applicationBuild, endpoints[0]);
+      servers.add(memberServer);
+      const memberContext = await applicationContext();
+      const member = await memberContext.newPage();
+      const memberAudit = auditPage(member);
+      try {
+        await login(member, "frank.doe", "123456", memberServer.origin);
+        await expect(member.getByRole("link", { name: "Einstellungen" })).toBeVisible();
+        await member.goto(`${memberServer.origin}/products`);
+        const product = member.getByText("Haftgrund, manuell angepasst", { exact: true });
+        const vendors = member.getByRole("tab", { name: "Händler", exact: true });
+        const customers = member.locator('nav a[href="/customers"]');
+        await expect(product).toHaveCount(0);
+        await expect(customers).toHaveCount(0);
+
+        await login(page, "john.doe");
+        await expect(
+          page.getByRole("link", { name: "Einstellungen", exact: true }),
+        ).toBeVisible();
+        const dialog = await openMemberPermissions(page);
+        const roles = dialog.getByRole("group", { name: "Fachrollen", exact: true });
+        const office = roles.getByRole("checkbox", { name: /^Büro/ });
+        const purchasing = roles.getByRole("checkbox", { name: /^Einkauf/ });
+        const save = () =>
+          saveResourceAccess(dialog, "Berechtigungen speichern", "Produktkatalog", 60_000);
+
+        await expect(office).not.toBeChecked();
+        await expect(purchasing).not.toBeChecked();
+        await office.press("Space");
+        await expect(office).toBeChecked();
+        await save();
+        await expect(product).toBeVisible();
+        await expect(customers).toHaveCount(1);
+        await expect(vendors).toHaveCount(0);
+
+        await purchasing.press("Space");
+        await expect(purchasing).toBeChecked();
+        await save();
+        await expect(vendors).toBeVisible();
+        await expect(office).toBeChecked();
+
+        await purchasing.press("Space");
+        await expect(purchasing).not.toBeChecked();
+        await save();
+        await expect(vendors).toHaveCount(0);
+        await expect(product).toBeVisible();
+
+        await selectAccess(page, dialog, "Produktkatalog", "Kein Zugriff");
+        await save();
+        await expect(product).toHaveCount(0);
+        await expect(office).toBeChecked();
+        await expect(customers).toHaveCount(1);
+        await office.press("Space");
+        await expect(office).not.toBeChecked();
+        await save();
+        await expect(customers).toHaveCount(0);
+        memberAudit.assertClean();
+      } finally {
+        await memberContext.close();
+        await memberServer.close();
+      }
+    },
+  );
+  await scenario(
     "default-supervisor-controls-approval-across-instances",
     async (page) => {
       const memberServer = await applicationServer(

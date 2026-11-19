@@ -103,6 +103,7 @@ export type VerifiedPolicy<F extends string, O extends string = never> = {
 export type PolicyOptions<F extends string, O extends string> = {
   /** Reject application-specific rule origins unless explicitly understood. */
   validateRuleOrigin?: (rule: Rule<F, O>) => void;
+  validateRules?: (rules: readonly Rule<F, O>[]) => void;
   validateSuspendedSubject?: (subject: string) => void;
 };
 
@@ -167,6 +168,7 @@ export function createPolicyCodec<
       throw new InvalidProtectedData();
     }
     const rules = value.rules.map(parseRule);
+    options.validateRules?.(rules);
     if (!hasSuspended) {
       return { tenant: value.tenant, version: value.version, rules };
     }

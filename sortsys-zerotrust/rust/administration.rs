@@ -302,7 +302,10 @@ impl PolicyAdministrationRef<'_> {
             .collect::<std::collections::HashSet<_>>();
         let mut result = Vec::new();
         for rule in &self.root.rules {
-            if !keys.contains(&(rule.subject, rule.scope, rule.facet)) {
+            let derived = rule.origin.is_some()
+                && rule.effect == Effect::Allow
+                && !rule.actions.contains(&Action::Grant);
+            if derived || !keys.contains(&(rule.subject, rule.scope, rule.facet)) {
                 result.push(rule.frame()?);
             }
         }

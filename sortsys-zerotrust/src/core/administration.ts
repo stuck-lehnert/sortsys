@@ -219,10 +219,14 @@ export function createAdministrativeProfileCodec<
       changed.add(key);
       previous = key;
     }
-    // A scoped Grant permits replacing the recipient's ordinary rules,
-    // including denials. The manager's own root limits remain unchanged.
+    // Explicit profile decisions override derived permissions without
+    // discarding their provenance or independently granted assignments.
     const result = checkpoint.rules.filter(
-      (rule) => !changed.has(administrativeProfileKey(rule)),
+      (rule) =>
+        (rule.origin &&
+          rule.effect === "allow" &&
+          !rule.actions.includes("grant")) ||
+        !changed.has(administrativeProfileKey(rule)),
     );
     for (const profile of profiles) {
       if (profile.actions.length)

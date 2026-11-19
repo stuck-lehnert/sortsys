@@ -16,8 +16,14 @@ import type {
 import {
   changeMemberAccess,
   finishAccessChanges,
-  memberAccess,
+  memberAccessState,
 } from "~/lib/crypto/permissions";
+import type { OrganizationRole } from "@sortsys/zerotrust/sortsys";
+import {
+  organizationRoles,
+  type OrganizationRolePatch,
+  type OrganizationRoleState,
+} from "~/lib/crypto/organizationRoleAccess";
 import { client } from "~/lib/client";
 import {
   permissionSelection,
@@ -51,6 +57,18 @@ const initialAccess = (): InvitationAccess => ({
   prices: "none",
   assistant: true,
 });
+const roleLabels: Record<OrganizationRole, () => string> = {
+  "organization-office": () =>
+    uiText(
+      "Büro (Kunden und Kontakte pflegen, Produkte lesen)",
+      "Office (edit customers and contacts, read products)",
+    ),
+  "organization-procurement": () =>
+    uiText(
+      "Einkauf (Produkte, Lieferanten und Preise pflegen)",
+      "Purchasing (edit products, suppliers, and prices)",
+    ),
+};
 function accessLabel(key: (typeof MASTER_DATA_FIELDS)[number]): string {
   switch (key) {
     case "catalogue":
@@ -93,10 +111,22 @@ export default function OrganizationInvitations({
   const [drafts, setDrafts] = useState(() =>
     accessDrafts(MASTER_DATA_FIELDS, (key) => initialAccess()[key]),
   );
-  function loadAccess(access: InvitationAccess) {
+  const [roleDraft, setRoleDraft] = useState<{
+    original: OrganizationRoleState;
+    value: OrganizationRoleState;
+  } | null>(null);
+  const roleEdits: OrganizationRolePatch = {};
+  for (const role of organizationRoles) {
+    if (roleDraft && roleDraft.value[role] !== roleDraft.original[role])
+      roleEdits[role] = roleDraft.value[role];
+  }
+  const rolesChanged = Object.keys(roleEdits).length > 0;
+
+  function loadAccess(access: InvitationAccess, roles?: OrganizationRoleState) {
     setPermissions(access);
     setOriginalAssistant(access.assistant);
     setDrafts(accessDrafts(MASTER_DATA_FIELDS, (key) => access[key]));
+    setRoleDraft(roles ? { original: roles, value: roles } : null);
   }
   const controller = useRef<AbortController | null>(null);
   async function refresh(signal: AbortSignal) {
@@ -116,10 +146,14 @@ export default function OrganizationInvitations({
       selected &&
       people.some((member) => member.id === selected.id && member.certified)
     ) {
-      const access = await memberAccess(client, `user:${selected.id}`, signal);
+      const state = await memberAccessState(
+        client,
+        `user:${selected.id}`,
+        signal,
+      );
       signal.throwIfAborted();
-      if (access) {
-        loadAccess(access);
+      if (state) {
+        loadAccess(state.access, state.roles);
         setEditing(true);
       } else setEditing(false);
     }
@@ -143,10 +177,10 @@ export default function OrganizationInvitations({
       return () => current.abort();
     }
     setLoadingAccess(true);
-    void memberAccess(client, `user:${selected.id}`, current.signal)
-      .then((access) => {
-        if (!current.signal.aborted && access) {
-          loadAccess(access);
+    void memberAccessState(client, `user:${selected.id}`, current.signal)
+      .then((state) => {
+        if (!current.signal.aborted && state) {
+          loadAccess(state.access, state.roles);
           setEditing(true);
         }
       })
@@ -253,6 +287,37 @@ export default function OrganizationInvitations({
           />
         </div>
       )}
+      {editing && roleDraft && (
+        <fieldset className="space-y-2">
+          <legend className="font-medium">
+            {uiText("Fachrollen", "Business roles")}
+          </legend>
+          <p className="text-sm text-muted">
+            {uiText(
+              "Ausdrückliche Sperren in den Einzelfreigaben gelten auch mit Fachrolle.",
+              "Explicit denials in individual permissions also apply to role members.",
+            )}
+          </p>
+          {organizationRoles.map((role) => (
+            <Checkbox
+              key={role}
+              labelText={roleLabels[role]()}
+              checked={roleDraft.value[role]}
+              disabled={busy || loadingAccess}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) => {
+                const checked = event.target.checked;
+                setRoleDraft(
+                  (current) =>
+                    current && {
+                      ...current,
+                      value: { ...current.value, [role]: checked },
+                    },
+                );
+              }}
+            />
+          ))}
+        </fieldset>
+      )}
       <div className="flex flex-wrap gap-2">
         {!memberId && (
           <MyButton
@@ -287,6 +352,7 @@ export default function OrganizationInvitations({
             busy ||
             loadingAccess ||
             (editing &&
+              !rolesChanged &&
               !MASTER_DATA_FIELDS.some((key) => accessChanged(drafts[key])) &&
               permissions.assistant === originalAssistant)
           }
@@ -314,6 +380,7 @@ export default function OrganizationInvitations({
                       ...(permissions.assistant !== originalAssistant
                         ? { assistant: permissions.assistant }
                         : {}),
+                      ...(rolesChanged ? { roles: roleEdits } : {}),
                     },
                   )
                 : createMemberInvitation(client, selected!, intended, signal);

@@ -2,6 +2,12 @@ import { InvalidProtectedData } from "./encoding";
 import { absenceDomain } from "./absenceRecords";
 import { type Facet, FACETS } from "./objects";
 import { createPolicyCodec } from "./core/policy";
+import {
+  isOrganizationRole,
+  validateOrganizationRoleRule,
+  validateOrganizationRoleSets,
+  type RuleOrigin,
+} from "./organizationRoles";
 import type {
   AdministrativeProfile as CoreAdministrativeProfile,
   PolicyAdministration as CorePolicyAdministration,
@@ -15,14 +21,11 @@ import type {
 export { type Action, ACTIONS } from "./core/policy";
 export { reconcilePolicyRules } from "./core/policy";
 export { administrativeProfileKey } from "./core/administration";
-export type Rule = CoreRule<Facet, "absence-default">;
-export type Policy = CorePolicy<Facet, "absence-default">;
-export type SignedPolicy = CoreSignedPolicy<Facet, "absence-default">;
+export type Rule = CoreRule<Facet, RuleOrigin>;
+export type Policy = CorePolicy<Facet, RuleOrigin>;
+export type SignedPolicy = CoreSignedPolicy<Facet, RuleOrigin>;
 export type AdministrativeProfile = CoreAdministrativeProfile<Facet>;
-export type PolicyAdministration = CorePolicyAdministration<
-  Facet,
-  "absence-default"
->;
+export type PolicyAdministration = CorePolicyAdministration<Facet, RuleOrigin>;
 
 function validateSuspendedSubject(subject: string): void {
   if (!/^user:[1-9a-v][0-9a-v]{0,12}$/.test(subject)) {
@@ -36,6 +39,11 @@ function validateSuspendedSubject(subject: string): void {
 }
 
 function validateRuleOrigin(rule: Rule): void {
+  if (rule.origin && isOrganizationRole(rule.origin)) {
+    validateSuspendedSubject(rule.subject);
+    validateOrganizationRoleRule(rule, rule.origin);
+    return;
+  }
   if (
     rule.origin !== "absence-default" ||
     rule.effect !== "allow" ||
@@ -69,10 +77,11 @@ function validateRuleOrigin(rule: Rule): void {
   }
 }
 
-export const sortsysPolicyCodec = createPolicyCodec<Facet, "absence-default">(
+export const sortsysPolicyCodec = createPolicyCodec<Facet, RuleOrigin>(
   FACETS,
   {
     validateRuleOrigin,
+    validateRules: validateOrganizationRoleSets,
     validateSuspendedSubject,
   },
 );

@@ -95,9 +95,15 @@ Baustellendokumentation oder Bauleitung. Die Verwaltung prüft den Entwurf
 vor dem Speichern. Im Chromium-Test mit zwei API-Instanzen konnte ein
 Mitarbeiter nach der Freigabe einen Bautagesbericht samt Foto öffnen und
 den Bericht bearbeiten. Die Löschaktion blieb gesperrt. Nach dem Entzug
-verschwand der Bericht aus der laufenden Sitzung. Mandantenweite Fachrollen
-bleiben offen. Siehe
+verschwand der Bericht aus der laufenden Sitzung. Siehe
 [Projektfreigaben](menues-und-datenfreigaben.md#freigabevorlagen-für-projekte).
+
+Die Rollen Büro und Einkauf decken gemeinsame Kataloge ab. Ihre Zuordnung
+ist Teil der signierten Regel. Im Chromium-Test blieb der Produktkatalog
+nach dem Entzug von Einkauf über Büro erreichbar. Eine ausdrückliche
+Produktsperre blendete den Katalog auch bei aktiver Bürorolle aus.
+Mandantenweite Rollen für Projekte und Personal stehen aus. Siehe
+[Fachrollen](menues-und-datenfreigaben.md#fachrollen-für-büro-und-einkauf).
 
 Das Framework und die API unterstützen außerdem bereichsgebundene
 Verwaltungsrechte mit dem eigenen Signaturschlüssel des beauftragten Nutzers.

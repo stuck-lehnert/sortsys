@@ -869,7 +869,7 @@ export type Rule = {
     origin?: RuleOrigin;
 };
 
-export type RuleOrigin = "absence-default";
+export type RuleOrigin = "absence-default" | "organization-office" | "organization-procurement";
 
 export type SaveInput = {
     domain: string;

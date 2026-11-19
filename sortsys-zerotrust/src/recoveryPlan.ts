@@ -7,13 +7,14 @@ import { sortsysDomainCodec } from "./domains";
 import { sortsysSetupCodec } from "./setup";
 import { type Facet, FACETS } from "./objects";
 import type { CreationOrigin } from "./creation";
+import type { RuleOrigin } from "./organizationRoles";
 export type { ExistingRecoveryAccount } from "./core/recovery";
 export { existingRecoveryAccount } from "./recoveryAccounts";
 
 export type RecoverySource = CoreRecoverySource<Facet, CreationOrigin>;
 export type RecoveryPlan = CoreRecoveryPlan<
   Facet,
-  "absence-default",
+  RuleOrigin,
   CreationOrigin
 >;
 export const sortsysRecoveryCodec = createRecoveryCodec(

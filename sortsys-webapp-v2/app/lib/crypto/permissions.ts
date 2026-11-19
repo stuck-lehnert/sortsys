@@ -74,6 +74,12 @@ import { absenceCollection } from "../data/absenceData";
 import { canUseAssistant } from "../data/assistantArea";
 import { provisionMemberKeyAuthorities } from "./keyAuthorities";
 import { changeDelegatedAreaActions } from "./delegatedAccess";
+import {
+  editOrganizationRoles,
+  memberOrganizationRoles,
+  parseOrganizationRolePatch,
+  type OrganizationRolePatch,
+} from "./organizationRoleAccess";
 
 export type MemberAccess = ManagedAccess;
 
@@ -587,6 +593,7 @@ async function publishActionChanges(
   context: Awaited<ReturnType<typeof administrator>>,
   signal: AbortSignal,
   assistant?: boolean,
+  roles?: OrganizationRolePatch,
 ): Promise<void> {
   const owner = `user:${context.session.user.id}`;
   if (
@@ -595,12 +602,17 @@ async function publishActionChanges(
     !(await certifiedMember(client, user, context))
   )
     throw new InvalidProtectedData();
-  for (const { area, patch } of changes) {
-    actionPatch(patch);
+  let rules = patchAccessRules(context.permissions.rules, user, changes);
+  const areas = new Map(changes.map(({ area }) => [area.domain, area]));
+  if (roles) {
+    const assignment = editOrganizationRoles(rules, user, roles);
+    rules = assignment.rules;
+    for (const area of assignment.areas) areas.set(area.domain, area);
+  }
+  for (const area of areas.values()) {
     if (!readers(context.effective, area).has(owner))
       throw new InvalidProtectedData();
   }
-  let rules = patchAccessRules(context.permissions.rules, user, changes);
   if (assistant !== undefined) {
     const personal = privateLlmCollection(user);
     rules = rules.filter(
@@ -630,10 +642,10 @@ async function publishActionChanges(
     ...context,
     permissions,
     subject: user,
-    areas: changes.map(({ area }) => area),
+    areas: [...areas.values()],
     signal,
   });
-  const domains = changes.map(({ area }) => area.domain);
+  const domains = [...areas.keys()];
   if (assistant !== undefined) domains.push(privateLlmCollection(user).domain);
   await finishAccessChanges(client, signal, domains);
   await client.invalidate("projects.list");
@@ -680,6 +692,14 @@ export async function memberAccess(
   user: string,
   signal: AbortSignal,
 ): Promise<MemberAccess | null> {
+  return (await memberAccessState(client, user, signal))?.access ?? null;
+}
+
+export async function memberAccessState(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+) {
   const context = await administrator(client, signal, [
     ...Object.values(MASTER_DATA_AREAS).map((area) => area.domain),
     privateLlmCollection(user).domain,
@@ -687,7 +707,7 @@ export async function memberAccess(
   if (!(await certifiedMember(client, user, context))) return null;
   const level = compileManagedAccess(context.permissions, user);
   const permitted = compilePolicy(context.permissions, [user]);
-  return {
+  const access: MemberAccess = {
     ...(Object.fromEntries(
       MASTER_DATA_FIELDS.map((key) => {
         const area = MASTER_DATA_AREAS[key];
@@ -696,6 +716,10 @@ export async function memberAccess(
     ) as Pick<ManagedAccess, (typeof MASTER_DATA_FIELDS)[number]>),
     assistant: canUseAssistant(user, permitted.allows),
   };
+  return {
+    access,
+    roles: memberOrganizationRoles(context.permissions.rules, user),
+  };
 }
 
 /** The server freezes affected writes until key redistribution finishes.
@@ -703,6 +727,7 @@ export async function memberAccess(
 export type MemberAccessEdits = {
   actions: Partial<Record<(typeof MASTER_DATA_FIELDS)[number], ActionPatch>>;
   assistant?: boolean;
+  roles?: OrganizationRolePatch;
 };
 export async function changeMemberAccess(
   client: Client,
@@ -716,6 +741,7 @@ export async function changeMemberAccess(
     const value = record(edits, [
       "actions",
       ...(Object.hasOwn(edits, "assistant") ? ["assistant"] : []),
+      ...(Object.hasOwn(edits, "roles") ? ["roles"] : []),
     ]);
     if (
       Object.hasOwn(value, "assistant") &&
@@ -744,6 +770,9 @@ export async function changeMemberAccess(
       ),
       ...(value.assistant !== undefined
         ? { assistant: value.assistant as boolean }
+        : {}),
+      ...(Object.hasOwn(value, "roles")
+        ? { roles: parseOrganizationRolePatch(value.roles) }
         : {}),
     };
   }
@@ -776,5 +805,6 @@ export async function changeMemberAccess(
     context,
     signal,
     assistant,
+    edits?.roles,
   );
 }

@@ -222,7 +222,7 @@ export type Room = { scope: string, document: string, facet: string, };
 
 export type Rule = { subject: string, scope: string, facet: Facet, actions: Array<Action>, effect: Effect, origin?: RuleOrigin, };
 
-export type RuleOrigin = "absence-default";
+export type RuleOrigin = "absence-default" | "organization-office" | "organization-procurement";
 
 export type SaveInput = { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, };
 

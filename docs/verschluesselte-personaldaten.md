@@ -160,9 +160,12 @@ Historische Vorgänge und Sicherungen können weiterhin personenbezogene Angaben
 enthalten. Die technische Kontokennung und der Anmeldename bleiben reserviert.
 Eine Seed-Recovery lässt den Löschstatus bestehen.
 
-Rollenänderungen und der Passwortverlust eines einzelnen Mitglieds brauchen
-noch eigene Abläufe. Abwesenheiten, Urlaub und Standardvorgesetzte verwenden
-ihren eigenen [verschlüsselten Fachadapter](abwesenheiten-protokoll.md).
+Die Verwaltung kann einem bestätigten Konto die [Fachrollen Büro und Einkauf](menues-und-datenfreigaben.md#fachrollen-für-büro-und-einkauf)
+für die gemeinsamen Kataloge zuweisen. Die Wiederherstellung eines verlorenen
+Mitarbeiterzugangs ist Teil der
+[Mandantenwiederherstellung](mandanten-wiederherstellung.md).
+Abwesenheiten, Urlaub und Standardvorgesetzte verwenden ihren eigenen
+[verschlüsselten Fachadapter](abwesenheiten-protokoll.md).
 
 Die lokale Suche berücksichtigt Namen, Anmeldenamen, E-Mail, Telefon und
 Vertragsart. Sie verwendet Wortpräfixe aus dem gemeinsamen Suchweg; ein
