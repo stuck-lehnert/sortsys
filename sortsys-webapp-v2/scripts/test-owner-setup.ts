@@ -413,7 +413,15 @@ try {
     await exerciseNativeStockBatching(owner, peer, rpcTransmissions);
     const { exerciseGaebCaseBatches } =
       await import("./test-native-content-preparation");
-    await exerciseGaebCaseBatches(owner, peer, rpcTransmissions);
+    await exerciseGaebCaseBatches(
+      owner,
+      peer,
+      rpcTransmissions,
+      endpoints[0],
+      (hook) => {
+        requestHook = hook;
+      },
+    );
     const { exerciseGaebReplayReceipt } =
       await import("./test-native-gaeb-replay");
     await exerciseGaebReplayReceipt(owner, peer);

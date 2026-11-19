@@ -215,6 +215,9 @@ festgeschriebenen Dokumentstands wie beim Öffnen.
 
 Die Vorgangsansicht fragt die signierten Stände ihrer Dateien gebündelt ab. Die
 Betragsanzeige und die Dateiliste verwenden dieselben geprüften Stände.
+Ändert sich der Vorgang zwischen dem Lesen der Stammdaten und der Abfrage
+festgeschriebener Dokumente, holt der Browser beide Stände neu. Er prüft dabei
+auch die Freigaben erneut.
 Beim Öffnen hat die aktive Datei Vorrang vor dem Auftragsvergleich. Wenn der
 Vergleich mehrere Dateien desselben Vorgangs öffnet, teilen sie sich den
 laufenden Abruf der Vorgangsdaten.

@@ -218,23 +218,36 @@ export function createProtectedCommercial(
   ) {
     addressId(id);
     if (fresh) runtime.revalidate();
-    const { selected, visible, collections } = await inventory();
-    const requests = selected.filter(
-      (request) => commercialDomain(request.area.domain)!.id === id,
-    );
-    const value = await runtime.read(
-      [...requests, ...invoiceViewRequests(requests)],
-      (view) => snapshot(view, id, requests, visible, empty),
-      collections,
-    );
-    live();
-    const basis = await includeRetainedDocuments(
-      client,
-      signal,
-      value,
-      collections,
-    );
-    return { basis, collections };
+    for (let attempt = 0; ; attempt++) {
+      const { selected, visible, collections } = await inventory();
+      const requests = selected.filter(
+        (request) => commercialDomain(request.area.domain)!.id === id,
+      );
+      const caseRequests = [...requests, ...invoiceViewRequests(requests)];
+      const value = await runtime.read(
+        caseRequests,
+        (view) => snapshot(view, id, requests, visible, empty),
+        collections,
+      );
+      live();
+      try {
+        const basis = await includeRetainedDocuments(
+          client,
+          signal,
+          value,
+          collections,
+        );
+        return { basis, collections };
+      } catch (error) {
+        if (!isWriteConflict(error) || attempt >= 2) throw error;
+        // The registration query is bound to the verified master-data
+        // sequence. Restart case and registration reads under fresh proofs.
+        live();
+        runtime.revalidate(
+          new Set(caseRequests.map(({ area }) => area.domain)),
+        );
+      }
+    }
   }
   // The editor and the order comparison can open several files from the same
   // case at once. Keep one verified case view only while its request is pending.

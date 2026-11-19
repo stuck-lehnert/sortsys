@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { access, rename, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import type { Client, MutateInput } from "@sortsys/v2-client";
+import type { Client, MutateInput, QueryInput } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
 import {
   base64,
@@ -792,10 +792,18 @@ async function exerciseGaebBlockBatches(
   }
 }
 
+type RequestHook = (
+  url: URL,
+  next: () => Promise<Response>,
+  options?: RequestInit,
+) => Promise<Response>;
+
 export async function exerciseGaebCaseBatches(
   owner: Client,
   peer: ReturnType<typeof createBusinessClient>,
   transmissions: readonly string[][],
+  peerEndpoint: string,
+  setRequestHook: (hook: RequestHook | null) => void,
 ) {
   const project = await required(
     owner.mutate("projects.create", { title: "Betriebsgebäude im GAEB-Batchtest" }),
@@ -865,6 +873,46 @@ export async function exerciseGaebCaseBatches(
   console.log(
     `GAEB: ${detail.documents.length} document heads share one HTTP request in the case details and in a cold position search. Parallel opening and download each check the case registrations once.`,
   );
+
+  const sequences: string[] = [];
+  const peerOrigin = new URL(peerEndpoint).origin;
+  let confirmation: Awaited<ReturnType<typeof createConfirmation>> | undefined;
+  setRequestHook(async (url, next, options) => {
+    const paths = url.pathname.slice(1).split(",");
+    const index = paths.indexOf(registrations);
+    if (url.origin !== peerOrigin || index < 0) return next();
+    const body = options?.body ?? url.searchParams.get("input");
+    assert.ok(typeof body === "string");
+    const input: QueryInput<typeof registrations> = JSON.parse(body)[index].json;
+    if (input.scope !== `commercial:${contract.caseId}`) return next();
+    assert.ok(input.sequence);
+    sequences.push(input.sequence);
+    if (sequences.length > 1) return next();
+
+    // The other API commits after the reader has captured the master-data head.
+    confirmation = await createConfirmation(owner, contract);
+    const response = await next();
+    const replies = await response.clone().json();
+    assert.equal(replies[index]?.error?.json?.data?.code, "CONFLICT");
+    return response;
+  });
+  try {
+    const current = await required(
+      peer.query(
+        "commercial.cases.get",
+        { id: contract.caseId },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.ok(confirmation);
+    assert.equal(current.documents.length, detail.documents.length + 1);
+    assert.ok(current.documents.some(({ id }) => id === confirmation?.target.id));
+    assert.equal(sequences.length, 2);
+    assert.notEqual(sequences[0], sequences[1]);
+  } finally {
+    setRequestHook(null);
+  }
+  console.log("GAEB case reads reload the signed master snapshot after a registration conflict on the other API instance");
 }
 
 export async function exerciseContentPreparation(
