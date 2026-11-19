@@ -1,7 +1,7 @@
 //! Public change hints only. One shared-store subscription per active tenant
 //! and API process fans out committed hints; document values never enter it.
 use super::{
-    access::metadata_security,
+    access::{metadata_context_for_domains, metadata_security_for_domains},
     crypto::{encode, frame, random_id, verify},
     document_messages::Room,
     wire::{Action, Effect},
@@ -414,21 +414,24 @@ pub(crate) fn register_metadata(
         move |ctx: RequestContext, _: ()| {
             let service = Arc::clone(&service);
             async move {
-                let auth = service.authenticate(&ctx.headers).await?;
-                let snapshot = snapshot(&service, &auth).await?;
+                let context = metadata_context_for_domains(&service, &ctx, Some(&[])).await?;
+                context.transaction.validate().await?;
+                let auth = context.auth;
+                let subject = context.security.subject;
+                let generation = context.security.root.generation.to_string();
                 let ticket = Ticket {
                     purpose: "encrypted-events-v1".into(),
                     tenant: auth.tenant,
                     session: auth.session.id,
                     user: auth.user.id,
-                    subject: snapshot.subject.clone(),
-                    generation: snapshot.generation.clone(),
+                    subject: subject.clone(),
+                    generation: generation.clone(),
                     exp: (chrono::Utc::now().timestamp() + 60) as u64,
                 };
                 Ok(Open {
                     ticket: service.issue_challenge_token(&ticket)?,
-                    subject: snapshot.subject,
-                    generation: snapshot.generation,
+                    subject,
+                    generation,
                 })
             }
         },
@@ -488,6 +491,40 @@ async fn authenticate(state: &EventService, ticket: &Ticket) -> RpcResult<AuthRe
     }
     Ok(auth)
 }
+
+async fn verify_admission(
+    state: &EventService,
+    ticket: &Ticket,
+    admission: &Admission,
+    nonce: &str,
+) -> RpcResult<Vec<u8>> {
+    let auth = authenticate(state, ticket).await?;
+    let repository = state.auth.records()?.tenant(&auth.tenant)?;
+    let mut transaction = repository.transaction()?;
+    let identity = metadata_security_for_domains(&mut transaction, &auth, Some(&[])).await?;
+    if identity.subject != ticket.subject
+        || identity.root.generation.to_string() != ticket.generation
+    {
+        return Err(forbidden());
+    }
+    verify(
+        &identity.signing_key,
+        &admission.proof,
+        &frame(
+            "sortsys/events-browser/v1",
+            &[
+                &ticket.tenant,
+                &ticket.subject,
+                &ticket.generation,
+                &encode(&Sha256::digest(admission.ticket.as_bytes())),
+                nonce,
+            ],
+        ),
+    )?;
+    transaction.validate().await?;
+    Ok(identity.signing_key)
+}
+
 fn scope_key(scope: &str, facet: &str) -> [u8; 32] {
     Sha256::digest(frame("sortsys/event-scope/v1", &[scope, facet])).into()
 }
@@ -541,6 +578,16 @@ fn capabilities(
     allowed
 }
 impl Snapshot {
+    fn check_identity(&self, ticket: &Ticket, signing_key: &[u8]) -> RpcResult<()> {
+        if self.subject != ticket.subject
+            || self.generation != ticket.generation
+            || self.signing_key != signing_key
+        {
+            return Err(forbidden());
+        }
+        Ok(())
+    }
+
     fn same_access(&self, next: &Self) -> bool {
         self.subject == next.subject
             && self.generation == next.generation
@@ -575,7 +622,7 @@ async fn snapshot_after_changes(
 ) -> RpcResult<(Snapshot, bool)> {
     let repository = service.records()?.tenant(&auth.tenant)?;
     let mut transaction = repository.transaction()?;
-    let guard = metadata_security(&mut transaction, auth).await?;
+    let guard = metadata_security_for_domains(&mut transaction, auth, None).await?;
     let mut assignment_closed = false;
     for project in closed_projects {
         if super::object_shares::has_project_assignment(&mut transaction, &guard, project).await? {
@@ -673,25 +720,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
     {
         return Err(forbidden());
     }
-    let auth = authenticate(state, &ticket).await?;
-    let identity = snapshot(&state.auth, &auth).await?;
-    if identity.subject != ticket.subject || identity.generation != ticket.generation {
-        return Err(forbidden());
-    }
-    verify(
-        &identity.signing_key,
-        &admission.proof,
-        &frame(
-            "sortsys/events-browser/v1",
-            &[
-                &ticket.tenant,
-                &ticket.subject,
-                &ticket.generation,
-                &encode(&Sha256::digest(admission.ticket.as_bytes())),
-                &nonce,
-            ],
-        ),
-    )?;
+    let signing_key = verify_admission(state, &ticket, &admission, &nonce).await?;
     let repository = state.auth.records()?.tenant(&ticket.tenant)?;
     let mut subscription = state
         .encrypted_events
@@ -700,9 +729,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
     // The durable change cursor is established before this baseline. Commits
     // during admission are either included here or remain queued.
     let mut current = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
-    if current.generation != ticket.generation {
-        return Err(forbidden());
-    }
+    current.check_identity(&ticket, &signing_key)?;
     send(
         socket,
         json!({"type":"ready","fingerprint":current.fingerprint}),
@@ -724,9 +751,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             }
             _ = heartbeat.tick() => {
                 let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
-                if next.generation != ticket.generation {
-                    return Err(forbidden());
-                }
+                next.check_identity(&ticket, &signing_key)?;
                 let changed = !current.same_access(&next);
                 let reset = current.resets_for(&next);
                 current = next;
@@ -783,14 +808,12 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
                 &closed_projects,
             )
             .await?;
+            next.check_identity(&ticket, &signing_key)?;
             let changed = !current.same_access(&next) || assignment_closed;
             all |= changed;
             control |= changed;
             reset = current.resets_for(&next) || assignment_closed;
             current = next;
-            if current.generation != ticket.generation {
-                return Err(forbidden());
-            }
         }
         domains.retain(|domain, _| {
             current.allowed.contains(domain) || recipient_domains.contains(domain)

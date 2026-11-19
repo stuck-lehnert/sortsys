@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import type { Client } from "@sortsys/v2-client";
 import {
+  base64,
   bytes,
   encryptObject,
   signPolicy,
@@ -26,6 +27,38 @@ async function waitFor(predicate: () => boolean, message: string) {
   }
 }
 
+async function requireSignedAdmission(client: Client, endpoint: string) {
+  const { ticket } = await required(
+    client.mutate("zerotrust.events.open", undefined),
+  );
+  const url = new URL(`${endpoint.replace(/\/$/, "")}/zerotrust/events`);
+  url.protocol = "ws:";
+  const socket = new WebSocket(url);
+  let challenged = false;
+  let admitted = false;
+  socket.onmessage = ({ data }) => {
+    const { type } = JSON.parse(data);
+    if (type === "challenge") {
+      challenged = true;
+      socket.send(JSON.stringify({
+        ticket,
+        proof: base64(new Uint8Array(64).fill(11)),
+      }));
+    }
+    if (type === "ready") admitted = true;
+  };
+  try {
+    await waitFor(
+      () => admitted || socket.readyState === WebSocket.CLOSED,
+      "The admission with an invalid signature must be resolved",
+    );
+    assert.equal(challenged, true);
+    assert.equal(admitted, false);
+  } finally {
+    socket.close();
+  }
+}
+
 /** Real browser transport over independently authenticated API peers. */
 export async function exerciseNativeEvents(
   owner: Client,
@@ -38,6 +71,7 @@ export async function exerciseNativeEvents(
   );
   for (const endpoint of endpoints)
     assert.equal(new URL(endpoint).hostname, "127.0.0.1");
+  await requireSignedAdmission(peer, endpoints[0]!);
   const subject = `user:${draft.userId}`;
   const scope = "project:abc";
   const domain = `${scope}:master-data`;

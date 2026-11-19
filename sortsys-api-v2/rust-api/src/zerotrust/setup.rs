@@ -187,10 +187,6 @@ pub(crate) fn register_root_queries(
                     &format!("user:{}", Id(account.id).encode()),
                     generation,
                 );
-                root.profile.authority.verify()?;
-                if root.profile.authority.tenant != auth.tenant {
-                    return Err(forbidden());
-                }
                 let initialization = super::initialization::completed(
                     &mut transaction,
                     &root.profile.authority.generation,
@@ -392,12 +388,10 @@ pub(super) async fn history(
     service: &AuthService,
     context: &RequestContext,
 ) -> RpcResult<super::objects::TrustHistory> {
-    let auth = service.authenticate(&context.headers).await?;
-    let repository = service.records()?.tenant(&auth.tenant)?;
-    let mut transaction = repository.transaction()?;
-    super::access::metadata_security(&mut transaction, &auth).await?;
-    let history = metadata_history(&mut transaction).await?;
-    transaction.validate().await?;
+    let mut context =
+        super::access::metadata_context_for_domains(service, context, Some(&[])).await?;
+    let history = metadata_history(&mut context.transaction).await?;
+    context.transaction.validate().await?;
     Ok(history)
 }
 

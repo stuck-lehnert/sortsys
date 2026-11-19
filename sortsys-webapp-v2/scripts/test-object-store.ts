@@ -3,6 +3,7 @@ import type { Client } from "@sortsys/v2-client";
 import {
   ACTIONS,
   bytes,
+  creationScope,
   createDomain,
   decryptObject,
   documentHeadHash,
@@ -268,6 +269,13 @@ async function exerciseDocuments(
       version: policyVersion,
       rules: [
         ...previous.permissions.rules,
+        {
+          subject,
+          scope: creationScope("commercial"),
+          facet: "master-data",
+          actions: ["create"],
+          effect: "allow",
+        },
         ...(["master-data", "scope"] as const).map((facet) => ({
           subject,
           scope,
@@ -301,6 +309,21 @@ async function exerciseDocuments(
     domains.set(facet, made.key);
   }
   const id = "456";
+  const caseRecord = await encryptObject(
+    {
+      tenant: draft.link.tenant,
+      scope,
+      facet: "master-data",
+      object: `${scope}:master-data:case`,
+      revision: "1",
+      generation: "1",
+      policyVersion,
+      author: subject,
+    },
+    bytes("Encrypted case master data"),
+    domains.get("master-data")!,
+    draft.identity.signingKey.privateKey,
+  );
   const blob = documentObject(scope, id, "scope", "a".repeat(32), "manifest");
   const envelope = await encryptObject(
     {
@@ -354,6 +377,11 @@ async function exerciseDocuments(
   await required(
     owner.mutate("zerotrust.objects.batch", {
       objects: [
+        {
+          domain: `${scope}:master-data`,
+          messageId: crypto.randomUUID(),
+          envelope: caseRecord,
+        },
         { domain: `${scope}:scope`, messageId: crypto.randomUUID(), envelope },
       ],
       heads: await heads(),

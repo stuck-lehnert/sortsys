@@ -144,7 +144,13 @@ Eine WebSocket-Meldung stößt die betroffenen Abfragen einmal an. Diese warten
 mit dem Lesen, bis der lokale Datenstand aktualisiert ist.
 Beim Verbindungsaufbau laufen Ticketabruf und Prüfung der Vertrauenskette
 parallel. Der Browser öffnet den Socket erst, wenn das Ticket zur geprüften
-Schlüsselgeneration gehört.
+Schlüsselgeneration gehört. Bei der Ticketausgabe und der Antwort auf die
+Socket-Challenge prüft die API Sitzung, Identität, Autorität und signierte
+Rechteregeln. Den vollständigen Berechtigungsstand liest sie, nachdem sie das
+Änderungsjournal abonniert hat. Änderungen während des Verbindungsaufbaus sind
+damit im bestätigten Stand enthalten oder werden als Ereignis zugestellt. Der
+bestätigte Stand muss zur selben Signaturidentität gehören wie die Antwort auf
+die Challenge.
 
 Das Menü lädt nur die öffentlichen Anlagenachweise, aus denen sich weitere
 Rechte ergeben. Eine Antwort bündelt bis zu 640 Nachweise und bis zu einem

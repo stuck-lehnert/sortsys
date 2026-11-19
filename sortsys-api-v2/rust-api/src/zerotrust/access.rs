@@ -39,14 +39,8 @@ pub(super) fn inherited_rules(
 }
 
 /// Load the public authorization context from the same tenant file as the
-/// account and ciphertext references. Every observation participates in CAS.
-pub(super) async fn metadata_security(
-    transaction: &mut crate::control::Transaction,
-    auth: &AuthResult,
-) -> RpcResult<Security> {
-    metadata_security_for_domains(transaction, auth, None).await
-}
-
+/// account and ciphertext references. An empty domain selection still checks
+/// the live session, identity, authority and policy, including suspension.
 pub(super) async fn metadata_security_for_domains(
     transaction: &mut crate::control::Transaction,
     auth: &AuthResult,
