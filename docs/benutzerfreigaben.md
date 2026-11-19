@@ -244,23 +244,28 @@ alte Einladungen ungültig.
 
 ## Signaturschlüssel erneuern
 
-Das Kontoprotokoll unterstützt außerdem einen bestätigten Wechsel des
-Signaturschlüssels. Dafür werden der bisherige und der neue private Schlüssel
-sowie ein von der Mandantenautorität ausgestelltes Nachfolgezertifikat benötigt.
-Benutzerkennung und Verschlüsselungsschlüssel bleiben erhalten. Die API
-veröffentlicht Passwortregistrierung, Kontotresor, Zertifikat und Gerätesperren
-in derselben Transaktion. Andere Sitzungen und bisherige Passkeys verlieren
-ihren Zugang. Eine verlorene Erfolgsbestätigung lässt sich durch Rücklesen
-auflösen; eine bloße Erfolgsantwort schaltet den lokalen Schlüssel nicht um.
+Mitarbeiter können den Wechsel unter **Einstellungen → Passwort →
+Signaturschlüssel erneuern** anfordern. Der dort erzeugte Anfragecode geht an
+die Organisationsverwaltung. Diese öffnet unter **Verwaltung → Organisation →
+Datenschutz** den Abschnitt **Signaturwechsel bestätigen**, prüft die Anfrage
+und gleicht das angezeigte Konto mit der betreffenden Person ab. Anschließend
+gibt sie den Bestätigungscode zurück. Der Mitarbeiter löst ihn in den
+Einstellungen mit einem neuen Passwort ein.
+
+Der Kontotresor schützt den neuen privaten Schlüssel bereits im Anfragecode.
+Dadurch lässt sich die Bestätigung auch nach einer erneuten Anmeldung oder auf
+einem anderen eigenen Gerät einlösen. Benutzerkennung und
+Verschlüsselungsschlüssel bleiben erhalten. Die API speichert die neue
+Passwortregistrierung, den Kontotresor und das Nachfolgezertifikat in derselben
+Transaktion, die andere Sitzungen und bisherige Passkeys sperrt. Der Browser
+liest den gespeicherten Stand zurück, bevor er mit dem neuen Schlüssel arbeitet.
 
 Frühere Zertifikate bleiben gespeichert, damit alte Inhalte und Unterschriften
 weiter geprüft werden können. Auch eine erneute Einladung behält das aktuelle
 Nachfolgezertifikat bei. Bereichsverwaltung und Anlagenachweise sind dagegen an
 ihren bestätigten Signaturschlüssel gebunden und benötigen nach einem Wechsel
-neue Nachweise. Für die Schlüsselbestätigung fehlt noch der Dialog. Ein
-vergessenes Mitarbeiterpasswort lässt sich über diesen Ablauf nicht
-zurücksetzen, weil der bisherige private Schlüssel benötigt wird. Der primäre
-Administrationszugang verwendet für einen Schlüsselwechsel die
+neue Nachweise. Der Ablauf setzt ein angemeldetes Konto mit geöffnetem
+Kontotresor voraus. Der primäre Administrationszugang verwendet die
 [Seed-Recovery](mandanten-wiederherstellung.md).
 
 ## Zugang nach Passwortverlust

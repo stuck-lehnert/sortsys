@@ -1,6 +1,7 @@
 import { uiText } from "~/lib/i18n";
 import { Tile, useNotifications } from "@sortsys/react-components";
 import { MyForm, type MyPublicFormContext } from "~/components/MyForm";
+import { PersonalSigningRenewal } from "~/components/SigningRenewal";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { client } from "~/lib/client";
 import type { Route } from "./+types/settings";
@@ -28,33 +29,40 @@ export default function PasswordSettingsPage() {
     if (err) throw err;
 
     context.setValues({ password: "", passwordConfirm: "" });
-    notifications.success({ title: uiText("Passwort gespeichert", "Password saved") });
+    notifications.success({
+      title: uiText("Passwort gespeichert", "Password saved"),
+    });
   }
 
   return (
-    <Tile className="settings-section space-y-4">
-      <MyForm
-        className={["settings-form", "max-w-2xl space-y-4"].join(" ")}
-        onSubmit={changePassword}
-      >
-        <MyForm.Input
-          required
-          name="password"
-          labelText={uiText("Neues Passwort")}
-          type="password"
-          autoComplete="new-password"
-          rules={[MyForm.Input.rules.min(10)]}
-        />
-        <MyForm.Input
-          required
-          name="passwordConfirm"
-          labelText={uiText("Passwort wiederholen")}
-          type="password"
-          autoComplete="new-password"
-          rules={[MyForm.Input.rules.min(10)]}
-        />
-        <MyForm.SubmitButton>{uiText("Speichern")}</MyForm.SubmitButton>
-      </MyForm>
-    </Tile>
+    <div className="space-y-6">
+      <Tile className="settings-section space-y-4">
+        <MyForm
+          className={["settings-form", "max-w-2xl space-y-4"].join(" ")}
+          onSubmit={changePassword}
+        >
+          <MyForm.Input
+            required
+            name="password"
+            labelText={uiText("Neues Passwort")}
+            type="password"
+            autoComplete="new-password"
+            rules={[MyForm.Input.rules.min(10)]}
+          />
+          <MyForm.Input
+            required
+            name="passwordConfirm"
+            labelText={uiText("Passwort wiederholen")}
+            type="password"
+            autoComplete="new-password"
+            rules={[MyForm.Input.rules.min(10)]}
+          />
+          <MyForm.SubmitButton>{uiText("Speichern")}</MyForm.SubmitButton>
+        </MyForm>
+      </Tile>
+      {!sessionInfo.isAdmin() && (
+        <PersonalSigningRenewal key={sessionInfo.session.id} />
+      )}
+    </div>
   );
 }

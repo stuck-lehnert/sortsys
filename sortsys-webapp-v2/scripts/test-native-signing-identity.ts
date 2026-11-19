@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import {
@@ -20,15 +21,17 @@ import {
   frame,
   objectFrame,
   openBox,
-  publicIdentity,
   randomSecret,
   sign,
-  signingPair,
   unbase64,
   utf8,
   type IdentityCertificate,
 } from "@sortsys/zerotrust/sortsys";
-import { administratorContext } from "../app/lib/crypto/administration";
+import {
+  createSigningRequest,
+  reviewSigningRequest,
+  signingRenewalEnrollment,
+} from "../app/lib/crypto/signingRenewal";
 import {
   commitRecovery,
   recoveryDraft,
@@ -135,7 +138,7 @@ try {
   });
   await initializeTenant(owner, signal, duckDriver);
   const administrator = unlockedAccount()!;
-  const authority = await administratorContext(owner, signal);
+  await assert.rejects(() => createSigningRequest(owner, signal));
   let business = createBusinessClient(owner, { productDriver: duckDriver });
   const person = await required(
     business.mutate("users.create", {
@@ -186,20 +189,38 @@ try {
   const subject = `user:${person.id}`;
   const history = await trustedHistory(member);
   const previous = history.identityCertificate(subject);
-  const identity = {
-    ...previousAccount.identity,
-    signingKey: await signingPair(),
-  };
-  const certificate = await certifyIdentity(
-    {
-      tenant,
-      generation: history.current.generation,
-      user: subject,
-      ...(await publicIdentity(identity)),
-      previousSignature: previous.signature,
-    },
-    authority.authority,
+  const request = await createSigningRequest(member, signal);
+  await assert.rejects(() => reviewSigningRequest(member, request, signal));
+  await acceptVaultWithKey(
+    administrator.dataKey,
+    administrator.vault,
+    administrator.username,
+    false,
   );
+  const tampered = JSON.parse(request);
+  tampered.sealedSeed = base64(new Uint8Array(48));
+  await assert.rejects(() =>
+    reviewSigningRequest(owner, JSON.stringify(tampered), signal),
+  );
+  const reviewed = await reviewSigningRequest(owner, request, signal);
+  assert.equal(reviewed.username, "key.member");
+  const approval = await reviewed.approve();
+  await assert.rejects(() =>
+    signingRenewalEnrollment(owner, approval, renewedPassword, signal),
+  );
+  await lockCryptoSession();
+  await signIn(member, {
+    tenant,
+    username: "key.member",
+    password: memberPassword,
+  });
+  const enrollment = await signingRenewalEnrollment(
+    member,
+    approval,
+    renewedPassword,
+    signal,
+  );
+  const { identity, replacementCertificate: certificate } = enrollment;
   business = createBusinessClient(member, { productDriver: duckDriver });
   const product = await required(
     business.mutate("products.create", {
@@ -237,14 +258,6 @@ try {
     history.authority(history.current.generation),
   );
   const encryptionKey = await areaKey(rawKey);
-  const enrollment = {
-    tenant,
-    username: "key.member",
-    subject,
-    password: renewedPassword,
-    identity,
-    replacementCertificate: certificate,
-  };
   rewrite = async (input) => {
     const forged: IdentityCertificate = await certifyIdentity(
       {
@@ -307,6 +320,9 @@ try {
   assert.equal(submitted, 5);
   const current = await trustedHistory(member);
   assert.deepEqual(current.identityCertificate(subject), certificate);
+  await assert.rejects(() =>
+    signingRenewalEnrollment(member, approval, renewedPassword, signal),
+  );
   assert.ok(await current.signer(encryptedObject(original)));
   assert.ok(
     (
@@ -531,6 +547,89 @@ try {
     changedName,
   );
   business.dispose();
+  if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+    await initializeTenant(owner, signal, duckDriver);
+    const recoveredAdmin = unlockedAccount()!;
+    const username = "dialog.member";
+    const password = "Original-signing-dialog-password-2026!";
+    const replacement = "Renewed-signing-dialog-password-2026!";
+    const browserBusiness = createBusinessClient(owner, {
+      productDriver: duckDriver,
+    });
+    const browserMember = await required(
+      browserBusiness.mutate("users.create", {
+        username,
+        firstName: "Dialogprüfung",
+        contractType: "internal",
+      }),
+    );
+    browserBusiness.dispose();
+    const invitation = await createMemberInvitation(
+      owner,
+      {
+        id: browserMember.id,
+        username,
+      },
+      {
+        catalogue: "read",
+        customers: "none",
+        contacts: "none",
+        vendors: "none",
+        prices: "none",
+        assistant: false,
+      },
+      signal,
+    );
+    await signInMemberInvitation(member, invitation.link, password, signal);
+    await joinMemberInvitation(member, invitation.link, signal);
+    await acceptVaultWithKey(
+      recoveredAdmin.dataKey,
+      recoveredAdmin.vault,
+      recoveredAdmin.username,
+      false,
+    );
+    await approveMemberInvitation(
+      owner,
+      invitation.link.invitation.id,
+      signal,
+      duckDriver,
+    );
+    const browserSubject = `user:${browserMember.id}`;
+    const before = (await trustedHistory(owner)).identityCertificate(
+      browserSubject,
+    );
+    await new Promise<void>((resolve, reject) => {
+      const child = spawn(
+        "node",
+        ["scripts/e2e/signingRenewal.browser.mjs", root],
+        {
+          stdio: "inherit",
+          env: {
+            ...process.env,
+            SORTSYS_SIGNING_E2E_TENANT: tenant,
+            SORTSYS_SIGNING_E2E_PASSWORD: password,
+            SORTSYS_SIGNING_E2E_RENEWED: replacement,
+            SORTSYS_SIGNING_E2E_ADMIN: plan.username,
+            SORTSYS_SIGNING_E2E_ADMIN_PASSWORD: recoveredPassword,
+          },
+        },
+      );
+      child.once("error", reject);
+      child.once("exit", (status, signal) => {
+        if (status === 0) resolve();
+        else
+          reject(new Error(`Signing dialog test failed: ${signal ?? status}`));
+      });
+    });
+    const after = (await trustedHistory(owner)).identityCertificate(
+      browserSubject,
+    );
+    assert.equal(after.previousSignature, before.signature);
+    assert.equal(after.encryptionKey, before.encryptionKey);
+    console.log(
+      "Signing renewal through the production UI published a verified successor",
+    );
+  }
   for (const secret of [
     memberPassword,
     renewedPassword,
@@ -539,6 +638,7 @@ try {
     source.phrase,
     draft.newPhrase,
     recoveredPassword,
+    JSON.parse(request).sealedSeed,
   ]) {
     assert.equal(
       wire.some((request) => request.includes(secret)),

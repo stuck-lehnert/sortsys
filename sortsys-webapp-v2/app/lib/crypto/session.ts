@@ -311,12 +311,7 @@ export async function updateAccountPins(
   await acceptVaultWithKey(current.dataKey, vault, current.username);
 }
 
-export async function changeOwnPassword(
-  client: Client,
-  password: string,
-): Promise<void> {
-  const current = account;
-  if (!current) throw new InvalidProtectedData();
+export function validateChangedPassword(password: string): void {
   if (
     password.length < 10 ||
     password.length > 2000 ||
@@ -329,6 +324,15 @@ export async function changeOwnPassword(
       ),
     );
   }
+}
+
+export async function changeOwnPassword(
+  client: Client,
+  password: string,
+): Promise<void> {
+  const current = account;
+  if (!current) throw new InvalidProtectedData();
+  validateChangedPassword(password);
   await enrollPasswordAccount(client, {
     tenant: current.tenant,
     username: current.username,

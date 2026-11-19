@@ -59,13 +59,15 @@ Einladung sind auch seine bisherigen Inhalte wieder lesbar. Der isolierte
 Admin-Reset ohne Phrase bleibt gesperrt; der Anbieter erhält keinen
 Wiederherstellungszugang. Siehe [Benutzerzugang](benutzerfreigaben.md).
 
-Ein bestätigter Signaturschlüsselwechsel ist im Kontoprotokoll angeschlossen.
-Er benötigt beide Benutzerschlüssel und die Zustimmung der Mandantenautorität;
-Passwortverlust deckt er dadurch noch nicht ab. Ein nativer Mehrinstanztest
-prüft unvollständige und gefälschte Nachweise, verlorene und falsche Antworten,
-das Schreiben nach der Erneuerung und die Ablehnung des alten Signaturschlüssels.
+Mitarbeiter können in den Passworteinstellungen eine Anfrage für den
+[Signaturschlüsselwechsel](benutzerfreigaben.md#signaturschlüssel-erneuern)
+erstellen. Die Organisationsverwaltung bestätigt sie unter **Datenschutz**.
+Der Kontotresor schützt den neuen privaten Schlüssel im Anfragecode. Ein
+nativer Mehrinstanztest prüft gefälschte und fehlende Nachweise, verlorene
+Antworten sowie die Ablehnung des alten Schlüssels bei neuen Schreibvorgängen.
 Historische Zertifikate und Inhalte bleiben auch nach einer Seed-Recovery
-prüfbar. Ein Dialog für diesen Ablauf fehlt noch.
+prüfbar. Chromium prüft die beiden Dialoge über getrennte API-Instanzen und
+löst die Bestätigung in einem neu geöffneten Browserkontext ein.
 
 **Administrationszugang nach Passwortverlust.** Die aktuelle Seed-Phrase kann
 das primäre Administratorkonto unter derselben Benutzerkennung

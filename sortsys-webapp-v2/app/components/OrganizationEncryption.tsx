@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import { uiText } from "~/lib/i18n";
 import OrganizationInvitations from "./OrganizationInvitations";
+import { SigningRequestApproval } from "./SigningRenewal";
 
 export default function OrganizationEncryption() {
   return (
@@ -20,6 +21,7 @@ export default function OrganizationEncryption() {
           "Recover organization using the recovery phrase",
         )}
       </Link>
+      <SigningRequestApproval />
       <OrganizationInvitations />
     </div>
   );
