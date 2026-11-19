@@ -2,7 +2,7 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import { newProductRowId, publicId } from "./products";
-import { createPrefixMatcher } from "../search/prefixQuery";
+import { buildPrefixSearch } from "../search/prefixQuery";
 import type { DuckDriver } from "./database";
 import { readableAreas } from "./readableAreas";
 import { acquireDataRuntime } from "./runtime/session";
@@ -39,6 +39,31 @@ import { unlockedAccount } from "../crypto/session";
 import { timestampMicros } from "./timestamps";
 import { absenceCollection } from "./absenceData";
 import { uiText } from "../i18n";
+
+const personnelSearch = Symbol("personnel search");
+const personnelNameSearch = Symbol("personnel name search");
+type User = ReturnType<typeof wirePersonnel>;
+
+function personnelSearchFields(user: User) {
+  return [
+    user.firstName,
+    user.lastName,
+    user.username,
+    user.email,
+    user.phone,
+    user.contractType,
+  ];
+}
+
+function comparePersonnel(a: User, b: User) {
+  if (a.lastName === null && b.lastName !== null) return 1;
+  if (b.lastName === null && a.lastName !== null) return -1;
+  const lastName = (a.lastName ?? "").toLocaleLowerCase().localeCompare(
+    (b.lastName ?? "").toLocaleLowerCase(),
+  );
+  return lastName ||
+    a.firstName.toLocaleLowerCase().localeCompare(b.firstName.toLocaleLowerCase());
+}
 
 export function createProtectedPersonnel(
   client: Client,
@@ -146,12 +171,14 @@ export function createProtectedPersonnel(
     ).synchronizeAbsenceDefaults(client, signal, driver);
     live();
   }
-  async function requests() {
-    preparingSelf ??= prepareSelf().catch((error) => {
-      preparingSelf = null;
-      throw error;
-    });
-    await preparingSelf;
+  async function requests(prepareOwnProfile = true) {
+    if (prepareOwnProfile) {
+      preparingSelf ??= prepareSelf().catch((error) => {
+        preparingSelf = null;
+        throw error;
+      });
+      await preparingSelf;
+    }
     live();
     const areas = await readableAreas(client, signal, (domain) => {
       const part = personnelDomain(domain);
@@ -240,7 +267,7 @@ export function createProtectedPersonnel(
       live();
       return result;
     },
-    async query(path: string, input: unknown) {
+    async query(path: string, input: unknown, limit?: number) {
       live();
       if (!PERSONNEL_QUERIES.has(path)) throw new InvalidProtectedData();
       const data = partialAddressRecord(
@@ -256,67 +283,65 @@ export function createProtectedPersonnel(
           typeof data.includeArchived !== "boolean")
       )
         throw new InvalidProtectedData();
-      const search = addressText(data.search, false, 1000),
-        selected = (await requests()).filter(
-          (request) =>
-            path !== "users.get" ||
-            personnelDomain(request.area.domain)!.id === data.id,
+      const search = addressText(data.search, false, 1000);
+      const namesOnly = path === "users.list" && limit !== undefined;
+      const selected = (await requests(!namesOnly)).filter((request) => {
+        if (namesOnly) return request.area.facet === "master-data";
+        return (
+          path !== "users.get" ||
+          personnelDomain(request.area.domain)!.id === data.id
         );
-      const result = await runtime.read(selected, (view) => {
-        const users = selected
-          .filter((request) => request.area.facet === "master-data")
-          .flatMap((request) => {
-            const id = personnelDomain(request.area.domain)!.id,
-              related = selected.filter(
-                (part) => personnelDomain(part.area.domain)!.id === id,
-              );
-            if (!view.documents(request).length) {
-              if (related.some((part) => view.documents(part).length))
-                throw new InvalidProtectedData();
-              return []; // Reserved, unpublished profiles do not form directory entries.
+      });
+      const result = await runtime.read(
+        selected,
+        (view) => {
+          function readUsers(): User[] {
+            const byId = new Map<string, DataRequest<PersonnelPart>[]>();
+            for (const request of selected) {
+              const id = personnelDomain(request.area.domain)!.id;
+              const parts = byId.get(id) ?? [];
+              parts.push(request);
+              byId.set(id, parts);
             }
-            if (related.some((part) => view.documents(part).length !== 1))
-              throw new InvalidProtectedData();
-            return [wirePersonnel(view, id)];
-          });
-        if (path === "users.get") {
-          const user = users.find((user) => user.id === data.id);
-          if (!user) throw new InvalidProtectedData();
-          return user;
-        }
-        const matches = createPrefixMatcher(search);
-        return users
-          .filter(
+            const users: User[] = [];
+            for (const [id, parts] of byId) {
+              const master = parts.findIndex((part) => part.area.facet === "master-data");
+              if (master < 0) continue;
+              const counts = parts.map((part) => view.documents(part).length);
+              if (!counts[master]) {
+                if (counts.some((count) => count)) throw new InvalidProtectedData();
+                continue;
+              }
+              if (counts.some((count) => count !== 1))
+                throw new InvalidProtectedData();
+              users.push(wirePersonnel(view, id, !namesOnly));
+            }
+            return users;
+          }
+          if (path === "users.get") {
+            const user = readUsers().find((user) => user.id === data.id);
+            if (!user) throw new InvalidProtectedData();
+            return user;
+          }
+          const find = view.derive(
+            namesOnly ? personnelNameSearch : personnelSearch,
+            selected,
+            () => buildPrefixSearch(
+              readUsers().sort(comparePersonnel),
+              personnelSearchFields,
+            ),
+          );
+          return find(
+            search,
             (user) =>
               (data.includeArchived || !user.archivedAt) &&
-              (data.deactivated == null ||
-                !!user.deactivatedAt === data.deactivated) &&
-              matches([
-                user.firstName,
-                user.lastName,
-                user.username,
-                user.email,
-                user.phone,
-                user.contractType,
-              ]),
-          )
-          .sort((a, b) =>
-            a.lastName === null
-              ? b.lastName === null
-                ? a.firstName
-                    .toLocaleLowerCase()
-                    .localeCompare(b.firstName.toLocaleLowerCase())
-                : 1
-              : b.lastName === null
-                ? -1
-                : a.lastName
-                    .toLocaleLowerCase()
-                    .localeCompare(b.lastName.toLocaleLowerCase()) ||
-                  a.firstName
-                    .toLocaleLowerCase()
-                    .localeCompare(b.firstName.toLocaleLowerCase()),
+              (data.deactivated == null || !!user.deactivatedAt === data.deactivated),
+            limit,
           );
-      });
+        },
+        undefined,
+        { batchDirectory: namesOnly },
+      );
       live();
       return result;
     },

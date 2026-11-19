@@ -1,7 +1,7 @@
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 
 type Adapter = {
-  query(path: string, input: unknown): Promise<unknown>;
+  query(path: string, input: unknown, limit?: number): Promise<unknown>;
   mutate(path: string, input: unknown, signal?: AbortSignal): Promise<unknown>;
   refresh(): Promise<void>;
   close(): void;
@@ -91,6 +91,7 @@ export function createAdapterRegistry(
     input: unknown,
     mutation = false,
     cancellation?: AbortSignal,
+    limit?: number,
   ) {
     cancellation?.throwIfAborted();
     const signal = context();
@@ -98,7 +99,7 @@ export function createAdapterRegistry(
     const store = await get(definition);
     const result = mutation
       ? await store.mutate(path, input, cancellation)
-      : await store.query(path, input);
+      : await store.query(path, input, limit);
     live();
     signal.throwIfAborted();
     cancellation?.throwIfAborted();
@@ -118,7 +119,8 @@ export function createAdapterRegistry(
           [...domains].some((domain) => definition.affected(domain)))
       );
     },
-    query: (path: string, input: unknown) => work(path, input),
+    query: (path: string, input: unknown, limit?: number) =>
+      work(path, input, false, undefined, limit),
     mutate: (path: string, input: unknown, cancellation?: AbortSignal) =>
       work(path, input, true, cancellation),
     async refresh(path: string) {

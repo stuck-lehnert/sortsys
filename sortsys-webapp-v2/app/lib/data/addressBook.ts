@@ -1,6 +1,6 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
-import { createPrefixMatcher } from "../search/prefixQuery";
+import { buildPrefixSearch, createPrefixMatcher } from "../search/prefixQuery";
 import type { DuckDriver } from "./database";
 import { acquireDataRuntime } from "./runtime/session";
 import { defineDataModel } from "./runtime/model";
@@ -260,16 +260,18 @@ export function searchableAddressValues(address: Customer["address"]): string[] 
   return [...new Set(values)].sort();
 }
 
+function addressSearchFields(value: Customer | Contact) {
+  return [
+    value.salutation,
+    ...("name" in value ? [value.name] : [value.firstName, value.lastName]),
+    ...searchableAddressValues(value.address),
+    ...value.phoneNumbers.map((phone) => phone.number),
+    ...value.emailAddresses.map((email) => email.email),
+  ];
+}
 export function createAddressMatcher(search: string | null | undefined) {
   const matches = createPrefixMatcher(search);
-  return (value: Customer | Contact) =>
-    matches([
-      value.salutation,
-      ...("name" in value ? [value.name] : [value.firstName, value.lastName]),
-      ...searchableAddressValues(value.address),
-      ...value.phoneNumbers.map((phone) => phone.number),
-      ...value.emailAddresses.map((email) => email.email),
-    ]);
+  return (value: Customer | Contact) => matches(addressSearchFields(value));
 }
 function compare(a: Customer | Contact, b: Customer | Contact): number {
   const names = (v: Customer | Contact) =>
@@ -303,6 +305,10 @@ const request = (kind: Kind): DataRequest<AddressPayload> => ({
 });
 const customerRequest = request("customers"),
   contactRequest = request("contacts");
+const addressSearch = {
+  customers: Symbol("customer search"),
+  contacts: Symbol("contact search"),
+};
 function payloads(view: DataView, kind: Kind) {
   return view.documents(request(kind)).map((document) => document.value);
 }
@@ -356,7 +362,7 @@ export function createProtectedAddressBook(
           : undefined,
       );
     },
-    async query(path: string, input: unknown): Promise<unknown> {
+    async query(path: string, input: unknown, limit?: number): Promise<unknown> {
       lease.live();
       if (!ADDRESS_QUERIES.has(path)) throw new InvalidProtectedData();
       if (
@@ -405,17 +411,25 @@ export function createProtectedAddressBook(
         data = list ? partial(input ?? {}, ["search"]) : record(input, ["id"]);
       if (list && data.search != null && typeof data.search !== "string")
         throw new InvalidProtectedData();
-      const matches = createAddressMatcher(data.search as string | undefined);
-      const result = await runtime.read([request(kind)], (view) => {
-        const values = payloads(view, kind);
-        return list
-          ? values
-              .filter((payload) => payload.row)
-              .map(wire)
-              .filter(matches)
-              .sort(compare)
-          : wire(find(values, data.id));
-      });
+      const selected = [request(kind)];
+      const result = await runtime.read(
+        selected,
+        (view) => {
+          if (!list) return wire(find(payloads(view, kind), data.id));
+          const search = view.derive(addressSearch[kind], selected, () =>
+            buildPrefixSearch(
+              payloads(view, kind)
+                .filter((payload) => payload.row)
+                .map(wire)
+                .sort(compare),
+              addressSearchFields,
+            ),
+          );
+          return search(data.search as string | undefined, undefined, limit);
+        },
+        undefined,
+        { batchDirectory: limit !== undefined },
+      );
       lease.live();
       return result;
     },

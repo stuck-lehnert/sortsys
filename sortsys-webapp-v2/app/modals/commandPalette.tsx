@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
-import { client, contentAccess, toolResources } from "~/lib/client";
+import { client, contentAccess, searchDirectory, toolResources } from "~/lib/client";
 import {
   contactName,
   customerName,
@@ -59,13 +59,13 @@ function useEntitySearchEntries(query: string, close: () => void) {
   const [results, setResults] = useState<SearchResults | null>(null);
 
   useEffect(() => {
-    setResults(null);
     if (!trimmedQuery) return;
 
     const groups: SearchLink[][] = [];
-    let active = true;
+    const controller = new AbortController();
+    const signal = AbortSignal.any([controller.signal, accessContext]);
     const publish = (finished: boolean) => {
-      if (active && !accessContext.aborted)
+      if (!signal.aborted)
         setResults({
           query: trimmedQuery,
           accessContext,
@@ -78,25 +78,27 @@ function useEntitySearchEntries(query: string, close: () => void) {
     // does not hide ready matches, and the final order stays deterministic.
     function load<Row>(
       enabled: boolean,
-      request: () => Promise<readonly [readonly Row[] | null, unknown]>,
+      request: () => Promise<readonly Row[] | null>,
       link: (row: Row) => SearchLink,
     ) {
       if (!enabled) return Promise.resolve();
       const index = groups.length;
       groups.push([]);
-      return request().then(([rows]) => {
-        if (!active || !rows?.length) return;
-        groups[index] = rows.slice(0, 8).map(link);
+      return request().then((rows) => {
+        if (signal.aborted || !rows?.length) return;
+        groups[index] = rows.map(link);
         publish(false);
       });
     }
 
     const timeout = window.setTimeout(() => {
-      const filter = { search: trimmedQuery };
+      if (signal.aborted) return;
+      const find = <Path extends Parameters<typeof searchDirectory>[0]>(path: Path) =>
+        searchDirectory(path, trimmedQuery, signal);
       const number = /^#?(\d+)$/.exec(trimmedQuery);
       const autoId = number ? Number(number[1]) : NaN;
       const work = [
-        load(projects, () => client.query("projects.list", filter), (project) => ({
+        load(projects, () => find("projects.list"), (project) => ({
           id: `project:${project.id}`,
           title: project.title,
           subtitle: uiText("Projekt"),
@@ -105,7 +107,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
         })),
         load(
           tools,
-          async () => [await toolResources.search(trimmedQuery), null],
+          () => toolResources.search(trimmedQuery, signal),
           (tool) => ({
             id: `tool:${tool.id}`,
             title: `${tool.customId} ${toolTitle(tool)}`,
@@ -114,35 +116,35 @@ function useEntitySearchEntries(query: string, close: () => void) {
             href: `/tools/${tool.id}`,
           }),
         ),
-        load(users, () => client.query("users.list", filter), (user) => ({
+        load(users, () => find("users.list"), (user) => ({
           id: `user:${user.id}`,
           title: userFullName(user),
           subtitle: uiText("Benutzer"),
           icon: Icons.User,
           href: `/users/${user.id}`,
         })),
-        load(products, () => client.query("products.list", filter), (product) => ({
+        load(products, () => find("products.list"), (product) => ({
           id: `product:${product.id}`,
           title: `${product.customId} ${productTitle(product)}`,
           subtitle: uiText("Produkt"),
           icon: Icons.Product,
           href: `/products/${product.id}`,
         })),
-        load(customers, () => client.query("customers.list", filter), (customer) => ({
+        load(customers, () => find("customers.list"), (customer) => ({
           id: `customer:${customer.id}`,
           title: customerName(customer),
           subtitle: uiText("Kunde"),
           icon: Icons.Customer,
           href: `/customers/${customer.id}`,
         })),
-        load(contacts, () => client.query("contacts.list", filter), (contact) => ({
+        load(contacts, () => find("contacts.list"), (contact) => ({
           id: `contact:${contact.id}`,
           title: contactName(contact),
           subtitle: uiText("Kontakt"),
           icon: Icons.Contact,
           href: `/contacts/${contact.id}`,
         })),
-        load(vendors, () => client.query("products.vendors.list", filter), (vendor) => ({
+        load(vendors, () => find("products.vendors.list"), (vendor) => ({
           id: `productVendor:${vendor.id}`,
           title: vendor.name,
           subtitle: uiText("Händler"),
@@ -153,7 +155,7 @@ function useEntitySearchEntries(query: string, close: () => void) {
       if (deliveryNotes && Number.isSafeInteger(autoId) && autoId > 0) {
         const request = async () => {
           const [note] = await client.query("deliveryNotes.get", { autoId });
-          return [note ? [note] : null, null] as const;
+          return note ? [note] : null;
         };
         work.push(
           load(true, request, (note) => ({
@@ -172,10 +174,10 @@ function useEntitySearchEntries(query: string, close: () => void) {
         );
       }
       void Promise.allSettled(work).then(() => publish(true));
-    }, 120);
+    }, 60);
 
     return () => {
-      active = false;
+      controller.abort();
       window.clearTimeout(timeout);
     };
   }, [
@@ -192,7 +194,9 @@ function useEntitySearchEntries(query: string, close: () => void) {
   ]);
 
   const current =
-    results?.query === trimmedQuery && results.accessContext === accessContext
+    results?.query === trimmedQuery &&
+    results.accessContext === accessContext &&
+    !accessContext.aborted
       ? results
       : null;
   const entries: PaletteEntry[] = useMemo(

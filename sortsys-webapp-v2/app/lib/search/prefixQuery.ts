@@ -67,7 +67,13 @@ function containsPrefixSequence(
 
 /** The former create_query joined space-separated fragments with AND. The
  * lexemes produced within one fragment must be adjacent and in order. */
-export function createPrefixMatcher(search: string | null | undefined) {
+type SearchText = { lowercase: string; words?: readonly string[] };
+
+function searchText(values: readonly unknown[]): SearchText {
+  return { lowercase: values.join(" ").toLowerCase() };
+}
+
+function compilePrefixQuery(search: string | null | undefined) {
   const query = search?.trim().toLowerCase();
   if (!query) return () => true;
   const sequences = query.split(" ").map(lexemes).filter((words) => words.length);
@@ -77,12 +83,39 @@ export function createPrefixMatcher(search: string | null | undefined) {
       prefix.length > longest.length ? prefix : longest,
     ),
   );
-  return (values: readonly unknown[]) => {
-    const lowercase = values.join(" ").toLowerCase();
+  return (text: SearchText) => {
     // Every emitted lexeme is a substring of the input. Save tokenization for
     // rows that contain at least one prefix from every search fragment.
-    if (!candidates.every((prefix) => lowercase.includes(prefix))) return false;
-    const words = lexemes(lowercase);
+    if (!candidates.every((prefix) => text.lowercase.includes(prefix))) return false;
+    const words = (text.words ??= lexemes(text.lowercase));
     return sequences.every((prefixes) => containsPrefixSequence(words, prefixes));
+  };
+}
+
+export function createPrefixMatcher(search: string | null | undefined) {
+  if (!search?.trim()) return () => true;
+  const matches = compilePrefixQuery(search);
+  return (values: readonly unknown[]) => matches(searchText(values));
+}
+
+/** Keep normalized fields and lazily computed lexemes for one verified snapshot.
+ * Return independent values so a consumer cannot edit the cached directory. */
+export function buildPrefixSearch<Row>(
+  orderedRows: readonly Row[],
+  fields: (row: Row) => readonly unknown[],
+) {
+  const entries = orderedRows.map((row) => ({ row, text: searchText(fields(row)) }));
+  return (
+    search: string | null | undefined,
+    eligible: (row: Row) => boolean = () => true,
+    limit = Infinity,
+  ): Row[] => {
+    const matches = compilePrefixQuery(search);
+    const rows: Row[] = [];
+    for (const entry of entries) {
+      if (rows.length === limit) break;
+      if (eligible(entry.row) && matches(entry.text)) rows.push(entry.row);
+    }
+    return structuredClone(rows);
   };
 }

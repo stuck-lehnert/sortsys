@@ -1,6 +1,7 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory } from "../crypto/session";
+import { buildPrefixSearch } from "../search/prefixQuery";
 import {
   addressId,
   addressText,
@@ -21,8 +22,8 @@ import {
   projectChanges,
   projectCollection,
   projectDomainId,
-  createProjectMatcher,
   projectPayload,
+  projectSearchFields,
   wireProject,
   PROJECT_MUTATIONS,
   PROJECT_QUERIES,
@@ -57,6 +58,14 @@ function document(view: DataView, selected: DataRequest<ProjectPayload>) {
   if (documents.length !== 1 || !documents[0]!.value.project)
     throw new InvalidProtectedData();
   return documents[0]!;
+}
+
+const projectSearch = Symbol("project search");
+type Project = ReturnType<typeof wireProject>;
+
+function compareProjects(a: Project, b: Project) {
+  return a.title.toLowerCase().localeCompare(b.title.toLowerCase()) ||
+    a.id.localeCompare(b.id);
 }
 
 export function createProtectedProjects(
@@ -199,7 +208,7 @@ export function createProtectedProjects(
         ),
       );
     },
-    async query(path: string, input: unknown): Promise<unknown> {
+    async query(path: string, input: unknown, limit?: number): Promise<unknown> {
       live();
       if (!PROJECT_QUERIES.has(path)) throw new InvalidProtectedData();
       if (path === "projects.get") {
@@ -258,37 +267,43 @@ export function createProtectedProjects(
         if (data.search != null && typeof data.search !== "string")
           throw new InvalidProtectedData();
       }
-      const matches = createProjectMatcher(data.search as string | undefined);
       const areas = await readableProjectAreas(client, signal);
       live();
       const selected = areas.map((area) => ({ model: PROJECT_MODEL, area }));
-      const values = await runtime.read(selected, (view) =>
-        selected
-          .flatMap((selected) => view.documents(selected))
-          .map((document) => document.value)
-          .filter((project) => project.project)
-          .filter(
+      const values = await runtime.read(
+        selected,
+        (view) => {
+          const projects = () =>
+            selected
+              .flatMap((request) => view.documents(request))
+              .map((document) => document.value)
+              .filter((project) => project.project);
+          if (forContact) {
+            return projects()
+              .filter((project) =>
+                project.contacts.some(
+                  (link) => publicId(link.values.contact_id) === data.contactId,
+                ),
+              )
+              .map(wireProject)
+              .sort(compareProjects);
+          }
+          const search = view.derive(projectSearch, selected, () =>
+            buildPrefixSearch(
+              projects().map(wireProject).sort(compareProjects),
+              projectSearchFields,
+            ),
+          );
+          return search(
+            data.search as string | undefined,
             (project) =>
-              !forContact ||
-              project.contacts.some(
-                (link) => publicId(link.values.contact_id) === data.contactId,
-              ),
-          )
-          .map(wireProject)
-          .filter(
-            (project) =>
-              forContact ||
-              ((data.finished == null ||
-                !!project.finishedAt === data.finished) &&
-                (data.customerId == null ||
-                  project.customerId === data.customerId) &&
-                matches(project)),
-          )
-          .sort(
-            (a, b) =>
-              a.title.toLowerCase().localeCompare(b.title.toLowerCase()) ||
-              a.id.localeCompare(b.id),
-          ),
+              (data.finished == null || !!project.finishedAt === data.finished) &&
+              (data.customerId == null || project.customerId === data.customerId),
+            limit,
+          );
+        },
+        undefined,
+        { batchDirectory: limit !== undefined },
       );
       live();
       if (data.orderBy === "activity")

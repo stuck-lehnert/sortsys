@@ -1,6 +1,6 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
-import { createPrefixMatcher } from "../search/prefixQuery";
+import { buildPrefixSearch } from "../search/prefixQuery";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { newProductRowId, publicId } from "./products";
 import { businessSchema } from "./schema";
@@ -25,6 +25,7 @@ function wire(payload: VendorPayload): QueryResult<"products.vendors.get"> {
   };
 }
 const request = { model: VENDOR_MODEL, area: VENDOR_COLLECTION };
+const vendorSearch = Symbol("vendor search");
 export function createProtectedVendors(
   client: Client,
   signal: AbortSignal,
@@ -33,7 +34,7 @@ export function createProtectedVendors(
   const lease = acquireDataRuntime(client, signal, driver),
     runtime = lease.runtime;
   return {
-    async query(path: string, input: unknown) {
+    async query(path: string, input: unknown, limit?: number) {
       lease.live();
       const data =
         path === "products.vendors.get"
@@ -45,22 +46,28 @@ export function createProtectedVendors(
         (data.search != null && typeof data.search !== "string")
       )
         throw new InvalidProtectedData();
-      const result = await runtime.read([request], (view) => {
-        const vendors = view
-          .documents(request)
-          .map((document) => wire(document.value));
-        if (path === "products.vendors.get") {
-          const vendor = vendors.find((vendor) => vendor.id === data.id);
-          if (!vendor) throw new InvalidProtectedData();
-          return vendor;
-        }
-        const matches = createPrefixMatcher(data.search as string | undefined);
-        return vendors
-          .filter((vendor) => matches([vendor.name, vendor.description]))
-          .sort((a, b) =>
-            a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+      const result = await runtime.read(
+        [request],
+        (view) => {
+          if (path === "products.vendors.get") {
+            const vendor = view.documents(request)
+              .find(({ value }) => publicId(value.vendor.values.id) === data.id);
+            if (!vendor) throw new InvalidProtectedData();
+            return wire(vendor.value);
+          }
+          const search = view.derive(vendorSearch, [request], () =>
+            buildPrefixSearch(
+              view.documents(request).map(({ value }) => wire(value)).sort((a, b) =>
+                a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
+              ),
+              (vendor) => [vendor.name, vendor.description],
+            ),
           );
-      });
+          return search(data.search as string | undefined, undefined, limit);
+        },
+        undefined,
+        { batchDirectory: limit !== undefined },
+      );
       lease.live();
       return result;
     },

@@ -5,7 +5,7 @@ import type {
   QueryResult,
 } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
-import { createPrefixMatcher } from "../search/prefixQuery";
+import { buildPrefixSearch, createPrefixMatcher } from "../search/prefixQuery";
 import type { BusinessDatabase, DuckDriver } from "./database";
 import { decodeBusinessRow } from "./rowCodec";
 import type { BusinessRow } from "./rowCodec";
@@ -330,21 +330,24 @@ function wireProduct(payload: ProductPayload): Product {
   };
 }
 
+function productSearchFields(
+  product: Pick<
+    Product,
+    "customId" | "name" | "brand" | "description" | "regieReportName"
+  >,
+) {
+  return [
+    product.customId,
+    product.name,
+    product.brand,
+    product.description,
+    product.regieReportName,
+  ];
+}
 export function createProductMatcher(search: string | null | undefined) {
   const matches = createPrefixMatcher(search);
-  return (
-    product: Pick<
-      Product,
-      "customId" | "name" | "brand" | "description" | "regieReportName"
-    >,
-  ) =>
-    matches([
-      product.customId,
-      product.name,
-      product.brand,
-      product.description,
-      product.regieReportName,
-    ]);
+  return (product: Parameters<typeof productSearchFields>[0]) =>
+    matches(productSearchFields(product));
 }
 
 /** A catalogue reader never requests or opens procurement keys. Price records
@@ -355,6 +358,7 @@ export const PRODUCT_MODEL = defineDataModel({
   tables: ["products", "product_categories"],
 });
 const productRequest = { model: PRODUCT_MODEL, area: PRODUCT_COLLECTION };
+const productSearch = Symbol("product search");
 
 export async function openProtectedProducts(
   client: Client,
@@ -412,7 +416,8 @@ export async function openProtectedProducts(
     return { success: true as const };
   }
   try {
-    await read(() => undefined);
+    await runtime.read([productRequest], () => undefined);
+    lease.live();
   } catch (error) {
     lease.close();
     throw error;
@@ -426,26 +431,42 @@ export async function openProtectedProducts(
           ? undefined
           : new Map([[PRODUCT_COLLECTION.domain, minimumSequence]]),
       );
-      await read(() => undefined);
+      await runtime.read([productRequest], () => undefined);
+      lease.live();
     },
-    list(
+    async list(
       input: QueryInput<"products.list">,
+      limit?: number,
     ): Promise<QueryResult<"products.list">> {
-      return read((products) => {
-        const category = input?.category?.trim();
-        const matches = createProductMatcher(input?.search);
-        return products
-          .map(wireProduct)
-          .filter(
-            (product) =>
-              (!category || product.categories.includes(category)) &&
-              matches(product),
-          )
-          .map((product) =>
-            category ? { ...product, categories: [category] } : product,
-          )
-          .sort((a, b) => a.customId - b.customId);
-      });
+      lease.live();
+      const category = input?.category?.trim();
+      const rows = await runtime.read(
+        [productRequest],
+        (view) => {
+          lease.live();
+          const search = view.derive(productSearch, [productRequest], () =>
+            buildPrefixSearch(
+              view
+                .documents(productRequest)
+                .map(({ value }) => wireProduct(value))
+                .sort((a, b) => a.customId - b.customId),
+              productSearchFields,
+            ),
+          );
+          return search(
+            input?.search,
+            (product) => !category || product.categories.includes(category),
+            limit,
+          );
+        },
+        undefined,
+        { batchDirectory: limit !== undefined },
+      );
+      lease.live();
+      if (category) {
+        for (const product of rows) product.categories = [category];
+      }
+      return rows;
     },
     get: (id: string): Promise<Product> =>
       read((products) => wireProduct(payload(products, id))),

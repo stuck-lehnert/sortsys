@@ -637,6 +637,8 @@ try {
     });
     let accessSnapshots = 0;
     let controlReads = 0;
+    let objectReads = 0;
+    const personnelSearchReads = [];
     const controlProcedures = (request) =>
       ["auth.sessionInfo", "zerotrust.status"].reduce(
         (count, path) => count + rpcInputs(request, path).length,
@@ -645,6 +647,23 @@ try {
     page.on("request", (request) => {
       accessSnapshots += rpcInputs(request, "zerotrust.access.snapshot").length;
       controlReads += controlProcedures(request);
+      const selections = [
+        ...rpcInputs(request, "zerotrust.access.snapshot").flatMap(
+          (input) => input?.pages?.selections ?? [],
+        ),
+        ...rpcInputs(request, "zerotrust.objects.pages").flatMap(
+          (input) => input?.selections ?? [],
+        ),
+        ...rpcInputs(request, "zerotrust.objects.list"),
+      ];
+      objectReads += selections.filter(({ domain }) =>
+        /^(catalog|personnel|project|tool):.+:master-data$/.test(domain ?? ""),
+      ).length;
+      const personnel = selections
+        .map((selection) => selection.domain)
+        .filter((domain) => domain?.startsWith("personnel:"));
+      const subjects = new Set(personnel.map((domain) => domain.split(":")[1]));
+      if (subjects.size > 1) personnelSearchReads.push(...personnel);
     });
 
     await login(page, "john.doe");
@@ -659,6 +678,7 @@ try {
     ).toBeVisible();
     await expect.poll(() => typeof fingerprint).toBe("string");
 
+    personnelSearchReads.length = 0;
     await page.keyboard.press("Control+k");
     const palette = page.getByRole("dialog", { name: "Befehlspalette" });
     const search = palette.getByRole("searchbox", { name: "Befehl oder Suche" });
@@ -669,16 +689,21 @@ try {
     await search.fill("pirckheimer");
     await expect(project).toBeVisible();
     await expect(searchPanel).toHaveAttribute("data-searching", "false");
-    const warmedSnapshots = accessSnapshots;
+    assert.ok(personnelSearchReads.length > 0);
+    assert.ok(
+      personnelSearchReads.every((domain) => domain.endsWith(":master-data")),
+      "The command palette only opens personnel master data",
+    );
+    const warmedObjectReads = objectReads;
     for (const term of ["pirckheimer-g", "pirckheimer-gym"]) {
       await search.fill(term);
       await expect(project).toBeVisible();
       await expect(searchPanel).toHaveAttribute("data-searching", "false");
     }
     assert.equal(
-      accessSnapshots,
-      warmedSnapshots,
-      "Refining the search reuses the verified directory and local data",
+      objectReads,
+      warmedObjectReads,
+      "Refining the search performs no additional business data reads",
     );
     await palette.getByText("Schließen", { exact: true }).click();
     await expect(palette).toBeHidden();
@@ -699,8 +724,9 @@ try {
         }),
       );
     const previousControlReads = controlReads;
+    const previousAccessSnapshots = accessSnapshots;
     sendRefresh(false);
-    await expect.poll(() => accessSnapshots).toBeGreaterThan(warmedSnapshots);
+    await expect.poll(() => accessSnapshots).toBeGreaterThan(previousAccessSnapshots);
     assert.equal(controlReads, previousControlReads);
     assert.equal(await mountedProduct.evaluate((node) => node.isConnected), true);
 
@@ -1497,7 +1523,7 @@ try {
     for (const target of ["/admin", "/offers", "/projects", "/products"]) {
       await expect(page.locator(`nav a[href="${target}"]`)).toHaveCount(0);
     }
-    await page.keyboard.press("Control+k");
+    await page.getByRole("button", { name: "Befehle und Suche" }).click();
     const palette = page.getByRole("dialog", { name: "Befehlspalette" });
     const search = palette.getByRole("searchbox", { name: "Befehl oder Suche" });
     for (const [term, deniedResult] of [

@@ -184,6 +184,133 @@ test("runtime selections beyond the server limit use the complete verified inven
   }
 });
 
+test("a derived directory stays warm across unrelated reads and retires with its source", async () => {
+  const [entry, other] = metadataRequests(2);
+  const fixture = await protectedTenant([entry.area, other.area]);
+  const object = `${entry.area.prefix}1`;
+  await fixture.seed(entry.area, object, { title: "Geprüfter Suchtext" });
+  const runtime = new DataRuntime(encryptedDataStorage(fixture.client), () => {});
+  const key = Symbol("search directory");
+  let built = 0;
+  const read = () => runtime.read([entry], (view) =>
+    view.derive(key, [entry], () => {
+      built++;
+      return view.documents(entry).map(({ value }) => value.title);
+    }),
+  );
+  try {
+    await expect(runtime.read([{ ...entry, ids: [object] }], (view) =>
+      view.derive(key, [entry], () => []),
+    )).rejects.toBeInstanceOf(InvalidProtectedData);
+    expect(await read()).toEqual(["Geprüfter Suchtext"]);
+    await runtime.read([other], () => undefined);
+    fixture.calls.length = 0;
+    expect(await read()).toEqual(["Geprüfter Suchtext"]);
+    expect(fixture.calls).toEqual([]);
+    expect(built).toBe(1);
+
+    await fixture.seed(entry.area, object, { title: "Neue Bezeichnung" });
+    runtime.invalidate(new Set([entry.area.domain]));
+    expect(await read()).toEqual(["Neue Bezeichnung"]);
+    expect(built).toBe(2);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("simultaneous directory lookups load together and isolate a denied area", async () => {
+  const requests = metadataRequests(2);
+  const fixture = await protectedTenant(requests.map(({ area }) => area));
+  for (const [index, { area }] of requests.entries())
+    await fixture.seed(area, `${area.prefix}1`, { label: `Entry ${index + 1}` });
+
+  let denySecond = false;
+  const loads = [];
+  const client = {
+    ...fixture.client,
+    query(path, input, options) {
+      if (path === "zerotrust.access.snapshot") {
+        const domains = input.pages.selections.map(({ domain }) => domain);
+        loads.push(domains);
+        if (denySecond && domains.includes(requests[1].area.domain))
+          return Promise.resolve([null, new RpcClientError({
+            message: "Denied",
+            code: -32003,
+            data: { code: "FORBIDDEN", httpCode: 403 },
+          })]);
+      }
+      return fixture.client.query(path, input, options);
+    },
+  };
+  const runtime = new DataRuntime(encryptedDataStorage(client), () => {});
+  const query = () => requests.map((request) =>
+    runtime.read(
+      [request],
+      (view) => view.documents(request).map(({ value }) => value.label),
+      undefined,
+      { batchDirectory: true },
+    ),
+  );
+  try {
+    expect(await Promise.all(query())).toEqual([["Entry 1"], ["Entry 2"]]);
+    const domains = requests.map(({ area }) => area.domain);
+    expect(loads).toEqual([domains]);
+
+    runtime.invalidate();
+    denySecond = true;
+    loads.length = 0;
+    const [allowed, denied] = await Promise.allSettled(query());
+    expect(allowed).toEqual({ status: "fulfilled", value: ["Entry 1"] });
+    expect(denied).toMatchObject({ status: "rejected" });
+    expect(loads).toEqual([domains, [domains[0]], [domains[1]]]);
+  } finally {
+    await runtime.close();
+  }
+});
+
+test("a warm directory does not wait for an unrelated encrypted read", async () => {
+  const [entry, other] = metadataRequests(2);
+  const fixture = await protectedTenant([entry.area, other.area]);
+  await fixture.seed(entry.area, `${entry.area.prefix}1`, { title: "Suchtext" });
+  const storage = encryptedDataStorage(fixture.client);
+  let started;
+  const fetching = new Promise((resolve) => { started = resolve; });
+  let finish;
+  const held = new Promise((resolve) => { finish = resolve; });
+  const runtime = new DataRuntime({
+    ...storage,
+    async open(signal, domains, initial) {
+      if (initial?.some(({ area }) => area.domain === other.area.domain)) {
+        started();
+        await held;
+      }
+      return storage.open(signal, domains, initial);
+    },
+  }, () => {});
+  const query = () => runtime.read(
+    [entry],
+    (view) => view.documents(entry).map(({ value }) => value.title),
+    undefined,
+    { batchDirectory: true },
+  );
+  let unrelated;
+  let timeout;
+  try {
+    expect(await query()).toEqual(["Suchtext"]);
+    unrelated = runtime.read([other], () => undefined);
+    await fetching;
+    const remaining = new Promise((resolve) => {
+      timeout = setTimeout(() => resolve("Blocked by the unrelated read"), 1000);
+    });
+    expect(await Promise.race([query(), remaining])).toEqual(["Suchtext"]);
+  } finally {
+    clearTimeout(timeout);
+    finish();
+    await unrelated;
+    await runtime.close();
+  }
+});
+
 test("a business read reuses verified metadata while still checking encrypted objects and account lifetime", async () => {
   const entries = {
     domain: "testing:entries:master-data",

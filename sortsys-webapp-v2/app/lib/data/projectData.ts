@@ -174,6 +174,8 @@ export function wireProject(payload: ProjectPayload): Project {
 }
 export function createProjectMatcher(search: string | null | undefined) {
   const matches = createPrefixMatcher(search);
-  return (value: Project) =>
-    matches([value.title, ...searchableAddressValues(value.address)]);
+  return (value: Project) => matches(projectSearchFields(value));
+}
+export function projectSearchFields(value: Project) {
+  return [value.title, ...searchableAddressValues(value.address)];
 }

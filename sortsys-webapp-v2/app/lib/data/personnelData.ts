@@ -219,10 +219,11 @@ export function newPersonnelProfile(
   for (const facet of PERSONNEL_FACETS) personnelPart(row, facet);
   return row;
 }
-export function wirePersonnel(view: DataView, id: string) {
+export function wirePersonnel(view: DataView, id: string, includePrivateFields = true) {
   const row = view.row("users", { id: addressId(id) });
   const fields = row.pick(personnelColumns("master-data"));
   const optional = (column: string) => {
+    if (!includePrivateFields) return null;
     const value = row.get(column);
     return value === UNLOADED ? null : value;
   };

@@ -1,6 +1,6 @@
 import { contractProcedureKind } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
-import type { Client, MutateInput } from "@sortsys/v2-client";
+import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
 import { revision } from "@sortsys/zerotrust/sortsys";
 import { Observable } from "rxjs";
 import {
@@ -242,6 +242,15 @@ function text(value: unknown): string {
   if (typeof value !== "string") throw invalidInput();
   return value;
 }
+
+type DirectorySearchPath =
+  | "projects.list"
+  | "users.list"
+  | "products.list"
+  | "customers.list"
+  | "contacts.list"
+  | "products.vendors.list";
+const DIRECTORY_SEARCH_LIMIT = 8;
 
 export function createBusinessClient(
   base: Client,
@@ -993,10 +1002,12 @@ export function createBusinessClient(
   async function readQuery(
     path: string,
     input: unknown,
+    limit?: number,
   ): Promise<[unknown | null, RpcClientError | null]> {
     try {
       await synchronized();
-      if (adapters.owns(path)) return [await adapters.query(path, input), null];
+      if (adapters.owns(path))
+        return [await adapters.query(path, input, limit), null];
       if (TOOL_QUERIES.has(path)) {
         const signal = controller.signal,
           value = await (await toolStore()).query(path, input);
@@ -1011,7 +1022,7 @@ export function createBusinessClient(
       }
       if (VENDOR_QUERIES.has(path)) {
         const signal = controller.signal,
-          value = await (await vendorStore()).query(path, input);
+          value = await (await vendorStore()).query(path, input, limit);
         if (closed || signal.aborted) throw unavailable();
         return [value, null];
       }
@@ -1090,13 +1101,13 @@ export function createBusinessClient(
       }
       if (PROJECT_QUERIES.has(path)) {
         const signal = controller.signal,
-          value = await (await projectStore()).query(path, input);
+          value = await (await projectStore()).query(path, input, limit);
         if (closed || signal.aborted) throw unavailable();
         return [value, null];
       }
       if (ADDRESS_QUERIES.has(path)) {
         const signal = controller.signal,
-          value = await (await directory()).query(path, input);
+          value = await (await directory()).query(path, input, limit);
         if (closed || signal.aborted) throw unavailable();
         return [value, null];
       }
@@ -1175,10 +1186,13 @@ export function createBusinessClient(
             )
           )
             throw unavailable();
-          value = await store.list({
-            search: data.search as string | undefined,
-            category: data.category as string | undefined,
-          });
+          value = await store.list(
+            {
+              search: data.search as string | undefined,
+              category: data.category as string | undefined,
+            },
+            limit,
+          );
           break;
         case "products.get":
           value = await store.get(text(data.id));
@@ -1760,9 +1774,11 @@ export function createBusinessClient(
     return choices;
   }
   const toolResourceActions = {
-    search(search: string) {
-      return readResourceChoices(async () =>
-        (await toolStore()).searchChoices(search),
+    search(search: string, cancellation: AbortSignal) {
+      return readResourceChoices(
+        async () =>
+          (await toolStore()).searchChoices(search, DIRECTORY_SEARCH_LIMIT),
+        cancellation,
       );
     },
     tools(cancellation?: AbortSignal) {
@@ -1778,6 +1794,21 @@ export function createBusinessClient(
       );
     },
   };
+  async function searchDirectory<Path extends DirectorySearchPath>(
+    path: Path,
+    search: string,
+    cancellation: AbortSignal,
+  ): Promise<QueryResult<Path> | null> {
+    return readResourceChoices(async () => {
+      const [result, error] = await readQuery(
+        path,
+        { search },
+        DIRECTORY_SEARCH_LIMIT,
+      );
+      if (error) throw error;
+      return result as QueryResult<Path> | null;
+    }, cancellation);
+  }
   async function documentFile(
     caseId: string,
     id: string,
@@ -2081,6 +2112,7 @@ export function createBusinessClient(
     files: typeof fileActions;
     documents: typeof documentActions;
     toolResources: typeof toolResourceActions;
+    searchDirectory: typeof searchDirectory;
     organization: typeof organizationActions;
     logo: typeof logoActions;
     templates: typeof templateActions;
@@ -2096,6 +2128,7 @@ export function createBusinessClient(
     files: fileActions,
     documents: documentActions,
     toolResources: toolResourceActions,
+    searchDirectory,
     organization: organizationActions,
     logo: logoActions,
     templates: templateActions,

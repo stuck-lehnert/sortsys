@@ -2,6 +2,7 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { listenCryptoSession, unlockedAccount } from "../../crypto/session";
 import type { DuckDriver } from "../database";
+import { hasReadableAreasConnection } from "../readableAreas";
 import { loadToolReturnProjection } from "../toolReturns";
 import { listenDataChanges } from "./changes";
 import { DataRuntime } from "./runtime";
@@ -31,7 +32,7 @@ export function acquireDataRuntime(
   }
   if (shared) {
     shared.runtime.configureDriver(driver);
-    shared.runtime.revalidate();
+    if (!hasReadableAreasConnection(client)) shared.runtime.revalidate();
   }
   if (!shared) {
     const runtime = new DataRuntime(

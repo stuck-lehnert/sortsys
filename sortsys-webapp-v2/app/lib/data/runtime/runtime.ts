@@ -75,6 +75,12 @@ type Resource = {
   known: ReadonlySet<string>;
   permissions: DataPermissions;
 };
+type SnapshotCache = Map<symbol, { sources: Resource[]; value: unknown }>;
+type DirectoryRead = {
+  requests: readonly DataRequest[];
+  run(): Promise<void>;
+  reject(reason: unknown): void;
+};
 
 function withPermissions(
   resource: Resource,
@@ -92,7 +98,33 @@ export class DataView {
     protected tables: DataTables,
     protected readonly live: () => void,
     protected readonly database: () => Promise<BusinessDatabase>,
+    private readonly snapshotCache: SnapshotCache = new Map(),
   ) {}
+  /** Keep a derived view only while its complete, verified source snapshots
+   * still match. The caller owns the cache key and must keep the value private. */
+  derive<T>(
+    key: symbol,
+    requests: readonly DataRequest[],
+    build: () => T,
+  ): T {
+    this.live();
+    const sources = requests.map((request) => {
+      const source = this.resources.get(dataAreaKey(request.area));
+      if (!source?.complete || source.request.model !== request.model)
+        throw new InvalidProtectedData();
+      return source;
+    });
+    const cached = this.snapshotCache.get(key);
+    if (
+      cached?.sources.length === sources.length &&
+      sources.every((source, index) => source === cached.sources[index])
+    )
+      return cached.value as T;
+    const value = build();
+    this.live();
+    this.snapshotCache.set(key, { sources, value });
+    return value;
+  }
   can(request: DataRequest, action: DataAction): boolean {
     this.live();
     const resource = this.resources.get(dataAreaKey(request.area));
@@ -415,9 +447,11 @@ export class DataTransaction extends DataView {
 export class DataRuntime {
   private resources = new Map<string, Resource>();
   private projectedResources = new Map<string, Resource>();
+  private snapshotCache: SnapshotCache = new Map();
   private tables: DataTables = new Map();
   private project?: RowProjection;
   private pending: Promise<unknown> = Promise.resolve();
+  private directoryReads?: DirectoryRead[];
   private database?: Promise<BusinessDatabase>;
   private controller = new AbortController();
   private generation = 0;
@@ -501,6 +535,7 @@ export class DataRuntime {
       if (!domains || domains.has(resource.request.area.domain))
         this.resources.delete(key);
     if (!domains) {
+      this.snapshotCache.clear();
       this.projectedResources.clear();
       this.tables.clear();
       this.project = undefined;
@@ -509,6 +544,12 @@ export class DataRuntime {
       void previous
         ?.then((database) => database.close())
         .catch(() => undefined);
+    } else {
+      for (const [key, cached] of this.snapshotCache)
+        if (
+          cached.sources.some((source) => domains.has(source.request.area.domain))
+        )
+          this.snapshotCache.delete(key);
     }
     for (const listener of this.listeners) listener(domains);
   }
@@ -536,27 +577,102 @@ export class DataRuntime {
     requests: readonly DataRequest[],
     work: (view: DataView) => T | Promise<T>,
     collections?: DataCollections,
+    options?: { batchDirectory?: boolean },
   ): Promise<T> {
+    if (options?.batchDirectory && !collections)
+      return this.readDirectory(requests, work);
     return this.queue(async () => {
       await this.loadCurrent(requests, undefined, collections);
+      return this.withView(work);
+    });
+  }
+  private async withView<T>(
+    work: (view: DataView) => T | Promise<T>,
+    allowSql = true,
+  ): Promise<T> {
+    const generation = this.generation;
+    let active = true;
+    const view = new DataView(
+      this.projectedResources,
+      this.tables,
+      () => {
+        this.live();
+        if (!active) throw new InvalidProtectedData();
+        if (generation !== this.generation) throw new ProtectedWriteConflict();
+      },
+      () => {
+        if (!allowSql) throw new InvalidProtectedData();
+        return this.db();
+      },
+      this.snapshotCache,
+    );
+    try {
+      return await work(view);
+    } finally {
+      active = false;
+    }
+  }
+  /** Directory views that are waiting for the same runtime can verify their
+   * objects in one load. A denied or broken area only fails its own search. */
+  private async readDirectory<T>(
+    requests: readonly DataRequest[],
+    work: (view: DataView) => T | Promise<T>,
+  ): Promise<T> {
+    this.live();
+    if (
+      requests.every((request) => request.ids === undefined) &&
+      this.hasCurrent(requests)
+    ) {
+      // A warm directory uses verified RAM data. It can finish while another
+      // area is being fetched or materialized in the shared SQL database.
       const generation = this.generation;
-      let active = true;
-      const view = new DataView(
-        this.projectedResources,
-        this.tables,
-        () => {
-          this.live();
-          if (!active) throw new InvalidProtectedData();
-          if (generation !== this.generation)
-            throw new ProtectedWriteConflict();
+      const value = await this.withView(work, false);
+      this.live();
+      if (this.generation !== generation || !this.hasCurrent(requests))
+        throw new ProtectedWriteConflict();
+      return value;
+    }
+    return new Promise<T>((resolve, reject) => {
+      const entry: DirectoryRead = {
+        requests,
+        run: async () => {
+          try {
+            await this.loadCurrent(requests);
+            const value = await this.withView(work);
+            this.live();
+            resolve(value);
+          } catch (error) {
+            reject(error);
+          }
         },
-        () => this.db(),
-      );
-      try {
-        return await work(view);
-      } finally {
-        active = false;
+        reject,
+      };
+      if (this.directoryReads) {
+        this.directoryReads.push(entry);
+        return;
       }
+      const batch = [entry];
+      this.directoryReads = batch;
+      void this.queue(async () => {
+        this.directoryReads = undefined;
+        const missing: DirectoryRead[] = [];
+        for (const read of batch) {
+          if (this.hasCurrent(read.requests)) await read.run();
+          else missing.push(read);
+        }
+        if (missing.length > 1) {
+          try {
+            await this.loadCurrent(missing.flatMap((read) => read.requests));
+          } catch {
+            this.live();
+            // Each authorized category still gets its own verified load.
+          }
+        }
+        for (const read of missing) await read.run();
+      }).catch((error) => {
+        if (this.directoryReads === batch) this.directoryReads = undefined;
+        for (const read of batch) read.reject(error);
+      });
     });
   }
   /** Retry only snapshot acquisition. Business callbacks have not run yet;
@@ -582,6 +698,23 @@ export class DataRuntime {
         );
       }
     }
+  }
+  private hasCurrent(requests: readonly DataRequest[]): boolean {
+    if (this.projectedGeneration !== this.generation) return false;
+    for (const key of this.projectedResources.keys()) {
+      if (this.stale.has(key)) return false;
+    }
+    return requests.every((request) => {
+      const key = dataAreaKey(request.area);
+      const resource = this.resources.get(key);
+      return (
+        !this.stale.has(key) &&
+        resource?.request.model === request.model &&
+        (resource.complete ||
+          (request.ids !== undefined &&
+            request.ids.every((id) => resource.known.has(id))))
+      );
+    });
   }
   private async load(
     input: readonly DataRequest[],
@@ -619,26 +752,7 @@ export class DataRuntime {
       merged.set(key, { ...request, ids });
     }
     const requests = [...merged.values()];
-    if (
-      !opened &&
-      !supplied &&
-      this.projectedGeneration === this.generation &&
-      [...this.projectedResources.keys()].every(
-        (key) => !this.stale.has(key),
-      ) &&
-      requests.every((request) => {
-        const key = dataAreaKey(request.area);
-        const resource = this.resources.get(key);
-        return (
-          !this.stale.has(key) &&
-          resource?.request.model === request.model &&
-          (resource.complete ||
-            (request.ids !== undefined &&
-              request.ids.every((id) => resource.known.has(id))))
-        );
-      })
-    )
-      return;
+    if (!opened && !supplied && this.hasCurrent(requests)) return;
     const generation = this.generation;
     const next = new Map(this.resources);
     const reads = opened ?? new Map<string, DataCollection>();
@@ -805,6 +919,12 @@ export class DataRuntime {
       if (changed) this.generation++;
       this.resources = next;
       this.projectedResources = fresh;
+      for (const [key, cached] of this.snapshotCache) {
+        const retired = cached.sources.some(
+          (source) => next.get(dataAreaKey(source.request.area)) !== source,
+        );
+        if (retired) this.snapshotCache.delete(key);
+      }
       this.tables = tables;
       this.project = project;
       this.projectedGeneration = this.generation;

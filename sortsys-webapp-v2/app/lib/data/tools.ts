@@ -15,7 +15,7 @@ import {
 import { createResourceAreas } from "./createProjectArea";
 import type { DuckDriver } from "./database";
 import { newProductRowId, publicId } from "./products";
-import { createPrefixMatcher } from "../search/prefixQuery";
+import { buildPrefixSearch, createPrefixMatcher } from "../search/prefixQuery";
 import {
   protectedCollections,
   required,
@@ -203,6 +203,8 @@ function wireTracking(
     deadlineAt: date(p.deadline_at),
   };
 }
+
+const toolSearch = Symbol("tool search");
 
 export function createProtectedTools(
   client: Client,
@@ -526,15 +528,22 @@ export function createProtectedTools(
     async choices(): Promise<ToolChoice[]> {
       return readAll(toolChoices, isToolMaster);
     },
-    async searchChoices(search: string): Promise<ToolChoice[]> {
-      const matches = createPrefixMatcher(addressText(search, false, 1000));
+    async searchChoices(search: string, limit?: number): Promise<ToolChoice[]> {
+      const term = addressText(search, false, 1000);
       const selected = (await requests()).filter(isToolMaster);
-      const result = await runtime.read(selected, (view) =>
-        toolChoices(view, selected)
-          .filter((tool) =>
-            matches([tool.customId, tool.brand, tool.category, tool.label]),
-          )
-          .sort((a, b) => a.customId - b.customId),
+      const result = await runtime.read(
+        selected,
+        (view) => {
+          const find = view.derive(toolSearch, selected, () =>
+            buildPrefixSearch(
+              toolChoices(view, selected).sort((a, b) => a.customId - b.customId),
+              (tool) => [tool.customId, tool.brand, tool.category, tool.label],
+            ),
+          );
+          return find(term, undefined, limit);
+        },
+        undefined,
+        { batchDirectory: limit !== undefined },
       );
       live();
       return result;

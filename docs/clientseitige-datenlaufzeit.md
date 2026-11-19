@@ -141,8 +141,13 @@ freigegebenen Bereiche für bis zu 15 Sekunden. Das spart beim Weiterfiltern
 in der Befehlspalette einen neuen Abruf des Verzeichnisses. Änderungen an
 Freigaben, Änderungen am Verzeichnis und ein Verbindungsabbruch verwerfen
 es sofort. Jeder neue Abruf verschlüsselter Inhalte prüft die Freigabe erneut.
-Die Werkzeugtreffer in der Befehlspalette verwenden die Stammdaten. Buchungen
-werden für die Werkzeugansicht und deren Verfügbarkeitsfilter geladen.
+Die Befehlspalette lädt für Werkzeuge und Personal nur die Stammdaten. Bei
+weiteren Eingaben verwendet sie die bereits aufbereiteten Suchtexte zu
+demselben geprüften Datenstand. Sie übernimmt bis zu acht Treffer pro
+Kategorie. Der Suchindex liegt im Arbeitsspeicher und wird bei einer
+Änderung des zugehörigen Datenstands neu aufgebaut. Gleichzeitig wartende
+Kategorien bündeln ihre erste Datenprüfung. Ist ein Bereich gesperrt, kann
+die Suche die freigegebenen Bereiche einzeln prüfen und deren Treffer anzeigen.
 
 Vorgangslisten teilen auch dann die noch laufende Aufbereitung ihrer Grunddaten,
 wenn sich Suchtext oder Statusfilter unterscheiden. Jede Ansicht filtert und

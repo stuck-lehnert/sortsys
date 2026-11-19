@@ -28,6 +28,10 @@ export function setReadableAreasConnection(client: Client, connected: boolean): 
   invalidateReadableAreas(client);
 }
 
+export function hasReadableAreasConnection(client: Client): boolean {
+  return byClient.get(client)?.connected === true;
+}
+
 /** Domain inventory is technical metadata, including for administrators. A
  * verified policy and a certified creation proof must allow each selection.
  * Hold the directory briefly while its change stream is connected. Encrypted

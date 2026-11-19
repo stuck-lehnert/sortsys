@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { createPrefixMatcher } from "./prefixQuery.ts";
+import { buildPrefixSearch, createPrefixMatcher } from "./prefixQuery.ts";
 
 // Results of the former create_query SQL function on PostgreSQL 18.6.
 const entries = [
@@ -101,10 +101,22 @@ const cases = [
   ["---", []],
 ];
 
+const searchCatalogue = buildPrefixSearch(entries, ({ fields }) => fields);
+
 test.each(cases)("matches the reference catalogue for %j", (query, expected) => {
   const matches = createPrefixMatcher(query);
   const hits = entries.filter(({ fields }) => matches(fields));
   expect(hits.map(({ id }) => id)).toEqual(expected);
+  expect(searchCatalogue(query).map(({ id }) => id)).toEqual(expected);
+});
+
+test("returns the first eligible matches, including terms from descriptions", () => {
+  const search = buildPrefixSearch(entries, ({ fields }) => fields);
+  const hits = search("WDVS", ({ id }) => id !== "Verbund", 1);
+  expect(hits.map(({ id }) => id)).toEqual(["Getrennt"]);
+  hits[0].fields[2] = "Verändert";
+  expect(search("Systembügel", undefined, 1)[0].fields[2]).toBe("Systembügel");
+  expect(search("WDVS", undefined, 1).map(({ id }) => id)).toEqual(["Verbund"]);
 });
 
 test("distinguishes a blank query from a query without searchable words", () => {
