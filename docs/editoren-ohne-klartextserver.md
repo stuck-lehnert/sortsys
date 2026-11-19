@@ -128,6 +128,11 @@ gebunden. Gleichzeitig begonnene Sitzungen übernehmen den bestätigten Gewinner
 Die API prüft dessen Veröffentlichung über denselben Versionsvergleich wie
 andere Dateiänderungen.
 
+Der eingebettete Editor verarbeitet den Raumzugang im Arbeitsspeicher. Die
+CryptPad-Integration hält ihn aus Frame-Adressen und der Navigationshistorie
+heraus. Die Webapp kann ein entferntes Editorfenster bei Bedarf aus dem
+verschlüsselten Dateistand neu öffnen.
+
 Eine geänderte Rechteversion entfernt die offenen Office-Iframes. Neue Sitzungen
 beginnen mit den aktuellen Empfängern. Frühere Bearbeitungszugänge öffnen damit
 keinen neuen gemeinsamen Raum. Auch beim Speichern prüft der Browser die
@@ -224,13 +229,14 @@ Der native Mehrinstanztest prüft die gemeinsame Speicherung, abgewiesene
 veraltete Übernahmen und den Entzug von Schreibrechten. Der Test mit dem echten
 Office-Dienst hält eine Dateibestätigung absichtlich offen, übernimmt den
 trotzdem im Raum gespeicherten Text und prüft die Trennung des alten und neuen
-Raums. Er prüft außerdem Local Storage, IndexedDB und OPFS auf Dokumentinhalte
-und Editorzugänge. Die geprüften Beispiele hinterlassen dort weder die bekannten
-Textinhalte noch ihre Bearbeitungs- oder Leseschlüssel.
+Raums. Er prüft Local Storage, IndexedDB und OPFS auf Dokumentinhalte und
+Editorzugänge. In Chromium umfasst die Prüfung zusätzlich die beobachteten
+Frame-Navigationen und die Sitzungshistorie des Tabs. Die geprüften
+Bearbeitungs- und Leseschlüssel bleiben auch beim Schließen des Iframes aus
+diesen Adressen heraus.
 
 Native Geschäftsabläufe und fein getrennte GAEB-Inhalte sind durch die
-Office-Anbindung nicht erledigt. Auch die Browserhistorie muss vor der Freigabe
-abschließend auf verbliebene Sitzungsschlüssel geprüft werden.
+Office-Anbindung nicht erledigt.
 
 Der eigenständige API-Router registriert keine früheren Office-Downloads oder
 Speichercallbacks. Bestätigte Dateistände werden als unveränderliche

@@ -88,6 +88,7 @@ try {
   const sentUrls: string[] = [];
   const sentFrames: Buffer[] = [];
   const sentBodies: Buffer[] = [];
+  const navigationUrls = new WeakMap<BrowserContext, Set<string>>();
   let sentFrameBytes = 0;
   let workerFrameCount = 0;
   let capturedBytes = 0;
@@ -113,7 +114,10 @@ try {
   }
   function observeEditorContext(context: BrowserContext) {
     context.on("request", observeRequest);
-    const observeSockets = (page: import("playwright").Page) => {
+    const urls = new Set<string>();
+    navigationUrls.set(context, urls);
+    const observePageTraffic = (page: import("playwright").Page) => {
+      page.on("framenavigated", (frame) => urls.add(frame.url()));
       page.on("websocket", (socket) => {
         sentUrls.push(socket.url());
         socket.on("framesent", ({ payload }) => {
@@ -123,9 +127,9 @@ try {
         });
       });
     };
-    context.on("page", observeSockets);
+    context.on("page", observePageTraffic);
     for (const page of context.pages()) {
-      observeSockets(page);
+      observePageTraffic(page);
     }
   }
   function observeFrame(bytes: Buffer) {
@@ -181,7 +185,7 @@ try {
       "",
     );
   };
-  async function assertPrivateBrowserStorage(
+  async function assertPrivateBrowserState(
     context: BrowserContext,
     capabilities: string[] = [],
   ) {
@@ -196,6 +200,36 @@ try {
       assert.ok(
         !stored.includes(secret),
         "Private document contents or room capabilities persisted in browser storage",
+      );
+    }
+    const observed = navigationUrls.get(context);
+    assert.ok(observed?.size, "The editor navigation check must observe frames");
+    const urls = new Set(observed);
+    for (const page of context.pages()) {
+      for (const frame of page.frames()) urls.add(frame.url());
+      const protocol = await context.newCDPSession(page);
+      try {
+        const { entries } = await protocol.send("Page.getNavigationHistory");
+        for (const entry of entries) {
+          urls.add(entry.url);
+          urls.add(entry.userTypedURL);
+        }
+      } finally {
+        await protocol.detach();
+      }
+    }
+    for (const url of urls) {
+      let decoded = url;
+      try {
+        decoded = decodeURIComponent(url);
+      } catch {
+        // Also check the raw URL if it has a malformed escape sequence.
+      }
+      assert.ok(
+        secrets.every(
+          (secret) => !decoded.includes(secret) && !url.includes(secret),
+        ),
+        "Private document contents or room capabilities appeared in frame URLs or browser history",
       );
     }
   }
@@ -216,6 +250,12 @@ try {
       0,
       "The real editor reported a startup error",
     );
+    const openedRoom = await page.evaluate(() => window.officeTest.session);
+    assert.ok(openedRoom);
+    await assertPrivateBrowserState(context, [
+      openedRoom.editKey,
+      openedRoom.viewKey,
+    ]);
     await page.waitForFunction(
       () => window.officeTest.saved.length > 0,
       undefined,
@@ -338,7 +378,7 @@ try {
       "Two independent browser contexts must preserve each other's edits in the same room",
     );
     console.log("Office proof: both collaborator edits merged");
-    await assertPrivateBrowserStorage(peerContext, [
+    await assertPrivateBrowserState(peerContext, [
       result.session.editKey,
       result.session.viewKey,
     ]);
@@ -473,15 +513,15 @@ try {
       !(await exportedText(replacement)).includes(oldRoomEdit),
       "Later writes through the revoked old capability must not enter the replacement room",
     );
-    await assertPrivateBrowserStorage(replacementContext, [
+    await assertPrivateBrowserState(replacementContext, [
       replacementRoom.editKey,
       replacementRoom.viewKey,
     ]);
-    await assertPrivateBrowserStorage(recoveryContext, [
+    await assertPrivateBrowserState(recoveryContext, [
       result.session.viewKey,
     ]);
-    await assertPrivateBrowserStorage(readerContext, [result.session.viewKey]);
-    await assertPrivateBrowserStorage(context, [
+    await assertPrivateBrowserState(readerContext, [result.session.viewKey]);
+    await assertPrivateBrowserState(context, [
       result.session.editKey,
       result.session.viewKey,
     ]);
@@ -491,6 +531,14 @@ try {
       "Office proof: unconfirmed shared draft transferred through a view capability into a fresh room; later old-room edits stay excluded",
     );
     await readerContext.close();
+    await page.evaluate(() => window.officeTest.bridge!.close());
+    await page.waitForFunction(
+      () => document.querySelector<HTMLIFrameElement>("#editor")?.src === "about:blank",
+    );
+    await assertPrivateBrowserState(context, [
+      result.session.editKey,
+      result.session.viewKey,
+    ]);
     await context.close();
     const container = process.env.SORTSYS_OFFICE_TEST_CONTAINER;
     if (container) {
@@ -744,7 +792,7 @@ try {
         await editor.page.evaluate(() => window.officeTest.saved.length),
         0,
       );
-      await assertPrivateBrowserStorage(editor.context, [
+      await assertPrivateBrowserState(editor.context, [
         diagramSession.editKey,
         diagramSession.viewKey,
       ]);
@@ -773,7 +821,7 @@ try {
       await readOnlyDiagram.page.evaluate(() => window.officeTest.saved.length),
       0,
     );
-    await assertPrivateBrowserStorage(readOnlyDiagram.context, [
+    await assertPrivateBrowserState(readOnlyDiagram.context, [
       diagramSession.viewKey,
     ]);
     await readOnlyDiagram.context.close();
@@ -806,7 +854,7 @@ try {
         recoveredDiagramXml.includes(diagramEditB),
       "Draft recovery must retain shared edits even when no project-file save was confirmed",
     );
-    await assertPrivateBrowserStorage(diagramRecoveryContext, [
+    await assertPrivateBrowserState(diagramRecoveryContext, [
       diagramSession.viewKey,
     ]);
     await diagramRecoveryContext.close();
@@ -860,7 +908,7 @@ try {
       false,
       "The test must inspect every outbound payload within its capture budget",
     );
-    await assertPrivateBrowserStorage(sheetContext);
+    await assertPrivateBrowserState(sheetContext);
     for (const key of [
       result.session.editKey,
       result.session.viewKey,
