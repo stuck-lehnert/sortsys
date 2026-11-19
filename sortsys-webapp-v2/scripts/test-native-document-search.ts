@@ -5,8 +5,12 @@ import { createClient } from "@sortsys/v2-client";
 import { signPolicy } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { createProtectedProjectFiles } from "../app/lib/data/projectFiles";
-import { required } from "../app/lib/data/protectedObjects";
-import { fileCollection } from "../app/lib/data/projectFileData";
+import { protectedCollection, required } from "../app/lib/data/protectedObjects";
+import {
+  fileCollection,
+  fileObject,
+  filePayload,
+} from "../app/lib/data/projectFileData";
 import { projectCollection } from "../app/lib/data/projectData";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
@@ -154,6 +158,68 @@ try {
       .length,
     3,
   );
+
+  const staleText = "VERALTETE_TEXTERKENNUNG_519842";
+  const staleVersion = await upload(visible.id, "Montagefassung.txt", staleText);
+  const failedExtraction = await upload(
+    visible.id,
+    "Montageprotokoll.txt",
+    staleText,
+  );
+  const attachments = await protectedCollection(
+    owner,
+    fileCollection(visible.id),
+    signal,
+  );
+  try {
+    const records = new Map(
+      (await attachments.read()).map((entry) => [entry.envelope.object, entry]),
+    );
+    const packets = [];
+    // Both combinations occur in old backups: retained text from an earlier
+    // file version and retained text after a failed extraction.
+    for (const [id, changes] of [
+      [staleVersion, { office_version: "2" }],
+      [failedExtraction, { text_extraction_status: "failed" }],
+    ] as const) {
+      const object = fileObject(visible.id, id);
+      const previous = records.get(object)!;
+      const payload = filePayload(previous.value, object, visible.id);
+      assert.ok(payload.file);
+      packets.push(
+        await attachments.packet(
+          object,
+          {
+            ...payload,
+            file: {
+              ...payload.file,
+              values: { ...payload.file.values, ...changes },
+            },
+          },
+          previous.envelope,
+        ),
+      );
+    }
+    await attachments.write(packets);
+  } finally {
+    attachments.close();
+  }
+  assert.deepEqual(
+    await required(ownerBusiness.query("projects.files.search", {
+      ...searchInput,
+      query: staleText,
+    })),
+    [],
+  );
+  const byName = await required(ownerBusiness.query("projects.files.search", {
+    ...searchInput,
+    query: "Montage",
+  }));
+  assert.deepEqual(
+    new Set(byName.map((result) => result.id)),
+    new Set([staleVersion, failedExtraction]),
+  );
+  assert.ok(byName.every((result) => result.excerpt === null));
 
   const changing = await upload(visible.id, "Zwischenstand.txt", "Eichentür");
   let projectLookups = 0;

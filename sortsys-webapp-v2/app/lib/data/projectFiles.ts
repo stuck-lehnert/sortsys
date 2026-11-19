@@ -889,6 +889,8 @@ export function createProtectedProjectFiles(
           id: key,
           name,
           text:
+            values.text_extraction_status === "ready" &&
+            values.text_extraction_version === values.office_version &&
             typeof values.extracted_text === "string"
               ? values.extracted_text
               : null,

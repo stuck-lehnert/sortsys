@@ -27,10 +27,12 @@ Dokument bleiben gewöhnlicher Text.
 
 Beim Hochladen liest der Browser die eingebettete Textschicht eines PDFs aus und
 verschlüsselt den Text zusammen mit den Dateimetadaten. Übernommene Bestände
-können ebenfalls bereits ausgelesenen Text enthalten. Ohne Textschicht ist ein
-Scan nur über seinen Dateinamen auffindbar. Die Suche startet weder OCR noch
-eine LLM-Anfrage. Nach einer Dateiänderung wird ein veralteter Textstand entfernt;
-ein erneutes Auslesen nach jeder Bearbeitung ist noch nicht angeschlossen.
+können ebenfalls bereits ausgelesenen Text enthalten. Die Suche verwendet
+Text nur nach erfolgreicher Extraktion aus der aktuellen Dateiversion. Liegt
+nach einer Änderung nur Text aus einer älteren Fassung vor, bleibt der
+Dateiname durchsuchbar. Dasselbe gilt für Scans ohne Textschicht. Die Suche
+startet weder OCR noch eine LLM-Anfrage. Dateien werden bislang beim Hochladen
+ausgelesen.
 
 Eine Dateifreigabe öffnet keine Projektstammdaten. Fehlt deren Leserecht, erscheint
 der Treffer ohne Projektbezeichnung. Ein Klick auf den Treffer öffnet die Datei
