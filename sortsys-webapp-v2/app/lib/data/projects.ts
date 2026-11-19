@@ -318,15 +318,20 @@ export function createProtectedProjects(
       const areas = await readableProjectAreas(client, signal);
       live();
       const selected = areas.map((area) => ({ model: PROJECT_MODEL, area }));
+      const linkedContact = forContact
+        ? { ...contactRequest, ids: [CONTACT_COLLECTION.prefix + data.contactId] }
+        : null;
       const values = await runtime.read(
-        selected,
+        linkedContact ? [...selected, linkedContact] : selected,
         (view) => {
           const projects = () =>
             selected
               .flatMap((request) => view.documents(request))
               .map((document) => document.value)
               .filter((project) => project.project);
-          if (forContact) {
+          if (linkedContact) {
+            if (!view.documents(linkedContact)[0]?.value.row)
+              throw new InvalidProtectedData();
             return projects()
               .filter((project) =>
                 project.contacts.some(

@@ -30,6 +30,7 @@ import { testScannedDeliveryHandoff } from "./test-scanned-delivery-handoff";
 import { testScannedPriceHandoff } from "./test-scanned-price-handoff";
 import { chatCostsReply } from "./test-chat-costs";
 import { chatToolsReply } from "./test-chat-tools";
+import { chatDirectoryReply } from "./test-chat-directory";
 import type { DuckDriver } from "../app/lib/data/database";
 
 export async function testLiveLlm(
@@ -111,7 +112,8 @@ export async function testLiveLlm(
       }
       const documentReply = documentsFixture.reply(body);
       if (documentReply) return documentReply;
-      const chat = chatToolsReply(body) ?? chatCostsReply(body) ?? await chatFixture.reply(body);
+      const chat = chatDirectoryReply(body) ?? chatToolsReply(body) ??
+        chatCostsReply(body) ?? await chatFixture.reply(body);
       if (chat) return chat;
       const member = memberFixture.reply(body);
       if (member) return member;

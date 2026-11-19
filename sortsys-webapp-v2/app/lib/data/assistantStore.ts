@@ -91,3 +91,20 @@ export async function readAssistantAccess(
     canRead,
   };
 }
+
+export type AssistantAccess = Awaited<ReturnType<typeof readAssistantAccess>>;
+export type AssistantAccessReader = (signal: AbortSignal) => Promise<AssistantAccess>;
+
+/** Read against one set of verified grants. Never forward an answer assembled
+ * under an access snapshot that changed before the read completed. */
+export async function readForAssistant<T>(
+  currentAccess: AssistantAccessReader,
+  signal: AbortSignal,
+  read: (access: AssistantAccess) => Promise<T>,
+): Promise<T> {
+  const access = await currentAccess(signal);
+  const value = await read(access);
+  const latest = await currentAccess(signal);
+  if (access.snapshot !== latest.snapshot) throw new InvalidProtectedData();
+  return value;
+}

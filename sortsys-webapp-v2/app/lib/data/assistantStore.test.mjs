@@ -93,25 +93,21 @@ test("project chat reads require the current signed module grants and exclude at
   });
 });
 
+function historyChat(client) {
+  return createProtectedChats(client, client, "", signal(), async () => {
+    throw new Error("History tests do not run directory searches");
+  });
+}
+
 test("signed personal permissions open and update chat history without technical roles", async () => {
   const fixture = await protectedTenant([area]);
   expect(fixture.state.roles).toEqual([]);
-  const chats = createProtectedChats(
-    fixture.client,
-    fixture.client,
-    "",
-    signal(),
-  );
+  const chats = historyChat(fixture.client);
   const chat = await chats.create({
     title: "Privates Gespräch ohne Zusatzrolle",
   });
   expect((await chats.list()).map((value) => value.id)).toEqual([chat.id]);
-  const reopened = createProtectedChats(
-    fixture.client,
-    fixture.client,
-    "",
-    signal(),
-  );
+  const reopened = historyChat(fixture.client);
   expect((await reopened.get(chat.id)).chat.title).toBe(
     "Privates Gespräch ohne Zusatzrolle",
   );
@@ -124,12 +120,7 @@ test("signed personal permissions open and update chat history without technical
 
 test("personal read access preserves history but cannot run a model or change a chat", async () => {
   const fixture = await protectedTenant([area]);
-  const writable = createProtectedChats(
-    fixture.client,
-    fixture.client,
-    "",
-    signal(),
-  );
+  const writable = historyChat(fixture.client);
   const chat = await writable.create({
     title: "Bereits gespeicherter Verlauf",
   });
@@ -155,7 +146,7 @@ test("personal read access preserves history but cannot run a model or change a 
       return fixture.client.query(path, input, options);
     },
   };
-  const readOnly = createProtectedChats(client, client, "", signal());
+  const readOnly = historyChat(client);
   expect((await readOnly.get(chat.id)).chat.title).toBe(
     "Bereits gespeicherter Verlauf",
   );

@@ -6,6 +6,7 @@ import { createBusinessClient } from "../app/lib/data/businessClient";
 import type { DuckDriver } from "../app/lib/data/database";
 import { required } from "../app/lib/data/protectedObjects";
 import { toolCollection } from "../app/lib/data/toolData";
+import { chatToolAnswer, chatToolCalls, chatToolProperties, type ChatToolRequest } from "./chat-tool-fixture";
 
 const names = {
   own: "Laserentfernungsmesser eigene Buchung",
@@ -16,22 +17,15 @@ const names = {
 const hiddenProject = "Projektname nur für Bauleitung 56123";
 const hiddenCost = 8214.72;
 
-type ModelRequest = {
-  messages: { role: string; content: unknown; tool_call_id?: string }[];
-  tools?: {
-    function: { name: string; parameters?: { properties?: Record<string, { enum?: string[] }> } };
-  }[];
-};
-
-export function chatToolsReply({ messages, tools }: ModelRequest): Response | null {
+export function chatToolsReply(body: ChatToolRequest): Response | null {
+  const { messages } = body;
   const prompt = messages.filter(({ role }) => role === "user").at(-1)?.content;
   if (typeof prompt !== "string" || !prompt.startsWith("TOOLS_FIXTURE ")) return null;
 
   const [, restrictedId] = prompt.split(" ");
   const results = messages.filter(({ role }) => role === "tool");
   if (!results.length) {
-    const search = tools?.find(({ function: tool }) => tool.name === "sortsys_search");
-    const properties = search?.function.parameters?.properties;
+    const properties = chatToolProperties(body, "sortsys_search");
     const resources = properties?.resource?.enum;
     assert.ok(resources);
     assert.ok(resources.includes("tools"));
@@ -55,18 +49,7 @@ export function chatToolsReply({ messages, tools }: ModelRequest): Response | nu
         args: { path: "tools.inventories.list", input: { toolId: restrictedId } },
       },
     ];
-    return Response.json({
-      choices: [{
-        finish_reason: "tool_calls",
-        message: {
-          role: "assistant",
-          content: null,
-          tool_calls: calls.map(({ id, name, args }) => ({
-            id, type: "function", function: { name, arguments: JSON.stringify(args) },
-          })),
-        },
-      }],
-    });
+    return chatToolCalls(calls);
   }
 
   const answers = new Map(results.map(({ content, tool_call_id }) => [tool_call_id, JSON.parse(String(content))]));
@@ -93,13 +76,7 @@ export function chatToolsReply({ messages, tools }: ModelRequest): Response | nu
     assert.ok(!JSON.stringify(results).includes(value), `Undelegated context: ${value}`);
   }
 
-  return Response.json({
-    choices: [{
-      finish_reason: "stop",
-      message: { role: "assistant", content: "Freigegebene Werkzeugdaten geprüft" },
-    }],
-    usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
-  });
+  return chatToolAnswer("Freigegebene Werkzeugdaten geprüft");
 }
 
 type Account = NonNullable<ReturnType<typeof unlockedAccount>>;

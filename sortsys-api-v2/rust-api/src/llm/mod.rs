@@ -250,6 +250,10 @@ const CHAT_SEARCH_QUERIES: &[(&str, &str)] = &[
     ("tools", "tools.list"),
     ("tool_trackings", "tools.trackings.list"),
     ("tool_inventories", "tools.inventories.list"),
+    ("customers", "customers.list"),
+    ("contacts", "contacts.list"),
+    ("projects", "projects.list"),
+    ("vendors", "products.vendors.list"),
 ];
 
 pub fn tool_definitions() -> Vec<Value> {

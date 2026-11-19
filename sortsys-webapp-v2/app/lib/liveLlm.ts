@@ -47,6 +47,10 @@ export const CHAT_SEARCH_QUERIES = {
   tools: "tools.list",
   tool_trackings: "tools.trackings.list",
   tool_inventories: "tools.inventories.list",
+  customers: "customers.list",
+  contacts: "contacts.list",
+  projects: "projects.list",
+  vendors: "products.vendors.list",
 } as const;
 
 export function chatSearchQuery(resource: unknown) {

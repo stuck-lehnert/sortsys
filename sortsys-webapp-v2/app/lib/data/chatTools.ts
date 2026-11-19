@@ -3,7 +3,7 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { CHAT_SEARCH_QUERIES } from "../liveLlm";
 import { createPrefixMatcher } from "../search/prefixQuery";
 import { partialAddressRecord } from "./addressBook";
-import type { readAssistantAccess } from "./assistantStore";
+import { readForAssistant, type AssistantAccess, type AssistantAccessReader } from "./assistantStore";
 import { personnelCollection } from "./personnelData";
 import { projectCollection } from "./projectData";
 import { required } from "./protectedObjects";
@@ -15,10 +15,9 @@ const INVENTORIES = CHAT_SEARCH_QUERIES.tool_inventories;
 const COVERAGE = "tools.inventories.overview";
 const DETAIL = "tools.get";
 
-type Access = Awaited<ReturnType<typeof readAssistantAccess>>;
 type SearchPath = typeof TOOLS | typeof BOOKINGS | typeof INVENTORIES;
 
-export function chatToolPaths(access: Access): QueryPath[] {
+export function chatToolPaths(access: AssistantAccess): QueryPath[] {
   const paths = new Set<QueryPath>();
   for (const { id: domain } of access.domains) {
     const part = toolDomain(domain);
@@ -57,7 +56,7 @@ function toolName(tool: ToolName) {
 
 export function openChatTools(
   client: Client,
-  currentAccess: (signal: AbortSignal) => Promise<Access>,
+  currentAccess: AssistantAccessReader,
 ) {
   const network = { strategy: "network-only" } as const;
 
@@ -67,18 +66,16 @@ export function openChatTools(
   async function read<T>(
     path: string,
     signal: AbortSignal,
-    work: (access: Access) => Promise<T>,
+    work: (access: AssistantAccess) => Promise<T>,
   ): Promise<T> {
-    const access = await currentAccess(signal);
-    if (!chatToolPaths(access).some((allowed) => allowed === path))
-      throw new InvalidProtectedData();
-    const result = await work(access);
-    const latest = await currentAccess(signal);
-    if (access.snapshot !== latest.snapshot) throw new InvalidProtectedData();
-    return result;
+    return readForAssistant(currentAccess, signal, (access) => {
+      if (!chatToolPaths(access).some((allowed) => allowed === path))
+        throw new InvalidProtectedData();
+      return work(access);
+    });
   }
 
-  async function people(ids: readonly (string | null)[], access: Access) {
+  async function people(ids: readonly (string | null)[], access: AssistantAccess) {
     const selected = new Set(ids.filter((id) =>
       id !== null && access.canRead(personnelCollection(id, "master-data"))
     ));
@@ -91,7 +88,7 @@ export function openChatTools(
       .map(({ id, firstName, lastName }) => [id, [firstName, lastName].filter(Boolean).join(" ")]));
   }
 
-  async function projects(ids: readonly (string | null)[], access: Access) {
+  async function projects(ids: readonly (string | null)[], access: AssistantAccess) {
     const selected = new Set(ids.filter((id) =>
       id !== null && access.canRead(projectCollection(id))
     ));
@@ -102,7 +99,7 @@ export function openChatTools(
       .map(({ id, title }) => [id, title]));
   }
 
-  async function toolNames(ids: readonly string[], access: Access) {
+  async function toolNames(ids: readonly string[], access: AssistantAccess) {
     const selected = new Set(ids.filter((id) =>
       access.canRead(toolCollection("tool", id, "master-data"))
     ));

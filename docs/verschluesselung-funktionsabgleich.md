@@ -495,6 +495,8 @@ Ausführungsnachweis.
 Die Werkzeugsuche unterscheidet Stammdaten, laufende Buchungen und Inventuren.
 Eine Auskunft zum Inventurstand eines Geräts setzt lesbare Stammdaten und
 Inventuren dieses Geräts voraus.
+Kunden, Ansprechpartner, Projekte und Lieferanten sind über die lokale Suche
+erreichbar. Fragen zu Verknüpfungen prüfen beide beteiligten Bereiche.
 Die Chatübernahme aus einer alten Sicherung erhält die Benutzerzuordnung.
 Historische Annahmen ohne Ergebnisprotokoll bleiben erkennbar und werden nicht
 erneut ausgeführt. Frühere Einleseverläufe lassen sich bei der Ersteinrichtung

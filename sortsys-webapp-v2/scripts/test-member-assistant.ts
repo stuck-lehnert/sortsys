@@ -8,6 +8,7 @@ import { readSelectedDocuments } from "../app/lib/data/imports";
 import { required } from "../app/lib/data/protectedObjects";
 import { testMemberChatCosts } from "./test-chat-costs";
 import { testMemberChatTools } from "./test-chat-tools";
+import { testMemberChatDirectory } from "./test-chat-directory";
 
 type Account = NonNullable<ReturnType<typeof unlockedAccount>>;
 type Admission = MutateInput<"zerotrust.llm.open">;
@@ -224,6 +225,7 @@ export async function exerciseMemberAssistantWorkflows(
     );
   await testMemberChatCosts(owner, administrator, participant, id, withBusiness, chat.id, driver, signal);
   await testMemberChatTools(owner, administrator, participant, id, withBusiness, chat.id, driver, signal);
+  await testMemberChatDirectory(owner, administrator, participant, id, withBusiness, chat.id, driver, signal);
   console.log(
     "Member assistant facade verified: private chats, authenticated catalogue MCP, read-only tool scope, import without unrelated roles and preserved history after catalogue revocation.",
   );

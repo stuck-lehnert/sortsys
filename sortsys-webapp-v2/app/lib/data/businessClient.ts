@@ -807,6 +807,7 @@ export function createBusinessClient(
         facade,
         options.endpoint ?? "/api/v2",
         signal,
+        searchDirectory,
         options.productDriver,
         (...args) => fileWork((store) => store.searchScoped(...args)),
       ),
@@ -1815,12 +1816,13 @@ export function createBusinessClient(
     path: Path,
     search: string,
     cancellation: AbortSignal,
+    limit = DIRECTORY_SEARCH_LIMIT,
   ): Promise<QueryResult<Path> | null> {
     return readResourceChoices(async () => {
       const [result, error] = await readQuery(
         path,
         { search },
-        DIRECTORY_SEARCH_LIMIT,
+        limit,
       );
       if (error) throw error;
       return result as QueryResult<Path> | null;

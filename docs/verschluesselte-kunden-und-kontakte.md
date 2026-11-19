@@ -22,6 +22,11 @@ Die Speicherung bindet sowohl den Kundenstand als auch den gelesenen
 Kontaktstand an dieselbe Transaktion. Ändert eine andere Anmeldung inzwischen
 einen dieser Bestände, muss die Zuordnung erneut geprüft werden.
 
+Das gilt für Leseabfragen in beiden Richtungen. Wer bei einem Ansprechpartner
+die zugeordneten Projekte öffnet, braucht Zugriff auf den aktuellen Kontakt
+und sieht nur freigegebene Projekte. Der Chat verwendet für solche Abfragen
+dieselben Freigaben wie die Webapp.
+
 Die API kann diese Versionsprüfung auch über mehrere Instanzen durchführen.
 Sie sperrt die beteiligten Bereiche in einer festen Reihenfolge und prüft die
 aktuellen Leserechte für zusätzliche Vergleichsstände. Sie kennt weder die

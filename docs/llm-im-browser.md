@@ -172,6 +172,14 @@ Freigaben haben. Die Werkzeugantworten zu Bautagesberichten enthalten keine
 Fotos oder Dateinamen. Für Projektanhänge gilt die gesonderte Dateifreigabe im
 Chat.
 
+Der Chat findet Auftraggeber anhand der hinterlegten Anschrift und
+Ansprechpartner anhand von Namen oder E-Mail-Adresse. Die Suche verwendet
+denselben lokalen Index wie die Listen der Webapp. Kunden, Ansprechpartner und
+Lieferanten brauchen jeweils ihre eigene Lesefreigabe. Bei einer Frage nach der
+Bauleitung eines Projekts prüft der Browser sowohl die Projektfreigabe als auch
+die Kontaktfreigabe. Das gilt auch für die umgekehrte Frage nach den Projekten
+eines Ansprechpartners.
+
 Der Chat kann Nettokosten, Angebots- und Rechnungswerte aktiver Projekte
 zusammenfassen. Er verwendet dafür dieselbe Berechnung wie die Kostenübersicht.
 Möglich sind auch Einzelabfragen pro Projekt und Zeitraum sowie eine Abfrage der

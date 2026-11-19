@@ -1,7 +1,7 @@
 import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
-import { readAssistantAccess } from "./assistantStore";
+import { readAssistantAccess, readForAssistant } from "./assistantStore";
 import { llmActivity } from "../llmActivity";
 import { chatSearchQuery, runLiveLlm } from "../liveLlm";
 import { uiText } from "../i18n";
@@ -24,6 +24,13 @@ import {
 import type { DuckDriver } from "./database";
 import { PRODUCT_COLLECTION, PRICE_COLLECTION } from "./products";
 import { openChatDocuments, type ScopedDocumentSearch } from "./chatDocuments";
+import {
+  chatDirectoryPaths,
+  isChatDirectoryQuery,
+  requireChatDirectory,
+  searchAssistantDirectory,
+  type AssistantDirectorySearch,
+} from "./chatDirectory";
 import {
   chatToolPaths,
   isChatToolPath,
@@ -57,6 +64,7 @@ export function createProtectedChats(
   data: Client,
   endpoint: string,
   lifetime: AbortSignal,
+  searchDirectory: AssistantDirectorySearch,
   driver?: () => Promise<DuckDriver>,
   searchFiles?: ScopedDocumentSearch,
 ) {
@@ -125,14 +133,15 @@ export function createProtectedChats(
     const access = await readAssistantAccess(transport, signal, "inventory");
     live(signal);
     const permitted = access.allows;
-    const read = permitted(PRODUCT_COLLECTION.scope, "master-data", "read");
+    const read = access.canRead(PRODUCT_COLLECTION);
     const queries = read ? [...PRODUCT_QUERIES] : [];
-    if (permitted(PRICE_COLLECTION.scope, "procurement", "read"))
+    if (access.canRead(PRICE_COLLECTION))
       queries.push("products.priceRecords.list");
     queries.push(
       ...projectChatPaths(access),
       ...chatCostPaths(access),
       ...chatToolPaths(access),
+      ...chatDirectoryPaths(access),
     );
     const mutations = read
       ? PRODUCT_MUTATIONS.filter((path) =>
@@ -244,6 +253,31 @@ export function createProtectedChats(
               return { path, data: result };
             }
             const query = () => required(data.queryDynamic(path, queryInput));
+            if (isChatDirectoryQuery(path)) {
+              const value = await readForAssistant(
+                currentAccess,
+                cancellation,
+                (current) => {
+                  requireChatDirectory(path, current);
+                  return query();
+                },
+              );
+              return { path, data: value };
+            }
+            if (PRODUCT_QUERIES.includes(path) || path === "products.priceRecords.list") {
+              const area = path === "products.priceRecords.list"
+                ? PRICE_COLLECTION
+                : PRODUCT_COLLECTION;
+              const value = await readForAssistant(
+                currentAccess,
+                cancellation,
+                (current) => {
+                  if (!current.canRead(area)) throw new InvalidProtectedData();
+                  return query();
+                },
+              );
+              return { path, data: value };
+            }
             if (isChatCostPath(path)) {
               const { value, current } = await readCosts(path, queryInput, cancellation, query);
               const result = path === COST_OVERVIEW
@@ -288,15 +322,15 @@ export function createProtectedChats(
               );
               return summarizeChatCosts(visibleChatCosts(value, current), args.query, limit);
             }
-            return {
-              records: (
-                await required(
-                  data.query(path, {
-                    search: args.query as string | undefined,
-                  }),
-                )
-              ).slice(0, limit),
-            };
+            const term = args.query ?? "";
+            const records = await readForAssistant(
+              currentAccess,
+              cancellation,
+              (current) => searchAssistantDirectory(
+                searchDirectory, path, term, limit, cancellation, current,
+              ),
+            );
+            return { records };
           }
           if (name === "sortsys_propose_change") {
             if (proposed.length >= 10) throw new InvalidProtectedData();

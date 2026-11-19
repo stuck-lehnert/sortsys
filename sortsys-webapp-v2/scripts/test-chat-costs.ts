@@ -6,47 +6,29 @@ import { createBusinessClient } from "../app/lib/data/businessClient";
 import type { DuckDriver } from "../app/lib/data/database";
 import { projectCostRequests } from "../app/lib/data/projectCosts";
 import { required } from "../app/lib/data/protectedObjects";
+import { chatToolAnswer, chatToolCalls, chatToolProperties, type ChatToolRequest } from "./chat-tool-fixture";
 
 const visibleInvoice = 2321.31;
 const hiddenInvoice = 91056.78;
 const sharedName = "Kostenauswertung Nordflügel";
 
-type ModelRequest = {
-  messages: { role: string; content: unknown }[];
-  tools?: {
-    function: { name: string; parameters?: { properties?: Record<string, { enum?: string[] }> } };
-  }[];
-};
-
-export function chatCostsReply({ messages, tools }: ModelRequest): Response | null {
+export function chatCostsReply(body: ChatToolRequest): Response | null {
+  const { messages } = body;
   const prompt = messages.filter(({ role }) => role === "user").at(-1)?.content;
   if (typeof prompt !== "string" || !prompt.startsWith("COSTS_FIXTURE ")) return null;
   const [, visible, hidden] = prompt.split(" ");
   const results = messages.filter(({ role }) => role === "tool");
   if (!results.length) {
-    const search = tools?.find(({ function: tool }) => tool.name === "sortsys_search");
-    const queries = tools?.find(({ function: tool }) => tool.name === "sortsys_query");
-    assert.deepEqual(search?.function.parameters?.properties?.resource?.enum, ["project_costs"]);
-    assert.ok(queries?.function.parameters?.properties?.path?.enum?.includes("settings.costs.get"));
+    const resources = chatToolProperties(body, "sortsys_search")?.resource?.enum;
+    const queries = chatToolProperties(body, "sortsys_query")?.path?.enum;
+    assert.deepEqual(resources, ["project_costs", "projects"]);
+    assert.ok(queries?.includes("settings.costs.get"));
     const calls = [
       { name: "sortsys_search", args: { resource: "project_costs", query: "Nordflüg", limit: 1 } },
       { name: "sortsys_query", args: { path: "projects.costs.get", input: { projectId: visible } } },
       { name: "sortsys_query", args: { path: "projects.costs.get", input: { projectId: hidden } } },
     ];
-    return Response.json({
-      choices: [{
-        finish_reason: "tool_calls",
-        message: {
-          role: "assistant",
-          content: null,
-          tool_calls: calls.map(({ name, args }, index) => ({
-            id: `chat-costs-${index}`,
-            type: "function",
-            function: { name, arguments: JSON.stringify(args) },
-          })),
-        },
-      }],
-    });
+    return chatToolCalls(calls.map((call, index) => ({ ...call, id: `chat-costs-${index}` })));
   }
 
   const output = results.map(({ content }) => JSON.parse(String(content)));
@@ -63,13 +45,7 @@ export function chatCostsReply({ messages, tools }: ModelRequest): Response | nu
   assert.equal(detail?.structuredContent.data.totalCosts.invoices, visibleInvoice);
   assert.ok(!JSON.stringify(results).includes(String(hiddenInvoice)));
   assert.ok(!JSON.stringify(results).includes(`${sharedName} Süd`));
-  return Response.json({
-    choices: [{
-      finish_reason: "stop",
-      message: { role: "assistant", content: "Freigegebene Nettokosten geprüft" },
-    }],
-    usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 },
-  });
+  return chatToolAnswer("Freigegebene Nettokosten geprüft");
 }
 
 type Account = NonNullable<ReturnType<typeof unlockedAccount>>;
