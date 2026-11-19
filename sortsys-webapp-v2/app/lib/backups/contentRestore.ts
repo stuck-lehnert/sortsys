@@ -26,6 +26,13 @@ import {
   projectDomainId,
   projectPayload,
 } from "../data/projectData";
+import {
+  SCHEDULE_MODEL,
+  SCHEDULE_TABLES,
+  scheduleCollection,
+  scheduleDomain,
+} from "../data/projectScheduleData";
+import { PERSONNEL_MODEL, personnelCollection } from "../data/personnelData";
 import { publicId } from "../data/products";
 import { commercialCollection, commercialDomain } from "../data/commercialAreas";
 import {
@@ -68,6 +75,7 @@ type ReadView = Awaited<ReturnType<typeof protectedReadView>>;
 
 export class RestoreBookingConflict extends Error {}
 export class RestoreInvoiceConflict extends Error {}
+export class RestorePlanningConflict extends Error {}
 
 async function readAreas(
   view: ReadView,
@@ -81,6 +89,42 @@ async function readAreas(
       for (const object of await view.read(area)) visit(area, object);
     });
   }
+}
+
+async function inspectPlanning(
+  view: ReadView,
+  projectIds: ReadonlySet<string>,
+) {
+  const areas = view.areas((domain) => {
+    const project = scheduleDomain(domain);
+    return project ? scheduleCollection(project) : null;
+  });
+  const scheduleIds = new Set<string>();
+  const users = new Set<string>();
+  let missing = 0;
+  let unchecked = 0;
+  await readAreas(view, areas, (area, { envelope, value }) => {
+    const { row } = SCHEDULE_MODEL.decode(value, envelope.object, area);
+    const id = `${row.table}:${publicId(row.values.id)}`;
+    if (scheduleIds.has(id)) throw new RestorePlanningConflict();
+    scheduleIds.add(id);
+    const project = publicId(row.values.project_id);
+    if (!view.readable(projectCollection(project))) unchecked++;
+    else if (!projectIds.has(project)) missing++;
+    if (row.table === SCHEDULE_TABLES.deployment)
+      users.add(publicId(row.values.user_id));
+  });
+
+  const profiles = new Set<string>();
+  const personnel = [...users].map((id) => personnelCollection(id, "master-data"));
+  const readablePersonnel = personnel.filter(view.readable);
+  unchecked += personnel.length - readablePersonnel.length;
+  await readAreas(view, readablePersonnel, (area, { envelope, value }) => {
+    const profile = PERSONNEL_MODEL.decode(value, envelope.object, area);
+    profiles.add(profile.id);
+  });
+  missing += readablePersonnel.length - profiles.size;
+  return { missing, unchecked };
 }
 
 function commercialMasterArea(id: string): Collection {
@@ -474,6 +518,7 @@ export async function inspectPreparedContent(
     for (const link of links) checkReference(contacts, link.values.contact_id);
   });
   const uncheckedBookings = await verifyActiveBookings(client, view, projectIds, signal);
+  const planning = await inspectPlanning(view, projectIds);
   const dependencies = await required(
     client.query("zerotrust.content.inspect", check, {
       strategy: "network-only",
@@ -537,6 +582,8 @@ export async function inspectPreparedContent(
     missingReferences,
     uncheckedReferences,
     uncheckedBookings,
+    missingPlanningReferences: planning.missing,
+    uncheckedPlanningReferences: planning.unchecked,
     retainedDocuments,
     uncheckedDocuments: dependencies.uncheckedDocuments + uncheckedInvoices,
     review,

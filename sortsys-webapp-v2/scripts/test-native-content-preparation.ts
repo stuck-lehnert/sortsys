@@ -34,6 +34,10 @@ import { newProductRowId, publicId } from "../app/lib/data/products";
 import { fileObject } from "../app/lib/data/projectFileData";
 import { projectCollection, projectPayload } from "../app/lib/data/projectData";
 import {
+  scheduleCollection,
+  scheduleObject,
+} from "../app/lib/data/projectScheduleData";
+import {
   protectedCollection,
   protectedReadView,
   required,
@@ -42,6 +46,7 @@ import {
   approvePreparedContent,
   inspectPreparedContent,
   RestoreInvoiceConflict,
+  RestorePlanningConflict,
 } from "../app/lib/backups/contentRestore";
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
@@ -475,6 +480,76 @@ async function rejectInvoiceWithoutContract(
       () => inspectPreparedContent(peer, approval, signal),
       RestoreInvoiceConflict,
     );
+  }
+}
+
+async function checkPlanningReview(
+  tenant: string,
+  owner: Client,
+  peer: Client,
+  operator: Client,
+) {
+  const { id: project } = await required(
+    owner.mutate("projects.create", { title: "Baustelle mit Sperrfrist" }),
+  );
+  const closure = await required(
+    owner.mutate("projects.unavailability.create", {
+      projectId: project,
+      from: "2026-11-26",
+      to: "2026-11-27",
+      reason: "Gerüstabbau im Innenhof",
+    }),
+  );
+  await required(owner.mutate("projects.delete", { id: project }));
+
+  const signal = new AbortController().signal;
+  async function inspectSnapshot() {
+    const backup = await required(
+      operator.mutate("admin.storage.snapshots.create", {
+        tenant,
+        operation: crypto.randomUUID(),
+      }),
+    );
+    const prepared = await required(
+      peer.mutate("zerotrust.content.prepare", {
+        snapshotOperation: backup.id,
+        operation: crypto.randomUUID(),
+      }),
+    );
+    const approval = await approvePreparedContent(peer, prepared, signal);
+    return inspectPreparedContent(peer, approval, signal);
+  }
+
+  const report = await inspectSnapshot();
+  assert.equal(report.missingPlanningReferences, 1);
+  assert.equal(report.uncheckedPlanningReferences, 0);
+
+  const area = await protectedCollection(
+    owner,
+    scheduleCollection(project),
+    signal,
+  );
+  try {
+    const [original] = await area.read();
+    assert.ok(original);
+    // Simulate two active placements of one business row, each with a valid
+    // signature and its own storage identity.
+    const duplicate = scheduleObject(
+      project,
+      "unavailability",
+      closure.id,
+      publicId(newProductRowId()),
+    );
+    const packet = await area.packet(duplicate, original.value);
+    await area.write([packet]);
+    try {
+      await assert.rejects(() => inspectSnapshot(), RestorePlanningConflict);
+    } finally {
+      const previous = encryptedObject(packet.envelope);
+      await area.write([await area.tombstone(duplicate, previous)]);
+    }
+  } finally {
+    area.close();
   }
 }
 
@@ -1022,6 +1097,8 @@ export async function exerciseContentPreparation(
   assert.equal(reportPreview.contacts, 1);
   assert.equal(reportPreview.missingReferences, 0);
   assert.equal(reportPreview.uncheckedReferences, 0);
+  assert.equal(reportPreview.missingPlanningReferences, 0);
+  assert.equal(reportPreview.uncheckedPlanningReferences, 0);
   assert.equal(reportPreview.retainedDocuments, 2);
   assert.equal(reportPreview.uncheckedDocuments, 0);
   const preview = await protectedReadView(
@@ -1446,6 +1523,7 @@ export async function exerciseContentPreparation(
     );
     assert.equal(restoredInBrowser.title, originalTitle);
   }
+  await checkPlanningReview(tenant, owner, peer, operator);
   await rejectSnapshotWithoutLockedCase(tenant, owner, peer, operator);
   await booking.checkMemberAndReturn();
   await rejectRestoreWithoutBookingParents(

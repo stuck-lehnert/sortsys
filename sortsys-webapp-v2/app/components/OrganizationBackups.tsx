@@ -12,6 +12,7 @@ import {
   inspectPreparedContent,
   RestoreBookingConflict,
   RestoreInvoiceConflict,
+  RestorePlanningConflict,
 } from "~/lib/backups/contentRestore";
 import { client } from "~/lib/client";
 import { unlockedAccount } from "~/lib/crypto/session";
@@ -26,7 +27,7 @@ type CheckedBackup = {
   input: MutateInput<"zerotrust.content.activate">;
   report: Verification;
 };
-type ReviewProblem = "booking" | "document" | "invoice" | null;
+type ReviewProblem = "booking" | "document" | "invoice" | "planning" | null;
 type Review =
   | { status: "checking"; backup: Backup; operation: string }
   | {
@@ -76,6 +77,11 @@ function reviewFailure(problem: ReviewProblem) {
     return uiText(
       "In dieser Sicherung fehlt für eine ausgestellte Rechnung das Projekt, der Auftrag oder die benötigte Version eines Bezugsdokuments.",
       "This backup lacks the project, contract or required source document version for an issued invoice.",
+    );
+  if (problem === "planning")
+    return uiText(
+      "Diese Sicherung enthält widersprüchliche Einträge in der Einsatzplanung. Wählen Sie eine andere Sicherung.",
+      "This backup contains conflicting entries in the schedule. Choose a different backup.",
     );
   return uiText(
     "Die Sicherung konnte nicht geprüft werden.",
@@ -134,6 +140,22 @@ function RestoreCounts({ report }: { report: Verification }) {
           {uiText(
             "Für einige Verknüpfungen laufender Werkzeugbuchungen fehlt die Lesefreigabe zur Prüfung.",
             "Some active tool booking links could not be checked with the current read access.",
+          )}
+        </p>
+      )}
+      {report.missingPlanningReferences > 0 && (
+        <MyCallout color="yellow">
+          {uiText(
+            "Für einige Einsätze oder Baustellensperren fehlen Projekte oder Personalprofile in der Sicherung.",
+            "This backup is missing projects or personnel records referenced by assignments or site closures.",
+          )}
+        </MyCallout>
+      )}
+      {report.uncheckedPlanningReferences > 0 && (
+        <p className="text-sm text-muted">
+          {uiText(
+            "Für einige Verknüpfungen der Einsatzplanung fehlt die Lesefreigabe zur Prüfung.",
+            "Some schedule links could not be checked with the current read access.",
           )}
         </p>
       )}
@@ -242,6 +264,7 @@ export default function OrganizationBackups() {
         if (error instanceof RestoreBookingConflict) problem = "booking";
         else if (error instanceof RestoreDocumentConflict) problem = "document";
         else if (error instanceof RestoreInvoiceConflict) problem = "invoice";
+        else if (error instanceof RestorePlanningConflict) problem = "planning";
         setReview({
           status: "failed",
           backup,

@@ -21,11 +21,11 @@ DuckDB-Dienst auf. Der frische Aufbau prüft beide Beispielkonten und 50
 Geschäftsvorgänge sowie den Erhalt manueller Änderungen nach einem Neustart
 des Seedings.
 
-Der Browserlauf mit einer Kopie dieses Bestands hat Anmeldung, GAEB-Autosave
-und gemeinsame Bearbeitung, Projektanhänge, Dokumentensuche und gesperrte
-Direktlinks geprüft. Ein Zeitüberschritt beim Neuladen einer Werkzeugansicht
-beendete den Lauf. Ein vollständiger Durchlauf aller Browserabläufe steht für
-die aktuelle Fassung aus.
+Browserläufe mit Kopien dieses Bestands haben Anmeldung, GAEB-Autosave,
+gemeinsame Bearbeitung, Projektanhänge, Dokumentensuche und gesperrte
+Direktlinks geprüft. Die zuerst beim Neuladen unterbrochene Prüfung der
+Werkzeugansicht ist separat durchgelaufen. Der gemeinsame Durchlauf aller
+Browserabläufe steht für die aktuelle Fassung aus.
 
 ## Zugang und Freigaben
 
@@ -505,8 +505,10 @@ Anlagenachweise erhalten ebenfalls unabhängige Nachweise. Der veränderliche
 Inhaltscursor bleibt davon getrennt. Die Organisationsverwaltung kann einen
 älteren Fachstand prüfen und freigeben. Die Vorschau prüft die lesbaren
 Projekte und Adressdaten samt Verknüpfungen sowie die Bezüge erhaltener
-Werkzeugbuchungen, Auftragsbestätigungen und ausgestellter Rechnungen. Fehlende
-Leserechte erscheinen in der Vorschau. Im Produktionsbrowser sind Abbruch und
+Werkzeugbuchungen, Auftragsbestätigungen und ausgestellter Rechnungen. Die
+Vorschau prüft auch die Projekt- und Personalbezüge lesbarer
+Planungseinträge. Fehlende Leserechte erscheinen in der Vorschau. Im
+Produktionsbrowser sind Abbruch und
 Bestätigung über zwei getrennte API-Prozesse geprüft. Danach sind die
 gesperrte Auftragsbestätigung und der Zahlungsstand der vorhandenen Rechnung
 weiterhin sichtbar. Ein vollständiger Abgleich aller verschlüsselten

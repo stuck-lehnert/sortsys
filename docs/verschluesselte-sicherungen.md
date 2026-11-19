@@ -113,9 +113,16 @@ Für erhaltene Auftragsbestätigungen prüft er den Bezugsauftrag in der
 Sicherung. Für ausgestellte Rechnungen prüft er das Projekt, den angenommenen
 Auftrag und die benötigte Version des Bezugsdokuments, soweit diese Daten
 lesbar sind. Bei einer fehlenden Verknüpfung oder einer zu alten Version
-hält der Browser die Freigabe an. Fehlende Leserechte weist die Vorschau aus. Weitere
-verschlüsselte Fachdaten und ihre Verknüpfungen sind in dieser Vorschau noch
-nicht abgedeckt.
+hält der Browser die Freigabe an.
+
+Bei lesbaren Einsätzen und Baustellensperren gleicht der Browser die
+Projektzuordnung mit der Sicherung ab. Bei Einsätzen prüft er auch das
+zugeordnete Personalprofil. Die Vorschau meldet fehlende Verknüpfungen und
+weist darauf hin, wenn Leserechte für ihre Prüfung fehlen. Sind zwei
+gespeicherte Fassungen desselben Planungseintrags gleichzeitig aktiv, hält die
+Prüfung an. Die Vorschau beschränkt sich auf die hier beschriebenen
+Verknüpfungen.
+
 Erst **Fachdaten wiederherstellen** gibt den vorbereiteten Stand frei. Die
 Freigabe erfordert die Administratorrolle und den Schlüssel der
 Mandantenautorität im Browser. Der Browser signiert nach der Prüfung eine
