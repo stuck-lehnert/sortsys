@@ -30,6 +30,7 @@ mod setup;
 mod staged;
 mod stock;
 mod timestamps;
+mod tool_returns;
 mod wire;
 
 use sha2::{Digest, Sha256};
@@ -62,6 +63,7 @@ pub(crate) fn register_native(
     let builder = delivery::register_metadata(builder, Arc::clone(&service));
     let builder = history::register_metadata(builder, Arc::clone(&service));
     let builder = timestamps::register_metadata(builder, Arc::clone(&service));
+    let builder = tool_returns::register(builder, Arc::clone(&service));
     let builder = objects::register_creation(builder, Arc::clone(&service));
     let builder = events::register_metadata(builder, Arc::clone(&service));
     let builder = passkeys::register(builder, Arc::clone(&service));
@@ -200,6 +202,7 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     let builder = staged::register_contract(builder);
     let builder = members::register_contract(builder);
     let builder = history::register_contract(timestamps::register_contract(builder));
+    let builder = tool_returns::register_contract(builder);
     recovery::register_contract(events::register_contract(invitations::register_contract(
         objects::register_contract(setup::register_contract(creation::register_contract(
             file_chunks::register_contract(opaque::register_contract(builder)),

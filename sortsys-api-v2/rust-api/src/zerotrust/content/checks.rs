@@ -183,6 +183,20 @@ async fn responsible_bookings(context: &mut MetadataContext) -> RpcResult<()> {
                 false,
             )
             .await?;
+            if let Some(binding) = access.command_binding.as_deref() {
+                let accepted = super::super::tool_returns::existing_command(
+                    &mut context.transaction,
+                    &context.auth.tenant,
+                    &origin.scope,
+                    binding,
+                )
+                .await?;
+                if origin.returned.as_ref().map(|state| &state.signature)
+                    != accepted.as_ref().map(|state| &state.signature)
+                {
+                    return Err(conflict());
+                }
+            }
         }
         let Some(next) = page.after else {
             return Ok(());

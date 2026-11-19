@@ -311,6 +311,8 @@ export async function protectedTenant(
             }),
             null,
           ];
+        case "zerotrust.toolReturns.lookup":
+          return [input.verificationKeys.map(() => null), null];
         case "zerotrust.fileChunks.get":
         case "zerotrust.fileChunks.getMany":
         case "zerotrust.fileChunks.findMany": {

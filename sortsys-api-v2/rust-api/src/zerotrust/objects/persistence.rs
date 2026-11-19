@@ -807,12 +807,12 @@ async fn commit_batch_inner(
         }
     }
     context.transaction.prefetch_protected(retained).await?;
-    let reviewed_bookings = input
+    let booking_guards = input
         .objects
         .iter()
-        .filter_map(|packet| super::super::resource_access::booking_review_key(&packet.envelope))
+        .flat_map(super::super::resource_access::booking_write_keys)
         .collect();
-    context.transaction.prefetch(reviewed_bookings).await?;
+    context.transaction.prefetch(booking_guards).await?;
     let checkpoints = super::super::live_checkpoints::persistence::prepare(
         &mut context,
         input.documents.as_deref().unwrap_or_default(),

@@ -92,6 +92,7 @@ export const TOOL_MUTATIONS = new Set([
   "tools.track",
   "tools.trackMany",
   "tools.untrack",
+  "tools.trackings.return",
   "tools.trackings.transfers.request",
   "tools.trackings.transfers.accept",
   "tools.trackings.transfers.deny",
@@ -491,9 +492,15 @@ export function checkToolReturnBinding(view: DataView, toolId: string, tracking:
 export function activeToolBooking(
   view: DataView,
   tool: ToolPart,
+  returned?: ReadonlyMap<string, unknown>,
 ): string | null {
-  const [booking] = view.documents(toolBookingRequest(tool.id));
-  return booking ? booking.value.trackingId : tool.activeTrackingId;
+  const booking = toolBookingPointer(view, tool.id);
+  if (booking?.returnKey && returned?.has(booking.returnKey)) return null;
+  return booking ? booking.trackingId : tool.activeTrackingId;
+}
+
+export function toolBookingPointer(view: DataView, toolId: string) {
+  return view.documents(toolBookingRequest(toolId))[0]?.value;
 }
 
 export function setActiveToolBooking(

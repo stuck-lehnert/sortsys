@@ -1,4 +1,6 @@
 import { uiText } from "~/lib/i18n";
+import { Button } from "@heroui/react";
+import { useState } from "react";
 import type { ToolTracking } from "~/type-helpers";
 import { MyTable, type MyTableColumn } from "./MyTable";
 import { client } from "~/lib/client";
@@ -6,6 +8,38 @@ import { MyLink } from "./MyLink";
 import { formatDate, userFullNameComma } from "~/lib/format";
 import { TrackingTile } from "~/lib/tiles";
 import { trackingToolReference } from "./trackingToolReference";
+
+function ReturnBookingButton({ trackingId }: { trackingId: string }) {
+  const [running, setRunning] = useState(false);
+  const [failed, setFailed] = useState(false);
+  async function submit() {
+    setRunning(true);
+    setFailed(false);
+    try {
+      const [, error] = await client.mutate("tools.trackings.return", { trackingId });
+      if (error) throw error;
+    } catch {
+      setFailed(true);
+    } finally {
+      setRunning(false);
+    }
+  }
+  return (
+    <div>
+      <Button size="sm" isDisabled={running} onPress={submit}>
+        {uiText("Zurückbuchen")}
+      </Button>
+      {failed && (
+        <p role="alert">
+          {uiText(
+            "Das Werkzeug konnte nicht zurückgebucht werden.",
+            "The tool could not be returned.",
+          )}
+        </p>
+      )}
+    </div>
+  );
+}
 
 export function TrackingTable(props: {
   trackings: ToolTracking[];
@@ -94,6 +128,13 @@ export function TrackingTable(props: {
     });
   }
 
+  function returnAction(tracking: ToolTracking) {
+    return tracking.canReturnOwn ? <ReturnBookingButton trackingId={tracking.id} /> : null;
+  }
+  if (props.trackings.some((tracking) => tracking.canReturnOwn)) {
+    columns.push({ label: uiText("Aktionen"), render: returnAction });
+  }
+
   return (
     <MyTable
       loading={props.loading}
@@ -102,9 +143,16 @@ export function TrackingTable(props: {
       columns={columns}
       loadMore={{}}
       className={props.className ?? "th-20rem"}
-      renderSmallViewport={(tracking) => (
-        <TrackingTile tracking={tracking} omit={props.omit} />
-      )}
+      renderSmallViewport={(tracking) =>
+        tracking.canReturnOwn ? (
+          <div className="grid gap-2">
+            <TrackingTile tracking={tracking} omit={props.omit} />
+            {returnAction(tracking)}
+          </div>
+        ) : (
+          <TrackingTile tracking={tracking} omit={props.omit} />
+        )
+      }
       viewportBreakpoint={1400}
     />
   );

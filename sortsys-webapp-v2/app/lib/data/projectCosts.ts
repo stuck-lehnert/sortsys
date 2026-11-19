@@ -33,6 +33,7 @@ import {
   type Project,
 } from "./projectData";
 import { toolUsageRequest } from "./projectToolUsage";
+import { loadToolReturns, toolReturnDate, type ToolReturns } from "./toolReturns";
 import { PRICE_MODEL, PRICE_COLLECTION, publicId } from "./products";
 import { readableAreas } from "./readableAreas";
 import type { Collection } from "./protectedObjects";
@@ -109,6 +110,7 @@ function missingAccess(
 function sources(
   view: DataView,
   requests: ReturnType<typeof projectCostRequests>,
+  returned: ToolReturns,
 ): ProjectCostSources {
   const workflow = view.documents(requests.workflow);
   if (workflow.length !== 1) throw new InvalidProtectedData();
@@ -168,11 +170,23 @@ function sources(
     const tracking = document.value.tracking;
     const price = toolPrices.get(tracking.values.id);
     if (!price) throw new InvalidProtectedData();
+    const returnedAt = toolReturnDate(
+      returned,
+      document.value.returnKey,
+      new Date(tracking.values.started_at as string),
+    );
     return decodeBusinessRow({
       format: "sortsys-row-v2",
       schema: businessSchema.fingerprint,
       table: "tool_trackings",
-      values: { ...tracking.values, ...price.values },
+      values: {
+        ...tracking.values,
+        ...price.values,
+        ...(returnedAt ? {
+          ended_at: returnedAt.toISOString(),
+          ended_by_user_id: tracking.values.responsible_user_id,
+        } : {}),
+      },
     });
   });
   return {
@@ -251,6 +265,12 @@ export function createProtectedProjectCosts(
 ) {
   const lease = acquireDataRuntime(client, signal, driver);
   const { runtime, live } = lease;
+  function returns(view: DataView, requests: readonly ReturnType<typeof projectCostRequests>[]) {
+    const keys = requests.flatMap(({ tools }) =>
+      view.documents(tools).map(({ value }) => value.returnKey),
+    );
+    return loadToolReturns(client, keys, signal);
+  }
   async function readable(
     requests: readonly DataRequest[],
   ): Promise<Set<string>> {
@@ -293,10 +313,11 @@ export function createProtectedProjectCosts(
         const period = costPeriod(data.from, data.to);
         const error = missingAccess(requests, await readable(requests.all));
         if (error) throw new Error(error);
-        const result = await runtime.read(requests.all, (view) => {
+        const result = await runtime.read(requests.all, async (view) => {
           if (!view.documents(requests.project)[0]?.value.project)
             throw new InvalidProtectedData();
-          return calculateProjectCosts(sources(view, requests), period, now);
+          const returned = await returns(view, [requests]);
+          return calculateProjectCosts(sources(view, requests, returned), period, now);
         });
         live();
         return result;
@@ -401,8 +422,11 @@ export function createProtectedProjectCosts(
       const requests = entries
         .filter((entry) => !entry.error)
         .flatMap((entry) => entry.requests.all);
-      const rows = await runtime.read([...masters, ...requests], (view) => {
+      const rows = await runtime.read([...masters, ...requests], async (view) => {
         verifyProjects(view);
+        const returned = await returns(
+          view, entries.filter((entry) => !entry.error).map((entry) => entry.requests),
+        );
         return entries.map((entry) => {
           const metadata = {
             projectId: entry.project.id,
@@ -423,7 +447,7 @@ export function createProtectedProjectCosts(
               accessError: entry.error,
             };
           const cost = calculateProjectCosts(
-            sources(view, entry.requests),
+            sources(view, entry.requests, returned),
             undefined,
             now,
           );

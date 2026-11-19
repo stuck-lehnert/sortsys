@@ -378,6 +378,8 @@ export async function exerciseToolBookingBatches(
         lost = false;
         const response = await next();
         assert.equal(response.ok, true);
+        const [result] = await response.clone().json();
+        if (result.error) return response;
         throw new TypeError("Lost successful bulk booking acknowledgement");
       }
       return next();

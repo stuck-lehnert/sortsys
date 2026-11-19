@@ -1,12 +1,18 @@
 import type { Client } from "@sortsys/v2-client";
 import {
   createResourceCommandKey,
+  base64,
+  boxFrame,
   hpke,
   InvalidProtectedData,
+  openBox,
+  openResourceCommandSigner,
   record,
   sealBox,
   sealedBox,
+  signResourceCommand,
   sized,
+  TOOL_RETURN_PURPOSE,
   type SealedBox,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
@@ -94,4 +100,52 @@ export async function prepareToolReturnKeys(
       seed.fill(0);
     }
   };
+}
+
+export async function signToolReturn(
+  client: Client,
+  source: ToolReturnKey,
+  trackingId: string,
+  revision: string,
+  startedAt: Date,
+  signal: AbortSignal,
+) {
+  const account = unlockedAccount();
+  if (!account) throw new InvalidProtectedData();
+  const { verificationKey, recipient: box } = source;
+  const history = await trustedHistory(client);
+  const author = await history.proofSigner(
+    box.author,
+    box.generation,
+    box.signature,
+    boxFrame(box),
+  );
+  signal.throwIfAborted();
+  if (unlockedAccount() !== account) throw new InvalidProtectedData();
+  const seed = await openBox(box, {
+    tenant: account.tenant,
+    purpose: "resource-command-key",
+    object: `tool-tracking:${trackingId}:return:${verificationKey}`,
+    generation: box.generation,
+    recipient: account.vault.subject,
+    author: box.author,
+  }, account.identity.encryptionKey.privateKey, author);
+  try {
+    const signer = await openResourceCommandSigner({
+      verificationKey,
+      signingSeed: base64(seed),
+    });
+    const command = await signResourceCommand({
+      tenant: account.tenant,
+      purpose: TOOL_RETURN_PURPOSE,
+      revision,
+      issuedAt: String(Math.max(Date.now(), startedAt.getTime())),
+      verificationKey,
+    }, signer);
+    signal.throwIfAborted();
+    if (unlockedAccount() !== account) throw new InvalidProtectedData();
+    return command;
+  } finally {
+    seed.fill(0);
+  }
 }

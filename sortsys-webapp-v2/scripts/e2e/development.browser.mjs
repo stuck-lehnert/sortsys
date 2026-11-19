@@ -1263,24 +1263,27 @@ try {
       const actions = page
         .getByRole("main")
         .getByRole("button", { name: "Aktionen", exact: true });
-      await actions.click();
-      await page.getByRole("menuitem", { name: "Buchen", exact: true }).click();
-      const booking = page.getByRole("dialog", {
-        name: "Werkzeuge einbuchen",
-        exact: true,
-      });
-      await booking
-        .getByRole("combobox", { name: /^Verantwortlicher/ })
-        .fill("Frank");
-      await page.getByRole("option", { name: /Frank Doe/ }).click();
-      await booking
-        .getByLabel("Kommentar", { exact: true })
-        .fill("Automatisch freigegebene Werkzeugbuchung im Browser");
-      await booking
-        .getByRole("button", { name: "Buchen", exact: true })
-        .click();
-      await expect(booking).toBeHidden();
-      await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
+      async function bookForFrank() {
+        await actions.click();
+        await page.getByRole("menuitem", { name: "Buchen", exact: true }).click();
+        const booking = page.getByRole("dialog", {
+          name: "Werkzeuge einbuchen",
+          exact: true,
+        });
+        await booking
+          .getByRole("combobox", { name: /^Verantwortlicher/ })
+          .fill("Frank");
+        await page.getByRole("option", { name: /Frank Doe/ }).click();
+        await booking
+          .getByLabel("Kommentar", { exact: true })
+          .fill("Automatisch freigegebene Werkzeugbuchung im Browser");
+        await booking
+          .getByRole("button", { name: "Buchen", exact: true })
+          .click();
+        await expect(booking).toBeHidden();
+        await expect(page.getByText("gebucht", { exact: true })).toBeVisible();
+      }
+      await bookForFrank();
 
       await member
         .getByRole("button", { name: "Material & Werkzeuge", exact: true })
@@ -1330,6 +1333,27 @@ try {
         [],
         "Closing another member's assignment and rotating its keys preserves the owner's unchanged access context",
       );
+
+      await bookForFrank();
+      await member.goto(`${memberServer.origin}/tools/trackings`);
+      await expect(label).toBeVisible();
+      await expect(member.locator(`a[href="${toolPath}"]`)).toHaveCount(0);
+      await member.setViewportSize({ width: 800, height: 1000 });
+      const publication = member.waitForRequest((request) =>
+        new URL(request.url()).pathname.endsWith("/zerotrust.toolReturns.publish"),
+      );
+      await member.getByRole("button", { name: "Zurückbuchen", exact: true }).click();
+      const payload = (await publication).postDataJSON();
+      const body = payload["0"].json;
+      assert.deepEqual(Object.keys(body).sort(), ["command", "trackingId"]);
+      assert.deepEqual(Object.keys(body.command).sort(), [
+        "issuedAt", "purpose", "revision", "signature", "tenant", "verificationKey",
+      ]);
+      await expect(label).toHaveCount(0);
+      await expect(member.getByRole("button", { name: "Zurückbuchen", exact: true })).toHaveCount(0);
+      await expect(page.getByText("verfügbar", { exact: true })).toBeVisible();
+      await page.reload();
+      await expect(page.getByText("verfügbar", { exact: true })).toBeVisible();
       memberAudit.assertClean();
     } finally {
       await member

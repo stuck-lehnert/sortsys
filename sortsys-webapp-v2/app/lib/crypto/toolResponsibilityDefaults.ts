@@ -15,6 +15,7 @@ import type { DuckDriver } from "../data/database";
 import { publicId } from "../data/products";
 import { acquireDataRuntime } from "../data/runtime/session";
 import { toolDomain, toolRequest } from "../data/toolData";
+import { loadToolReturns } from "../data/toolReturns";
 import { renewToolResponsibilityOrigins } from "./renewToolResponsibilityOrigins";
 
 /** The intent targets no encryption domain. A separately verified, active
@@ -99,9 +100,16 @@ export async function synchronizeToolResponsibilityDefaults(
   };
   const lease = acquireDataRuntime(client, signal, driver);
   try {
-    const prepared = await lease.runtime.prepare(selected, (transaction) => {
+    const prepared = await lease.runtime.prepare(selected, async (transaction) => {
       const bookings = [];
       const certified = new Set<string>();
+      const returned = await loadToolReturns(
+        client,
+        selected.flatMap((request) =>
+          transaction.documents(request).map(({ value }) => value.returnKey?.verificationKey),
+        ),
+        signal,
+      );
       for (const request of selected) {
         const documents = transaction.documents(request);
         if (!documents.length) continue;
@@ -127,7 +135,8 @@ export async function synchronizeToolResponsibilityDefaults(
         const active =
           row.ended_at === null &&
           responsible !== null &&
-          origin.returned === undefined;
+          origin.returned === undefined &&
+          !returned.has(document.value.returnKey?.verificationKey ?? "");
         bookings.push({ scope: request.area.scope, responsible, active });
         if (active && known && !origin.access) {
           // An unchanged payload gets a new signed revision that attests its

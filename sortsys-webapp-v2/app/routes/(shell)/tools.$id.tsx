@@ -191,13 +191,17 @@ export default function ToolDetailPage() {
                 {
                   label: uiText("Zurückbuchen"),
                   renderIcon: Icons.TakeBack,
-                  hideIf: tool.available || !canReturnTool,
+                  hideIf: tool.available || !(canReturnTool || activeTracking?.canReturnOwn),
                   onClick: async () => {
                     if (!activeTracking) return;
-                    const [, err] = await client.mutate("tools.untrack", {
-                      id: tool.id,
-                      expectedTrackingId: activeTracking.id,
-                    });
+                    const [, err] = canReturnTool
+                      ? await client.mutate("tools.untrack", {
+                          id: tool.id,
+                          expectedTrackingId: activeTracking.id,
+                        })
+                      : await client.mutate("tools.trackings.return", {
+                          trackingId: activeTracking.id,
+                        });
                     if (err) throw err;
                   },
                 },

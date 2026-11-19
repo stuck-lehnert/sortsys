@@ -1564,7 +1564,12 @@ async fn tool_booking_batches_publish_atomically_across_api_instances() {
     )
     .unwrap();
     let tenant = first.tenant(fixture["tenant"].as_str().unwrap()).unwrap();
-    for collection in ["domain-access", "creation-capabilities", "created-areas-1"] {
+    for collection in [
+        "domain-access",
+        "creation-capabilities",
+        "created-areas-1",
+        crate::zerotrust::tool_returns::RECEIPTS,
+    ] {
         assert_protected_collection(&tenant, collection).await;
     }
     let domain = fixture["domain"].as_str().unwrap();

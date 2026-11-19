@@ -27,6 +27,7 @@ import {
   DataRow,
   patchDataRecord,
   projectDataRows,
+  type RowProjection,
   UnloadedDataField,
 } from "./rows";
 import { tableDefinition } from "../schema";
@@ -198,6 +199,7 @@ export class DataTransaction extends DataView {
       request: DataRequest,
       action: DataAction,
     ) => boolean,
+    private readonly project?: RowProjection,
   ) {
     super(resources, tables, live, database);
   }
@@ -392,6 +394,7 @@ export class DataTransaction extends DataView {
     this.resources = resources;
     this.tables = projectDataRows(
       [...resources.values()].flatMap((resource) => resource.documents),
+      this.project,
     );
   }
   private editable(document: DataDocument<unknown>): DataDocument<unknown> {
@@ -413,6 +416,7 @@ export class DataRuntime {
   private resources = new Map<string, Resource>();
   private projectedResources = new Map<string, Resource>();
   private tables: DataTables = new Map();
+  private project?: RowProjection;
   private pending: Promise<unknown> = Promise.resolve();
   private database?: Promise<BusinessDatabase>;
   private controller = new AbortController();
@@ -426,6 +430,10 @@ export class DataRuntime {
     private readonly storage: DataStorage,
     private readonly context: () => void,
     private driver?: () => Promise<DuckDriver>,
+    private readonly loadProjection?: (
+      documents: readonly DataDocument<unknown>[],
+      signal: AbortSignal,
+    ) => Promise<RowProjection | undefined>,
   ) {}
   private live = () => {
     this.controller.signal.throwIfAborted();
@@ -495,6 +503,7 @@ export class DataRuntime {
     if (!domains) {
       this.projectedResources.clear();
       this.tables.clear();
+      this.project = undefined;
       const previous = this.database;
       this.database = undefined;
       void previous
@@ -767,13 +776,18 @@ export class DataRuntime {
       const documents = [...fresh.values()].flatMap(
         (resource) => resource.documents,
       );
-      const tables = projectDataRows(documents);
       const changed =
         this.projectedGeneration !== generation ||
         fresh.size !== this.projectedResources.size ||
         [...fresh].some(
           ([key, value]) => this.projectedResources.get(key) !== value,
         );
+      const project = changed
+        ? await this.loadProjection?.(documents, this.controller.signal)
+        : this.project;
+      this.live();
+      if (generation !== this.generation) throw new ProtectedWriteConflict();
+      const tables = changed ? projectDataRows(documents, project) : this.tables;
       if (changed && (this.tables.size || tables.size))
         await projectRuntimeRows(
           await this.db(),
@@ -787,6 +801,7 @@ export class DataRuntime {
       this.resources = next;
       this.projectedResources = fresh;
       this.tables = tables;
+      this.project = project;
       this.projectedGeneration = this.generation;
       for (const request of requests)
         this.stale.delete(dataAreaKey(request.area));
@@ -905,6 +920,7 @@ export class DataRuntime {
         () => this.db(),
         (request, action) =>
           reads.get(dataAreaKey(request.area))?.can(action) ?? false,
+        this.project,
       );
       const result = await work(tx);
       this.live();
@@ -995,7 +1011,7 @@ export class DataRuntime {
       const documents = [...next.values()].flatMap(
         (resource) => resource.documents,
       );
-      const tables = projectDataRows(documents);
+      const tables = projectDataRows(documents, this.project);
       // Validate the prospective state; rollback the local projection before
       // network publication. Nothing speculative is visible to other callers.
       if (this.tables.size || tables.size) {

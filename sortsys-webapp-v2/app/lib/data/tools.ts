@@ -6,6 +6,7 @@ import {
   type Facet,
 } from "@sortsys/zerotrust/sortsys";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
+import { unlockedAccount } from "../crypto/session";
 import {
   commitProtectedWrites,
   ProtectedWriteConflict,
@@ -21,11 +22,13 @@ import {
 } from "./protectedObjects";
 import { readableAreas } from "./readableAreas";
 import { acquireDataRuntime } from "./runtime/session";
+import { announceDataChanges } from "./runtime/changes";
 import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
 import {
   activeToolBooking,
   checkToolReturnBinding,
   setActiveToolBooking,
+  toolBookingPointer,
   toolBookingRequest,
   toolChanges,
   toolCollection,
@@ -48,7 +51,8 @@ import {
   finishToolBookingRotations,
   finishToolResponsibilityChanges,
 } from "./toolResponsibility";
-import { prepareToolReturnKeys } from "./toolReturnKey";
+import { prepareToolReturnKeys, signToolReturn } from "./toolReturnKey";
+import { loadToolReturns, type ToolReturns } from "./toolReturns";
 import type { createProtectedProjects } from "./projects";
 import { createProtectedPersonnel } from "./personnel";
 import {
@@ -131,10 +135,11 @@ function wireTool(
   view: DataView,
   request: PartRequest,
   requests: PartRequest[],
+  returned: ToolReturns,
 ) {
   const value = document(view, request)!.value;
   const p = values(view, request);
-  const activeTrackingId = activeToolBooking(view, value);
+  const activeTrackingId = activeToolBooking(view, value, returned);
   return {
     id: value.id,
     customId: Number(p.custom_id),
@@ -164,17 +169,26 @@ function wireTracking(
   requests: PartRequest[],
 ) {
   const p = values(view, request);
-  const resource = document(view, request)!.value.id;
+  const part = document(view, request)!.value;
+  const resource = part.id;
+  const startedAt = date(p.started_at)!;
+  const status = view.row("tool_trackings", { id: p.id });
+  const endedAt = date(status.require("ended_at"));
+  const endedBy = endedAt && p.ended_at === null
+    ? p.responsible_user_id
+    : p.ended_by_user_id;
+  const canReturnOwn =
+    endedAt === null && !!part.returnKey &&
+    part.returnKey.recipient.recipient === unlockedAccount()?.vault.subject;
   return {
     id: resource,
     toolId: publicId(p.tool_id),
-    ...(document(view, request)!.value.toolSummary
-      ? { toolSummary: document(view, request)!.value.toolSummary }
-      : {}),
+    ...(part.toolSummary ? { toolSummary: part.toolSummary } : {}),
+    ...(canReturnOwn ? { canReturnOwn } : {}),
     projectId: id(p.project_id),
     responsibleUserId: id(p.responsible_user_id),
     startedByUserId: id(p.started_by_user_id),
-    endedByUserId: id(p.ended_by_user_id),
+    endedByUserId: id(endedBy),
     toolUsageCostPerDay: cost(
       view,
       requests,
@@ -183,8 +197,8 @@ function wireTracking(
       "tool_usage_cost_per_day",
     ),
     comment: p.comment as string | null,
-    startedAt: date(p.started_at)!,
-    endedAt: date(p.ended_at),
+    startedAt,
+    endedAt,
     deadlineAt: date(p.deadline_at),
   };
 }
@@ -208,7 +222,7 @@ export function createProtectedTools(
     return areas.map((area) => ({ model: TOOL_MODEL, area }));
   }
   async function readAll<T>(
-    work: (view: DataView, selected: PartRequest[]) => T | Promise<T>,
+    work: (view: DataView, selected: PartRequest[], returned: ToolReturns) => T | Promise<T>,
     include: (request: PartRequest) => boolean = () => true,
     selectedDomains?: readonly string[],
     withBookings = false,
@@ -230,12 +244,13 @@ export function createProtectedTools(
       : [];
     const result = await runtime.read(
       [...selected, ...bookings],
-      (view) => {
+      async (view) => {
         live();
-        return work(
-          view,
-          selected.filter((request) => document(view, request, true)),
-        );
+        const present = selected.filter((request) => document(view, request, true));
+        const keys = bookings.map((request) => view.documents(request)[0]?.value.returnKey);
+        const returned = await loadToolReturns(client, keys, signal);
+        live();
+        return work(view, present, returned);
       },
       collections,
     );
@@ -282,11 +297,14 @@ export function createProtectedTools(
     const toolId = addressId(resource);
     const master = toolRequest("tool", resource, "master-data");
     const booking = toolBookingRequest(resource);
-    const basis = await runtime.read([master, booking], (view) => {
+    const basis = await runtime.read([master, booking], async (view) => {
       values(view, master);
+      const key = toolBookingPointer(view, resource)?.returnKey;
+      const returned = await loadToolReturns(client, [key], signal);
       return {
         head: view.head(master),
-        trackingId: activeToolBooking(view, document(view, master)!.value),
+        trackingId: activeToolBooking(view, document(view, master)!.value, returned),
+        physicallyReturned: key !== undefined && returned.has(key),
       };
     });
     if (
@@ -327,6 +345,7 @@ export function createProtectedTools(
         throw new ProtectedWriteConflict();
       }
     };
+    if (basis.physicallyReturned) return;
     if (basis.trackingId === null) {
       await persist([master, booking], (tx) => {
         checkTool(tx);
@@ -376,6 +395,31 @@ export function createProtectedTools(
       });
       setActiveToolBooking(tx, resource, null);
     });
+  }
+
+  async function returnOwnTool(trackingId: string, actorId: string) {
+    const request = toolRequest("tool-tracking", trackingId, "master-data");
+    const source = await runtime.read([request], (view) => {
+      const row = values(view, request);
+      const tracking = document(view, request)!;
+      const key = tracking.value.returnKey;
+      if (row.responsible_user_id !== actorId || !key || row.ended_at !== null)
+        throw new InvalidProtectedData();
+      return { key, revision: tracking.revision, startedAt: date(row.started_at)! };
+    });
+    const command = await signToolReturn(
+      client, source.key, trackingId, source.revision, source.startedAt, signal,
+    );
+    const [, failure] = await client.mutate("zerotrust.toolReturns.publish", {
+      trackingId, command,
+    });
+    const returned = await loadToolReturns(
+      client, [source.key.verificationKey], signal,
+    ).catch((error) => { throw failure ?? error; });
+    if (returned.get(source.key.verificationKey)?.signature !== command.signature)
+      throw failure ?? new InvalidProtectedData();
+    live();
+    announceDataChanges(client, undefined, { revalidate: true });
   }
 
   async function provision(
@@ -497,11 +541,12 @@ export function createProtectedTools(
             .map((request) => {
               const value = document(view, request)!.value;
               const record = values(view, request);
+              const startedAt = date(record.started_at)!;
               return {
                 id: value.id,
                 tool: tools.get(publicId(record.tool_id)) ?? null,
-                startedAt: date(record.started_at)!,
-                endedAt: date(record.ended_at),
+                startedAt,
+                endedAt: date(view.row("tool_trackings", { id: record.id }).require("ended_at")),
               };
             });
         },
@@ -553,7 +598,7 @@ export function createProtectedTools(
         }
       }
       return readAll(
-        (view, selected) => {
+        (view, selected, returned) => {
           const tools = matching(selected, "tool", "master-data").filter(
             (request) => !document(view, request)!.value.deleted,
           );
@@ -564,7 +609,7 @@ export function createProtectedTools(
               (request) => document(view, request)!.value.id === p.id,
             );
             if (!request) throw new InvalidProtectedData();
-            return wireTool(view, request, selected);
+            return wireTool(view, request, selected, returned);
           }
           if (["tools.brands", "tools.categories"].includes(path)) {
             const field = path === "tools.brands" ? "brand" : "category";
@@ -597,7 +642,7 @@ export function createProtectedTools(
               if (p[key] != null && typeof p[key] !== "string")
                 throw new InvalidProtectedData();
             return tools
-              .map((request) => wireTool(view, request, selected))
+              .map((request) => wireTool(view, request, selected, returned))
               .filter(
                 (tool) =>
                   (!brand || tool.brand === brand) &&
@@ -730,7 +775,7 @@ export function createProtectedTools(
                   transferToUserId: publicId(p.transfer_to_user_id),
                   createdByUserId: publicId(p.created_by_user_id),
                   projectId: id(p.project_id),
-                  status: p.status as string,
+                  status: source.endedAt && p.status === "open" ? "denied" : p.status as string,
                   notes: p.notes as string | null,
                   createdAt: date(p.created_at)!,
                   responsibleUserId: source.responsibleUserId,
@@ -799,7 +844,7 @@ export function createProtectedTools(
               ),
             )
             .map((request) => {
-              const tool = wireTool(view, request, selected);
+              const tool = wireTool(view, request, selected, returned);
               const recent = inventories
                 .filter((value) => value.toolId === tool.id)
                 .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
@@ -877,6 +922,12 @@ export function createProtectedTools(
       const session = await actor();
       const actorId = addressId(session.user.id);
       const now = new Date().toISOString();
+      if (path === "tools.trackings.return") {
+        const { trackingId } = record(input, ["trackingId"]);
+        addressId(trackingId);
+        await returnOwnTool(trackingId as string, actorId);
+        return { success: true };
+      }
       if (path === "tools.create") {
         const changes = toolChanges(input, true);
         const resource = publicId(newProductRowId());
@@ -1282,16 +1333,19 @@ export function createProtectedTools(
             toolRequest("tool-tracking", trackingId, "master-data"),
             toolRequest("tool-tracking", trackingId, "scope"),
           ],
-          (tx) => {
+          async (tx) => {
             const tracking = toolRequest(
               "tool-tracking",
               trackingId,
               "master-data",
             );
             const current = values(tx, tracking);
+            const key = document(tx, tracking)!.value.returnKey?.verificationKey;
+            const returned = await loadToolReturns(client, [key], signal);
             const request = toolRequest("tool-tracking", trackingId, "scope");
             if (
               current.ended_at !== null ||
+              returned.size !== 0 ||
               (!tx.can(tracking, "update") &&
                 recipient !== actorId &&
                 current.started_by_user_id !== actorId)
@@ -1405,6 +1459,10 @@ export function createProtectedTools(
             throw new ProtectedWriteConflict();
           const found = lookupTransfer(tx, [baseline.request], transferId);
           const current = values(tx, found.tracking);
+          const prior = document(tx, found.tracking)!.value;
+          const returned = await loadToolReturns(
+            client, [prior.returnKey?.verificationKey], signal,
+          );
           if (
             !tx.can(found.tracking, "update") &&
             found.row.values.transfer_to_user_id !== actorId
@@ -1412,6 +1470,7 @@ export function createProtectedTools(
             throw new InvalidProtectedData();
           if (
             found.row.values.status !== "open" ||
+            returned.size !== 0 ||
             (current.ended_at !== null && path.endsWith("accept"))
           )
             throw new ProtectedWriteConflict();
@@ -1419,7 +1478,6 @@ export function createProtectedTools(
           if (path.endsWith("accept")) {
             const tool = toolRequest("tool", baseline.toolId, "master-data");
             const price = toolRequest("tool", baseline.toolId, "procurement");
-            const prior = document(tx, found.tracking)!.value;
             checkToolReturnBinding(tx, baseline.toolId, prior);
             if (
               activeToolBooking(tx, document(tx, tool)!.value) !==

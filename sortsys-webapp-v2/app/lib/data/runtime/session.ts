@@ -2,6 +2,7 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { listenCryptoSession, unlockedAccount } from "../../crypto/session";
 import type { DuckDriver } from "../database";
+import { loadToolReturnProjection } from "../toolReturns";
 import { listenDataChanges } from "./changes";
 import { DataRuntime } from "./runtime";
 import { encryptedDataStorage } from "./storage";
@@ -39,6 +40,8 @@ export function acquireDataRuntime(
         if (unlockedAccount() !== account) throw new InvalidProtectedData();
       },
       driver,
+      (documents, lifetime) =>
+        loadToolReturnProjection(client, documents, lifetime),
     );
     const stopChanges = listenDataChanges(client, (domains, options) =>
       options?.revalidate

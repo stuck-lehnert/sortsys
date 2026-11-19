@@ -9,9 +9,10 @@ import { signIn } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { newProductRowId, publicId } from "../app/lib/data/products";
 import { toolUsageCollection } from "../app/lib/data/projectToolUsage";
-import { required } from "../app/lib/data/protectedObjects";
+import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
-import { toolCollection } from "../app/lib/data/toolData";
+import { TOOL_MODEL, toolCollection } from "../app/lib/data/toolData";
+import { signToolReturn } from "../app/lib/data/toolReturnKey";
 import { enrollToolResponsibleMember } from "./test-native-tool-recovery";
 import { exerciseToolResponsibilityBrowser } from "./test-tool-responsibility-browser";
 
@@ -142,8 +143,35 @@ export async function prepareToolBookingRestore(
       await signIn(owner, login);
     }
   }
+  // Open the employee's signing key before this test starts holding an open
+  // editor as the administrator. Publish the signed return only after backup.
+  const trackingId = originalBooking.trackingId;
+  const command = await asMember(async (_, transport) => {
+    const signal = new AbortController().signal;
+    const area = toolCollection("tool-tracking", trackingId, "master-data");
+    const source = await protectedCollection(transport, area, signal);
+    try {
+      const [opened] = await source.read();
+      assert.ok(opened);
+      const booking = TOOL_MODEL.decode(opened.value, area.prefix, area);
+      assert.ok(booking.returnKey);
+      return await signToolReturn(
+        transport,
+        booking.returnKey,
+        trackingId,
+        opened.envelope.revision,
+        new Date(booking.rows[0]!.values.started_at as string),
+        signal,
+      );
+    } finally {
+      source.close();
+    }
+  });
   return async function replaceAfterBackup() {
-    await required(owner.mutate("tools.untrack", { id: tool.id }));
+    const accepted = await required(member.mutate("zerotrust.toolReturns.publish", {
+      trackingId, command,
+    }));
+    assert.deepEqual(accepted, command);
     await required(
       owner.mutate("tools.update", {
         id: tool.id,

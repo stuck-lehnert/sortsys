@@ -3,6 +3,7 @@ import type { Client } from "@sortsys/v2-client";
 type ChangeOptions = {
   revalidate?: boolean;
   control?: boolean;
+  toolReturns?: boolean;
   heads?: ReadonlyMap<string, string>;
 };
 type Listener = (

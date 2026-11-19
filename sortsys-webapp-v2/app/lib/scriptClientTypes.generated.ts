@@ -1553,6 +1553,9 @@ export type QueryInputs = {
         object: string;
         revision: string;
     };
+    "zerotrust.toolReturns.lookup": {
+        verificationKeys: Array<string>;
+    };
     "zerotrust.trust.history": void;
 };
 
@@ -2773,6 +2776,7 @@ export type QueryOutputs = {
         endedAt: Date | null;
         deadlineAt: Date | null;
         toolSummary?: ToolBookingTool;
+        canReturnOwn?: boolean;
     }>;
     "tools.trackings.transfers.list": {
         id: string;
@@ -3307,6 +3311,14 @@ export type QueryOutputs = {
         artifact: JsonValue;
         proofs: Array<string>;
     } | null;
+    "zerotrust.toolReturns.lookup": Array<{
+        tenant: string;
+        purpose: string;
+        revision: string;
+        issuedAt: string;
+        verificationKey: string;
+        signature: string;
+    } | null>;
     "zerotrust.trust.history": {
         authorities: Array<AuthorityHistory>;
         identities: Array<IdentityCertificate>;
@@ -4244,6 +4256,9 @@ export type MutationInputs = {
         tools: Array<ToolBookingSelection>;
         data: ToolBookingData;
     };
+    "tools.trackings.return": {
+        trackingId: Id;
+    };
     "tools.trackings.transfers.accept": {
         id: string;
         projectId?: undefined | null | string;
@@ -4712,6 +4727,10 @@ export type MutationInputs = {
         proof: string | null;
     };
     "zerotrust.timestamps.work": void;
+    "zerotrust.toolReturns.publish": {
+        trackingId: Id;
+        command: ResourceCommand;
+    };
 };
 
 export type MutationOutputs = {
@@ -5243,6 +5262,9 @@ export type MutationOutputs = {
     "tools.trackMany": {
         trackings: Array<ToolBookingReference>;
     };
+    "tools.trackings.return": {
+        success: true;
+    };
     "tools.trackings.transfers.accept": {
         success: true;
     };
@@ -5484,6 +5506,14 @@ export type MutationOutputs = {
         lease: string;
         evidence: Evidence;
     } | null;
+    "zerotrust.toolReturns.publish": {
+        tenant: string;
+        purpose: string;
+        revision: string;
+        issuedAt: string;
+        verificationKey: string;
+        signature: string;
+    };
 };
 
 /** Select the network/cache order for queries and refreshed streams. */

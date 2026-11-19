@@ -7,6 +7,7 @@ use ts_rs::TS;
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
         .mutation_stub::<ToolBookingInput, ToolBookingResult>("tools.trackMany")
+        .mutation_stub::<ToolReturnInput, crate::api::Success>("tools.trackings.return")
         .query_stub::<ToolTrackingListInput, Vec<ToolTracking>>("tools.trackings.list")
 }
 
@@ -69,6 +70,15 @@ pub struct ToolTracking {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub tool_summary: Option<ToolBookingTool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub can_return_own: Option<bool>,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ToolReturnInput {
+    pub tracking_id: Id,
 }
 
 #[derive(Deserialize, TS)]

@@ -418,6 +418,7 @@ export type QueryInputs = {
   "zerotrust.stock.deleted": { object: string, };
   "zerotrust.stock.references": { objects: Array<string>, };
   "zerotrust.timestamps.get": { scope: string, object: string, revision: string, };
+  "zerotrust.toolReturns.lookup": { verificationKeys: Array<string>, };
   "zerotrust.trust.history": void;
 };
 
@@ -512,7 +513,7 @@ export type QueryOutputs = {
   "tools.inventories.overview": { id: string; customId: number; brand: string; category: string; label: null | string; status: null | "lost" | "broken"; available: boolean; archivedSince: null | Date; lastInventoryAt: null | Date; lastResponsibleUserId: null | string; lastResponsibleFirstName: null | string; lastResponsibleLastName: null | string; }[];
   "tools.list": { id: string; customId: number; brand: string; category: string; label: null | string; purchasePrice: null | number; usageCostPerDay: null | number; status: null | "lost" | "broken"; available: boolean; activeTrackingId: null | string; createdByUserId: null | string; createdAt: Date; modifiedAt: Date; archivedSince: null | Date; }[];
   "tools.suggestNextCustomId": number;
-  "tools.trackings.list": Array<{ id: Id, toolId: Id, projectId: Id | null, responsibleUserId: Id | null, startedByUserId: Id | null, endedByUserId: Id | null, toolUsageCostPerDay: number | null, comment: string | null, startedAt: Date, endedAt: Date | null, deadlineAt: Date | null, toolSummary?: ToolBookingTool, }>;
+  "tools.trackings.list": Array<{ id: Id, toolId: Id, projectId: Id | null, responsibleUserId: Id | null, startedByUserId: Id | null, endedByUserId: Id | null, toolUsageCostPerDay: number | null, comment: string | null, startedAt: Date, endedAt: Date | null, deadlineAt: Date | null, toolSummary?: ToolBookingTool, canReturnOwn?: boolean, }>;
   "tools.trackings.transfers.list": { id: string; toolTrackingId: string; toolId: string; transferToUserId: string; createdByUserId: string; projectId: null | string; status: "open" | "denied" | "accepted"; notes: null | string; createdAt: Date; responsibleUserId: null | string; toolUsageCostPerDay: null | number; }[];
   "users.get": { id: string; salutation: null | string; firstName: string; lastName: null | string; username: string; email: null | string; phone: null | string; contractType: "internal" | "external" | "subcontractor"; costPerHour: null | number; vacationDaysPerYear: null | number; supervisorUserId: null | string; createdAt: Date; modifiedAt: Date; deactivatedAt: null | Date; archivedAt: null | Date; };
   "users.list": { id: string; salutation: null | string; firstName: string; lastName: null | string; username: string; email: null | string; phone: null | string; contractType: "internal" | "external" | "subcontractor"; costPerHour: null | number; vacationDaysPerYear: null | number; supervisorUserId: null | string; createdAt: Date; modifiedAt: Date; deactivatedAt: null | Date; archivedAt: null | Date; }[];
@@ -573,6 +574,7 @@ export type QueryOutputs = {
   "zerotrust.stock.deleted": { object: string, deletion: StockDeletion, references: StockReferences, } | null;
   "zerotrust.stock.references": Array<{ object: string, references: StockReferences, vendorDeletion: StockDeletion | null, }>;
   "zerotrust.timestamps.get": { target: Target, artifact: JsonValue, proofs: Array<string>, } | null;
+  "zerotrust.toolReturns.lookup": Array<{ tenant: string, purpose: string, revision: string, issuedAt: string, verificationKey: string, signature: string, } | null>;
   "zerotrust.trust.history": { authorities: Array<AuthorityHistory>, identities: Array<IdentityCertificate>, };
 };
 
@@ -721,6 +723,7 @@ export type MutationInputs = {
   "tools.inventories.delete": { id: string; };
   "tools.track": { id: string; data: { projectId?: undefined | null | string; responsibleUserId?: undefined | null | string; deadlineAt?: unknown; comment?: undefined | null | string; }; };
   "tools.trackMany": { operationId: Id, tools: Array<ToolBookingSelection>, data: ToolBookingData, };
+  "tools.trackings.return": { trackingId: Id, };
   "tools.trackings.transfers.accept": { id: string; projectId?: undefined | null | string; };
   "tools.trackings.transfers.deny": { id: string; };
   "tools.trackings.transfers.request": { toolTrackingId: string; transferToUserId?: undefined | null | string; projectId?: undefined | null | string; notes?: undefined | null | string; };
@@ -787,6 +790,7 @@ export type MutationInputs = {
   "zerotrust.stock.delete": { tenant: string, domain: string, object: string, revision: string, envelopeHash: string, authorityGeneration: string, policyVersion: string, author: string, kind: StockKind, signature: string, };
   "zerotrust.timestamps.finish": { digest: string, lease: string, proof: string | null, };
   "zerotrust.timestamps.work": void;
+  "zerotrust.toolReturns.publish": { trackingId: Id, command: ResourceCommand, };
 };
 
 export type MutationOutputs = {
@@ -934,6 +938,7 @@ export type MutationOutputs = {
   "tools.inventories.delete": { success: true; };
   "tools.track": { trackingId: string; };
   "tools.trackMany": { trackings: Array<ToolBookingReference>, };
+  "tools.trackings.return": { success: true, };
   "tools.trackings.transfers.accept": { success: true; };
   "tools.trackings.transfers.deny": { success: true; };
   "tools.trackings.transfers.request": { id: string; };
@@ -1000,6 +1005,7 @@ export type MutationOutputs = {
   "zerotrust.stock.delete": { success: true, };
   "zerotrust.timestamps.finish": null;
   "zerotrust.timestamps.work": { lease: string, evidence: Evidence, } | null;
+  "zerotrust.toolReturns.publish": { tenant: string, purpose: string, revision: string, issuedAt: string, verificationKey: string, signature: string, };
 };
 
 const queryProcedures = new Set<string>([
@@ -1154,6 +1160,7 @@ const queryProcedures = new Set<string>([
   "zerotrust.stock.deleted",
   "zerotrust.stock.references",
   "zerotrust.timestamps.get",
+  "zerotrust.toolReturns.lookup",
   "zerotrust.trust.history",
 ]);
 
@@ -1302,6 +1309,7 @@ const mutationProcedures = new Set<string>([
   "tools.inventories.delete",
   "tools.track",
   "tools.trackMany",
+  "tools.trackings.return",
   "tools.trackings.transfers.accept",
   "tools.trackings.transfers.deny",
   "tools.trackings.transfers.request",
@@ -1368,6 +1376,7 @@ const mutationProcedures = new Set<string>([
   "zerotrust.stock.delete",
   "zerotrust.timestamps.finish",
   "zerotrust.timestamps.work",
+  "zerotrust.toolReturns.publish",
 ]);
 
 export function contractProcedureKind(path: string): "query" | "mutation" | undefined {

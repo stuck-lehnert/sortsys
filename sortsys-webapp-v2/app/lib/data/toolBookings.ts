@@ -27,6 +27,7 @@ import {
 import { protectedCollections } from "./protectedObjects";
 import { finishToolResponsibilityChanges } from "./toolResponsibility";
 import { prepareToolReturnKeys } from "./toolReturnKey";
+import { loadToolReturns } from "./toolReturns";
 import { defineDataModel } from "./runtime/model";
 import type {
   DataRequest,
@@ -35,6 +36,7 @@ import type {
 } from "./runtime/runtime";
 import {
   activeToolBooking,
+  toolBookingPointer,
   setActiveToolBooking,
   toolBookingRequest,
   toolPart,
@@ -362,13 +364,19 @@ export async function bookProtectedTools(
     const previous = await runtime.read([receiptRequest], saved, collections);
     if (previous) return previous;
   }
+  const previousReturns = (view: BusinessView) => loadToolReturns(
+    client,
+    selected.map((entry) => toolBookingPointer(view, entry.id)?.returnKey),
+    signal,
+  );
   const basis = await runtime.read(
     sources,
-    (view) => {
+    async (view) => {
+      const returned = await previousReturns(view);
       const previousRows = [];
       for (const selection of selected) {
         const tool = part(view, selection.tool);
-        if (activeToolBooking(view, tool) !== selection.expectedTrackingId)
+        if (activeToolBooking(view, tool, returned) !== selection.expectedTrackingId)
           throw new ToolBookingSelectionConflict();
         if (!view.can(selection.tool, "update"))
           throw new InvalidProtectedData();
@@ -444,9 +452,10 @@ export async function bookProtectedTools(
       async (tx) => {
         const previous = saved(tx);
         if (previous) return previous;
+        const returned = await previousReturns(tx);
         for (const selection of selected) {
           const tool = part(tx, selection.tool);
-          if (activeToolBooking(tx, tool) !== selection.expectedTrackingId)
+          if (activeToolBooking(tx, tool, returned) !== selection.expectedTrackingId)
             throw new ToolBookingSelectionConflict();
           for (const request of selection.next) {
             if (tx.documents(request).length)

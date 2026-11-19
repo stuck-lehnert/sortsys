@@ -1,6 +1,6 @@
 # Funktionsstand der verschlüsselten Anwendung
 
-Dieser Abgleich beschreibt den Stand vom 18. November 2026. Die API speichert
+Dieser Abgleich beschreibt den Stand vom 19. November 2026. Die API speichert
 verschlüsselte Geschäftsdaten und prüft öffentliche Zugriffsnachweise. Suche,
 Berechnungen und fachliche Inhaltsprüfungen laufen im Browser. Es gibt weder
 eine Trusted Execution Environment noch eine vorübergehende Entschlüsselung
@@ -276,8 +276,13 @@ Kosten, einen gültig signierten abgewiesenen Schreibversuch und den Entzug nach
 Rückgabe. Die Werkzeugansicht bindet eine Rückgabe an die ausgewählte Buchung.
 Ein berechtigter Benutzer mit bereichsbezogener Schlüsselzuständigkeit kann den
 Schlüsselwechsel ohne globale Administratorrolle ausführen. Für andere Bereiche
-bleibt der Wechsel vorgemerkt. Die automatische Schreibfreigabe für
-Verantwortliche bei Rückgabe und Umbuchung fehlt noch.
+bleibt der Wechsel vorgemerkt. Für neue Buchungen an registrierte Mitarbeiter
+ermöglicht ein buchungseigener Schlüssel die Rückgabe direkt aus der Liste.
+Werkzeugstatus und Projektkosten berücksichtigen den bestätigten Abschluss.
+Alte Buchungen ohne diesen Schlüssel oder Buchungen nach einem Wechsel des
+Kontoschlüssels können weiterhin über die Werkzeugverwaltung abgeschlossen
+werden. Die eigenständige Umbuchung mit ausschließlich abgeleitetem Leserecht
+steht noch aus.
 Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
 aus. Siehe
 [Werkzeugverwaltung](verschluesselte-werkzeuge.md).

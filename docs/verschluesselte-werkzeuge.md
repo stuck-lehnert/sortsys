@@ -31,8 +31,8 @@ Werkzeugs geladen. Der Inventurabruf bleibt auf dieses Werkzeug beschränkt.
 Die Buchungshistorie und die dafür benötigten Freigaben werden anschließend
 gelesen. Das Öffnen der Historie löst keine Änderungen an Buchungsfreigaben aus.
 
-Bei der Rückgabe öffnet der Browser die aktive Buchung über den gespeicherten
-Verweis am Werkzeug. Er beendet die Buchung, schließt offene Umbuchungsanfragen
+Bei einer Rückgabe aus der Werkzeugverwaltung öffnet der Browser die Buchung
+über den gespeicherten Verweis am Werkzeug. Er beendet die Buchung, schließt offene Umbuchungsanfragen
 und setzt den Werkzeugstatus in derselben Veröffentlichung. Hat eine zweite
 Sitzung die Buchung inzwischen geändert, wird die Rückgabe abgewiesen.
 
@@ -152,13 +152,25 @@ und Projektkosten enthalten in ihren verschlüsselten Daten nur den Prüfschlüs
 Die API erhält dessen Prüfsumme und bindet sie an die signierte Buchungsrevision.
 Ein späterer Schreibvorgang darf diese Zuordnung weder austauschen noch entfernen.
 Der Mehrinstanztest prüft diese Bindung und die getrennte Ablage in den drei
-Bereichen. Browser und API können einen mit diesem Schlüssel signierten
-Rückgabenachweis prüfen. Er gilt für genau einen Mandanten und eine
-Buchungsrevision. Ein gültiger Nachweis beendet das aus der Ausgabe abgeleitete
-Leserecht. Andere Freigaben folgen weiterhin den Berechtigungsregeln. Die
-Rückgabe durch den Verantwortlichen wird erst verfügbar, wenn die API den Befehl
-transaktional annimmt und Werkzeugstatus, Umbuchungen und Projektkosten ihn
-berücksichtigen.
+Bereichen.
+
+Der Verantwortliche kann das Werkzeug über „Zurückbuchen“ in der Buchungsliste
+zurückgeben. Dafür genügen die Buchung und ihr privater Rückgabeschlüssel.
+Die API prüft die Signatur für genau diese Buchungsrevision und speichert den
+Nachweis gemeinsam mit dem Entzug des abgeleiteten Leserechts. Eine gleichzeitig
+vorbereitete Umbuchung kann die beendete Buchung danach nicht mehr ändern.
+Der Werkzeugstatus zeigt das Gerät wieder als verfügbar an, offene
+Umbuchungsanfragen gelten als abgelehnt und die Projektkosten enden am
+bestätigten Rückgabezeitpunkt. Der Browser lädt mehrere solcher Nachweise
+gebündelt. Eine spätere Rücksicherung darf den bestätigten Abschluss nicht
+aufheben.
+
+Bei vor der Registrierung oder aus einem Sicherungsarchiv angelegten Buchungen
+kann der persönliche Rückgabeschlüssel fehlen. Hat die zuständige Person durch
+eine Wiederherstellung einen neuen Kontoschlüssel erhalten, ist ihr bisheriger
+Rückgabeschlüssel damit nicht zu öffnen. In beiden Fällen steht die Rückgabe
+aus der Werkzeugverwaltung zur Verfügung. Bei der nächsten Ausgabe erzeugt
+der Browser einen neuen Rückgabeschlüssel.
 
 Die Rückgabe aus der Werkzeugansicht gilt für die dort angezeigte Buchung.
 Wurde das Werkzeug zwischenzeitlich erneut ausgegeben, lässt die alte Aktion
@@ -173,7 +185,7 @@ prüft den Schlüsselwechsel im freigegebenen Bereich. Der Bereich für
 Umbuchungsanfragen bleibt bis zur Erneuerung durch einen weiteren Berechtigten
 vorgemerkt. Eine Wiederholung der Rückgabe lässt eine spätere Ausgabe bestehen.
 
-Eine verschlüsselte, unveränderliche Bestätigung bindet den ausgeführten Befehl
+Eine verschlüsselte, unveränderliche Bestätigung bindet den ausgeführten Ausgabebefehl
 an dessen Urheber und vollständige Eingaben. Nach einer verlorenen Antwort wird
 beim Wiederholen das ursprüngliche Ergebnis zurückgegeben. Das erzeugt auch
 dann keine neue Ausgabe, wenn das Werkzeug inzwischen wieder zurückgegeben
@@ -188,8 +200,9 @@ Projektbereiche eine zusätzliche verschlüsselte Sicht auf ihre Werkzeugnutzung
 Buchungsdaten und historische Preise bleiben darin getrennt. Änderungen an der
 ursprünglichen Buchung und dieser Sicht werden gemeinsam veröffentlicht. Eine
 Kostenfreigabe für eine Baustelle öffnet dadurch keine Buchungen anderer
-Projekte. Ausgabe, Rückgabe und Umbuchung benötigen die jeweils betroffenen
-Schreibrechte auch im Projektbereich.
+Projekte. Ausgabe, verwaltete Rückgabe und Umbuchung benötigen die jeweils
+betroffenen Schreibrechte auch im Projektbereich. Für die Rückgabe über die
+Buchungsliste gilt der Nachweis aus der ursprünglichen Ausgabe.
 
 Beim Anlegen eines Mandanten kann ein geprüftes Sicherungsarchiv Werkzeugdaten,
 einzelne Buchungen, Inventuren und Umbuchungsanfragen liefern. Vorhandene

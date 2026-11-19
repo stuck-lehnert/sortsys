@@ -20,6 +20,7 @@ export type EncryptedChange = {
   control: boolean;
   domains: Record<string, string | null>;
   staged?: boolean;
+  toolReturns?: boolean;
 };
 
 export function eventFingerprint(value: unknown): string {
@@ -180,6 +181,7 @@ export async function watchEncryptedEvents(
                 "fingerprint",
               ];
               if (Object.hasOwn(raw, "staged")) keys.push("staged");
+              if (Object.hasOwn(raw, "toolReturns")) keys.push("toolReturns");
               const value = record(raw, keys);
               eventFingerprint(value.fingerprint);
               if (
@@ -188,8 +190,10 @@ export async function watchEncryptedEvents(
                 typeof value.control !== "boolean" ||
                 (value.staged !== undefined &&
                   typeof value.staged !== "boolean") ||
+                (value.toolReturns !== undefined &&
+                  typeof value.toolReturns !== "boolean") ||
                 (value.staged === true &&
-                  (value.reset || value.all || value.control)) ||
+                  (value.reset || value.all || value.control || value.toolReturns)) ||
                 !value.domains ||
                 typeof value.domains !== "object" ||
                 Array.isArray(value.domains) ||
@@ -214,6 +218,7 @@ export async function watchEncryptedEvents(
                 domains: value.domains as Record<string, string | null>,
               };
               if (value.staged === true) change.staged = true;
+              if (value.toolReturns === true) change.toolReturns = true;
               onChange(change);
               return;
             }

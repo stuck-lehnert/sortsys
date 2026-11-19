@@ -11,6 +11,7 @@ use crate::{
     error::{RpcResult, forbidden},
     ids::Id,
 };
+use sortsys_zerotrust::metadata::RecordKey;
 
 pub(super) const REVIEWED_BOOKINGS: &str = "tool-booking-revisions";
 const COMMAND_BINDINGS: &str = "tool-booking-command-bindings";
@@ -46,13 +47,28 @@ pub(super) async fn check_command_binding(
 
 /// Checkout pointers and tracking parents are decrypted during a restore
 /// review. Keep a per-object revision for an inexpensive collection CAS.
-pub(super) fn booking_review_key(
-    envelope: &EncryptedObject,
-) -> Option<sortsys_zerotrust::metadata::RecordKey> {
+pub(super) fn booking_review_key(envelope: &EncryptedObject) -> Option<RecordKey> {
     (envelope.facet == Facet::MasterData
         && (envelope.scope.starts_with("tool:") || envelope.scope.starts_with("tool-tracking:"))
         && retains_tool_booking(envelope))
     .then(|| key(REVIEWED_BOOKINGS, &envelope.object))
+}
+
+pub(super) fn booking_write_keys(packet: &SaveInput) -> Vec<RecordKey> {
+    let mut records = Vec::new();
+    if let Some(review) = booking_review_key(&packet.envelope) {
+        records.push(review);
+    }
+    if let Some(state) = &packet.resource_access {
+        records.push(key(BOOKING_COMMANDS, &packet.envelope.scope));
+        if let Some(binding) = &state.command_binding
+            && super::crypto::sized::<32>(binding).is_ok()
+        {
+            records.push(key(COMMAND_BINDINGS, binding));
+            records.push(super::tool_returns::receipt_key(binding));
+        }
+    }
+    records
 }
 
 fn canonical_id(token: &str) -> bool {
@@ -163,6 +179,20 @@ pub(super) async fn save(
         }
         return Ok(false);
     }
+    let returned = if let Some(binding) = state.command_binding.as_deref() {
+        super::tool_returns::existing_command(
+            &mut context.transaction,
+            &context.auth.tenant,
+            &original.scope,
+            binding,
+        )
+        .await?
+    } else {
+        None
+    };
+    if state.active && returned.is_some() {
+        return Err(conflict());
+    }
     if let Some(previous) = &original.access {
         if revision(&previous.revision)?.checked_add(1) != Some(revision(&state.revision)?)
             || (!original.is_active_booking() && state.active)
@@ -217,6 +247,8 @@ pub(super) async fn save(
             return Err(invalid());
         }
         origin.access = Some(state.clone());
+        origin.returned = returned.clone();
+        origin.verify(&context.security.authority)?;
         context.transaction.put_protected(record, &origin).await?;
     }
     let changed_access = original.access.is_none() || original.is_active_booking() != state.active;

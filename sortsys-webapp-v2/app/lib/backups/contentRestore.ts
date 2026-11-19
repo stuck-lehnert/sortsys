@@ -53,6 +53,7 @@ import {
   type OpenedObject,
 } from "../data/protectedObjects";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
+import { loadToolReturns } from "../data/toolReturns";
 import {
   TOOL_BOOKING_MODEL,
   TOOL_MODEL,
@@ -233,8 +234,10 @@ async function verifySealedInvoices(
 }
 
 async function verifyActiveBookings(
+  client: Client,
   view: ReadView,
   projects: ReadonlySet<string>,
+  signal: AbortSignal,
 ) {
   const records = view.areas((domain) => {
     const part = toolDomain(domain);
@@ -245,7 +248,13 @@ async function verifyActiveBookings(
     .filter((area) => area.scope.startsWith("tool:"))
     .map((area) => toolBookingArea(toolDomain(area.domain)!.id));
   const tools = new Map<string, string | null>();
-  const slots = new Map<string, string | null>();
+  const pointers = new Map<string, { trackingId: string | null; returnKey?: string }>();
+  const bookings = new Map<string, {
+    tool: string;
+    project: string | null;
+    returnKey: string | undefined;
+    open: boolean;
+  }>();
   const active = new Map<
     string,
     { tracking: string; project: string | null }
@@ -256,7 +265,7 @@ async function verifyActiveBookings(
     (area, { envelope, value }) => {
       if (area.prefix.endsWith(":booking")) {
         const slot = TOOL_BOOKING_MODEL.decode(value, envelope.object, area);
-        slots.set(slot.toolId, slot.trackingId);
+        pointers.set(slot.toolId, slot);
         return;
       }
       const part = TOOL_MODEL.decode(value, envelope.object, area);
@@ -266,15 +275,36 @@ async function verifyActiveBookings(
         return;
       }
       const row = part.rows[0]!.values;
-      if (row.ended_at !== null) return;
-      const id = publicId(row.tool_id);
-      if (active.has(id)) throw new RestoreBookingConflict();
-      active.set(id, {
-        tracking: part.id,
+      bookings.set(part.id, {
+        tool: publicId(row.tool_id),
         project: row.project_id === null ? null : publicId(row.project_id),
+        returnKey: part.returnKey?.verificationKey,
+        open: row.ended_at === null,
       });
     },
   );
+  const returned = await loadToolReturns(
+    client,
+    [
+      ...Array.from(pointers.values(), (pointer) => pointer.returnKey),
+      ...Array.from(bookings.values(), (booking) => booking.open ? booking.returnKey : undefined),
+    ],
+    signal,
+  );
+  const slots = new Map<string, string | null>();
+  for (const [tool, pointer] of pointers) {
+    const booking = pointer.trackingId === null ? undefined : bookings.get(pointer.trackingId);
+    if (booking && (booking.tool !== tool || booking.returnKey !== pointer.returnKey))
+      throw new RestoreBookingConflict();
+    const closed = pointer.returnKey !== undefined && returned.has(pointer.returnKey);
+    slots.set(tool, closed ? null : pointer.trackingId);
+  }
+  for (const [tracking, booking] of bookings) {
+    const closed = booking.returnKey !== undefined && returned.has(booking.returnKey);
+    if (!booking.open || closed) continue;
+    if (active.has(booking.tool)) throw new RestoreBookingConflict();
+    active.set(booking.tool, { tracking, project: booking.project });
+  }
 
   let unchecked = 0;
   for (const [tool, tracking] of tools) {
@@ -443,7 +473,7 @@ export async function inspectPreparedContent(
       checkReference(customers, project.values.customer_id);
     for (const link of links) checkReference(contacts, link.values.contact_id);
   });
-  const uncheckedBookings = await verifyActiveBookings(view, projectIds);
+  const uncheckedBookings = await verifyActiveBookings(client, view, projectIds, signal);
   const dependencies = await required(
     client.query("zerotrust.content.inspect", check, {
       strategy: "network-only",

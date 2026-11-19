@@ -502,7 +502,18 @@ export function createBusinessClient(
       adapters.affected(path, domains, false);
   }
   const stopDataChanges = listenDataChanges(base, (domains, options) => {
-    const affected = affectedQueries(domains, options?.control === true);
+    const changed = affectedQueries(domains, options?.control === true);
+    const affected = (path: string) =>
+      changed(path) ||
+      (options?.toolReturns === true && (
+        path === "tools.get" ||
+        path === "tools.list" ||
+        path === "tools.trackings.list" ||
+        path === "tools.trackings.transfers.list" ||
+        path === "tools.inventories.overview" ||
+        path === "projects.costs.get" ||
+        path === "projects.costs.overview"
+      ));
     reads.clear(affected);
     queueMicrotask(() => {
       if (options?.control && !closed) {
@@ -587,6 +598,7 @@ export function createBusinessClient(
       announceDataChanges(base, undefined, { revalidate: true });
     else
       announceDataChanges(base, new Set(Object.keys(change.domains)), {
+        toolReturns: change.toolReturns,
         heads: new Map(
           Object.entries(change.domains).filter(
             (entry): entry is [string, string] => entry[1] !== null,

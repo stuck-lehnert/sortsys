@@ -211,6 +211,10 @@ async fn review_stamp(
         .transaction
         .collection_version(super::resource_access::REVIEWED_BOOKINGS)
         .await?;
+    let returns = context
+        .transaction
+        .collection_version(super::tool_returns::RECEIPTS)
+        .await?;
     let registrations = context
         .transaction
         .collection_version(super::documents::REGISTRATIONS)
@@ -220,13 +224,14 @@ async fn review_stamp(
     let content = approval.fingerprint()?;
     Ok(super::crypto::encode(&Sha256::digest(
         super::crypto::frame(
-            "sortsys/content-review-stamp/v1",
+            "sortsys/content-review-stamp/v2",
             &[
                 operation,
                 &content,
                 &context.security.policy.signature,
                 &catalog.catalog_version,
                 &booking_version,
+                &returns,
                 &registrations,
             ],
         ),

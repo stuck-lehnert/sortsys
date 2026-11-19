@@ -18,6 +18,10 @@ export type DataRecord = {
   values: Record<string, unknown>;
   owners: Map<string, DataCellSource[]>;
 };
+export type RowProjection = (
+  document: DataDocument<unknown>,
+  source: RowSource,
+) => RowSource;
 export class UnloadedDataField extends Error {
   constructor() {
     super("The requested field has not been loaded");
@@ -28,11 +32,13 @@ export class UnloadedDataField extends Error {
  * quantity fragment can therefore never erase an unseen price fragment. */
 export function projectDataRows(
   documents: Iterable<DataDocument<unknown>>,
+  project?: RowProjection,
 ): Map<string, Map<string, DataRecord>> {
   const tables = new Map<string, Map<string, DataRecord>>(),
     entities = new Map<string, string>();
   for (const document of documents)
-    for (const row of document.sources) {
+    for (const sourceRow of document.sources) {
+      const row = project ? project(document, sourceRow) : sourceRow;
       const key = dataKey(row.table, row.values),
         table = tables.get(row.table) ?? new Map<string, DataRecord>();
       tables.set(row.table, table);

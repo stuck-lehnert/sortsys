@@ -17,6 +17,7 @@ import {
   openBox,
   verifyDomain,
   type EncryptedObject,
+  resourceCommandBinding,
   verify,
   objectFrame,
 } from "@sortsys/zerotrust/sortsys";
@@ -35,7 +36,8 @@ import {
   protectedCollection,
   required,
 } from "../app/lib/data/protectedObjects";
-import { toolCollection } from "../app/lib/data/toolData";
+import { TOOL_MODEL, toolCollection } from "../app/lib/data/toolData";
+import { signToolReturn } from "../app/lib/data/toolReturnKey";
 import {
   finishToolBookingRotations,
   toolResponsibilityPacket,
@@ -79,7 +81,7 @@ export async function exerciseLateToolResponsibility(
     productDriver: duckDriver,
   });
   const endpoints = JSON.parse(process.env.SORTSYS_AUTH_TEST_ENDPOINTS!);
-  const member = createClient(endpoints[1], "native-late-tool-member");
+  const member = createClient(endpoints[0], "native-late-tool-member");
   let restricted: ReturnType<typeof createBusinessClient> | undefined;
   try {
     const person = await required(
@@ -439,6 +441,11 @@ export async function exerciseLateToolResponsibility(
       "Native late tool responsibility: earlier active booking checkpointed at invitation approval, closed booking and costs hidden, exact retry unchanged, authentic reader write denied, return revokes access and retained key cannot read later changes",
     );
     await unlockOwner();
+    await exerciseOwnToolReturn(
+      business, peer, member, tools[1]!.id, person.id, unlockOwner,
+      () => acceptVaultWithKey(account.dataKey, account.vault, account.username, false),
+      signal,
+    );
     await exerciseDelegatedToolReturn(
       business,
       peer,
@@ -453,6 +460,165 @@ export async function exerciseLateToolResponsibility(
     business.dispose();
     await unlockOwner();
   }
+}
+
+async function exerciseOwnToolReturn(
+  owner: Client,
+  peer: Client,
+  member: Client,
+  toolId: string,
+  memberId: string,
+  unlockOwner: () => Promise<unknown>,
+  unlockMember: () => Promise<unknown>,
+  signal: AbortSignal,
+) {
+  const project = await required(owner.mutate("projects.create", {
+    title: "Projekt für eigene Werkzeugrückgaben",
+  }));
+  async function assign() {
+    return required(owner.mutate("tools.track", {
+      id: toolId,
+      data: { responsibleUserId: memberId, projectId: project.id },
+    }));
+  }
+  type Publish = MutateInput<"zerotrust.toolReturns.publish">;
+  let request: Publish | undefined;
+  let mode: "false-reply" | "lost-reply" = "false-reply";
+  const observed: Client = {
+    ...member,
+    mutate: (async (path, input, options) => {
+      if (path !== "zerotrust.toolReturns.publish")
+        return member.mutate(path, input, options);
+      const publication = input as Publish;
+      request = publication;
+      if (mode === "false-reply") return [publication.command, null];
+
+      const [wrongActor, denied] = await owner.mutate("zerotrust.toolReturns.publish", publication);
+      assert.equal(wrongActor, null);
+      assert.equal(denied instanceof RpcClientError && denied.code, "FORBIDDEN");
+      await required(member.mutate("zerotrust.toolReturns.publish", publication, options));
+      return [null, new Error("Lost return acknowledgement")];
+    }) as Client["mutate"],
+  };
+  const assigned = await assign();
+  const trackingId = assigned.trackingId;
+  const area = toolCollection("tool-tracking", trackingId, "master-data");
+  const before = await required(peer.query("zerotrust.objects.get", { id: area.prefix }, {
+    strategy: "network-only",
+  }));
+  await unlockMember();
+  const restricted = createBusinessClient(observed, { productDriver: duckDriver });
+  try {
+    const active = await required(restricted.query("tools.trackings.list", { toolId }));
+    assert.equal(active[0]?.canReturnOwn, true);
+    assert.equal(active[0]?.toolUsageCostPerDay, null);
+    assert.ok((await restricted.query("tools.get", { id: toolId }))[1]);
+    assert.ok((await restricted.mutate("tools.untrack", { id: toolId }))[1]);
+    assert.ok((await restricted.mutate("tools.trackings.return", { trackingId }))[1]);
+    assert.ok(request);
+    assert.deepEqual(await required(member.query("zerotrust.toolReturns.lookup", {
+      verificationKeys: [request.command.verificationKey],
+    }, { strategy: "network-only" })), [null]);
+
+    mode = "lost-reply";
+    await required(restricted.mutate("tools.trackings.return", { trackingId }));
+    assert.ok(request);
+    assert.deepEqual(
+      await required(member.mutate("zerotrust.toolReturns.publish", request)),
+      request.command,
+    );
+    assert.deepEqual(await required(restricted.query("tools.trackings.list", { toolId })), []);
+    assert.equal((await member.query("zerotrust.keys.get", {
+      domain: area.domain, generation: before.generation,
+    }, { strategy: "network-only" }))[1]?.code, "FORBIDDEN");
+  } finally {
+    restricted.dispose();
+    await unlockOwner();
+  }
+  assert.ok(request);
+  const verified = request.command;
+  const returnedAt = new Date(Number(verified.issuedAt));
+  const selection = {
+    verificationKeys: [
+      await resourceCommandBinding(verified.verificationKey),
+      verified.verificationKey,
+    ],
+  };
+  assert.deepEqual(await required(peer.query("zerotrust.toolReturns.lookup", selection)), [
+    null, verified,
+  ]);
+  const after = await required(peer.query("zerotrust.objects.get", { id: area.prefix }, {
+    strategy: "network-only",
+  }));
+  assert.equal(after.signature, before.signature);
+  assert.equal((await required(peer.query("tools.get", { id: toolId }))).available, true);
+  const history = await required(peer.query("tools.trackings.list", { toolId, finished: true }));
+  const finished = history.find((row) => row.id === trackingId);
+  assert.equal(finished?.endedByUserId, memberId);
+  assert.deepEqual(finished?.endedAt, returnedAt);
+  const costs = await required(peer.query("projects.costs.get", { projectId: project.id }));
+  const usage = costs.toolTrackings.find((entry) => entry.id === trackingId);
+  assert.equal(usage?.endedByUserId, memberId);
+  assert.deepEqual(usage?.endedAt, returnedAt);
+
+  const competing = await assign();
+  const transferId = (await required(owner.mutate("tools.trackings.transfers.request", {
+    toolTrackingId: competing.trackingId, transferToUserId: memberId,
+  }))).id;
+  const competingArea = toolCollection("tool-tracking", competing.trackingId, "master-data");
+  await unlockMember();
+  const source = await protectedCollection(member, competingArea, signal);
+  let command: Publish["command"];
+  try {
+    const [opened] = await source.read();
+    assert.ok(opened);
+    const booking = TOOL_MODEL.decode(opened.value, competingArea.prefix, competingArea);
+    assert.ok(booking.returnKey);
+    command = await signToolReturn(
+      member, booking.returnKey, competing.trackingId, opened.envelope.revision,
+      new Date(booking.rows[0]!.values.started_at as string), signal,
+    );
+  } finally {
+    source.close();
+    await unlockOwner();
+  }
+  let competed = false;
+  const intercepted: Client = {
+    ...owner,
+    mutate: (async (path, input, options) => {
+      if (path === "zerotrust.objects.batch" && !competed) {
+        const packet = input as MutateInput<"zerotrust.objects.batch">;
+        if (packet.objects.some(
+          ({ domain, resourceAccess }) => domain === competingArea.domain && resourceAccess?.active === false,
+        )) {
+          await required(member.mutate("zerotrust.toolReturns.publish", {
+            trackingId: competing.trackingId, command,
+          }));
+          competed = true;
+        }
+      }
+      return owner.mutate(path, input, options);
+    }) as Client["mutate"],
+  };
+  const transfer = createBusinessClient(intercepted, { productDriver: duckDriver });
+  try {
+    const [, error] = await transfer.mutate("tools.trackings.transfers.accept", { id: transferId });
+    assert.ok(error);
+    assert.equal(competed, true, error.message);
+  } finally {
+    transfer.dispose();
+  }
+  const transfers = await required(peer.query("tools.trackings.transfers.list", {
+    toolId, status: "denied",
+  }));
+  assert.ok(transfers.some((transfer) => transfer.id === transferId));
+  const next = await assign();
+  await required(member.mutate("zerotrust.toolReturns.publish", {
+    trackingId: competing.trackingId, command,
+  }));
+  const current = await required(peer.query("tools.get", { id: toolId }));
+  assert.equal(current.activeTrackingId, next.trackingId);
+  console.log("Native own tool return: separate API replicas check denied actors, false and lost replies, lost read access, costs, competing transfers and later booking");
 }
 
 async function exerciseDelegatedToolReturn(

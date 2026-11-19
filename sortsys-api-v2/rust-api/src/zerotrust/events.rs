@@ -40,6 +40,7 @@ enum Event {
     ObjectRecipient(String, String),
     Domain(String),
     Access,
+    ToolReturn,
     Account(String),
     Resync,
     DocumentMessage(Room),
@@ -50,6 +51,7 @@ struct PendingChanges {
     all: bool,
     refresh: bool,
     visible: bool,
+    tool_returns: bool,
     domains: HashMap<String, Option<i64>>,
     recipient_domains: HashSet<String>,
     document_messages: HashSet<Room>,
@@ -62,6 +64,9 @@ impl PendingChanges {
             }
             Event::Access => {
                 self.refresh = true;
+            }
+            Event::ToolReturn => {
+                self.tool_returns = true;
             }
             Event::Resync => {
                 self.visible = true;
@@ -253,6 +258,7 @@ fn parse_hint(channel: &str, input: &str) -> Option<Event> {
     let data: Value = serde_json::from_str(input).ok()?;
     match channel {
         "access" => Some(Event::Access),
+        "tool-return" if data.as_object()?.is_empty() => Some(Event::ToolReturn),
         "account" => Some(Event::Account(data.get("subject")?.as_str()?.to_owned())),
         "domain" => {
             let domain = data.get("domain")?.as_str()?;
@@ -709,6 +715,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             mut all,
             refresh,
             visible,
+            tool_returns,
             mut domains,
             recipient_domains,
             document_messages,
@@ -726,6 +733,14 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
         domains.retain(|domain, _| {
             current.allowed.contains(domain) || recipient_domains.contains(domain)
         });
+        // Availability and project costs can be read independently of the
+        // booking. Refresh those views without forwarding the booking ID.
+        let tool_returns = tool_returns
+            && current.allowed.iter().any(|domain| {
+                domain.starts_with("tool:")
+                    || domain.starts_with("tool-tracking:")
+                    || domain.ends_with(":tool-usage:master-data")
+            });
         // A new key generation requires fresh authorization and a reload of
         // that domain. Only an actual access change invalidates every view.
         let control = all || reset;
@@ -733,20 +748,20 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
             .into_iter()
             .map(|(domain, sequence)| (domain, sequence.map(|n| n.to_string())))
             .collect::<HashMap<_, _>>();
-        if all || reset || !domains.is_empty() {
-            send(
-                socket,
-                json!({
-                    "type": "changed",
-                    "reset": reset,
-                    "all": all,
-                    "control": control,
-                    "domains": domains,
-                    "fingerprint": current.fingerprint,
-                    "staged": !visible && !control,
-                }),
-            )
-            .await?;
+        if all || reset || tool_returns || !domains.is_empty() {
+            let mut message = json!({
+                "type": "changed",
+                "reset": reset,
+                "all": all,
+                "control": control,
+                "domains": domains,
+                "fingerprint": current.fingerprint,
+                "staged": !visible && !control && !tool_returns,
+            });
+            if tool_returns {
+                message["toolReturns"] = json!(true);
+            }
+            send(socket, message).await?;
         }
         for room in document_messages {
             let outer = room.outer()?;
