@@ -17,12 +17,33 @@ import {
   verifyPlanningRecipient,
 } from "./planningRecipients";
 import { PLANNING_TITLE_PURPOSE } from "./planningTitles";
+import type { PreparedWrites } from "./atomicWrites";
+import { projectCollection } from "./projectData";
 import { required } from "./protectedObjects";
 import { mapConcurrent } from "./runtime/concurrentReads";
 
 type Packet = MutateInput<"zerotrust.objects.save">;
+export type PlanningTitleChange = { projectId: string; title: string };
 
-export async function preparePlanningTitle(
+/** A composed change can rename a project more than once. Publish only the
+ * title in its final signed packet, with the current protected audience. */
+export async function attachPlanningTitles(
+  client: Client,
+  groups: readonly PreparedWrites[],
+  changes: readonly PlanningTitleChange[],
+  signal: AbortSignal,
+) {
+  const latest = new Map(changes.map(({ projectId, title }) => [projectId, title]));
+  await mapConcurrent([...latest], 4, async ([projectId, title]) => {
+    const area = projectCollection(projectId);
+    const group = groups.find(({ head }) => head.domain === area.domain);
+    const packet = group?.packets.find(({ envelope }) => envelope.object === area.prefix);
+    if (!packet) throw new InvalidProtectedData();
+    await preparePlanningTitle(client, projectId, title, packet, signal);
+  });
+}
+
+async function preparePlanningTitle(
   client: Client,
   project: string,
   title: string,

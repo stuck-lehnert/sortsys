@@ -200,7 +200,11 @@ Der Chat kann Änderungen am Produktkatalog und am Adressbuch vorschlagen. Ein
 Vorschlag kann etwa einen Auftraggeber anlegen, einem bestehenden Kunden einen
 Ansprechpartner zuordnen und Material erfassen. Welche Vorschläge möglich sind,
 hängt von den signierten Freigaben ab. Für eine Kontaktzuordnung ist zusätzlich
-Leserecht für den Kontaktbestand nötig.
+Leserecht für den Kontaktbestand nötig. Auch Projektgrunddaten,
+Projektkontakte und der Abschluss oder die Wiederöffnung eines Projekts lassen
+sich vorschlagen. Entscheidend ist das Änderungsrecht am betroffenen Projekt.
+Bei einer neuen Projektbezeichnung erhält die Einsatzplanung den Titel mit
+demselben verschlüsselten Paket wie bei einer Änderung im Projektformular.
 
 Die Webapp prüft den Vorschlag mit denselben Schreibfunktionen wie die Formulare.
 Erst bei der Bestätigung speichert sie die Änderungen und den Ausführungsnachweis

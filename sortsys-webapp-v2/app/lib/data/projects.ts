@@ -4,17 +4,12 @@ import {
   record,
   TOMBSTONE_FORMAT,
 } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory } from "../crypto/session";
 import { buildPrefixSearch } from "../search/prefixQuery";
 import {
   addressId,
-  addressText,
   wireAddress,
   compareAddresses,
   CONTACT_COLLECTION,
-  CONTACT_MODEL,
-  CUSTOMER_COLLECTION,
-  CUSTOMER_MODEL,
   partialAddressRecord,
   type createProtectedAddressBook,
 } from "./addressBook";
@@ -23,7 +18,10 @@ import { protectedCollection, required } from "./protectedObjects";
 import { newProductRowId, publicId } from "./products";
 import {
   PROJECT_MODEL,
+  isProjectEdit,
   projectChanges,
+  projectDocument as document,
+  projectRequest as request,
   projectCollection,
   projectDomainId,
   projectPayload,
@@ -31,7 +29,6 @@ import {
   wireProject,
   PROJECT_MUTATIONS,
   PROJECT_QUERIES,
-  type ProjectPayload,
 } from "./projectData";
 import { readableProjectAreas } from "./projectAreas";
 import { PROJECT_ACCESS_KEYS, projectAccessArea } from "./projectScope";
@@ -48,23 +45,14 @@ import {
 } from "./projectCommercial";
 import { acquireDataRuntime } from "./runtime/session";
 import { announceDataChanges } from "./runtime/changes";
-import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
-import { preparePlanningTitle } from "./planningTitlePublication";
+import { attachPlanningTitles } from "./planningTitlePublication";
+import {
+  certifyProjectLeader,
+  projectContactRequest as contactRequest,
+  projectEditCommand,
+} from "./projectWrites";
 
 type Directory = ReturnType<typeof createProtectedAddressBook>;
-const request = (id: string) => ({
-  model: PROJECT_MODEL,
-  area: projectCollection(id),
-});
-const contactRequest = { model: CONTACT_MODEL, area: CONTACT_COLLECTION },
-  customerRequest = { model: CUSTOMER_MODEL, area: CUSTOMER_COLLECTION };
-function document(view: DataView, selected: DataRequest<ProjectPayload>) {
-  const documents = view.documents(selected);
-  if (documents.length !== 1 || !documents[0]!.value.project)
-    throw new InvalidProtectedData();
-  return documents[0]!;
-}
-
 /** The signed master tombstone closes all of the project's areas. Reading
  * loaded dependents is unnecessary and would require unrelated grants. */
 export async function deleteProtectedProject(
@@ -125,11 +113,6 @@ export function createProtectedProjects(
   const lease = acquireDataRuntime(client, signal, driver),
     runtime = lease.runtime,
     live = lease.live;
-  async function certifiedUser(id: string) {
-    const history = await trustedHistory(client);
-    live();
-    history.identityCertificate(`user:${id}`);
-  }
   async function read(id: string, fresh = false) {
     live();
     if (fresh) runtime.revalidate();
@@ -155,7 +138,10 @@ export function createProtectedProjects(
         ).references("customers", [publicId(changes.customer_id)]),
       );
     if (changes.responsible_project_leader_user_id != null)
-      await certifiedUser(publicId(changes.responsible_project_leader_user_id));
+      await certifyProjectLeader(
+        client,
+        publicId(changes.responsible_project_leader_user_id),
+      );
     const session = await required(
       client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
     );
@@ -389,145 +375,19 @@ export function createProtectedProjects(
       }
       if (path === "projects.delete")
         return deleteProtectedProject(client, input, signal);
-      const linking = path.startsWith("projects.contacts."),
-        now = new Date().toISOString();
-      const data = linking
-        ? partialAddressRecord(
-            input,
-            path.endsWith(".set")
-              ? ["projectId", "contacts"]
-              : ["projectId", "contactId", "label"],
-          )
-        : record(input, path === "projects.update" ? ["id", "data"] : ["id"]);
-      const id = (linking ? data.projectId : data.id) as string,
-        selected = request(id);
-      if (linking) {
-        const setting = path.endsWith(".set"),
-          removing = path.endsWith(".remove"),
-          entries = setting
-            ? data.contacts
-            : [{ contactId: data.contactId, label: data.label }];
-        if (!Array.isArray(entries) || entries.length > 10000)
-          throw new InvalidProtectedData();
-        const links = entries.map((entry) => {
-          const link = partialAddressRecord(entry, ["contactId", "label"]);
-          addressId(link.contactId);
-          return {
-            id: link.contactId as string,
-            label: addressText(link.label, false, 127),
-          };
-        });
-        await runtime.transaction(
-          [selected, ...(!removing && links.length ? [contactRequest] : [])],
-          (tx) => {
-            const original = document(tx, selected).value,
-              current = new Map(
-                original.contacts.map((row) => [
-                  publicId(row.values.contact_id),
-                  row,
-                ]),
-              );
-            if (setting) current.clear();
-            const contacts =
-              !removing && links.length
-                ? new Set(
-                    tx
-                      .documents(contactRequest)
-                      .filter((document) => document.value.row)
-                      .map((document) =>
-                        publicId(document.value.row!.values.id),
-                      ),
-                  )
-                : null;
-            for (const link of links) {
-              if (removing) {
-                if (!current.delete(link.id)) throw new InvalidProtectedData();
-              } else {
-                if (!contacts!.has(link.id)) throw new InvalidProtectedData();
-                current.set(
-                  link.id,
-                  decodeBusinessRow({
-                    format: "sortsys-row-v2",
-                    schema: businessSchema.fingerprint,
-                    table: "project_contacts",
-                    values: {
-                      project_id: original.project!.values.id,
-                      contact_id: addressId(link.id),
-                      label: link.label,
-                    },
-                  }),
-                );
-              }
-            }
-            tx.edit(selected, selected.area.prefix, (payload) => {
-              payload.contacts = [...current.values()];
-            });
-          },
-        );
-        live();
-        return { success: true };
-      }
-      const finishing = path === "projects.finish" || path === "projects.resume";
-      const changes = finishing ? {} : projectChanges(data.data, false);
-      const baseline =
-        changes.customer_id != null ||
-        changes.responsible_project_leader_user_id != null
-          ? await read(id)
-          : null;
-      const needsCustomer =
-        changes.customer_id != null &&
-        changes.customer_id !== baseline?.value.project?.values.customer_id;
-      if (
-        changes.responsible_project_leader_user_id != null &&
-        changes.responsible_project_leader_user_id !==
-          baseline?.value.project?.values.responsible_project_leader_user_id
-      )
-        await certifiedUser(
-          publicId(changes.responsible_project_leader_user_id),
-        );
-      const requests = [selected, ...(needsCustomer ? [customerRequest] : [])];
-      const change = (tx: DataTransaction) => {
-        const original = document(tx, selected).value;
-        if (baseline)
-          tx.expect(selected, selected.area.prefix, {
-            signature: baseline.signature,
-          });
-        if (finishing) {
-          tx.require(selected, "update");
-          const finish = path === "projects.finish";
-          if (!!original.project!.values.finished_at === finish) return false;
-          changes.finished_at = finish ? now : null;
-        }
-        if (
-          needsCustomer &&
-          !tx
-            .documents(customerRequest)
-            .some(
-              (document) =>
-                document.value.row?.values.id === changes.customer_id,
-            )
-        )
-          throw new InvalidProtectedData();
-        tx.patch(
-          "projects",
-          { id: addressId(id) },
-          { ...changes, modified_at: now },
-        );
-        return (
-          changes.title !== original.project?.values.title &&
-          typeof changes.title === "string"
-        );
-      };
-      const title = changes.title;
-      if (typeof title === "string") {
-        const prepared = await runtime.prepare(requests, change);
+      if (!isProjectEdit(path)) throw new InvalidProtectedData();
+      const command = await projectEditCommand(client, runtime, path, input);
+      live();
+      if (command.mayRename) {
+        const prepared = await runtime.prepare(command.requests, command.apply);
         try {
-          if (prepared.value) {
-            const packet = prepared.groups
-              .flatMap((group) => group.packets)
-              .find((entry) => entry.envelope.object === selected.area.prefix);
-            if (!packet) throw new InvalidProtectedData();
-            await preparePlanningTitle(client, id, title, packet, signal);
+          if (prepared.value.planningTitle) {
+            await attachPlanningTitles(
+              client,
+              prepared.groups,
+              [prepared.value.planningTitle],
+              signal,
+            );
           }
           await commitProtectedWrites(
             client,
@@ -539,7 +399,7 @@ export function createProtectedProjects(
           prepared.close();
         }
       } else {
-        await runtime.transaction(requests, change);
+        await runtime.transaction(command.requests, command.apply);
       }
       live();
       return { success: true };

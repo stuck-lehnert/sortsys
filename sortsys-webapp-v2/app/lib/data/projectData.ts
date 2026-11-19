@@ -12,6 +12,7 @@ import { publicId } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import type { Collection } from "./protectedObjects";
 import { defineDataModel } from "./runtime/model";
+import type { DataRequest, DataView } from "./runtime/runtime";
 import { projectFacetArea, projectFacetDomain } from "./projectScope";
 
 export type Project = QueryResult<"projects.get">;
@@ -35,18 +36,34 @@ export const PROJECT_QUERIES = new Set([
   "projects.contacts.list",
   "contacts.projects.list",
 ]);
-export const PROJECT_MUTATIONS = new Set([
-  "projects.create",
+export const PROJECT_EDITS = [
   "projects.update",
   "projects.finish",
   "projects.resume",
-  "projects.delete",
   "projects.contacts.add",
   "projects.contacts.set",
   "projects.contacts.remove",
-]);
+] as const;
+export type ProjectEditPath = (typeof PROJECT_EDITS)[number];
+export const PROJECT_MUTATIONS = new Set(["projects.create", "projects.delete", ...PROJECT_EDITS]);
+
+export function isProjectEdit(path: string): path is ProjectEditPath {
+  return PROJECT_EDITS.some((edit) => edit === path);
+}
+
 export function projectCollection(id: string): Collection {
   return { ...projectFacetArea(id, "master-data"), prefix: `project:${id}` };
+}
+
+export function projectRequest(id: string): DataRequest<ProjectPayload> {
+  return { model: PROJECT_MODEL, area: projectCollection(id) };
+}
+
+export function projectDocument(view: DataView, request: DataRequest<ProjectPayload>) {
+  const documents = view.documents(request);
+  if (documents.length !== 1 || !documents[0]!.value.project)
+    throw new InvalidProtectedData();
+  return documents[0]!;
 }
 export function projectDomainId(domain: string): string | null {
   const part = projectFacetDomain(domain);

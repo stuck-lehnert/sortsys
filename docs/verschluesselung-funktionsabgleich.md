@@ -490,9 +490,11 @@ Bautagesberichte, Regieberichte und Lieferscheine mit eigener Lesefreigabe
 abrufbar. Projektkostensuche und Einzelabfragen verwenden dieselbe Berechnung
 wie die Kostenübersicht. Fehlt eine Kostenfreigabe, zählt das betreffende Projekt
 auch bei einer Suche über mehrere Projekte nicht zur Summe. Vorschläge für
-Produkte, Kunden und Ansprechpartner nutzen dieselben Schreibfunktionen wie die
-Formulare. Eine Bestätigung veröffentlicht die Änderungen aller betroffenen
-Bereiche gemeinsam mit dem Ausführungsnachweis.
+Produkte, Kunden, Ansprechpartner und bestehende Projekte nutzen dieselben
+Schreibfunktionen wie die Formulare. Eine Bestätigung veröffentlicht die
+Änderungen aller betroffenen Bereiche gemeinsam mit dem Ausführungsnachweis.
+Bei einer Projektumbenennung gehört der verschlüsselte Titel für die
+Einsatzempfänger zur selben Transaktion.
 Die Werkzeugsuche unterscheidet Stammdaten, laufende Buchungen und Inventuren.
 Eine Auskunft zum Inventurstand eines Geräts setzt lesbare Stammdaten und
 Inventuren dieses Geräts voraus.

@@ -603,6 +603,7 @@ export function createProtectedChats(
             driver,
           );
           try {
+            await changes.sealPlanningTitles();
             accepted = {
               ...proposal,
               status: "accepted",

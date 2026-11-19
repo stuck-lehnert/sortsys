@@ -86,6 +86,11 @@ export async function showAssistantHistory(
         input: { id: "9" },
         description: "Veralteten Eintrag löschen",
       },
+      {
+        path: "projects.contacts.add",
+        input: { projectId: "4", contactId: "8", label: "Bauleitung" },
+        description: "Bauleitung für das Projekt hinterlegen",
+      },
     ];
     const parts = [
       {

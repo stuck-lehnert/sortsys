@@ -266,6 +266,13 @@ function executionLink(
       : null;
   }
 
+  if (operation.path.startsWith("projects.contacts.")) {
+    const { projectId } = operation.input;
+    return typeof projectId === "string"
+      ? { href: `/projects/${projectId}`, label: t("proposal.openProject") }
+      : null;
+  }
+
   if (operation.path.startsWith("projects.costs.entries.")) {
     const projectId = operation.input.projectId;
     return typeof projectId === "string"
