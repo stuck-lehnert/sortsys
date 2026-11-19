@@ -843,8 +843,27 @@ export async function exerciseGaebCaseBatches(
     .flat()
     .filter((path) => path === registrations);
   assert.equal(registrationLookups.length, 1);
+  const firstSearch = transmissions.length;
+  const positions = await required(
+    peer.query("gaeb.positions.search", { query: "fensterlaib" }),
+  );
+  assert.ok(
+    positions.items.some(({ shortText }) => shortText === "Fensterlaibung"),
+    "the cold index must return a decrypted GAEB position",
+  );
+  const searchRequests = transmissions.slice(firstSearch);
+  assert.ok(
+    searchRequests.every((paths) => !paths.includes("gaeb.positions.search")),
+  );
+  const searchHeads = searchRequests
+    .map(
+      (paths) => paths.filter((path) => path === "zerotrust.documents.get").length,
+    )
+    .filter((count) => count > 0);
+  assert.deepEqual(searchHeads, [detail.documents.length]);
+
   console.log(
-    `GAEB: ${detail.documents.length} document heads share one HTTP request. Parallel opening and download each check the case registrations once.`,
+    `GAEB: ${detail.documents.length} document heads share one HTTP request in the case details and in a cold position search. Parallel opening and download each check the case registrations once.`,
   );
 }
 

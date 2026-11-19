@@ -219,6 +219,11 @@ Beim Öffnen hat die aktive Datei Vorrang vor dem Auftragsvergleich. Wenn der
 Vergleich mehrere Dateien desselben Vorgangs öffnet, teilen sie sich den
 laufenden Abruf der Vorgangsdaten.
 
+Die Positionssuche lädt bei leerem Index bis zu vier Quelldokumente pro
+Suchschritt parallel. Ihre verschlüsselten Abrufe können damit ein gemeinsames
+HTTP-Paket nutzen. Die Auswertung beginnt beim neuesten Dokument. Die
+Suchbegriffe und die gefundenen Positionstexte bleiben im Browser.
+
 Beim Download aus dem Menüband liest der Browser Dateiname und Inhalt in einem
 Vorgang. Er verwendet den geprüften Zugriff auf den Vorgang für die
 Inhaltsprüfung weiter. Ein Wechsel des Kontos oder der Freigabe bricht die

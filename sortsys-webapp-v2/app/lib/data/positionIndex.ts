@@ -17,6 +17,7 @@ export type PositionSource = {
 type Text = Pick<GaebPositionSuggestion, "shortText" | "description" | "unit">;
 type Cached = { positions: Text[]; size: number };
 const BUDGET = 32 * 1024 * 1024;
+const MAX_SOURCE_READS = 4;
 const words = (text: string) =>
   text.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? [];
 
@@ -101,17 +102,40 @@ export function createPositionIndex(
           search = JSON.stringify(query);
         if (state.query !== search || state.inventory !== inventory)
           state = { query: search, inventory, cursor: 0, found: new Map() };
-        let cold = 0;
+        let remainingSourceReads = MAX_SOURCE_READS;
+        let loadedSources: PromiseSettledResult<string>[] = [];
         while (state.cursor < all.length && state.found.size < 20) {
           const index = state.cursor,
             source = all[index]!,
             key = keys[index]!;
           let cached = cache.get(key);
+          // Retire this response even if an earlier source filled its cache entry.
+          let prefetchedSource = loadedSources.shift();
           if (!cached) {
-            if (cold++ >= 4) break;
-            const xml = await source.read(current);
-            active();
-            const positions = await extract(xml, current);
+            if (!prefetchedSource) {
+              if (remainingSourceReads === 0) break;
+              const group: PositionSource[] = [];
+              for (
+                let next = index;
+                next < all.length && group.length < remainingSourceReads;
+                next++
+              ) {
+                if (cache.has(keys[next]!)) break;
+                group.push(all[next]!);
+              }
+              remainingSourceReads -= group.length;
+              // Start independent reads together so their encrypted RPCs can
+              // share the transport window. Consume results by source rank.
+              loadedSources = await Promise.allSettled(
+                group.map(async (entry) => entry.read(current)),
+              );
+              active();
+              prefetchedSource = loadedSources.shift()!;
+            }
+            if (prefetchedSource.status === "rejected") {
+              throw prefetchedSource.reason;
+            }
+            const positions = await extract(prefetchedSource.value, current);
             active();
             const size = bytes(JSON.stringify(positions)).length;
             cached = { positions, size };

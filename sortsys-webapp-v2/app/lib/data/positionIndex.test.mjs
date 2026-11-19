@@ -36,6 +36,103 @@ test("newest distinct matches use exact microseconds and stop after twenty", asy
     expect(result.items).toHaveLength(20); expect(result.items[0].shortText).toBe("Position 24"); expect(result.items.at(-1).shortText).toBe("Position 5");
   } finally { index.close(); }
 });
+
+test("overlapping source reads keep the newest result first", async () => {
+  const events = [];
+  const older = source("old", [text()], "1", "2026-11-10T12:00:00Z");
+  const newer = source("new");
+  const rows = [
+    {
+      ...newer,
+      async read() {
+        events.push("start newer");
+        await Promise.resolve();
+        events.push("finish newer");
+        return newer.read();
+      },
+    },
+    {
+      ...older,
+      async read() {
+        events.push("start older");
+        events.push("finish older");
+        return older.read();
+      },
+    },
+  ];
+  const index = createPositionIndex(
+    async () => rows,
+    async (xml) => JSON.parse(xml),
+    new AbortController().signal,
+  );
+  try {
+    const result = await index.search({ query: "innen" });
+    expect(events).toEqual([
+      "start newer",
+      "start older",
+      "finish older",
+      "finish newer",
+    ]);
+    expect(result.items.map(({ sourceFile }) => sourceFile)).toEqual([
+      newer.fileName,
+    ]);
+    expect(result.indexing).toBe(false);
+  } finally {
+    index.close();
+  }
+});
+
+test("a prefetched source becoming a cache hit keeps later responses aligned", async () => {
+  const repeated = source("1", [text("Innenputz")]);
+  const next = source("2", [text("Außenputz")]);
+  const index = createPositionIndex(
+    async () => [repeated, repeated, next],
+    async (xml) => JSON.parse(xml),
+    new AbortController().signal,
+  );
+  try {
+    const result = await index.search({ query: "" });
+    const matches = result.items.map(({ shortText, sourceFile }) => [
+      shortText,
+      sourceFile,
+    ]);
+    expect(matches).toEqual([
+      ["Innenputz", repeated.fileName],
+      ["Außenputz", next.fileName],
+    ]);
+  } finally {
+    index.close();
+  }
+});
+
+test("failure of an older prefetched source affects only searches that need it", async () => {
+  const positions = Array.from({ length: 20 }, (_, index) =>
+    text(`Innenputz ${index}`),
+  );
+  const first = source("1", positions);
+  const second = {
+    ...source("2"),
+    async read() {
+      throw new Error("Encrypted source unavailable");
+    },
+  };
+  const index = createPositionIndex(
+    async () => [first, second],
+    async (xml) => JSON.parse(xml),
+    new AbortController().signal,
+  );
+  try {
+    const complete = await index.search({ query: "innen" });
+    expect(complete.items).toHaveLength(20);
+    expect(complete.indexing).toBe(false);
+    await expect(index.search({ query: "außen" })).rejects.toThrow(
+      "Encrypted source unavailable",
+    );
+  } finally {
+    index.close();
+  }
+});
+
 test("late source data cannot survive a rights or account cancellation", async () => {
   let release, started;
   const gate = new Promise(resolve => { release = resolve; }), waiting = new Promise(resolve => { started = resolve; });
