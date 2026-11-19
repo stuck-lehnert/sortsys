@@ -2,7 +2,7 @@ import { duckDriver } from "./testing/duckDriver.mjs";
 import { test, expect } from "bun:test";
 import { createBusinessDatabase, businessSchemaFingerprint } from "./database";
 import { businessSchema, checkExpression, quoted } from "./schema";
-import { projectCompleteRows } from "./projection";
+import { projectCompleteRows, projectFacetRows } from "./projection";
 import { projectCompleteSnapshot } from "./snapshot";
 import { row } from "./rowCodec.test.mjs";
 import { readBusinessRows } from "./products";
@@ -169,6 +169,51 @@ test("business checks and references reject invalid updates without replacing th
       )
     ).rows[0];
     expect(current).toEqual({ status: "draft", net_amount: "123.45" });
+  } finally {
+    await db.close();
+  }
+}, 15000);
+
+test("large attachment projections batch inserts and reject duplicate keys or missing parents atomically", async () => {
+  const driver = await duckDriver();
+  const prepare = driver.connection.prepare.bind(driver.connection);
+  let prepared = 0;
+  driver.connection.prepare = (sql) => {
+    prepared++;
+    return prepare(sql);
+  };
+  const db = await createBusinessDatabase(driver);
+  const deferred = new Set(["projects", "users"]);
+  try {
+    const folders = Array.from({ length: 10_001 }, (_, index) =>
+      row("project_file_folders", {
+        id: String(100 + index),
+        project_id: "50",
+        name: `Bauabschnitt ${index}`,
+        parent_folder_id: index % 2 ? String(99 + index) : null,
+      }),
+    );
+    // Children can arrive before parents and references span insert groups.
+    prepared = 0;
+    await projectFacetRows(db, folders.toReversed(), deferred);
+    expect(prepared).toBeLessThan(100);
+    const count = await db.query("SELECT count(*) AS count FROM project_file_folders");
+    expect(count.rows[0].count).toBe(10_001n);
+
+    const first = folders[0];
+    const rename = { ...first, values: { ...first.values, name: "Neuer Name" } };
+    await expect(projectFacetRows(db, [first, rename], deferred)).rejects.toThrow();
+    const orphan = row("project_file_folders", {
+      id: "20000",
+      project_id: "50",
+      name: "Fehlender Elternordner",
+      parent_folder_id: "30000",
+    });
+    await expect(projectFacetRows(db, [rename, orphan], deferred)).rejects.toThrow();
+    const retained = await db.query(
+      "SELECT name FROM project_file_folders WHERE id IN (100,20000)",
+    );
+    expect(retained.rows).toEqual([{ name: "Bauabschnitt 0" }]);
   } finally {
     await db.close();
   }

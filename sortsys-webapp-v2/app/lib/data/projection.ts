@@ -1,43 +1,47 @@
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase, BusinessTransaction } from "./database";
-import { decodeBusinessRow, rowParameters } from "./rowCodec";
-import type { BusinessRow } from "./rowCodec";
+import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
+import { insertTableRows } from "./rowInsert";
 import {
-  assertProjectedChecks,
   assertUniqueIndexes,
+  checkExpression,
+  missingReference,
   primaryColumns,
   quoted,
   tableDefinition,
+  type BusinessTable,
 } from "./schema";
 
-async function put(tx: BusinessTransaction, row: BusinessRow): Promise<void> {
-  const table = tableDefinition(row.table);
-  const columns = table.columns.map((c) => c.name);
-  const key = primaryColumns(table);
-  const updates = columns.filter((c) => !key.includes(c));
-  await tx.query(
-    `INSERT INTO ${quoted(table.name)}(${columns.map(quoted).join(",")}) VALUES(${columns.map((_, index) => `$${index + 1}`).join(",")}) ON CONFLICT(${key.map(quoted).join(",")}) ${updates.length ? `DO UPDATE SET ${updates.map((c) => `${quoted(c)}=excluded.${quoted(c)}`).join(",")}` : "DO NOTHING"}`,
-    rowParameters(row),
-  );
-}
-
-async function references(
+/** Complete projections can check each constraint over the entire table. */
+export async function projectionViolation(
   tx: BusinessTransaction,
-  row: BusinessRow,
+  table: BusinessTable,
   deferred: ReadonlySet<string>,
-): Promise<void> {
-  for (const constraint of tableDefinition(row.table).constraints.filter(
-    (c) => c.kind === "f",
-  )) {
-    if (constraint.columns.some((c) => row.values[c] === null)) continue; // SQL MATCH SIMPLE
-    if (deferred.has(constraint.referencedTable!)) continue;
-    const target = tableDefinition(constraint.referencedTable!);
-    const result = await tx.query(
-      `SELECT 1 AS found FROM ${quoted(target.name)} WHERE ${constraint.referencedColumns.map((c, index) => `${quoted(c)}=$${index + 1}`).join(" AND ")} LIMIT 1`,
-      constraint.columns.map((c) => row.values[c]),
+): Promise<"check" | "reference" | null> {
+  if (table.constraints.some((constraint) => constraint.kind === "c")) {
+    const invalid = await tx.query(
+      `SELECT 1 FROM ${quoted(table.name)} WHERE NOT (${checkExpression(table)}) LIMIT 1`,
     );
-    if (result.rows.length !== 1) throw new InvalidProtectedData();
+    if (invalid.rows.length) return "check";
   }
+  try {
+    await assertUniqueIndexes(tx, table);
+  } catch {
+    return "check";
+  }
+  for (const key of table.constraints) {
+    if (key.kind !== "f" || deferred.has(key.referencedTable!)) continue;
+    // MATCH SIMPLE skips a composite reference if any component is NULL.
+    const present = key.columns.map(
+      (column) => `source.${quoted(column)} IS NOT NULL`,
+    );
+    const violation = [...present, missingReference(key)].join(" AND ");
+    const missing = await tx.query(
+      `SELECT 1 FROM ${quoted(table.name)} source WHERE ${violation} LIMIT 1`,
+    );
+    if (missing.rows.length) return "reference";
+  }
+  return null;
 }
 
 /** Complete rows used during migration/recovery. A batch is checked only after
@@ -45,7 +49,7 @@ async function references(
  * Partial, facet-specific reads need a public reference resolver instead. */
 export async function projectCompleteRows(
   database: BusinessDatabase,
-  inputs: unknown[],
+  inputs: Iterable<unknown>,
 ): Promise<void> {
   await projectFacetRows(database, inputs, new Set());
 }
@@ -55,20 +59,33 @@ export async function projectCompleteRows(
  * CHECKs, primary keys and uniqueness still run in this local transaction. */
 export async function projectFacetRows(
   database: BusinessDatabase,
-  inputs: unknown[],
+  inputs: Iterable<unknown>,
   deferred: ReadonlySet<string>,
 ): Promise<void> {
-  if (inputs.length > 10_000) throw new InvalidProtectedData();
-  const rows = inputs.map(decodeBusinessRow);
+  const groups = new Map<string, BusinessRow["values"][]>();
+  for (const input of inputs) {
+    const { table, values } = decodeBusinessRow(input);
+    const group = groups.get(table);
+    if (group) group.push(values);
+    else groups.set(table, [values]);
+  }
   try {
     await database.transaction(async (tx) => {
-      for (const row of rows) await put(tx, row);
-      for (const row of rows) {
-        await assertProjectedChecks(tx, tableDefinition(row.table), row.values);
-        await references(tx, row, deferred);
+      for (const [name, values] of groups) {
+        const table = tableDefinition(name);
+        const key = primaryColumns(table);
+        // Reject competing source rows before DuckDB can silently drop one.
+        const ids = new Set(
+          values.map((row) => JSON.stringify(key.map((column) => row[column]))),
+        );
+        if (ids.size !== values.length) throw new InvalidProtectedData();
+        await insertTableRows(tx, table, values, "upsert");
       }
-      for (const name of new Set(rows.map((row) => row.table)))
-        await assertUniqueIndexes(tx, tableDefinition(name));
+      for (const name of groups.keys()) {
+        if (await projectionViolation(tx, tableDefinition(name), deferred)) {
+          throw new InvalidProtectedData();
+        }
+      }
     });
   } catch {
     throw new InvalidProtectedData();

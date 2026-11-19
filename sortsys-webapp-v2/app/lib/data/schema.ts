@@ -135,18 +135,17 @@ export function checkExpression(table: BusinessTable): string {
   );
 }
 
-export async function assertProjectedChecks(
-  tx: BusinessTransaction,
-  table: BusinessTable,
-  row: Record<string, unknown>,
-): Promise<void> {
-  const keys = primaryColumns(table);
-  const result = await tx.query<{ accepted: boolean }>(
-    `SELECT ${checkExpression(table)} AS accepted FROM ${quoted(table.name)} WHERE ${keys.map((key, index) => `${quoted(key)}=$${index + 1}`).join(" AND ")}`,
-    keys.map((key) => row[key]),
-  );
-  if (result.rows.length !== 1 || result.rows[0]?.accepted !== true)
-    throw new Error("Invalid business row");
+/** The caller selects applicable rows from the referencing table as `source`. */
+export function missingReference(key: BusinessConstraint): string {
+  if (key.kind !== "f" || !key.referencedTable) {
+    throw new Error("Invalid foreign key");
+  }
+  const target = tableDefinition(key.referencedTable);
+  const match = key.columns.map((column, index) => {
+    const referenced = key.referencedColumns[index]!;
+    return `target.${quoted(referenced)}=source.${quoted(column)}`;
+  });
+  return `NOT EXISTS(SELECT 1 FROM ${quoted(target.name)} target WHERE ${match.join(" AND ")})`;
 }
 
 /** DuckDB has no partial unique indexes. Check the model's uniqueness rules

@@ -1,7 +1,9 @@
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase, BusinessTransaction } from "../database";
+import { insertTableRows } from "../rowInsert";
 import {
   assertUniqueIndexes,
+  missingReference,
   primaryColumns,
   quoted,
   tableDefinition,
@@ -46,14 +48,7 @@ async function validateConstraint(
       throw new InvalidProtectedData();
     violation = `((${constraint.expression.slice(6)}) IS FALSE)`;
   } else {
-    const target = tableDefinition(constraint.referencedTable!);
-    const match = constraint.columns
-      .map(
-        (column, index) =>
-          `target.${quoted(constraint.referencedColumns[index]!)}=source.${quoted(column)}`,
-      )
-      .join(" AND ");
-    violation = `NOT EXISTS(SELECT 1 FROM ${quoted(target.name)} target WHERE ${match})`;
+    violation = missingReference(constraint);
   }
   const keys = primaryColumns(table);
   const batchSize = Math.min(128, Math.max(1, Math.floor(4096 / keys.length)));
@@ -96,31 +91,11 @@ export function projectRuntimeRows(
       await tx.exec(deletes.join(";\n"));
     }
     for (const [name, rows] of tables) {
-      const table = tableDefinition(name);
-      const columns = table.columns.map((column) => column.name);
-      const target = `${quoted(name)}(${columns.map(quoted).join(",")})`;
-      const values = [...rows.values()];
-      const batchSize = Math.min(
-        128,
-        Math.max(1, Math.floor(4096 / columns.length)),
+      await insertTableRows(
+        tx,
+        tableDefinition(name),
+        [...rows.values()].map((row) => row.values),
       );
-      for (let offset = 0; offset < values.length; offset += batchSize) {
-        const batch = values.slice(offset, offset + batchSize);
-        const parameters = batch.flatMap((row) =>
-          columns.map((column) =>
-            Object.hasOwn(row.values, column) ? row.values[column] : null,
-          ),
-        );
-        const placeholders = batch.map((_, index) => {
-          const start = index * columns.length + 1;
-          const bindings = columns.map((_, column) => `$${start + column}`);
-          return `(${bindings.join(",")})`;
-        });
-        await tx.query(
-          `INSERT INTO ${target} VALUES ${placeholders.join(",")}`,
-          parameters,
-        );
-      }
     }
     for (const [name, rows] of tables) {
       const table = tableDefinition(name);

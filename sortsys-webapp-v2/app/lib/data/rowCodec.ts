@@ -167,12 +167,6 @@ export function decodeBusinessRow(input: unknown): BusinessRow {
   }
 }
 
-export function rowParameters(row: BusinessRow): unknown[] {
-  return tableDefinition(row.table).columns.map(
-    (column) => row.values[column.name],
-  );
-}
-
 /** Missing fields are unavailable, not SQL NULL. Only supplied cells are
  * validated; every primary-key component must still be known. */
 export function decodeBusinessFields(

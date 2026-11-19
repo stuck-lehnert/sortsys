@@ -90,6 +90,15 @@ Datentypen und unerlaubte Änderungen an geschützten Bestandteilen dürfen nich
 ungeprüft in das Arbeitsmodell übernommen werden. Entschlüsselte Objekte werden
 nicht beliebig mit bestehenden Anwendungsobjekten zusammengeführt.
 
+Beim Laden von Projektanhängen und bei der Prüfung einer Sicherung verwendet
+der Browser dieselben DuckDB-Regeln für vollständige Zeilen. Er prüft
+Fremdschlüssel nach dem Einfügen, damit auch später geladene Bezugszeilen
+berücksichtigt werden. Schlägt die Prüfung fehl, verwirft die Transaktion alle
+Änderungen. Bei getrennt freigegebenen Bereichen werden ausdrücklich benannte
+externe Referenzen von dieser lokalen Prüfung ausgenommen. Die Prüfung von
+Teilansichten unterscheidet fehlende Feldfreigaben weiterhin von gespeicherten
+`NULL`-Werten.
+
 Ein empfangener Dokumentstand kann deshalb kryptografisch authentisch und
 serverseitig angenommen sein, aber beim Empfänger die Inhaltsprüfung nicht
 bestehen. Dieser Fall erhält einen eigenen Fehlerzustand. Der letzte geprüfte
