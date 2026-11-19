@@ -243,13 +243,13 @@ export function absenceState(
   sourceSignature: string,
   decision?: AbsenceDecision,
 ) {
-  if (
-    decision &&
-    (decision.userId !== publicId(request.row.values.user_id) ||
-      decision.id !== publicId(request.row.values.id) ||
-      decision.requestSignature !== sourceSignature)
-  )
-    throw new InvalidProtectedData();
+  if (decision) {
+    assertAbsenceDecisionSource(decision, {
+      userId: publicId(request.row.values.user_id),
+      id: publicId(request.row.values.id),
+      signature: sourceSignature,
+    });
+  }
   return decodeBusinessRow({
     ...request.row,
     values: {
@@ -268,6 +268,19 @@ export function absenceState(
         : {}),
     },
   });
+}
+
+export function assertAbsenceDecisionSource(
+  decision: AbsenceDecision,
+  request: { userId: string; id: string; signature: string },
+) {
+  if (
+    decision.userId !== request.userId ||
+    decision.id !== request.id ||
+    decision.requestSignature !== request.signature
+  ) {
+    throw new InvalidProtectedData();
+  }
 }
 async function legacyFrame(
   value: AbsenceRequest | AbsenceDecision,

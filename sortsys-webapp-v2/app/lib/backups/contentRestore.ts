@@ -69,6 +69,7 @@ import {
   toolCollection,
   toolDomain,
 } from "../data/toolData";
+import { inspectRestoredAbsences } from "./absenceReview";
 import { inspectRestoredMaterial } from "./materialReview";
 import { inspectRestoredPrintFiles } from "./organizationPrintReview";
 import { inspectRestoredFiles } from "./projectFileReview";
@@ -521,6 +522,12 @@ export async function inspectPreparedContent(
   );
   const uncheckedBookings = await verifyActiveBookings(client, view, projectReferences, signal);
   const planning = await inspectPlanning(view, projectIds);
+  const restoredAbsences = await inspectRestoredAbsences(
+    client,
+    view,
+    account.tenant,
+    signal,
+  );
   const restoredMaterial = await inspectRestoredMaterial(
     view,
     projectIds,
@@ -593,6 +600,7 @@ export async function inspectPreparedContent(
     uncheckedBookings,
     missingPlanningReferences: planning.missing,
     uncheckedPlanningReferences: planning.unchecked,
+    restoredAbsences,
     restoredMaterial,
     restoredFiles,
     restoredPrintFiles,

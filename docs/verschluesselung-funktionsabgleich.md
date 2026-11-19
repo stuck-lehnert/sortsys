@@ -570,6 +570,11 @@ Inhaltscursor bleibt davon getrennt. Die Organisationsverwaltung kann einen
 Projekte und Adressdaten samt Verknüpfungen sowie die Bezüge erhaltener
 Werkzeugbuchungen, Auftragsbestätigungen und ausgestellter Rechnungen. Die
 Vorschau prüft auch die Projekt- und Personalbezüge lesbarer Planungseinträge.
+Bei lesbaren Abwesenheitsanträgen gleicht der Browser die Entscheidung mit
+der Signatur des Antrags ab. Ein Test mit zwei API-Prozessen spielt eine
+gültige Sicherung zurück und weist eine falsche Zuordnung auch dann zurück,
+wenn der Antrag bereits zurückgezogen wurde. Chromium zeigt den Fehler in
+der Vorschau und sperrt die Freigabe im Dialog.
 Bei Lieferscheinen und Regieberichten prüft sie die Projekt- und Produktbezüge
 mit den Nachweisen aus der Sicherung. Ein dort fehlendes Produkt bleibt in der
 Vorschau als Hinweis sichtbar.

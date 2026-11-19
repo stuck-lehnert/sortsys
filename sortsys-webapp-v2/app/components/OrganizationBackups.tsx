@@ -6,6 +6,7 @@ import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyTable } from "~/components/MyTable";
 import { useClientStream } from "~/hooks/useClientStream";
+import { RestoreAbsenceConflict } from "~/lib/backups/absenceReview";
 import {
   activatePreparedContent,
   approvePreparedContent,
@@ -32,6 +33,7 @@ type CheckedBackup = {
 };
 type ReviewProblem =
   | "booking"
+  | "absence"
   | "document"
   | "invoice"
   | "planning"
@@ -94,6 +96,11 @@ function reviewFailure(problem: ReviewProblem) {
       "Diese Sicherung enthält widersprüchliche Einträge in der Einsatzplanung. Wählen Sie eine andere Sicherung.",
       "This backup contains conflicting entries in the schedule. Choose a different backup.",
     );
+  if (problem === "absence")
+    return uiText(
+      "In dieser Sicherung ist ein Abwesenheitsantrag ungültig oder eine Entscheidung passt nicht zum zugehörigen Antrag.",
+      "This backup contains an invalid absence request or a decision that does not match its request.",
+    );
   if (problem === "material")
     return uiText(
       "Die Sicherung enthält ungültige Lieferscheine, Regieberichte oder Produktdaten. Wählen Sie eine andere Sicherung.",
@@ -118,6 +125,7 @@ function reviewFailure(problem: ReviewProblem) {
 function RestoreCounts({ report }: { report: Verification }) {
   const count = new Intl.NumberFormat(currentLocaleTag());
   const files = report.restoredFiles;
+  const absences = report.restoredAbsences;
   const print = report.restoredPrintFiles;
   const material = report.restoredMaterial;
   const entries = [
@@ -131,6 +139,12 @@ function RestoreCounts({ report }: { report: Verification }) {
     entries.push({
       label: uiText("Lieferscheine", "Delivery notes"),
       value: material.deliveryNotes,
+    });
+  }
+  if (absences.requests > 0) {
+    entries.push({
+      label: uiText("Abwesenheitsanträge", "Absence requests"),
+      value: absences.requests,
     });
   }
   if (material.regieReports > 0) {
@@ -231,6 +245,15 @@ function RestoreCounts({ report }: { report: Verification }) {
             "Some schedule links could not be checked with the current read access.",
           )}
         </p>
+      )}
+      {absences.unchecked > 0 && (
+        <MyCallout color="yellow">
+          {uiText(
+            "Für einige Abwesenheiten fehlt die Lesefreigabe für Anträge oder Entscheidungen.",
+            "Access to requests or decisions is missing for some absences.",
+          )}{" "}
+          {count.format(absences.unchecked)}
+        </MyCallout>
       )}
       {files.missingProjects > 0 && (
         <MyCallout color="yellow">
@@ -376,6 +399,7 @@ export default function OrganizationBackups() {
           error instanceof RpcClientError && error.code === "CONFLICT";
         let problem: ReviewProblem = null;
         if (error instanceof RestoreBookingConflict) problem = "booking";
+        else if (error instanceof RestoreAbsenceConflict) problem = "absence";
         else if (error instanceof RestoreDocumentConflict) problem = "document";
         else if (error instanceof RestoreInvoiceConflict) problem = "invoice";
         else if (error instanceof RestorePlanningConflict) problem = "planning";

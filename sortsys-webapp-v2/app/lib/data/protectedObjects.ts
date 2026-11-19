@@ -297,6 +297,7 @@ export async function protectedReadView(
   const open = await bindCollections(client, signal, undefined, source);
   return {
     prepared: source.view,
+    authority: open.authority,
     areas: open.areas,
     readable: open.readable,
     prefetch: open.prefetch,
@@ -304,6 +305,7 @@ export async function protectedReadView(
       const collection = open(area);
       return {
         open: collection.open,
+        openHistorical: collection.openHistorical,
         can: collection.can,
         close: collection.close,
       };

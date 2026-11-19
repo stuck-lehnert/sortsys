@@ -129,6 +129,14 @@ weist darauf hin, wenn Leserechte für ihre Prüfung fehlen. Sind zwei
 gespeicherte Fassungen desselben Planungseintrags gleichzeitig aktiv, hält die
 Prüfung an.
 
+Bei Abwesenheiten prüft der Browser, ob eine Entscheidung zur Signatur des
+zugehörigen Antrags gehört. Wurde der Antrag zurückgezogen, verwendet der
+Browser für diesen Abgleich die aufbewahrte verschlüsselte Originalfassung.
+Das funktioniert auch ohne einen externen Zeitstempel. Stimmen Antrag und
+Entscheidung nicht überein, sperrt die Vorschau die Freigabe. Fehlt der
+Lesezugriff auf eine der beiden Seiten, weist die Vorschau auf die
+unvollständige Prüfung hin.
+
 Bei lesbaren Lieferscheinen und Regieberichten prüft der Browser die
 Materialpositionen und ihre Bezüge zu Projekten und Produkten. Dafür verwendet
 er die Produktdaten und Signaturnachweise aus der ausgewählten Sicherung.
