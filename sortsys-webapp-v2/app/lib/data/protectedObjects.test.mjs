@@ -17,7 +17,7 @@ import {
   verify,
 } from "@sortsys/zerotrust/sortsys";
 import { acceptVault, lockCryptoSession } from "../crypto/session";
-import { protectedCollection } from "./protectedObjects";
+import { protectedCollection, protectedCollections } from "./protectedObjects";
 import { accessSnapshotFixture } from "./testing/accessSnapshot.mjs";
 
 afterEach(() => lockCryptoSession());
@@ -153,6 +153,9 @@ async function fixture(extraReader = false, suspended = false) {
     beforeObjectBatch: async () => {},
     transformOpenings: (openings) => openings,
     transformPage: (page) => page,
+    beforePageBatch: () => undefined,
+    pageBatches: [],
+    pageRequests: [],
     pages: [],
   };
   const client = {
@@ -163,6 +166,7 @@ async function fixture(extraReader = false, suspended = false) {
         path === "zerotrust.access.page"
       )
         return accessSnapshotFixture(client, input);
+      if (path === "zerotrust.creations.list") return [[], null];
       if (path === "auth.sessionInfo")
         return [{ user: { id: "1", username: "owner" }, roles: [] }, null];
       if (path === "zerotrust.trust.history")
@@ -240,7 +244,23 @@ async function fixture(extraReader = false, suspended = false) {
           null,
         ];
       }
+      if (path === "zerotrust.objects.pages") {
+        state.pageBatches.push(input.selections);
+        const error = state.beforePageBatch(input.selections);
+        if (error) return [null, error];
+        const pages = [];
+        for (const selection of input.selections) {
+          const [page, failure] = await client.query(
+            "zerotrust.objects.list",
+            selection,
+          );
+          if (failure) return [null, failure];
+          pages.push(page);
+        }
+        return [pages, null];
+      }
       if (path === "zerotrust.objects.list") {
+        state.pageRequests.push(input);
         state.pages.push(input.snapshot);
         if (state.conflict && input.after) {
           state.conflict = false;
@@ -306,6 +326,7 @@ async function fixture(extraReader = false, suspended = false) {
   };
   return {
     state,
+    client,
     collection: await protectedCollection(
       client,
       AREA,
@@ -387,6 +408,113 @@ test("parallel object decryption shares one combined opening request across page
     expect(state.pages).toEqual([null, "1"]);
   } finally {
     collection.close();
+  }
+});
+
+async function pagedFixture() {
+  const { state, client, collection } = await fixture();
+  const areas = [AREA, { ...AREA, prefix: "item:0" }];
+  const open = await protectedCollections(client, new AbortController().signal);
+  await open.prefetch(areas.map((area) => ({ area })));
+  const readers = areas.map(open);
+  return {
+    state,
+    areas,
+    read: () => Promise.all(readers.map((reader) => reader.read())),
+    close() {
+      for (const reader of readers) reader.close();
+      collection.close();
+    },
+  };
+}
+
+test("parallel collection walks batch their next pages and retain each snapshot", async () => {
+  const { state, areas, read, close } = await pagedFixture();
+  try {
+    const results = await read();
+    for (const rows of results) {
+      expect(rows.map(({ value }) => value.index)).toEqual(
+        Array.from({ length: 48 }, (_, index) => index),
+      );
+    }
+    expect(state.pageBatches.map((pages) => pages.length)).toEqual([2, 2]);
+    const pages = state.pageBatches[1].toSorted(
+      (first, second) => first.prefix.localeCompare(second.prefix),
+    );
+    expect(pages).toEqual(
+      areas.map(({ domain, prefix }) => ({
+        domain,
+        prefix,
+        after: "item:031",
+        snapshot: "1",
+        known: undefined,
+        headOnly: undefined,
+        includeOpenings: true,
+      })),
+    );
+  } finally {
+    close();
+  }
+});
+
+test("a continuation conflict keeps every single retry bound to its cursor and snapshot", async () => {
+  const { state, read, close } = await pagedFixture();
+  state.beforePageBatch = (selections) => {
+    if (!selections.every(({ after }) => after !== null)) return;
+    return new RpcClientError({
+      code: -32009,
+      message: "Protected data changed; reload the current version",
+      data: { code: "CONFLICT", httpCode: 409 },
+    });
+  };
+
+  try {
+    const results = await read();
+    expect(results.map((rows) => rows.length)).toEqual([48, 48]);
+    expect(state.pageBatches.map((pages) => pages.length)).toEqual([2, 2]);
+    expect(state.pageRequests.slice(2)).toEqual(state.pageBatches[1]);
+  } finally {
+    close();
+  }
+});
+
+test("an oversized continuation batch splits without changing any cursor", async () => {
+  const { state, read, close } = await pagedFixture();
+  state.beforePageBatch = (selections) => {
+    if (!selections.every(({ after }) => after !== null)) return;
+    return new RpcClientError({
+      code: -32600,
+      message: "Protected collection batch exceeds the response limit",
+      data: { code: "BAD_REQUEST", httpCode: 413 },
+    });
+  };
+
+  try {
+    expect((await read()).map((rows) => rows.length)).toEqual([48, 48]);
+    expect(state.pageBatches.map((pages) => pages.length)).toEqual([2, 2, 1, 1]);
+    expect(state.pageRequests.slice(2)).toEqual(state.pageBatches[1]);
+  } finally {
+    close();
+  }
+});
+
+test("a denied continuation does not probe individual reads", async () => {
+  const { state, read, close } = await pagedFixture();
+  const failure = new RpcClientError({
+    code: -32003,
+    message: "Access denied",
+    data: { code: "FORBIDDEN", httpCode: 403 },
+  });
+  state.beforePageBatch = (selections) => {
+    if (selections.every(({ after }) => after !== null)) return failure;
+  };
+
+  try {
+    await expect(read()).rejects.toBe(failure);
+    expect(state.pageBatches.map((pages) => pages.length)).toEqual([2, 2]);
+    expect(state.pageRequests).toHaveLength(2);
+  } finally {
+    close();
   }
 });
 

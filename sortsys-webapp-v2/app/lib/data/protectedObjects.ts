@@ -81,6 +81,10 @@ export type CollectionPageRequest = {
   headOnly?: boolean;
 };
 type ObjectPage = QueryResult<"zerotrust.objects.list">;
+type PageInput = QueryInput<"zerotrust.objects.list">;
+const PAGE_BATCH_LIMIT = 16;
+const PAGE_BATCH_WINDOW_MS = 5;
+
 type PreparedPageSource = {
   view: NonNullable<QueryInput<"zerotrust.stock.references">["prepared"]>;
   domains: QueryResult<"zerotrust.access.snapshot">["domains"];
@@ -150,7 +154,11 @@ export async function protectedCollections(
   selectedDomains?: readonly string[],
   initial: readonly CollectionPageRequest[] = [],
 ) {
-  if (selectedDomains && initial.length > 0 && initial.length <= 16) {
+  if (
+    selectedDomains &&
+    initial.length > 0 &&
+    initial.length <= PAGE_BATCH_LIMIT
+  ) {
     try {
       return await bindCollections(
         client,
@@ -175,6 +183,102 @@ export async function protectedCollections(
 
 function exceedsResponseBudget(error: unknown): boolean {
   return error instanceof RpcClientError && error.data?.httpCode === 413;
+}
+
+function createPageReader(
+  client: Client,
+  source: PreparedPageSource | undefined,
+  live: () => void,
+) {
+  async function batch(requests: PageInput[]): Promise<ObjectPage[]> {
+    live();
+    const input = { selections: requests };
+    let pages: ObjectPage[];
+    try {
+      pages = source
+        ? await source.pages(input)
+        : await required(
+            client.query("zerotrust.objects.pages", input, {
+              strategy: "network-only",
+            }),
+          );
+    } catch (error) {
+      if (!exceedsResponseBudget(error)) throw error;
+      if (requests.length === 1) {
+        if (source) throw error;
+        return [await single(requests[0]!)];
+      }
+      const middle = Math.ceil(requests.length / 2);
+      const first = await batch(requests.slice(0, middle));
+      return [...first, ...(await batch(requests.slice(middle)))];
+    }
+    live();
+    if (
+      !Array.isArray(pages) ||
+      pages.length !== requests.length ||
+      pages.some((page) => !page)
+    ) {
+      throw new InvalidProtectedData();
+    }
+    return pages;
+  }
+
+  async function single(input: PageInput): Promise<ObjectPage> {
+    if (source) return (await batch([input]))[0]!;
+    live();
+    return required(
+      client.query("zerotrust.objects.list", input, { strategy: "network-only" }),
+    );
+  }
+
+  type WaitingPage = {
+    input: PageInput;
+    resolve(page: ObjectPage): void;
+    reject(error: unknown): void;
+  };
+  let waiting: WaitingPage[] = [];
+
+  async function deliver(group: WaitingPage[]) {
+    try {
+      if (group.length === 1) {
+        const entry = group[0]!;
+        entry.resolve(await single(entry.input));
+        return;
+      }
+      const pages = await batch(group.map(({ input }) => input));
+      group.forEach(({ resolve }, index) => resolve(pages[index]!));
+    } catch (error) {
+      if (
+        group.length > 1 &&
+        error instanceof RpcClientError &&
+        error.code === "CONFLICT"
+      ) {
+        // One changed collection must not make its unchanged peers restart.
+        // Every single request retains the original cursor and snapshot.
+        await mapConcurrent(group, 4, (entry) => deliver([entry]));
+        return;
+      }
+      for (const { reject } of group) reject(error);
+    }
+  }
+
+  function continuation(input: PageInput) {
+    return new Promise<ObjectPage>((resolve, reject) => {
+      if (!waiting.length) {
+        // Page decryption can finish at different times across collections.
+        setTimeout(async () => {
+          const pages = waiting;
+          waiting = [];
+          for (let offset = 0; offset < pages.length; offset += PAGE_BATCH_LIMIT) {
+            await deliver(pages.slice(offset, offset + PAGE_BATCH_LIMIT));
+          }
+        }, PAGE_BATCH_WINDOW_MS);
+      }
+      waiting.push({ input, resolve, reject });
+    });
+  }
+
+  return { batch, single, continuation };
 }
 
 /** A read-only content view uses live access proofs and its own page source.
@@ -257,36 +361,18 @@ async function bindCollections(
     if (!selections.length) return;
     for (const selection of selections)
       if (!readable(selection.area)) throw new InvalidProtectedData();
+    if (!source && selections.filter(({ headOnly }) => !headOnly).length > 1) {
+      context.batchContinuations = true;
+    }
     const missing = selections.filter(
       (selection) => !context.pages.has(pageKey(selectionRequest(selection))),
     );
     const groups: CollectionPageRequest[][] = [];
-    for (let offset = 0; offset < missing.length; offset += 16)
-      groups.push(missing.slice(offset, offset + 16));
+    for (let offset = 0; offset < missing.length; offset += PAGE_BATCH_LIMIT)
+      groups.push(missing.slice(offset, offset + PAGE_BATCH_LIMIT));
     await mapConcurrent(groups, 4, async (group) => {
       const requests = group.map(selectionRequest);
-      let pages: ObjectPage[];
-      try {
-        const input = { selections: requests };
-        pages = source
-          ? await source.pages(input)
-          : await required(
-              client.query("zerotrust.objects.pages", input, {
-                strategy: "network-only",
-              }),
-            );
-      } catch (error) {
-        if (!exceedsResponseBudget(error)) throw error;
-        // Split only a response-budget rejection. Permission, integrity and
-        // snapshot failures must discard the read instead of falling back.
-        if (group.length === 1) return;
-        const middle = Math.ceil(group.length / 2);
-        await prefetch(group.slice(0, middle));
-        await prefetch(group.slice(middle));
-        return;
-      }
-      if (!Array.isArray(pages) || pages.length !== group.length)
-        throw new InvalidProtectedData();
+      const pages = await context.pageReader.batch(requests);
       for (const [index, selection] of group.entries()) {
         const page = pages[index];
         if (!readable(selection.area) || !page) throw new InvalidProtectedData();
@@ -380,6 +466,8 @@ async function collectionContext(
   }
   return {
     pages,
+    pageReader: createPageReader(client, source, live),
+    batchContinuations: false,
     source,
     account,
     history,
@@ -664,7 +752,7 @@ function openCollection(
       plain.fill(0);
     }
   }
-  async function loadPage(input: QueryInput<"zerotrust.objects.list">) {
+  async function loadPage(input: PageInput) {
     if (input.after === null) {
       const key = pageKey(input);
       const cached = context.pages.get(key);
@@ -673,17 +761,10 @@ function openCollection(
         return cached;
       }
     }
-    if (context.source) {
-      const pages = await context.source.pages({ selections: [input] });
-      if (!Array.isArray(pages) || pages.length !== 1 || !pages[0])
-        throw new InvalidProtectedData();
-      return pages[0];
+    if (input.after !== null && context.batchContinuations) {
+      return context.pageReader.continuation(input);
     }
-    return required(
-      client.query("zerotrust.objects.list", input, {
-        strategy: "network-only",
-      }),
-    );
+    return context.pageReader.single(input);
   }
   function checkHeadOnly(page: ObjectPage) {
     if (

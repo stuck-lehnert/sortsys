@@ -31,6 +31,7 @@ try {
   await expect(page.getByRole("link", { name: "Einstellungen", exact: true }))
     .toBeVisible();
   const documentsPage = `${server.origin}/documents`;
+  const pagedQuery = "Pfostenanker";
   const textQuery = "Suchfenster OR Rückbau Asbest Genehmigung";
   const fileNameQuery = "Freigegebener Plan";
   const searchRequests = [];
@@ -42,6 +43,15 @@ try {
   });
   await page.goto(documentsPage);
   const search = page.getByRole("searchbox", { name: "Dokumente durchsuchen" });
+  await search.fill(pagedQuery);
+  await search.press("Enter");
+  const pagedResults = page.locator(".documents-search__result");
+  await expect(pagedResults).toHaveCount(1);
+  await expect(pagedResults.getByRole("link")).toHaveAttribute(
+    "href",
+    `/projects/${fixture.projectId}/files/${fixture.pagedFileId}`,
+  );
+
   await search.fill(textQuery);
   await search.press("Enter");
   const hit = page.getByRole("link", { name: fixture.fileName, exact: true });
@@ -61,9 +71,10 @@ try {
   await search.press("Enter");
   await expect(hit).toBeVisible();
   assert.ok(searchRequests.length > 0);
+  const privateQueries = [pagedQuery, textQuery, fileNameQuery];
   assert.ok(
-    searchRequests.every((request) =>
-      !request.includes(textQuery) && !request.includes(fileNameQuery),
+    searchRequests.every(
+      (request) => privateQueries.every((query) => !request.includes(query)),
     ),
     "Document search terms must stay out of browser requests, including on reload",
   );

@@ -55,8 +55,10 @@ Dateinamen und Ausschnitte bleiben im Client. Die Seite hält die Suchanfrage
 im Arbeitsspeicher. Nach dem Neuladen beginnt die Suche mit einem leeren Feld.
 Bei der Suche in einem Projekt fordert der Browser den Berechtigungsnachweis
 und die erste Dateiseite zusammen an.
-Die Suche über mehrere Projekte lädt Dateisammlungen gebündelt. Weitere Abrufe
-prüfen ihren Änderungsstand. DuckDB prüft die Dateidaten und Ordnerbeziehungen
+Die Suche über mehrere Projekte lädt Dateisammlungen gebündelt. Treffen
+Anfragen für Folgeseiten gleichzeitig ein, verarbeitet die API sie ebenfalls
+in einem Sammelabruf. Für jede Seite prüft sie den Stand der zugehörigen
+Sammlung. DuckDB prüft die Dateidaten und Ordnerbeziehungen
 in einer lokalen Transaktion. Bei weiteren Prüfungen verwendet der Browser
 dieselbe DuckDB-Instanz und rollt die Prüfdaten nach jeder Transaktion zurück.
 Ein Wechsel der Freigaberichtlinie oder das Sitzungsende schließt die Instanz.
@@ -96,8 +98,9 @@ der Ausschnitte steht der Vergleich noch aus.
 Die [Vergleichsfälle](../sortsys-webapp-v2/app/lib/search/documentQuery.test.mjs)
 prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der
 [native Mehrinstanztest](../sortsys-webapp-v2/scripts/test-native-document-search.ts)
-prüft getrennte Dateifreigaben, Versionswechsel, eine Löschung während der Suche
+prüft gebündelte Folgeseiten, Versionswechsel, eine Löschung während der Suche
 und den Entzug von Freigaben bei geöffnetem Client-Cache. Nach einem
-Versionswechsel einer E-Mail findet er nur den Text der aktuellen Fassung. Die
-Browsertests suchen in PDF-, Word-, Excel- und PowerPoint-Dateien sowie in EML-
-und MSG-Nachrichten.
+Versionswechsel einer E-Mail findet er nur den Text der aktuellen Fassung.
+Chromium prüft bei Treffern auf späteren Seiten auch die Sichtbarkeit nach
+Dateifreigabe. Weitere Browsertests suchen in PDF-, Word-, Excel- und
+PowerPoint-Dateien sowie in EML- und MSG-Nachrichten.

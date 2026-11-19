@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
-import { createClient } from "@sortsys/v2-client";
+import { createClient, type QueryInput } from "@sortsys/v2-client";
 import { signPolicy } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { openChatDocuments } from "../app/lib/data/chatDocuments";
@@ -13,6 +13,7 @@ import {
   filePayload,
 } from "../app/lib/data/projectFileData";
 import { projectCollection } from "../app/lib/data/projectData";
+import { publicId } from "../app/lib/data/products";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import { initializeTenant } from "../app/lib/crypto/initializeTenant";
 import { administratorPolicyContext } from "../app/lib/crypto/administration";
@@ -171,6 +172,90 @@ try {
     "Vertrauliche Preise.txt",
     "Fenster Wände " + secret,
   );
+
+  async function addPagedDocuments(
+    projectId: string,
+    templateId: string,
+    firstId: number,
+  ) {
+    const collection = await protectedCollection(
+      owner,
+      fileCollection(projectId),
+      signal,
+    );
+    try {
+      const templateObject = fileObject(projectId, templateId);
+      const source = (await collection.read()).find(
+        ({ envelope }) => envelope.object === templateObject,
+      );
+      assert.ok(source);
+      const template = filePayload(source.value, templateObject, projectId);
+      assert.ok(template.file);
+      const file = template.file;
+      const fileCount = 36;
+      const lastId = String(firstId + fileCount - 1);
+      const packets = await Promise.all(
+        Array.from({ length: fileCount }, (_, index) => {
+          const rowId = String(firstId + index);
+          const id = publicId(rowId);
+          return collection.packet(fileObject(projectId, id), {
+            ...template,
+            file: {
+              ...file,
+              values: {
+                ...file.values,
+                id: rowId,
+                file_name: `Teilblatt ${index + 1}.txt`,
+                size_bytes: "0",
+                object_key: `encrypted:${id}`,
+                extracted_text:
+                  rowId === lastId ? "Pfostenanker" : "Kontrollpunkt",
+              },
+            },
+            // The search should read the metadata without fetching a file.
+            original: { version: "legacy", size: 0, parts: [] },
+          });
+        }),
+      );
+      await collection.write(packets);
+      return publicId(lastId);
+    } finally {
+      collection.close();
+    }
+  }
+
+  const pagedResults = [
+    await addPagedDocuments(visible.id, dense, 100),
+    await addPagedDocuments(hidden.id, forbidden, 200),
+  ];
+  const beforePagedSearch = requests.length;
+  const pagedMatches = await findDocuments(ownerBusiness, "Pfostenanker");
+  assert.deepEqual(
+    new Set(pagedMatches.map(({ id }) => id)),
+    new Set(pagedResults),
+  );
+  const fileDomains = [visible.id, hidden.id].map(
+    (id) => fileCollection(id).domain,
+  );
+  type CapturedOperation = { json?: Partial<QueryInput<"zerotrust.objects.pages">> };
+  const batchRequests = requests.slice(beforePagedSearch).flatMap((request) => {
+    if (!request.includes('"selections":')) return [];
+    const operations: Record<string, CapturedOperation> = JSON.parse(request);
+    return Object.values(operations).flatMap(({ json }) =>
+      json?.selections ? [json.selections] : [],
+    );
+  });
+  assert.ok(
+    batchRequests.some((selections) =>
+      fileDomains.every((domain) =>
+        selections.some((page) =>
+          page.domain === domain && page.after !== null && page.snapshot !== null,
+        ),
+      ),
+    ),
+    "Two project continuations share one objects.pages operation",
+  );
+
   assert.equal(
     (await required(ownerBusiness.query("projects.files.search", searchInput)))
       .length,
@@ -564,6 +649,7 @@ try {
   for (const privateText of [
     query,
     secret,
+    "Pfostenanker",
     oldVersionText,
     newVersionText,
     "Vertrauliche Preise.txt",
@@ -619,6 +705,7 @@ try {
       projectTitle: visibleTitle,
       fileId,
       fileName,
+      pagedFileId: pagedResults[0],
       deniedProjectId: hidden.id,
       deniedFileId: forbidden,
     }));
