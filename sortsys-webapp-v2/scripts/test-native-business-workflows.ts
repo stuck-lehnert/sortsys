@@ -53,11 +53,49 @@ export async function exerciseNativeBusinessWorkflows(
 ) {
   const summary = "Vertrauliche Fassadenarbeit im nativen Fachablauf 749283";
   const note = "Vertraulicher Baustellenwechsel 928471";
+  const street = "Sichtschutz-Nord 427";
+  const customerName = "Baustellenservice-Ost";
+  const email = "Bauleitung.West@beispiel.invalid";
   const project = await required(
     owner.mutate("projects.create", {
       title: "Baustelle für Bericht und Einsatzplanung",
+      address: { streetAddress: street, city: "Nürnberg" },
     }),
   );
+  const customer = await required(
+    owner.mutate("customers.create", { name: customerName }),
+  );
+  const contact = await required(
+    owner.mutate("contacts.create", {
+      firstName: "Klara",
+      emailAddresses: [{ email }],
+    }),
+  );
+  const searchChecks = [
+    {
+      path: "projects.list",
+      match: "Sichtschutz-Nor",
+      miss: "Nord-Sichtschutz",
+      id: project.id,
+    },
+    {
+      path: "customers.list",
+      match: "Baustellenservice-Os",
+      miss: "Ost-Baustellenservice",
+      id: customer.id,
+    },
+    {
+      path: "contacts.list",
+      match: email,
+      miss: "beispiel.invalid",
+      id: contact.id,
+    },
+  ] as const;
+  for (const { path, match, miss, id } of searchChecks) {
+    const hits = await required(peer.query(path, { search: match }));
+    assert.deepEqual(hits.map((row) => row.id), [id]);
+    assert.deepEqual(await required(peer.query(path, { search: miss })), []);
+  }
   const target = await required(
     peer.mutate("projects.create", {
       title: "Zielbaustelle der Einsatzplanung",
@@ -299,7 +337,14 @@ export async function exerciseNativeBusinessWorkflows(
     console.log(
       "Native daily reports, regie reports and planning passed across two APIs: exact quantities, stable line IDs, stale forms, atomic moves, repeated creation and false/lost publication replies.",
     );
-    return [summary, note, "Zusätzliche Abdichtung 749283"];
+    return [
+      summary,
+      note,
+      "Zusätzliche Abdichtung 749283",
+      street,
+      customerName,
+      ...searchChecks.flatMap(({ match, miss }) => [match, miss]),
+    ];
   } finally {
     faults.close();
   }

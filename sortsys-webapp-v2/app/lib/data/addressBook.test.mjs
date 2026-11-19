@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { row } from "./rowCodec.test.mjs";
-import { addressChanges, addressId, addressMatches, addressPayload } from "./addressBook";
+import { addressChanges, addressId, createAddressMatcher, addressPayload } from "./addressBook";
 
 function customer() { return { format: "sortsys-address-v1", kind: "customers", row: row("customers", {
   id: "100", name: "Bauherr", phone_numbers: "[]", email_addresses: "[]",
@@ -33,6 +33,8 @@ test("address edits preserve absent patch fields and normalize new names and cha
 test("local address search matches actual address and channel values, never JSON field names or timestamps", () => {
   const value = { name: "Musterbau", salutation: "Firma", address: { city: "Nürnberg", streetAddress: "Pirckheimer Straße" },
     phoneNumbers: [{ number: "+49 12345", name: "Durchwahl" }], emailAddresses: [{ email: "bauleitung@muster.example" }], createdAt: new Date("2026-11-09"), id: "34" };
-  for (const search of ["Nürn Pirck", "bauleitung", "12345"]) expect(addressMatches(value, search)).toBe(true);
-  for (const search of ["createdAt", "phoneNumbers", "2026", "Durchwahl", "Hamburg"]) expect(addressMatches(value, search)).toBe(false);
+  for (const search of ["Nürn Pirck", "bauleitung", "12345"])
+    expect(createAddressMatcher(search)(value)).toBe(true);
+  for (const search of ["createdAt", "phoneNumbers", "2026", "Durchwahl", "Hamburg"])
+    expect(createAddressMatcher(search)(value)).toBe(false);
 });

@@ -60,10 +60,16 @@ Server nicht von einer anderen verschlüsselten Inhaltsänderung unterscheiden.
 Der normale Client verlangt dafür zusätzlich die Löschfreigabe.
 
 Die Suche umfasst Namen, Anreden, Adresswerte, Telefonnummern und E-Mail-Adressen.
-Sie verbindet Wortanfänge mit einer UND-Verknüpfung. Eine vollständige Gleichheit
-mit der bisherigen PostgreSQL-Textsuche, etwa bei URL-Zerlegung oder Satzzeichen,
-ist damit noch nicht nachgewiesen. Projektzuordnungen und die übrigen
-Fachbereiche sind ebenfalls noch umzustellen.
+Projekte, Kunden und Ansprechpartner verwenden dieselbe lokale Präfixsuche.
+`Pirckheimer-Str` findet beispielsweise `Pirckheimer-Straße`.
+Bei `Straße Pirckheimer` dürfen die Begriffe in anderer Reihenfolge stehen,
+bei `Straße-Pirckheimer` zählt die Reihenfolge. Der Vergleich mit der früheren
+SQL-Abfrage umfasst auch Telefonnummern mit Ländervorwahl und E-Mail-Adressen.
+Seltene Schreibweisen und länderspezifische Regeln des PostgreSQL-Textparsers
+sind nur teilweise abgedeckt.
+
+Die Befehlspalette zeigt Treffer eines Bereichs an, sobald dessen Prüfung
+fertig ist. Langsamere Bereiche ergänzen ihre Treffer danach.
 
 Die Namenssortierung verwendet derzeit den Vergleich des Browsers. Ihre
 Reihenfolge bei Umlauten und Sonderzeichen kann von der bisherigen

@@ -21,7 +21,7 @@ import {
   projectChanges,
   projectCollection,
   projectDomainId,
-  projectMatches,
+  createProjectMatcher,
   projectPayload,
   wireProject,
   PROJECT_MUTATIONS,
@@ -257,6 +257,7 @@ export function createProtectedProjects(
         if (data.search != null && typeof data.search !== "string")
           throw new InvalidProtectedData();
       }
+      const matches = createProjectMatcher(data.search as string | undefined);
       const areas = await readableProjectAreas(client, signal);
       live();
       const selected = areas.map((area) => ({ model: PROJECT_MODEL, area }));
@@ -280,7 +281,7 @@ export function createProtectedProjects(
                 !!project.finishedAt === data.finished) &&
                 (data.customerId == null ||
                   project.customerId === data.customerId) &&
-                projectMatches(project, data.search)),
+                matches(project)),
           )
           .sort(
             (a, b) =>

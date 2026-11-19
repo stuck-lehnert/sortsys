@@ -102,6 +102,9 @@ function auditPage(page) {
       "WDVS-Sockelschiene-684217",
       "wdvs-sockelschiene",
       "sockelschiene-wdvs",
+      "pirckheimer-gym",
+      "gymnasium-pirckheimer",
+      "bauleitung-0@example.invalid",
       "Treppenhausrenovierung Musterstraße",
       "Treppenhaus im Live-Abgleich",
       "Gemeinsam bearbeiteter Leistungsumfang",
@@ -609,6 +612,31 @@ try {
       await restore.getByRole("button", { name: "Speichern", exact: true }).click();
       await expect(restore).toBeHidden();
     }
+  });
+  await scenario("project-and-address-prefix-search", async (page) => {
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Control+k");
+    const palette = page.getByRole("dialog", { name: "Befehlspalette" });
+    const search = palette.getByRole("searchbox", {
+      name: "Befehl oder Suche",
+    });
+    const project = palette.getByRole("option", {
+      name: /Fenstersanierung Pirckheimer-Gymnasium/,
+    });
+    await search.fill("pirckheimer-gym");
+    await expect(project).toBeVisible();
+    await search.fill("gymnasium-pirckheimer");
+    await expect(
+      palette.getByText("Keine Treffer.", { exact: true }),
+    ).toBeVisible();
+    await expect(project).toHaveCount(0);
+    await search.fill("bauleitung-0@example.invalid");
+    await expect(
+      palette.getByRole("option", { name: /Nürnberger Wohnbau GmbH/ }),
+    ).toBeVisible();
   });
   await scenario("seeded-gaeb-link-and-download", async (page) => {
     await login(page, "john.doe");

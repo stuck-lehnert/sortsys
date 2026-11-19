@@ -13,7 +13,6 @@ import {
   userFullName,
 } from "~/lib/format";
 import { Icons, type Icon } from "~/lib/icons";
-import { dailyReportDayKey } from "~/lib/tiles";
 import { useUserActions, type UserAction } from "~/lib/userActions";
 
 type PaletteEntry = {
@@ -35,133 +34,144 @@ function actionMatches(action: UserAction, query: string) {
   return query.split(/\s+/g).every(part => haystack.includes(part));
 }
 
+type SearchLink = Omit<PaletteEntry, "run" | "group"> & { href: string };
+type SearchResults = {
+  query: string;
+  links: SearchLink[];
+  finished: boolean;
+};
+
 function useEntitySearchEntries(query: string, close: () => void) {
   const navigate = useNavigate();
-  const [entries, setEntries] = useState<PaletteEntry[]>([]);
   const trimmedQuery = normalizeSearch(query);
-  const [searching, setSearching] = useState(false);
+  const [results, setResults] = useState<SearchResults | null>(null);
 
   useEffect(() => {
-    let cancelled = false;
-    setEntries([]);
-    setSearching(!!trimmedQuery);
+    setResults(null);
     if (!trimmedQuery) return;
 
-    const timeout = window.setTimeout(async () => {
-      const pushLink = (rows: PaletteEntry[], entry: Omit<PaletteEntry, 'run'> & { href: string }) => {
-        rows.push({
-          ...entry,
-          run: () => {
-            close();
-            navigate(entry.href);
-          },
-        });
-      };
+    const groups: SearchLink[][] = [];
+    let active = true;
+    const publish = (finished: boolean) => {
+      if (active)
+        setResults({ query: trimmedQuery, links: groups.flat(), finished });
+    };
 
-      const [
-        [projects],
-        [tools],
-        [users],
-        [products],
-        [customers],
-        [contacts],
-        [productVendors],
-        [deliveryNote],
-      ] = await Promise.all([
-        client.query('projects.list', { search: trimmedQuery }).catch(() => [null, null] as const),
-        client.query('tools.list', { search: trimmedQuery }).catch(() => [null, null] as const),
-        client.query('users.list', { search: trimmedQuery }).catch(() => [null, null] as const),
-        client.query('products.list', { search: trimmedQuery }).catch(() => [null, null] as const),
-        client.query('customers.list', { search: trimmedQuery }).catch(() => [null, null] as const),
-        client.query('contacts.list', { search: trimmedQuery }).catch(() => [null, null] as const),
-        client.query('products.vendors.list', { search: trimmedQuery }).catch(() => [null, null] as const),
-        (async () => {
-          const raw = trimmedQuery.startsWith('#') ? trimmedQuery.slice(1) : trimmedQuery;
-          const autoId = Number.parseInt(raw, 10);
-          if (!Number.isFinite(autoId)) return [null, null] as const;
-          const [note] = await client.query('deliveryNotes.get', { autoId }).catch(() => [null, null] as const);
-          return [note ? [note] : null, null] as const;
-        })(),
-      ]);
+    // Reserve each group's place before its query completes. A slow category
+    // does not hide ready matches, and the final order stays deterministic.
+    function load<Row>(
+      request: Promise<readonly [readonly Row[] | null, unknown]>,
+      link: (row: Row) => SearchLink,
+    ) {
+      const index = groups.length;
+      groups.push([]);
+      return request.then(([rows]) => {
+        if (!active || !rows?.length) return;
+        groups[index] = rows.slice(0, 8).map(link);
+        publish(false);
+      });
+    }
 
-      if (cancelled) return;
-
-      const nextEntries: PaletteEntry[] = [];
-      (projects ?? []).slice(0, 8).forEach(project => pushLink(nextEntries, {
-        id: `project:${project.id}`,
-        title: project.title,
-        subtitle: uiText("Projekt"),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.Project,
-        href: `/projects/${project.id}`,
-      }));
-      (tools ?? []).slice(0, 8).forEach(tool => pushLink(nextEntries, {
-        id: `tool:${tool.id}`,
-        title: `${tool.customId} ${toolTitle(tool)}`,
-        subtitle: uiText("Werkzeug"),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.Tool,
-        href: `/tools/${tool.id}`,
-      }));
-      (users ?? []).slice(0, 8).forEach(user => pushLink(nextEntries, {
-        id: `user:${user.id}`,
-        title: userFullName(user),
-        subtitle: uiText("Benutzer"),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.User,
-        href: `/users/${user.id}`,
-      }));
-      (products ?? []).slice(0, 8).forEach(product => pushLink(nextEntries, {
-        id: `product:${product.id}`,
-        title: `${product.customId} ${productTitle(product)}`,
-        subtitle: uiText("Produkt"),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.Product,
-        href: `/products/${product.id}`,
-      }));
-      (customers ?? []).slice(0, 8).forEach(customer => pushLink(nextEntries, {
-        id: `customer:${customer.id}`,
-        title: customerName(customer),
-        subtitle: uiText("Kunde"),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.Customer,
-        href: `/customers/${customer.id}`,
-      }));
-      (contacts ?? []).slice(0, 8).forEach(contact => pushLink(nextEntries, {
-        id: `contact:${contact.id}`,
-        title: contactName(contact),
-        subtitle: uiText("Kontakt"),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.Contact,
-        href: `/contacts/${contact.id}`,
-      }));
-      (productVendors ?? []).slice(0, 8).forEach(vendor => pushLink(nextEntries, {
-        id: `productVendor:${vendor.id}`,
-        title: vendor.name,
-        subtitle: uiText("Händler"),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.ProductVendor,
-        href: `/products/vendors/${vendor.id}`,
-      }));
-      (deliveryNote ?? []).slice(0, 3).forEach(note => pushLink(nextEntries, {
-        id: `deliveryNote:${note.id}`,
-        title: uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`),
-        subtitle: uiText(`Erfasst ${formatDate(note.createdAt)}`, `Recorded ${formatDate(note.createdAt)}`),
-        group: uiText('Treffer', 'Results'),
-        icon: Icons.DeliveryNote,
-        href: `/products/deliveryNotes/${note.id}`,
-      }));
-
-      setEntries(nextEntries);
-      setSearching(false);
+    const timeout = window.setTimeout(() => {
+      const filter = { search: trimmedQuery };
+      const rawNumber = trimmedQuery.startsWith("#")
+        ? trimmedQuery.slice(1)
+        : trimmedQuery;
+      const autoId = Number.parseInt(rawNumber, 10);
+      const work = [
+        load(client.query("projects.list", filter), (project) => ({
+          id: `project:${project.id}`,
+          title: project.title,
+          subtitle: uiText("Projekt"),
+          icon: Icons.Project,
+          href: `/projects/${project.id}`,
+        })),
+        load(client.query("tools.list", filter), (tool) => ({
+          id: `tool:${tool.id}`,
+          title: `${tool.customId} ${toolTitle(tool)}`,
+          subtitle: uiText("Werkzeug"),
+          icon: Icons.Tool,
+          href: `/tools/${tool.id}`,
+        })),
+        load(client.query("users.list", filter), (user) => ({
+          id: `user:${user.id}`,
+          title: userFullName(user),
+          subtitle: uiText("Benutzer"),
+          icon: Icons.User,
+          href: `/users/${user.id}`,
+        })),
+        load(client.query("products.list", filter), (product) => ({
+          id: `product:${product.id}`,
+          title: `${product.customId} ${productTitle(product)}`,
+          subtitle: uiText("Produkt"),
+          icon: Icons.Product,
+          href: `/products/${product.id}`,
+        })),
+        load(client.query("customers.list", filter), (customer) => ({
+          id: `customer:${customer.id}`,
+          title: customerName(customer),
+          subtitle: uiText("Kunde"),
+          icon: Icons.Customer,
+          href: `/customers/${customer.id}`,
+        })),
+        load(client.query("contacts.list", filter), (contact) => ({
+          id: `contact:${contact.id}`,
+          title: contactName(contact),
+          subtitle: uiText("Kontakt"),
+          icon: Icons.Contact,
+          href: `/contacts/${contact.id}`,
+        })),
+        load(client.query("products.vendors.list", filter), (vendor) => ({
+          id: `productVendor:${vendor.id}`,
+          title: vendor.name,
+          subtitle: uiText("Händler"),
+          icon: Icons.ProductVendor,
+          href: `/products/vendors/${vendor.id}`,
+        })),
+      ];
+      if (Number.isFinite(autoId)) {
+        const request = client
+          .query("deliveryNotes.get", { autoId })
+          .then(([note]) => [note ? [note] : null, null] as const);
+        work.push(
+          load(request, (note) => ({
+            id: `deliveryNote:${note.id}`,
+            title: uiText(
+              `Lieferschein #${note.autoId}`,
+              `Delivery note #${note.autoId}`,
+            ),
+            subtitle: uiText(
+              `Erfasst ${formatDate(note.createdAt)}`,
+              `Recorded ${formatDate(note.createdAt)}`,
+            ),
+            icon: Icons.DeliveryNote,
+            href: `/products/deliveryNotes/${note.id}`,
+          })),
+        );
+      }
+      void Promise.allSettled(work).then(() => publish(true));
     }, 180);
 
     return () => {
-      cancelled = true;
+      active = false;
       window.clearTimeout(timeout);
     };
-  }, [close, navigate, trimmedQuery]);
+  }, [trimmedQuery]);
 
+  const current = results?.query === trimmedQuery ? results : null;
+  const entries: PaletteEntry[] = useMemo(
+    () =>
+      (current?.links ?? []).map(({ href, ...link }) => ({
+        ...link,
+        group: uiText("Treffer", "Results"),
+        run: () => {
+          close();
+          navigate(href);
+        },
+      })),
+    [current, close, navigate],
+  );
+  const searching = !!trimmedQuery && !current?.finished;
   return { entries, searching };
 }
 

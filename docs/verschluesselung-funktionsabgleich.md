@@ -694,9 +694,11 @@ sowie stabilen weiteren Kriterien. Kaufmännische Listen verwendeten dagegen auc
 
 Der lokale Präfixabgleich für Katalog, Lieferanten, Personal, Werkzeuge und
 Skripte wurde anhand von 45 Suchfällen mit der früheren SQL-Abfrage in
-PostgreSQL 18.6 verglichen. Darunter sind Bindestriche, Artikelnummern, URLs,
-Dateipfade und E-Mail-Adressen. Seltene Schreibweisen und länderspezifische
-Regeln des PostgreSQL-Textparsers sind nur teilweise abgedeckt.
+PostgreSQL 18.6 verglichen. Weitere 24 Suchfälle vergleichen jeweils
+Projekt-, Kunden- und Ansprechpartnerdaten. Darunter sind Bindestriche,
+Artikelnummern, URLs, Dateipfade, Telefonnummern und E-Mail-Adressen. Seltene
+Schreibweisen und länderspezifische Regeln des PostgreSQL-Textparsers sind nur
+teilweise abgedeckt.
 
 Ein Austausch gegen ein beliebiges JavaScript-`includes` oder die ungeprüfte
 Standardsuche einer anderen Datenbank wäre daher keine Funktionsgleichheit. Auch

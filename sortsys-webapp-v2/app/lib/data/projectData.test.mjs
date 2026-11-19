@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { row } from "./rowCodec.test.mjs";
-import { projectChanges, projectCollection, projectDomainId, projectMatches, projectPayload, wireProject } from "./projectData";
+import { createProjectMatcher, projectChanges, projectCollection, projectDomainId, projectPayload, wireProject } from "./projectData";
 
 function payload() { return { format: "sortsys-project-v1", project: row("projects", { id: "100", title: "Fenstersanierung", address: '{"city":"Nürnberg","streetAddress":"Pirckheimer Straße"}' }),
   contacts: [row("project_contacts", { project_id: "100", contact_id: "101", label: "Bauleitung" })] }; }
@@ -24,7 +24,8 @@ test("project changes retain absent fields and submillisecond input, reject malf
 });
 test("project search covers title and address, without hidden keys or other project data", () => {
   const project = wireProject(projectPayload(payload(), "project:34", "34"));
-  expect(projectMatches(project, "Fenster Nürn")).toBe(true);
-  expect(projectMatches(project, "Pirckheimer")).toBe(true);
-  for (const search of ["customerId", "createdAt", "2026", "Bauleitung", "Hamburg"]) expect(projectMatches(project, search)).toBe(false);
+  expect(createProjectMatcher("Fenster Nürn")(project)).toBe(true);
+  expect(createProjectMatcher("Pirckheimer")(project)).toBe(true);
+  for (const search of ["customerId", "createdAt", "2026", "Bauleitung", "Hamburg"])
+    expect(createProjectMatcher(search)(project)).toBe(false);
 });

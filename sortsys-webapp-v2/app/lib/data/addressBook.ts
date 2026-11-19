@@ -1,5 +1,6 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import { createPrefixMatcher } from "../search/prefixQuery";
 import type { DuckDriver } from "./database";
 import { acquireDataRuntime } from "./runtime/session";
 import { defineDataModel } from "./runtime/model";
@@ -250,31 +251,25 @@ function wire(payload: AddressPayload): Customer | Contact {
         lastName: p.last_name as string | null,
       };
 }
-export function addressMatches(
-  value: Customer | Contact,
-  search: unknown,
-): boolean {
-  if (search != null && typeof search !== "string")
-    throw new InvalidProtectedData();
-  const terms =
-    (search as string | null | undefined)
-      ?.trim()
-      .toLocaleLowerCase()
-      .match(/[\p{L}\p{N}_]+/gu) ?? [];
-  if ((search as string | null | undefined)?.trim() && !terms.length)
-    return false;
-  const words =
-    [
+export function searchableAddressValues(address: Customer["address"]): string[] {
+  if (!address) return [];
+  // Keep distinct address values in a stable order regardless of JSON key order.
+  const values = Object.values(address).filter(
+    (value): value is string => typeof value === "string",
+  );
+  return [...new Set(values)].sort();
+}
+
+export function createAddressMatcher(search: string | null | undefined) {
+  const matches = createPrefixMatcher(search);
+  return (value: Customer | Contact) =>
+    matches([
       value.salutation,
       ...("name" in value ? [value.name] : [value.firstName, value.lastName]),
-      ...Object.values(value.address ?? {}),
+      ...searchableAddressValues(value.address),
       ...value.phoneNumbers.map((phone) => phone.number),
       ...value.emailAddresses.map((email) => email.email),
-    ]
-      .join(" ")
-      .toLocaleLowerCase()
-      .match(/[\p{L}\p{N}_]+/gu) ?? [];
-  return terms.every((term) => words.some((word) => word.startsWith(term)));
+    ]);
 }
 function compare(a: Customer | Contact, b: Customer | Contact): number {
   const names = (v: Customer | Contact) =>
@@ -410,13 +405,14 @@ export function createProtectedAddressBook(
         data = list ? partial(input ?? {}, ["search"]) : record(input, ["id"]);
       if (list && data.search != null && typeof data.search !== "string")
         throw new InvalidProtectedData();
+      const matches = createAddressMatcher(data.search as string | undefined);
       const result = await runtime.read([request(kind)], (view) => {
         const values = payloads(view, kind);
         return list
           ? values
               .filter((payload) => payload.row)
               .map(wire)
-              .filter((row) => addressMatches(row, data.search))
+              .filter(matches)
               .sort(compare)
           : wire(find(values, data.id));
       });

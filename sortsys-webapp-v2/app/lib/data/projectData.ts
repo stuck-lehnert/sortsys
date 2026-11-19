@@ -1,10 +1,12 @@
 import type { QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import { createPrefixMatcher } from "../search/prefixQuery";
 import {
   addressId,
   addressText,
   normalizeAddress,
   partialAddressRecord,
+  searchableAddressValues,
 } from "./addressBook";
 import { publicId } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
@@ -170,20 +172,8 @@ export function wireProject(payload: ProjectPayload): Project {
     modifiedAt: new Date(p.modified_at as string),
   };
 }
-export function projectMatches(value: Project, search: unknown): boolean {
-  if (search != null && typeof search !== "string")
-    throw new InvalidProtectedData();
-  const terms =
-    (search as string | null | undefined)
-      ?.trim()
-      .toLowerCase()
-      .match(/[\p{L}\p{N}_]+/gu) ?? [];
-  if ((search as string | null | undefined)?.trim() && !terms.length)
-    return false;
-  const words =
-    [value.title, ...Object.values(value.address ?? {})]
-      .join(" ")
-      .toLowerCase()
-      .match(/[\p{L}\p{N}_]+/gu) ?? [];
-  return terms.every((term) => words.some((word) => word.startsWith(term)));
+export function createProjectMatcher(search: string | null | undefined) {
+  const matches = createPrefixMatcher(search);
+  return (value: Project) =>
+    matches([value.title, ...searchableAddressValues(value.address)]);
 }
