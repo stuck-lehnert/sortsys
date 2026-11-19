@@ -182,8 +182,11 @@ try {
     lease.close();
   }
   console.log("Native editors: member enrolled");
+  const livePermissions = process.env.TEST_OFFICE_PERMISSIONS === "1";
   const expected = {
-    officeOrigin: "http://127.0.0.1:29400",
+    officeOrigin: livePermissions
+      ? process.env.SORTSYS_OFFICE_TEST_ORIGIN
+      : "http://127.0.0.1:29400",
   };
   assert.deepEqual(
     await required(owner.query("zerotrust.editors.config", undefined)),
@@ -252,6 +255,19 @@ try {
     signal,
     project.id,
   );
+  if (livePermissions) {
+    const { testOfficeRevocation } = await import(
+      "./test-native-office-permissions"
+    );
+    await testOfficeRevocation({
+      owner,
+      business,
+      memberEndpoint: endpoints[1],
+      memberId: profile.id,
+      projectId: project.id,
+      signal,
+    });
+  }
   const wire = JSON.stringify(sent);
   for (const privateText of [
     "CONFIDENTIAL_OFFICE_NATIVE_846281",

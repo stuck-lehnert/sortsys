@@ -16,7 +16,7 @@ const types = new Map([
 
 /** Serve the real production SPA and forward HTTP/WebSocket traffic unchanged
  * to an isolated production API router. No application services are mocked. */
-export async function applicationServer(directory, endpoint) {
+export async function applicationServer(directory, endpoint, { port = 0 } = {}) {
   const root = resolve(directory);
   await stat(resolve(root, "index.html"));
   const api = new URL(endpoint);
@@ -104,7 +104,7 @@ export async function applicationServer(directory, endpoint) {
   });
   await new Promise((accept, reject) => {
     server.once("error", reject);
-    server.listen(0, "127.0.0.1", accept);
+    server.listen(port, "127.0.0.1", accept);
   });
   let closing;
   return {

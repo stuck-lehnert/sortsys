@@ -154,6 +154,14 @@ denselben öffentlichen Anlagenachweis wie die ursprünglichen Teilnehmer. Dadur
 erkennen sie den gemeinsamen Raum, ohne den Bearbeitungszugang entschlüsseln zu
 können.
 
+Der [DOCX-Browsertest](../sortsys-webapp-v2/scripts/test-native-office-permissions.ts)
+hält eine verschlüsselte Speicheranfrage zurück, bevor die API sie erhält. Die
+zweite API-Instanz meldet die Herabstufung auf Lesen. Der schreibbare Editor
+schließt, und derselbe Dateilink öffnet den bestätigten Stand zum Lesen. Die
+API weist die noch wartende Speicheranfrage ab. Anschließend kann ein
+berechtigtes Konto den Entwurf prüfen und ausdrücklich in einen neuen Raum
+übernehmen. Der vollständige Entzug schließt auch die laufende Lesesitzung.
+
 ## Betrieb des Office-Dienstes
 
 Der Dienst [office](../sortsys-office/README.md) baut den geprüften
@@ -281,11 +289,19 @@ Entwicklungsstack bleibt dabei ausgeschaltet. Aufruf aus dem Repository:
 CONTAINER_RUNTIME=docker ./scripts/test-office
 ```
 
+Der gemeinsame DOCX-Test benötigt zusätzlich die Umgebung der nativen
+API-Tests. Er startet Chromium mit dem Produktionsbuild und zwei getrennten
+API-Prozessen.
+
+```bash
+TEST_OFFICE_PERMISSIONS=1 CONTAINER_RUNTIME=docker ./scripts/test-office
+```
+
 Der weitere Funktionsabgleich muss mehr Formeln und Zahlenformate,
 Bildbearbeitung, komplexe Kopf- und Fußzeilen, Präsentationslayouts und
 gleichzeitige Änderungen derselben Inhalte abdecken. Auch die Wiederverbindung
-nach einem Verbindungsabbruch während des Schreibens und der Rechteentzug vor
-einem Dateispeicherpunkt sind noch zu prüfen. Vor der Ablösung sind außerdem die
-bisherigen Klartextkopien und Caches des Dokumentservers zu berücksichtigen.
+nach einem Verbindungsabbruch während des Schreibens ist noch zu prüfen. Vor der
+Ablösung sind außerdem die bisherigen Klartextkopien und Caches des
+Dokumentservers zu berücksichtigen.
 Bereits angelegte Betreiberbackups werden durch einen neuen Editor nicht
 nachträglich verschlüsselt.

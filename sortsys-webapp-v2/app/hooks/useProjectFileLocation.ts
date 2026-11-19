@@ -68,7 +68,9 @@ export function useProjectFileLocation(
   }, [basePath, route.pathname, route.search]);
   useEffect(
     () => () => {
-      tracked.current?.close();
+      // Permission revalidation can temporarily unmount the attachment page.
+      // Keep the link so a still-authorized file can reopen with its new rights.
+      tracked.current?.detach();
       tracked.current = null;
     },
     [],

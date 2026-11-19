@@ -90,7 +90,7 @@ export function useMyModals(): MyModalsInterface {
       },
       trackLocation: (...args) => {
         if (currentDataContext(context)) return modals.trackLocation(...args);
-        return { close() {}, update() {} };
+        return { close() {}, detach() {}, update() {} };
       },
     } satisfies MyModalsInterface;
   }, [context, modals]);
@@ -145,6 +145,7 @@ export interface MyModalsInterface {
     onRequestClose: () => void,
   ) => {
     close: () => void;
+    detach: () => void;
     update: (location: { url: string; backgroundUrl: string }) => void;
   };
 
@@ -293,9 +294,14 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
     },
     trackLocation: (location, onRequestClose) => {
       const modal = registerModal(() => null, { location, onRequestClose });
-      if (!modal) return { close() {}, update() {} };
+      if (!modal) return { close() {}, detach() {}, update() {} };
       return {
         close: () => hideModal(modal),
+        detach: () => {
+          modal.visible = false;
+          modalsRef.current = modals().filter((entry) => entry !== modal);
+          forceUpdate();
+        },
         update: (next) => setLocation(modal, next),
       };
     },

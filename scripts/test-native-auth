@@ -28,6 +28,7 @@ PROCESS_TESTS = {
     TEST_PREFIX + "own_planning_records_use_exact_recipient_keys_across_api_instances",
     TEST_PREFIX + "content_views::tenant_prepares_an_encrypted_snapshot_across_api_instances",
     TEST_PREFIX + "delegated_administration_uses_own_keys_and_revokes_across_independent_api_instances",
+    TEST_PREFIX + "private_editors_use_native_configuration_and_separate_file_permissions",
     COLD_RESTORE_TEST,
 }
 

@@ -441,8 +441,13 @@ Hintergrundbetrieb. Lokale Arbeiten können mit dem Tab enden. Die
 LLM-/OCR-Ausnahme gilt nur für den ausdrücklich aufgerufenen Ablauf.
 
 **EuroOffice/ONLYOFFICE.** Normale Dateidialoge verwenden CryptPads
-Browsereditoren. Gemeinsame DOCX-Bearbeitung und Lesezugänge sind geprüft;
-weitere Dateifunktionen und laufende Änderungen bei Rechteentzug bleiben offen.
+Browsereditoren. Neben gemeinsamer Bearbeitung und Lesezugängen decken die
+DOCX-Browsertests den Rechteentzug während einer Speicheranfrage über zwei
+API-Instanzen ab. Nach der Herabstufung öffnet derselbe Link die Datei zum
+Lesen. Die API weist den alten Schreibvorgang ab, und ein berechtigtes Konto
+kann den Entwurf anschließend ausdrücklich übernehmen. Der Funktionsabgleich
+für weitere Dateifunktionen und die Wiederverbindung läuft weiter. Siehe
+[Editorprüfungen](editoren-ohne-klartextserver.md).
 
 **diagrams.net.** Diagramme verwenden denselben geschützten Editorablauf und
 dieselbe verschlüsselte Projektablage wie Office-Dateien. Der echte Diensttest

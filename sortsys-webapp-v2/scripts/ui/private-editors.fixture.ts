@@ -440,7 +440,7 @@ Object.assign(window, {
           throw new Error("Export unexpectedly failed");
         },
         showForm: () => {},
-        trackLocation: () => ({ close() {}, update() {} }),
+        trackLocation: () => ({ close() {}, detach() {}, update() {} }),
       };
       Object.assign(window, {
         exportQueries: queries,

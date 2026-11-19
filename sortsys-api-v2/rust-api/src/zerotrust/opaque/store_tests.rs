@@ -174,12 +174,14 @@ async fn browser_with_tenant(
         Duration::from_secs(900)
     } else if mode == "development-seed" {
         if std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() == Ok("1") {
-            // The complete run includes seed validation and all 18 real-browser
-            // workflows. Keep their individual interaction deadlines unchanged.
+            // The complete run includes seed validation and browser workflows.
+            // Keep the individual interaction deadlines unchanged.
             Duration::from_secs(3600)
         } else {
             Duration::from_secs(1800)
         }
+    } else if mode == "editors" && std::env::var("TEST_OFFICE_PERMISSIONS").as_deref() == Ok("1") {
+        Duration::from_secs(600)
     } else if matches!(mode, "administration" | "owner-content-preparation")
         && std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() == Ok("1")
     {
@@ -379,23 +381,19 @@ async fn private_editors_use_native_configuration_and_separate_file_permissions(
     settings.admin_hash = bcrypt::hash("Native-editor-operator-password-2026!", 4)
         .unwrap()
         .into();
-    settings.editors = crate::editors::EditorConfig {
-        office_origin: Some("http://127.0.0.1:29400".into()),
+    let origin = if std::env::var("TEST_OFFICE_PERMISSIONS").as_deref() == Ok("1") {
+        assert_eq!(
+            std::env::var("SORTSYS_DISPOSABLE_OFFICE_TEST").as_deref(),
+            Ok("1")
+        );
+        let origin = std::env::var("SORTSYS_OFFICE_TEST_ORIGIN").unwrap();
+        assert!(origin.starts_with("http://127.0.0.1:"));
+        origin
+    } else {
+        "http://127.0.0.1:29400".into()
     };
-    let mut tasks = Vec::new();
-    let mut endpoints = Vec::new();
-    for _ in 0..2 {
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let router = crate::standalone::connect_at(&settings, address)
-            .await
-            .unwrap();
-        endpoints.push(format!("http://{address}/"));
-        tasks.push(ApiTask(tokio::spawn(async move {
-            axum::serve(listener, router).await.unwrap();
-        })));
-    }
-    browser("editors", &root, Some(&endpoints)).await;
+    settings.editors.office_origin = Some(crate::editors::office_origin(origin).unwrap());
+    processes::run_browser(&settings, &root, "editors").await;
 }
 
 #[tokio::test]

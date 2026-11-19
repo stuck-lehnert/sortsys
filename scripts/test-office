@@ -93,5 +93,13 @@ if [ "${TEST_OFFICE_COLD_RESTORE:-}" = 1 ]; then
   "$root/scripts/test-native-auth"
   exit
 fi
+if [ "${TEST_OFFICE_PERMISSIONS:-}" = 1 ]; then
+  if [ -z "${SORTSYS_E2E_APPLICATION_BUILD:-}" ]; then
+    (cd "$root/sortsys-webapp-v2" && bun run build)
+  fi
+  export SORTSYS_NATIVE_AUTH_TEST_FILTER=zerotrust::opaque::store_tests::private_editors_use_native_configuration_and_separate_file_permissions
+  "$root/scripts/test-native-auth"
+  exit
+fi
 cd "$root/sortsys-webapp-v2"
 bun scripts/test-live-office.ts
