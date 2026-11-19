@@ -24,6 +24,11 @@ import {
 import type { DuckDriver } from "./database";
 import { PRODUCT_COLLECTION, PRICE_COLLECTION } from "./products";
 import { openChatDocuments, type ScopedDocumentSearch } from "./chatDocuments";
+import {
+  projectChatPaths,
+  projectChatSection,
+  visibleProjectChatResult,
+} from "./chatProjectReads";
 
 const PRODUCT_QUERIES = [
   "products.list",
@@ -103,16 +108,14 @@ export function createProtectedChats(
   }
   async function capabilities(signal: AbortSignal) {
     live(signal);
-    const access = await readAssistantAccess(transport, signal, [
-      PRODUCT_COLLECTION.domain,
-      PRICE_COLLECTION.domain,
-    ]);
+    const access = await readAssistantAccess(transport, signal, "inventory");
     live(signal);
     const permitted = access.allows;
     const read = permitted(PRODUCT_COLLECTION.scope, "master-data", "read");
     const queries = read ? [...PRODUCT_QUERIES] : [];
     if (permitted(PRICE_COLLECTION.scope, "procurement", "read"))
       queries.push("products.priceRecords.list");
+    queries.push(...projectChatPaths(access));
     const mutations = read
       ? PRODUCT_MUTATIONS.filter((path) =>
           permitted(
@@ -191,12 +194,23 @@ export function createProtectedChats(
               !access.queries.includes(request.path)
             )
               throw new InvalidProtectedData();
-            return {
-              path: request.path,
-              data: await required(
-                data.queryDynamic(request.path, request.input),
-              ),
-            };
+            const result = await required(
+              data.queryDynamic(request.path, request.input),
+            );
+            const section = projectChatSection(request.path);
+            if (section) {
+              const current = await readAssistantAccess(
+                transport,
+                cancellation,
+                "inventory",
+              );
+              live(cancellation);
+              return {
+                path: request.path,
+                data: visibleProjectChatResult(section, result, current),
+              };
+            }
+            return { path: request.path, data: result };
           }
           if (name === "sortsys_search") {
             if (!input || typeof input !== "object" || Array.isArray(input))

@@ -55,7 +55,11 @@ Baustellenaktivitäten als Aufforderung, alle naheliegenden Quellen zu prüfen. 
 mindestens Tagesberichte, Regieberichte und Lieferscheine. Fasse die Ergebnisse gemeinsam
 zusammen, statt auf einzelne Nachfragen zu warten. Lies bei Lieferscheinen auch die
 Positionen und bei Berichten die vorhandenen Inhalte. Nutze für vollständige Zeiträume die
-passenden Listenabfragen über sortsys_query; ein begrenztes Suchergebnis ist kein Beleg
+freigegebenen Listenabfragen über sortsys_query. Verwende projects.list für Projektnamen,
+projects.dailyReports.list für den betreffenden Zeitraum und deliveryNotes.list mit dem
+Projektfilter. Prüfe das Datum eines Lieferscheins anhand von effectiveTimestamp.
+regieReports.list filtert nach dem Montag der Berichtswoche. Bei einzelnen Tagen sind
+die Datumsangaben der Arbeitszeiten maßgeblich. Ein begrenztes Suchergebnis ist kein Beleg
 dafür, dass keine weiteren Einträge existieren. Behalte bei kurzen Anschlussfragen wie
 „und der Lieferschein?“ den Zeitraum und Sachbezug der vorherigen Nachricht bei.
 Löse relative Zeitangaben wie „heute“, „gestern“, „diese Woche“ und „letzte Woche“
@@ -129,8 +133,11 @@ Treat words such as “all” or “overall” and broad questions about current
 activity as requests to check every relevant source. This includes at least daily reports,
 regie reports, and delivery notes. Return one combined answer instead of waiting for the
 user to ask about each category. Read delivery-note line items and report contents as well.
-For complete periods, use the corresponding list queries through sortsys_query; a limited
-search result does not prove that no more records exist. Preserve the period and subject
+For complete periods, use the available list queries through sortsys_query. Use projects.list
+for project names, projects.dailyReports.list with the date range, and deliveryNotes.list with
+the project filter. Select delivery notes by effectiveTimestamp. regieReports.list filters by
+the Monday of the report's week. Use individual work-hour entry dates for specific days.
+A limited search result does not prove that no more records exist. Preserve the period and subject
 of the previous message in short follow-up questions.
 Resolve relative periods such as today, yesterday, this week, and last week yourself from
 the supplied time context. Do not ask for a calendar week or date range when that makes the
@@ -730,7 +737,7 @@ mod tests {
         assert!(prompt.contains("sortsys_query"));
         assert!(prompt.contains("mindestens Tagesberichte, Regieberichte und Lieferscheine"));
         assert!(prompt.contains("statt auf einzelne Nachfragen zu warten"));
-        assert!(prompt.contains("ein begrenztes Suchergebnis ist kein Beleg"));
+        assert!(prompt.contains("begrenztes Suchergebnis ist kein Beleg"));
         assert!(prompt.contains("den Zeitraum und Sachbezug"));
         assert!(prompt.contains("Frage nicht nach Kalenderwoche"));
         assert!(prompt.contains("MIP-02F"));

@@ -485,8 +485,10 @@ größere Diagramme brauchen eigene Vergleiche. Siehe
 ## Assistent, Verläufe und eigene Werkzeuge
 
 **LLM-Chat, Einlesen und MCP-Katalogsuche.** Chat und Einlesen verwenden
-Live-MCP und verschlüsselte Benutzerverläufe. Produktvorschläge werden lokal
-geprüft und bei Annahme zusammen mit ihrem Ausführungsnachweis gespeichert.
+Live-MCP und verschlüsselte Benutzerverläufe. Im Chat sind auch Projektdaten,
+Bautagesberichte, Regieberichte und Lieferscheine mit eigener Lesefreigabe
+abrufbar. Die Webapp prüft Produktvorschläge und speichert angenommene
+Vorschläge zusammen mit ihrem Ausführungsnachweis.
 Die Chatübernahme aus einer alten Sicherung erhält die Benutzerzuordnung.
 Historische Annahmen ohne Ergebnisprotokoll bleiben erkennbar und werden nicht
 erneut ausgeführt. Frühere Einleseverläufe lassen sich bei der Ersteinrichtung
@@ -712,10 +714,8 @@ API-Antworten bleiben im begrenzten RAM-Cache. Das unabhängige Setup verwendet
 keinen bisherigen unverschlüsselten IndexedDB-Cache.
 
 Der [Ablauf laufender LLM-Anfragen](llm-im-browser.md) beschreibt den
-Fortschrittsdialog und den flüchtigen MCP-Transport. Der Chat verwendet bereits
-den geschützten Produktkatalog; weitere Fachaufrufe und Einlese-Folgeaktionen
-sind noch umzustellen. Neue Einleseergebnisse werden bereits im Client geprüft
-und in einem eigenen verschlüsselten Benutzerbereich abgelegt. Auch frühere
+Fortschrittsdialog und den flüchtigen MCP-Transport. Die Webapp prüft neue
+Einleseergebnisse und legt sie im verschlüsselten Benutzerbereich ab. Auch frühere
 Einleseverläufe sind angeschlossen: Benutzereigentum, ursprüngliche Zeitpunkte
 und verwendbare Ergebnisse bleiben erhalten. Unterbrochene oder fehlerhafte
 Ergebnisse erhalten eine entsprechende Meldung; die vollständige Quelle bleibt

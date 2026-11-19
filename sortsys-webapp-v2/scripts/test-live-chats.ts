@@ -2,25 +2,105 @@ import assert from "node:assert/strict";
 import type { Client } from "@sortsys/v2-client";
 import type { DuckDriver } from "../app/lib/data/database";
 import { createBusinessClient } from "../app/lib/data/businessClient";
+import { calendarWeek } from "../app/lib/data/calendarDays";
 import { openProtectedProducts } from "../app/lib/data/products";
 import { required } from "../app/lib/data/protectedObjects";
 import { llmActivity } from "../app/lib/llmActivity";
 
 type Message = { role: string; content: string };
+type ModelRequest = {
+  messages: Message[];
+  tools?: {
+    function?: {
+      name?: string;
+      parameters?: { properties?: { path?: { enum?: string[] } } };
+    };
+  }[];
+};
+const activityDay = "2025-06-12";
+const activity = {
+  "projects.list": "Musterbaustelle am Stadtpark 782169",
+  "projects.dailyReports.list": "Fensterlaibungen verputzt 782169",
+  "regieReports.list": "Anschluss an Bestandswand hergestellt 782169",
+  "deliveryNotes.list": "Zwölf Sack Kalkputz angeliefert 782169",
+};
+
 export function chatModelFixture() {
   let customId = 0, started: (() => void) | null = null, release: (() => void) | null = null;
   let entered = Promise.resolve(), held = Promise.resolve();
+  let activityProject: string | undefined;
   return {
     configure(next: number) { customId = next; },
+    siteActivity(projectId: string) { activityProject = projectId; },
     hold() { entered = new Promise(resolve => { started = resolve; }); held = new Promise(resolve => { release = resolve; }); },
     async wait() { await Promise.race([entered, Bun.sleep(10_000).then(() => { throw new Error("Chat provider did not start"); })]); },
     release() { release?.(); },
-    async reply(body: { messages: Message[] }) {
+    async reply(body: ModelRequest) {
       const user = body.messages.filter(message => message.role === "user").at(-1)?.content;
       if (typeof user !== "string") return null;
       const result = (content: string) => Response.json({ choices: [{ finish_reason: "stop", message: { role: "assistant", content } }], usage: { prompt_tokens: 10, completion_tokens: 2, total_tokens: 12 } });
       if (user.startsWith("The user approved the change")) return result("<no-follow-up>");
       if (!user.startsWith("LIVE_CHAT_")) return null;
+      if (user === "LIVE_CHAT_SITE_ACTIVITY") {
+        assert.ok(activityProject);
+        const answers = body.messages.filter((message) => message.role === "tool");
+        if (answers.length) {
+          assert.equal(answers.length, 4);
+          for (const [path, expected] of Object.entries(activity)) {
+            const answer = answers.find((message) =>
+              message.content.includes(`"path":"${path}"`),
+            );
+            assert.ok(
+              answer?.content.includes(expected),
+              `Missing result from ${path}`,
+            );
+            if (path === "regieReports.list" && answer) {
+              const report = JSON.parse(answer.content).structuredContent.data[0];
+              assert.equal(report.day.slice(0, 10), calendarWeek(activityDay));
+              assert.equal(report.workHours[0].day.slice(0, 10), activityDay);
+            }
+          }
+          return result("Baustellenaktivitäten aus allen vier freigegebenen Abfragen gelesen");
+        }
+        const query = body.tools?.find(
+          (tool) => tool.function?.name === "sortsys_query",
+        );
+        const permitted = query?.function?.parameters?.properties?.path?.enum;
+        assert.ok(permitted);
+        assert.ok(Object.keys(activity).every((path) => permitted.includes(path)));
+        assert.equal(permitted.includes("projects.files.list"), false);
+        const inputs = {
+          "projects.list": { search: "Stadtpark 782169" },
+          "projects.dailyReports.list": {
+            projectId: activityProject,
+            from: activityDay,
+            to: activityDay,
+          },
+          "regieReports.list": {
+            projectId: activityProject,
+            dayFrom: calendarWeek(activityDay),
+            dayTo: calendarWeek(activityDay),
+          },
+          "deliveryNotes.list": { projectId: activityProject },
+        };
+        return Response.json({
+          choices: [{
+            finish_reason: "tool_calls",
+            message: {
+              role: "assistant",
+              content: null,
+              tool_calls: Object.entries(inputs).map(([path, input], index) => ({
+                id: `site-activity-${index}`,
+                type: "function",
+                function: {
+                  name: "sortsys_query",
+                  arguments: JSON.stringify({ path, input }),
+                },
+              })),
+            },
+          }],
+        });
+      }
       if (user === "LIVE_CHAT_HOLD") { started?.(); await held; return result("Späte Antwort auf einen gelöschten Chat"); }
       if (user === "LIVE_CHAT_LONG") return result("Großer geschützter Chatverlauf. ".repeat(60000));
       if (user === "LIVE_CHAT_SHORT") {
@@ -69,6 +149,52 @@ export async function testLiveChats(raw: Client, business: Client, endpoint: str
   const options = { endpoint, productDriver: driver, openProducts: (client: Client, signal: AbortSignal) => openProtectedProducts(client, signal, driver) };
   const client = createBusinessClient(observed, options);
   try {
+    const { id: projectId } = await required(
+      business.mutate("projects.create", { title: activity["projects.list"] }),
+    );
+    fixture.siteActivity(projectId);
+    await required(
+      business.mutate("projects.dailyReports.create", {
+        projectId,
+        day: activityDay,
+        summary: activity["projects.dailyReports.list"],
+      }),
+    );
+    await required(
+      business.mutate("regieReports.create", {
+        projectId,
+        day: activityDay,
+        summary: activity["regieReports.list"],
+        specialRecords: [{ name: "Anschluss abdichten", amount: 6, unit: "m" }],
+        workHours: [{ day: activityDay, hours: 2.5 }],
+      }),
+    );
+    await required(
+      business.mutate("deliveryNotes.create", {
+        projectId,
+        effectiveTimestamp: new Date(activityDay),
+        comment: activity["deliveryNotes.list"],
+        specialRecords: [
+          { name: "Kalkputz", amount: 12, unit: "Sack", pricePerUnit: null },
+        ],
+      }),
+    );
+    const activityChat = await required(client.mutate("llm.chats.create", {}));
+    const siteActivity = await required(
+      client.mutate("llm.messages.send", {
+        chatId: activityChat.id,
+        content: "LIVE_CHAT_SITE_ACTIVITY",
+      }),
+    );
+    assert.equal(
+      siteActivity.messages.at(-1)?.content,
+      "Baustellenaktivitäten aus allen vier freigegebenen Abfragen gelesen",
+    );
+    assert.ok(requests.every(({ path }) => !Object.hasOwn(activity, path)));
+    for (const expected of Object.values(activity)) {
+      assert.equal(JSON.stringify(requests).includes(expected), false);
+    }
+
     const chat = await required(client.mutate("llm.chats.create", {}));
     let published: () => void = () => {};
     const publication = new Promise<void>(resolve => { published = resolve; });

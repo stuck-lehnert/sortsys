@@ -227,6 +227,9 @@ fn definitions(ticket: &Ticket) -> Vec<Value> {
             if tool["name"] == "sortsys_search" {
                 tool["inputSchema"]["properties"]["resource"]["enum"] = json!(["products"]);
             }
+            if tool["name"] == "sortsys_query" {
+                tool["inputSchema"]["properties"]["path"]["enum"] = json!(ticket.queries);
+            }
             if tool["name"] == "sortsys_propose_change" {
                 tool["inputSchema"]["properties"]["operations"]["items"]["properties"]["path"]["enum"] =
                     json!(ticket.mutations);
@@ -315,6 +318,15 @@ mod tests {
         assert_eq!(
             found["procedures"],
             json!([{"path":"products.list","kind":"query"}])
+        );
+        let tools = definitions(&session.ticket);
+        let query = tools
+            .iter()
+            .find(|tool| tool["name"] == "sortsys_query")
+            .unwrap();
+        assert_eq!(
+            query["inputSchema"]["properties"]["path"]["enum"],
+            json!(["products.list"])
         );
         for path in [
             "zerotrust.keys.get",

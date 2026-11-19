@@ -153,9 +153,19 @@ nicht den gesamten bisherigen Verlauf erneut. Alte große Antworten werden bei
 Bedarf aus dem mitgesendeten Kontext entfernt. Im gespeicherten Verlauf bleiben
 sie erhalten.
 
-Aktuell kann der Chat den geschützten Produktkatalog durchsuchen und Vorschläge
-zum Anlegen, Bearbeiten und Verschlagworten von Produkten vorbereiten. Die
-Webapp prüft einen Vorschlag vor seiner Anzeige gegen das lokale Datenschema.
+Für einen Baustellenrückblick kann der Chat die freigegebenen Projekte,
+Bautagesberichte, Regieberichte und Lieferscheine lesen. Bautagesberichte lassen
+sich nach Tag und Regieberichte nach Berichtswoche abfragen. Bei Lieferscheinen
+grenzt die Abfrage das Projekt ein. Die Webapp prüft vor jeder
+Werkzeugantwort erneut, welche Daten das Konto lesen darf. Das gilt auch für
+Stundensätze, Regiearbeitszeiten und Sonderpostenpreise, die jeweils eigene
+Freigaben haben. Die Werkzeugantworten zu Bautagesberichten enthalten keine
+Fotos oder Dateinamen. Für Projektanhänge gilt die gesonderte Dateifreigabe im
+Chat.
+
+Der Chat kann den geschützten Produktkatalog durchsuchen und Vorschläge zum
+Anlegen, Bearbeiten und Verschlagworten von Produkten vorbereiten. Die Webapp
+prüft einen Vorschlag vor seiner Anzeige gegen das lokale Datenschema.
 Die Werkzeugauswahl folgt den signierten Inhaltsrechten: Katalogsuche,
 Preiszugriff sowie Anlegen und Bearbeiten werden getrennt freigegeben.
 Bei der Annahme eines Vorschlags prüft der Client die aktuellen Rechte erneut.

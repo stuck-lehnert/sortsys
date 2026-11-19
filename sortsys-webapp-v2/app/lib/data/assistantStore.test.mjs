@@ -4,15 +4,94 @@ import { lockCryptoSession } from "../crypto/session";
 import { privateLlmCollection } from "./assistantArea";
 import { readAssistantAccess } from "./assistantStore";
 import { createProtectedChats } from "./chats";
+import {
+  projectChatPaths,
+  projectChatSection,
+  visibleProjectChatResult,
+} from "./chatProjectReads";
 import { importHistory, readSelectedDocuments } from "./imports";
 import { newAssistantId, openPrivateLlm } from "./privateLlm";
 import { PRODUCT_COLLECTION } from "./products";
+import { projectAccessArea } from "./projectScope";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { accessSnapshotFixture } from "./testing/accessSnapshot.mjs";
 
 afterEach(() => lockCryptoSession());
 const signal = () => new AbortController().signal;
 const area = privateLlmCollection("user:1");
+
+test("project chat reads require the current signed module grants and exclude attached photos", async () => {
+  const permitted = [
+    area,
+    projectAccessArea("3", "daily-reports:master-data"),
+    projectAccessArea("3", "regie-reports:master-data"),
+    projectAccessArea("3", "delivery-notes:master-data"),
+    projectAccessArea("3", "attachment"),
+  ];
+  const domains = new Set(permitted.map(({ domain }) => domain));
+  const fixture = await protectedTenant(
+    [
+      ...permitted,
+      projectAccessArea("3", "master-data"),
+      projectAccessArea("4", "daily-reports:master-data"),
+      projectAccessArea("3", "daily-reports:calculation"),
+      projectAccessArea("3", "regie-reports:personnel"),
+      projectAccessArea("3", "delivery-notes:procurement"),
+    ],
+    ({ domain }) => domains.has(domain) ? ["read", "create", "update"] : [],
+  );
+  fixture.state.roles = [":admin"];
+  const access = await readAssistantAccess(fixture.client, signal(), "inventory");
+  expect(projectChatPaths(access).sort()).toEqual([
+    "deliveryNotes.get",
+    "deliveryNotes.list",
+    "projects.dailyReports.get",
+    "projects.dailyReports.list",
+    "regieReports.get",
+    "regieReports.list",
+  ]);
+
+  const report = {
+    projectId: "3",
+    summary: "Fenster montiert",
+    costRevision: "1",
+    workHours: [{ hours: 4, costPerHour: 76 }],
+    photos: [{ fileName: "Baustellenfoto.jpg" }],
+  };
+  const reports = projectChatSection("projects.dailyReports.list");
+  const otherProject = { ...report, projectId: "4" };
+  expect(visibleProjectChatResult(reports, [report, otherProject], access)).toEqual([
+    {
+      projectId: "3",
+      summary: "Fenster montiert",
+      workHours: [{ hours: 4, costPerHour: null }],
+      photos: [],
+    },
+  ]);
+  expect(() => visibleProjectChatResult(reports, otherProject, access)).toThrow();
+
+  const regieReport = {
+    projectId: "3",
+    hoursRevision: "1",
+    workHoursAvailable: true,
+    workHours: [{ hours: 4 }],
+  };
+  expect(
+    visibleProjectChatResult(projectChatSection("regieReports.get"), regieReport, access),
+  ).toEqual({ projectId: "3", workHoursAvailable: false, workHours: [] });
+
+  const delivery = {
+    projectId: "3",
+    priceRevision: "1",
+    specialRecords: [{ amount: 4, pricePerUnit: 67 }],
+  };
+  expect(
+    visibleProjectChatResult(projectChatSection("deliveryNotes.get"), delivery, access),
+  ).toEqual({
+    projectId: "3",
+    specialRecords: [{ amount: 4, pricePerUnit: null }],
+  });
+});
 
 test("signed personal permissions open and update chat history without technical roles", async () => {
   const fixture = await protectedTenant([area]);

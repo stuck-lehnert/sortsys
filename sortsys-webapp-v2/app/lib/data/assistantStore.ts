@@ -48,12 +48,16 @@ export async function openAssistantCollection(
 export async function readAssistantAccess(
   client: Client,
   signal: AbortSignal,
-  domains: readonly string[] = [],
+  domains: readonly string[] | "inventory" = [],
 ) {
   const session = assistantSession(client, signal);
-  const context = await verifiedAccessContext(client, signal, {
-    domains: [...new Set([session.area.domain, ...domains])],
-  });
+  const context = await verifiedAccessContext(
+    client,
+    signal,
+    domains === "inventory"
+      ? {}
+      : { domains: [...new Set([session.area.domain, ...domains])] },
+  );
   session.live();
   const privateArea = context.domains.find(
     (domain) => domain.id === session.area.domain,
@@ -68,5 +72,5 @@ export async function readAssistantAccess(
     !canUseAssistant(context.subject, access.allows)
   )
     throw new InvalidProtectedData();
-  return { ...session, allows: access.allows };
+  return { ...session, allows: access.allows, domains: context.domains };
 }
