@@ -15,7 +15,9 @@ const artifacts = join(
   "own-planning",
 );
 await mkdir(artifacts, { recursive: true });
-const directory = new URL("../../build/client", import.meta.url).pathname;
+const directory =
+  process.env.SORTSYS_E2E_APPLICATION_BUILD ??
+  new URL("../../build/client", import.meta.url).pathname;
 const servers = [
   await applicationServer(directory, endpoints[0]),
   await applicationServer(directory, endpoints[1]),
@@ -36,10 +38,11 @@ for (const signal of ["SIGINT", "SIGTERM"])
     void close().finally(() => process.exit(signal === "SIGINT" ? 130 : 143));
   });
 
-async function pageFor(name) {
+async function pageFor(name, timezoneId = "Europe/Berlin") {
   const context = await browser.newContext({
     viewport: { width: 1440, height: 1000 },
     locale: "de-DE",
+    timezoneId,
   });
   contexts.push(context);
   await context.tracing.start({
@@ -60,6 +63,8 @@ async function pageFor(name) {
       fixture.changedNote,
       fixture.hiddenNote,
       fixture.project.title,
+      fixture.closure.reason,
+      fixture.closure.note,
     ])
       if (wire.includes(value)) leaks.push({ name, path: url.pathname, value });
   });
@@ -187,6 +192,50 @@ try {
     path: join(artifacts, "member-after-deletion.png"),
     fullPage: true,
   });
+
+  const firstClosureDay = `/deployments?view=day&day=${fixture.closure.from}`;
+  const lastClosureDay = `/deployments?view=day&day=${fixture.closure.to}`;
+  const closureButton = (page) =>
+    page.getByRole("button").filter({ hasText: fixture.closure.reason });
+  await owner.goto(servers[0].origin + firstClosureDay);
+  await member.goto(servers[1].origin + firstClosureDay);
+  const closure = closureButton(owner);
+  await expect(closure).toBeVisible();
+  await expect(
+    member.getByRole("region", { name: "Einsatzplanung", exact: true }),
+  ).toBeVisible();
+  await expect(member.getByText(fixture.closure.reason)).toHaveCount(0);
+  await expect(
+    member.getByRole("button", { name: "Baustelle sperren", exact: true }),
+  ).toHaveCount(0);
+
+  const west = await pageFor("owner-west", "America/Los_Angeles");
+  await login(west, servers[1].origin, fixture.owner);
+  await west.goto(servers[1].origin + lastClosureDay);
+  await expect(closureButton(west)).toBeVisible();
+
+  await closure.click();
+  dialog = owner.getByRole("dialog");
+  await expect(dialog.getByRole("textbox", { name: /^Grund/ })).toHaveValue(
+    fixture.closure.reason,
+  );
+  await expect(
+    dialog.getByRole("textbox", { name: "Kommentar", exact: true }),
+  ).toHaveValue(fixture.closure.note);
+  await expect(dialog.getByLabel(/^Von/)).toHaveValue(fixture.closure.from);
+  await expect(dialog.getByLabel(/^Bis/)).toHaveValue(fixture.closure.to);
+  await owner.screenshot({ path: join(artifacts, "restored-site-closure.png") });
+  await dialog.getByRole("button", { name: "Sperre löschen", exact: true }).click();
+  await expect(dialog).toBeHidden();
+  await expect(closure).toHaveCount(0);
+  await expect(closureButton(west)).toHaveCount(0);
+  await owner.reload();
+  await expect(
+    owner.getByRole("region", { name: "Einsatzplanung", exact: true }),
+  ).toBeVisible();
+  await expect(closure).toHaveCount(0);
+  assert.deepEqual(errors, []);
+  assert.deepEqual(leaks, []);
   await writeFile(
     join(artifacts, "results.json"),
     JSON.stringify(
@@ -198,6 +247,10 @@ try {
         crossInstanceUpdate: true,
         crossInstanceDeletion: true,
         reload: true,
+        recoveredSiteClosureVisibleToOwner: true,
+        recoveredSiteClosureHiddenFromMember: true,
+        recoveredSiteClosureDeleted: true,
+        recoveryCalendar: ["Europe/Berlin", "America/Los_Angeles"],
         plaintextLeaks: leaks,
         pageErrors: errors,
       },

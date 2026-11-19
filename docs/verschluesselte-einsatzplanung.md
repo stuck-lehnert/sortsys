@@ -72,10 +72,11 @@ Drei-Sekunden-Abgleich entfällt. Vollständige Listen entfernen auch Einträge,
 die inzwischen gelöscht oder aus dem angezeigten Zeitraum verschoben wurden.
 
 Einsätze verwenden Zeitpunkte mit Zeitzone und ein ausgeschlossenes Ende.
-Baustellensperren verwenden einschließlich ihres Endtags reine Kalendertage. Das
-Formular übergibt diese Tage als Datumszeichenfolge, damit der Wechsel zur
-Sommerzeit keinen Tag verschiebt. Die Bestandsübernahme erhält die gespeicherten
-Zeitpunkte einschließlich ihrer Mikrosekunden.
+Baustellensperren und Abwesenheiten gelten für volle Kalendertage einschließlich
+des Endtags. Formular und Abfrage übergeben diese Tage als Datumszeichenfolgen.
+Die Planungsansicht zeigt sie am selben Kalendertag in der jeweiligen Zeitzone
+an. Die Bestandsübernahme erhält die gespeicherten Zeitpunkte einschließlich
+ihrer Mikrosekunden.
 
 ## Prüfstand und offene Abläufe
 
@@ -95,7 +96,7 @@ verwenden kein WebSocket; sie laden den Stand der anderen Instanz ausdrücklich
 neu. Der zusätzliche Test der Eigenansicht prüft inzwischen auch die Recovery.
 
 Der [native Test der Eigenansicht](../sortsys-webapp-v2/scripts/test-native-planning-recipients.ts)
-verwendet zwei API-Instanzen im selben Rust-Testprozess und zwei Benutzerkonten.
+verwendet zwei getrennte API-Prozesse und zwei Benutzerkonten.
 Er prüft Einsätze vor der Einladung, eigene Inhalte ohne Bereichsschlüssel,
 abgewiesene Fremdzugriffe und Schreibversuche sowie fehlende oder manipulierte
 Empfängernachweise. Auch ausdrückliche Lesesperren, Signaturschlüsselwechsel,
@@ -103,19 +104,23 @@ Baustellenwechsel, Neuzuweisung und Löschung werden geprüft. Änderungen der e
 API erreichen den gewöhnlichen Planungsstream über den WebSocket der zweiten.
 
 Derselbe Test führt zwei Recoveries mit der jeweils aktuellen Phrase durch.
-Einsätze und Benutzerkennungen bleiben erhalten. Alte Phrasen, Sitzungen und
-Passwörter werden abgewiesen; die alten privaten Schlüssel können die erneuerten
-Empfängerpakete nicht öffnen. Eine erneute Einladungsfreigabe stellt die
-Eigenansicht ohne Bereichsschlüssel wieder her.
+Einsätze, Benutzerkennungen und eine zwischen den Recoveries geänderte
+Baustellensperre bleiben erhalten. Der Test prüft, dass alte Phrasen, Sitzungen
+und Passwörter abgewiesen werden und alte private Schlüssel die erneuerten
+Empfängerpakete nicht öffnen können. Eine erneute Einladungsfreigabe stellt die
+Eigenansicht ohne Bereichsschlüssel wieder her. Die Baustellensperre bleibt für
+dieses Konto gesperrt.
 
 Mit `SORTSYS_NATIVE_BROWSER=1` prüft dieser Ablauf außerdem die fertig gebaute
-Webapp nach der zweiten Recovery in zwei getrennten Chromium-Sitzungen. Die
+Webapp nach der zweiten Recovery in getrennten Chromium-Sitzungen. Die
 Mitarbeitersicht zeigt den eigenen Einsatz mit Projektbezeichnung, verbirgt
 fremde Einsätze und bietet keine Planungsaktionen an. Änderungen und Löschungen
-aus der anderen Sitzung werden ohne manuelles Neuladen sichtbar. Abschließend
-prüft der Test einen Seitenreload und sucht im HTTP-Verkehr nach unverschlüsselten
-Testinhalten. Screenshots, Traces und Ergebnisse liegen im ausgegebenen
-Testverzeichnis unter `browser-artifacts/own-planning`.
+aus der anderen Sitzung werden ohne manuelles Neuladen sichtbar. Das berechtigte
+Konto sieht die wiederhergestellte Baustellensperre in Berlin am ersten Tag und
+in Los Angeles am letzten Tag. Nach dem Löschen über die erste API verschwindet
+sie auch in der zweiten Sitzung. Der Test prüft zudem einen Seitenreload und
+sucht im HTTP-Verkehr nach unverschlüsselten Testinhalten. Screenshots, Traces
+und Ergebnisse liegen im Testverzeichnis unter `browser-artifacts/own-planning`.
 
 Eine Bereichsfreigabe öffnet weiterhin alle Einsätze dieser Baustelle. Persönliche
 [Abwesenheiten samt Urlaubskontingent und Genehmigung](abwesenheiten-protokoll.md)

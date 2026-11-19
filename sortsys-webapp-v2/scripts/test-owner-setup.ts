@@ -382,10 +382,12 @@ try {
     if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
       const { exercisePlanningBrowser } =
         await import("./test-planning-browser");
-      await exercisePlanningBrowser(owner, recovered.owner, {
-        ...scenario,
-        member: recovered.member,
-      });
+      await exercisePlanningBrowser(
+        owner,
+        recovered.owner,
+        { ...scenario, member: recovered.member },
+        recovered.closure,
+      );
     }
   } else if (mode === "owner-print-templates") {
     const { initializeTenant } =

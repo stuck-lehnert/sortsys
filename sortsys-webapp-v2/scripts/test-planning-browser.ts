@@ -8,6 +8,7 @@ import { createBusinessClient } from "../app/lib/data/businessClient";
 import { required } from "../app/lib/data/protectedObjects";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import type { PlanningScenario } from "./test-native-planning-recipients";
+import type { RecoveredSiteClosure } from "./test-native-planning-recovery";
 
 /** Prepare only through normal client encryption. The browser then edits and
  * deletes its fixture through the actual production forms and both API peers. */
@@ -15,6 +16,7 @@ export async function exercisePlanningBrowser(
   owner: Client,
   draft: Pick<OwnerDraft, "username" | "password" | "userId">,
   scenario: PlanningScenario,
+  closure: RecoveredSiteClosure,
 ) {
   assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
   assert.equal(process.env.SORTSYS_NATIVE_BROWSER, "1");
@@ -55,6 +57,7 @@ export async function exercisePlanningBrowser(
         note,
         changedNote,
         hiddenNote,
+        closure,
       }),
       { mode: 0o600 },
     );
@@ -93,6 +96,14 @@ export async function exercisePlanningBrowser(
       remaining.some((assignment) => assignment.id === own.id),
       false,
     );
+    const closures = await required(
+      business.query("projects.unavailability.list", {
+        projectId: scenario.project.id,
+        from: closure.from,
+        to: closure.to,
+      }),
+    );
+    assert.equal(closures.some((period) => period.id === closure.id), false);
     console.log(
       "Own planning browser: production SPA, private visibility, disabled editing and cross-instance update/deletion verified",
     );

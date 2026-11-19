@@ -295,19 +295,19 @@ verwenden zusätzliche Schlüsselpakete je Datensatzrevision; dafür wird kein
 Bereichsschlüssel verteilt. Ein weiterer nativer Test prüft zwei Benutzerkonten,
 die Einladungsfreigabe bestehender Einsätze, verweigerte Fremdzugriffe,
 ausdrückliche Lesesperren und den Signaturschlüsselwechsel. Änderungen über die
-erste API erreichen die Eigenansicht am WebSocket der zweiten. Die beiden
-Instanzen dieses Tests laufen in einem Rust-Prozess. Zwei Recoveries erhalten
-Einsätze und Benutzerkennungen; alte Zugänge, Phrasen und Schlüssel werden
-abgewiesen. Nach erneuter Einladung ist die Eigenansicht wieder lesbar. Der
-zugehörige Browsertest prüft die fertige Webapp nach der zweiten Recovery mit
-zwei getrennten Sitzungen: eigene und verborgene fremde Einsätze, fehlende
-Planungsaktionen, automatische Aktualisierung, Löschung und Neuladen. Ohne
+erste API erreichen die Eigenansicht am WebSocket des zweiten API-Prozesses.
+Zwei Recoveries erhalten Einsätze, Benutzerkennungen und Baustellensperren.
+Alte Zugänge, Phrasen und Schlüssel werden abgewiesen. Nach erneuter Einladung
+ist die Eigenansicht wieder lesbar. Der Browsertest prüft danach die Sichtbarkeit
+eigener Einsätze, fehlende Planungsaktionen für das Mitglied sowie automatische
+Aktualisierung, Löschung und Neuladen. Das berechtigte Konto sieht die
+wiederhergestellte Sperre einschließlich Anfangs- und Endtag. Dafür prüft der
+Test getrennte Sitzungen in den Zeitzonen Berlin und Los Angeles. Ohne
 Projektstammdaten verwendet die Eigenansicht eine verschlüsselte Kopie der
 Projektbezeichnung, die reine Umbenennungen noch nicht nachführt. Persönliche
 Abwesenheiten kommen aus dem eigenen verschlüsselten Adapter. Atomare
 Baustellenwechsel, Wiederholungen, veraltete Formulare und verlorene oder
-falsche Speicherantworten sind über zwei echte API-Instanzen geprüft. Die
-Recovery der Baustellensperren ist dabei noch nicht gesondert geprüft. Siehe
+falsche Speicherantworten sind über zwei echte API-Instanzen geprüft. Siehe
 [Einsatzplanung](verschluesselte-einsatzplanung.md).
 
 ## Katalog, Kontakte und Kosten

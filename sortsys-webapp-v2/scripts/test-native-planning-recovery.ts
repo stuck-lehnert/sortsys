@@ -26,8 +26,17 @@ import {
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { readOwnAssignments } from "../app/lib/data/planningRecipients";
 import { required } from "../app/lib/data/protectedObjects";
+import { scheduleObject } from "../app/lib/data/projectScheduleData";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import type { PlanningScenario } from "./test-native-planning-recipients";
+
+export type RecoveredSiteClosure = {
+  id: string;
+  from: string;
+  to: string;
+  reason: string;
+  note: string;
+};
 
 function sourceContext(envelope: EncryptedObject) {
   const {
@@ -73,7 +82,66 @@ export async function exercisePlanningRecovery(
       note,
     }),
   );
+  const initialClosure = {
+    projectId: scenario.project.id,
+    from: "2026-11-21",
+    to: "2026-11-22",
+    reason: "Gesperrter Hauptzugang 741852",
+    note: "Gerüst wird abgebaut 741852",
+  };
+  const createdClosure = await required(
+    business.mutate("projects.unavailability.create", initialClosure),
+  );
   business.dispose();
+  const closure: RecoveredSiteClosure = {
+    id: createdClosure.id,
+    from: initialClosure.from,
+    to: initialClosure.to,
+    reason: initialClosure.reason,
+    note: initialClosure.note,
+  };
+  const closureQuery = {
+    projectId: scenario.project.id,
+    from: "2026-11-20",
+    to: "2026-11-24",
+  };
+  async function assertClosureHidden() {
+    const memberBusiness = createBusinessClient(member, {
+      productDriver: duckDriver,
+    });
+    try {
+      assert.deepEqual(
+        await required(
+          memberBusiness.query("projects.unavailability.list", {
+            from: closureQuery.from,
+            to: closureQuery.to,
+          }),
+        ),
+        [],
+      );
+      const [scopedPeriods, scopeError] = await memberBusiness.query(
+        "projects.unavailability.list",
+        closureQuery,
+      );
+      assert.equal(scopedPeriods, null);
+      assert.ok(scopeError);
+      const [changed, changeError] = await memberBusiness.mutate(
+        "projects.unavailability.update",
+        { id: closure.id, data: { note: "Unauthorized change" } },
+      );
+      assert.equal(changed, null);
+      assert.ok(changeError);
+      const [ciphertext, readError] = await member.query(
+        "zerotrust.objects.get",
+        { id: scheduleObject(scenario.project.id, "unavailability", closure.id) },
+        { strategy: "network-only" },
+      );
+      assert.equal(ciphertext, null);
+      assert.equal(readError?.code, "FORBIDDEN");
+    } finally {
+      memberBusiness.dispose();
+    }
+  }
   let phrase = initialPhrase;
   let memberPassword = scenario.member.password;
   let generation = "1";
@@ -88,6 +156,7 @@ export async function exercisePlanningRecovery(
     const previous = await readOwnAssignments(member, signal);
     assert.equal(previous.length, 1);
     assert.equal(previous[0]!.value.row.values.note, note);
+    await assertClosureHidden();
     const oldPage = await required(
       member.query(
         "zerotrust.objects.shared",
@@ -178,6 +247,30 @@ export async function exercisePlanningRecovery(
         retained.find((row) => row.id === assignment.id)?.note,
         note,
       );
+      const [period] = await required(
+        ownerBusiness.query("projects.unavailability.list", closureQuery),
+      );
+      assert.ok(period);
+      assert.equal(period.id, closure.id);
+      assert.equal(period.projectId, scenario.project.id);
+      assert.equal(period.createdByUserId, ownerSubject.slice(5));
+      assert.equal(period.from.toISOString().slice(0, 10), closure.from);
+      assert.equal(period.to.toISOString().slice(0, 10), closure.to);
+      assert.equal(period.reason, closure.reason);
+      assert.equal(period.note, closure.note);
+      if (round === 1) {
+        const to = "2026-11-23";
+        const note = "Gerüstabbau verlängert 741852";
+        await required(
+          ownerBusiness.mutate("projects.unavailability.update", {
+            id: closure.id,
+            expectedRevision: period.revision,
+            data: { to, note },
+          }),
+        );
+        closure.to = to;
+        closure.note = note;
+      }
     } finally {
       ownerBusiness.dispose();
     }
@@ -222,6 +315,7 @@ export async function exercisePlanningRecovery(
     assert.equal(restored.length, 1);
     assert.equal(restored[0]!.value.row.values.note, note);
     assert.equal(restored[0]!.value.projectTitle, scenario.project.title);
+    await assertClosureHidden();
     const fresh = await required(
       member.query(
         "zerotrust.objects.shared",
@@ -279,7 +373,7 @@ export async function exercisePlanningRecovery(
     memberPassword = nextMemberPassword;
   }
   console.log(
-    "Own planning recovery: two phrase-only recoveries retain assignments and account IDs, revoke old phrases/sessions/keys, and regrant exact record keys without parent access",
+    "Planning recovery: two phrase-only recoveries retain assignments and a changed site closure, revoke old phrases and sessions, and restore only the exact assignment keys to the member.",
   );
   const administrator = unlockedAccount()!;
   return {
@@ -290,5 +384,6 @@ export async function exercisePlanningRecovery(
       userId: administrator.vault.subject.slice(5),
     },
     member: { ...scenario.member, password: memberPassword },
+    closure,
   };
 }

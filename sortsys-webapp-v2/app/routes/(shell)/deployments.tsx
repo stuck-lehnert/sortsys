@@ -176,42 +176,44 @@ export default function DeploymentsPage() {
     () => addDays(range.endExclusive, -1),
     [range.endExclusive],
   );
+  const firstCalendarDay = toDateInputValue(range.start);
+  const lastCalendarDay = toDateInputValue(rangeEndInclusive);
 
-  const [vacations, vacationsError] = useClientStream<
+  const [vacationRows, vacationsError] = useClientStream<
     DeploymentVacation[] | null,
     any
   >(() => {
     return client.streamQuery(
       "users.vacations.list",
       {
-        from: range.start,
-        to: rangeEndInclusive,
+        from: firstCalendarDay,
+        to: lastCalendarDay,
         includeDenied: false,
       },
       { strategy: "cache-first" },
     );
-  }, [
-    range.start.getTime(),
-    rangeEndInclusive.getTime(),
-    vacationReloadCounter,
-  ]);
-  const [projectUnavailability, projectUnavailabilityError] = useClientStream<
+  }, [firstCalendarDay, lastCalendarDay, vacationReloadCounter]);
+  const [unavailabilityRows, projectUnavailabilityError] = useClientStream<
     ProjectUnavailabilityPeriod[] | null,
     any
   >(() => {
     return client.streamQuery(
       "projects.unavailability.list",
       {
-        from: range.start,
-        to: rangeEndInclusive,
+        from: firstCalendarDay,
+        to: lastCalendarDay,
       },
       { strategy: "cache-first" },
     );
-  }, [
-    range.start.getTime(),
-    rangeEndInclusive.getTime(),
-    unavailabilityReloadCounter,
-  ]);
+  }, [firstCalendarDay, lastCalendarDay, unavailabilityReloadCounter]);
+  const vacations = useMemo(
+    () => vacationRows?.map(localCalendarPeriod) ?? null,
+    [vacationRows],
+  );
+  const projectUnavailability = useMemo(
+    () => unavailabilityRows?.map(localCalendarPeriod) ?? null,
+    [unavailabilityRows],
+  );
 
   useEffect(() => {
     setDeployments([]);
@@ -2143,6 +2145,18 @@ function combineDateAndTime(
 
   date.setHours(hours, minutes, 0, 0);
   return date;
+}
+
+/** All-day records arrive as UTC dates. The planning grid and forms use
+ * local calendar days, while deployment start/end times remain instants. */
+function localCalendarPeriod<T extends { from: Date; to: Date }>(period: T): T {
+  function localDay(utc: Date): Date {
+    const date = new Date(0);
+    date.setFullYear(utc.getUTCFullYear(), utc.getUTCMonth(), utc.getUTCDate());
+    date.setHours(0, 0, 0, 0);
+    return date;
+  }
+  return { ...period, from: localDay(period.from), to: localDay(period.to) };
 }
 
 function periodOverlapsWindow(
