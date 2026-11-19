@@ -141,6 +141,7 @@ async fn assignments(context: &mut MetadataContext) -> RpcResult<()> {
 
 async fn responsible_bookings(context: &mut MetadataContext) -> RpcResult<()> {
     let collection = registry::origin_collection(context.security.root.generation);
+    let generation = context.security.root.generation.to_string();
     let mut after = None;
     loop {
         let page = context
@@ -152,21 +153,21 @@ async fn responsible_bookings(context: &mut MetadataContext) -> RpcResult<()> {
             if origin.facet != Facet::MasterData {
                 continue;
             }
-            let Some(access) = origin.access.as_ref() else {
+            if origin.access.is_none() && origin.returned.is_none() {
                 continue;
+            }
+            if origin.id != row.record.key
+                || origin.tenant != context.auth.tenant
+                || origin.capability.generation != generation
+            {
+                return Err(invalid());
+            }
+            origin.verify(&context.security.authority)?;
+            let Some(access) = origin.access.as_ref() else {
+                return Err(invalid());
             };
             let object = format!("{}:master-data:record", origin.scope);
             let envelope = record(context, &object).await?;
-            access.verify(
-                &sortsys_zerotrust::resource_access::ResourceAccessContext {
-                    tenant: &context.auth.tenant,
-                    resource: &origin.scope,
-                    object: &object,
-                    generation: &origin.capability.generation,
-                    binding: &origin.resource_binding()?,
-                },
-                &context.security.authority,
-            )?;
             if envelope.revision != access.revision
                 || envelope.signature != access.packet_signature
                 || envelope.scope != origin.scope

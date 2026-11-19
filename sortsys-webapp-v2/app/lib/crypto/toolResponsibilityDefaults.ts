@@ -123,9 +123,12 @@ export async function synchronizeToolResponsibilityDefaults(
             if (!(error instanceof InvalidProtectedData)) throw error;
           }
         }
-        const active = row.ended_at === null && responsible !== null;
-        bookings.push({ scope: request.area.scope, responsible, active });
         const origin = origins.get(request.area.domain)!;
+        const active =
+          row.ended_at === null &&
+          responsible !== null &&
+          origin.returned === undefined;
+        bookings.push({ scope: request.area.scope, responsible, active });
         if (active && known && !origin.access) {
           // An unchanged payload gets a new signed revision that attests its
           // actual state. The policy publication guards this exact source.

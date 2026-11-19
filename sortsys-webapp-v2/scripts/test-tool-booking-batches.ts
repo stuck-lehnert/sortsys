@@ -6,7 +6,9 @@ import {
   immutableObject,
   openBox,
   openResourceCommandSigner,
+  signResourceCommand,
   sized,
+  TOOL_RETURN_PURPOSE,
   type Action,
 } from "@sortsys/zerotrust/sortsys";
 import { publicId, newProductRowId } from "../app/lib/data/products";
@@ -78,6 +80,13 @@ async function checkReturnBinding(
     const checkedUsage = TOOL_USAGE_MODEL.decode(usageObject.value, usageId, projection);
     assert.equal(checkedPointer.returnKey, publicKey);
     assert.equal(checkedUsage.returnKey, publicKey);
+    const origin = await required(peer.query("zerotrust.creations.origin", {
+      domain: source.domain,
+    }, { strategy: "network-only" }));
+    assert.ok(origin?.access);
+    const commitment = await digest(sized(publicKey, 32));
+    assert.equal(origin.access.commandBinding, commitment);
+    assert.equal(origin.access.active, true);
     const member = unlockedAccount()!;
     const box = stored.returnKey.recipient;
     const copy = await openBox(
@@ -95,18 +104,39 @@ async function checkReturnBinding(
     );
     try {
       const signingSeed = base64(copy);
-      await openResourceCommandSigner({ verificationKey: publicKey, signingSeed });
+      const signer = await openResourceCommandSigner({
+        verificationKey: publicKey,
+        signingSeed,
+      });
       for (const value of [opened.value, pointerObject.value, usageObject.value]) {
         assert.ok(!JSON.stringify(value).includes(signingSeed));
       }
+      const returned = await signResourceCommand({
+        tenant: member.tenant,
+        purpose: TOOL_RETURN_PURPOSE,
+        revision: opened.envelope.revision,
+        issuedAt: Date.now().toString(),
+        verificationKey: publicKey,
+      }, signer);
+      const definition = await required(owner.query("zerotrust.domains.get", {
+        domain: source.domain,
+        generation: opened.envelope.generation,
+      }, { strategy: "network-only" }));
+      assert.ok(definition.creation);
+      const [updated, error] = await peer.mutate("zerotrust.domains.put", {
+        ...definition,
+        creation: { ...origin, returned },
+      });
+      assert.equal(updated, null);
+      assert.ok(error instanceof RpcClientError);
+      assert.equal(error.code, "BAD_REQUEST");
+      const current = await required(owner.query("zerotrust.creations.origin", {
+        domain: source.domain,
+      }, { strategy: "network-only" }));
+      assert.deepEqual(current, origin);
     } finally {
       copy.fill(0);
     }
-    const origin = await required(peer.query("zerotrust.creations.origin", {
-      domain: source.domain,
-    }, { strategy: "network-only" }));
-    const commitment = await digest(sized(publicKey, 32));
-    assert.equal(origin?.access?.commandBinding, commitment);
 
     // A valid author and signature cannot replace or remove a committed key.
     const prepare = await prepareToolReturnKeys(

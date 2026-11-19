@@ -9,6 +9,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use sortsys_zerotrust::resource_access::{ResourceCommand, ResourceCommandContext};
 use std::{
     collections::HashSet,
     sync::{Mutex, OnceLock},
@@ -26,6 +27,7 @@ pub(super) const COMMERCIAL_FACETS: [Facet; 9] = [
     Facet::Billing,
     Facet::Attachment,
 ];
+pub(super) const TOOL_RETURN_PURPOSE: &str = "tool-return";
 
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -89,6 +91,9 @@ pub(super) struct CreationOrigin {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub access: Option<sortsys_zerotrust::resource_access::ResourceAccessState>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub returned: Option<ResourceCommand>,
 }
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -131,6 +136,7 @@ impl CreationRenewalInput {
                 || origin.capability.signature != master.capability.signature
                 || origin.assignee.is_some()
                 || origin.access.is_some()
+                || origin.returned.is_some()
                 || origin.parent.is_some()
             {
                 return Err(invalid());
@@ -164,6 +170,7 @@ impl CreationParent {
             parent: None,
             assignee: None,
             access: None,
+            returned: None,
         }
     }
 }
@@ -325,6 +332,25 @@ impl CreationOrigin {
                 authority,
             )?;
         }
+        if let Some(returned) = &self.returned {
+            let access = self.access.as_ref().ok_or_else(invalid)?;
+            let binding = access.command_binding.as_deref().ok_or_else(invalid)?;
+            let command_revision = revision(&returned.revision)?;
+            let access_revision = revision(&access.revision)?;
+            let valid_revision = if access.active {
+                command_revision == access_revision
+            } else {
+                command_revision < access_revision
+            };
+            if !valid_revision {
+                return Err(invalid());
+            }
+            returned.verify(&ResourceCommandContext {
+                tenant: &self.tenant,
+                purpose: TOOL_RETURN_PURPOSE,
+                binding,
+            })?;
+        }
         let mut hash = Sha256::new();
         hash.update(authority);
         hash.update(&body);
@@ -371,7 +397,7 @@ impl CreationOrigin {
             })
             .collect();
         if let Some(assignee) = &self.assignee
-            && self.access.as_ref().is_some_and(|access| access.active)
+            && self.is_active_booking()
         {
             rules.push(Rule {
                 origin: None,
@@ -389,6 +415,9 @@ impl CreationOrigin {
             .chain(&self.capability.readers)
             .chain(self.assignee.iter())
             .collect()
+    }
+    pub fn is_active_booking(&self) -> bool {
+        self.access.as_ref().is_some_and(|access| access.active) && self.returned.is_none()
     }
     pub fn assignment_binding(&self) -> RpcResult<String> {
         let assignee = self.assignee.as_ref().ok_or_else(invalid)?;
@@ -421,7 +450,7 @@ impl CreationOrigin {
     pub fn active_booking_rules(&self, policy: &super::wire::SignedPolicy) -> Vec<Rule> {
         if self.capability.namespace != "tool-tracking"
             || !matches!(self.facet, Facet::MasterData | Facet::Scope)
-            || !self.access.as_ref().is_some_and(|access| access.active)
+            || !self.is_active_booking()
         {
             return Vec::new();
         }
@@ -631,6 +660,44 @@ mod tests {
                 format!("create:{}", origin.capability.namespace)
             );
         }
+    }
+
+    #[test]
+    fn browser_tool_return_only_ends_the_derived_booking_grants() {
+        let source: Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/zerotrust-tool-return.json"
+        ))
+        .unwrap();
+        let mut origin: CreationOrigin = serde_json::from_value(source["origin"].clone()).unwrap();
+        let authority = sized::<32>(source["authority"].as_str().unwrap()).unwrap();
+        let active = serde_json::from_value(source["active"].clone()).unwrap();
+        let closed = serde_json::from_value(source["closed"].clone()).unwrap();
+        let returned: ResourceCommand = serde_json::from_value(source["returned"].clone()).unwrap();
+        origin.access = Some(active);
+        origin.verify(&authority).unwrap();
+        assert!(origin.is_active_booking());
+        let member = origin.assignee.as_ref().unwrap().user.clone();
+        assert!(origin.rules().iter().any(|rule| rule.subject == member));
+
+        let mut unbound = origin.clone();
+        unbound.access = None;
+        unbound.returned = Some(returned.clone());
+        assert!(unbound.verify(&authority).is_err());
+
+        origin.returned = Some(returned);
+        origin.verify(&authority).unwrap();
+        assert!(!origin.is_active_booking());
+        assert!(!origin.rules().iter().any(|rule| rule.subject == member));
+        assert!(origin.rules().iter().any(|rule| {
+            rule.subject == origin.capability.creator.user && rule.actions.contains(&Action::Update)
+        }));
+        let mut substituted = origin.clone();
+        substituted.returned.as_mut().unwrap().issued_at = "1795046400001".into();
+        assert!(substituted.verify(&authority).is_err());
+
+        origin.access = Some(closed);
+        origin.verify(&authority).unwrap();
+        assert!(!origin.is_active_booking());
     }
     use super::*;
     use crate::zerotrust::objects::DomainDefinition;

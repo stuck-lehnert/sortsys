@@ -1,0 +1,92 @@
+{
+  "notice": "Öffentlicher Browser-Testvektor für eine Werkzeugrückgabe. Enthält keine privaten Schlüssel.",
+  "authority": "-rcuwvgiqc0W176ZG4RSarbXcMwDWL25PlGNadsK6Sk",
+  "origin": {
+    "tenant": "test",
+    "id": "tool-tracking:abc:master-data",
+    "scope": "tool-tracking:abc",
+    "facet": "master-data",
+    "capability": {
+      "tenant": "test",
+      "id": "create_test",
+      "generation": "1",
+      "namespace": "tool-tracking",
+      "creator": {
+        "tenant": "test",
+        "generation": "1",
+        "user": "user:2",
+        "encryptionKey": "FLIYLtjeBJW8bQu4fqgHWvnty5rO9cEGlXNm1BshzRE",
+        "signingKey": "rPSSgCssBv3Y4vJ6ztqs_TxBW9IfcqtWU90VOSgHao8",
+        "signature": "jHKfUXQhDQ-H_WjAxPLjP5JUI2owu9k9DGGro6BkutOZIfn8TTwFaR6pn_KiOF4Q8cT7KV26SfrSBwSJJHh_AA"
+      },
+      "readers": [
+        {
+          "tenant": "test",
+          "generation": "1",
+          "user": "user:1",
+          "encryptionKey": "d8sCb6ZfN8OgnGm_nlRtr7982pGUwZx1RoP2bXG74AY",
+          "signingKey": "j4emERfZcjMGT75NhN2niAROcvopjXBJqM0mXKm0m34",
+          "signature": "B3U96t0PAruLOa-zXOoV8clQhUgF-ADIgTVae-ybkRg9CvgmpWoG0YsFP5oIHbtSKzmQRJs3GgfxK_VZ9pzyCQ"
+        }
+      ],
+      "signature": "Za4B6ro9OZj-moSXXmPrXK8z8NpSZZwW3Bxy4dz8UUn8FemBG7WspZZEEmy0gP-rk-dGXyxCL00AzlYimGx_Cw"
+    },
+    "signature": "wy0wo_X5H8SHyEDPg2y2LDclm5rZoRy1_YsGD5r3lmqSwwY8hTNWgd7F5vnCGn3VvT0mxrUwI3851-hI0qdMAw",
+    "assignee": {
+      "tenant": "test",
+      "generation": "1",
+      "user": "user:3",
+      "encryptionKey": "JUxyZorl6EkQeTyoaddnswu7Kth9inoyAYcZ7WviMBc",
+      "signingKey": "7FfnMYwvrBQpSuq_SMsS82Mx6SbUHgmzBCVomCe8w_o",
+      "signature": "H9DxLDPZOnLXuamtH-xVO8Hfqlzj8V6V9G8QLN8E2F0csgWmeML8ICkyDuj8Mtxsc99Qx3sFQmaCHwf7SiEgCA"
+    }
+  },
+  "active": {
+    "tenant": "test",
+    "resource": "tool-tracking:abc",
+    "object": "tool-tracking:abc:master-data:record",
+    "generation": "1",
+    "binding": "DTooBxjXwSJnrN8jLm2StZesvlHHIZRZD45NbsGP4x4",
+    "commandBinding": "-dRN3Afm_NX22A54eHYgimodgc88lhuztnS_RIdalgo",
+    "author": {
+      "tenant": "test",
+      "generation": "1",
+      "user": "user:2",
+      "encryptionKey": "FLIYLtjeBJW8bQu4fqgHWvnty5rO9cEGlXNm1BshzRE",
+      "signingKey": "rPSSgCssBv3Y4vJ6ztqs_TxBW9IfcqtWU90VOSgHao8",
+      "signature": "jHKfUXQhDQ-H_WjAxPLjP5JUI2owu9k9DGGro6BkutOZIfn8TTwFaR6pn_KiOF4Q8cT7KV26SfrSBwSJJHh_AA"
+    },
+    "revision": "7",
+    "active": true,
+    "packetSignature": "AQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQEBAQ",
+    "signature": "w0vqc_Jr6mttx8dj23xZ-cXaI0H1nPsdE-cZOi5aHYB45kTjH6T4RhEZDVB8NWdtBdREQceKcQosPW-2ZmeMCg"
+  },
+  "returned": {
+    "tenant": "test",
+    "purpose": "tool-return",
+    "revision": "7",
+    "issuedAt": "1795046400000",
+    "verificationKey": "Eldlro3hQ3C9zdaob-Ek6mlftZdi_GjKoZHehTrsbjU",
+    "signature": "VBSE9cH_QT_2Gilx6BCPhwFrF6u8WmG-maX59v2lmdJuq-_V52iJV39ocJ58y2Bxbfk6qhre2SUp7I733fVcDA"
+  },
+  "closed": {
+    "tenant": "test",
+    "resource": "tool-tracking:abc",
+    "object": "tool-tracking:abc:master-data:record",
+    "generation": "1",
+    "binding": "DTooBxjXwSJnrN8jLm2StZesvlHHIZRZD45NbsGP4x4",
+    "commandBinding": "-dRN3Afm_NX22A54eHYgimodgc88lhuztnS_RIdalgo",
+    "author": {
+      "tenant": "test",
+      "generation": "1",
+      "user": "user:2",
+      "encryptionKey": "FLIYLtjeBJW8bQu4fqgHWvnty5rO9cEGlXNm1BshzRE",
+      "signingKey": "rPSSgCssBv3Y4vJ6ztqs_TxBW9IfcqtWU90VOSgHao8",
+      "signature": "jHKfUXQhDQ-H_WjAxPLjP5JUI2owu9k9DGGro6BkutOZIfn8TTwFaR6pn_KiOF4Q8cT7KV26SfrSBwSJJHh_AA"
+    },
+    "revision": "8",
+    "active": false,
+    "packetSignature": "AgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAgICAg",
+    "signature": "3PmeB_veoH8bHQ2xarOw9vwUP_VophEB76L6_KRE97eeMhKdiuOYIslQkoAvLMNhZmT75N4CRzkZ2GjUk80QDw"
+  }
+}

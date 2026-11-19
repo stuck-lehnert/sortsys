@@ -169,7 +169,8 @@ test("the native checkpoint vector preserves its signature, channel and exact la
 });
 
 test("a replay manifest is bound to a fully covered native cursor and the exact channel", async () => {
-  const { checkpoint, publicKey, frame } = native.replayVector;
+  const { publicKey, frame } = native.replayVector;
+  const checkpoint = liveCheckpoint(native.replayVector.checkpoint);
   const signer = await importSigningKey(publicKey);
   const verified = await verifyLiveCheckpoint(checkpoint, checkpoint, signer);
   expect(base64(liveCheckpointFrame(verified))).toBe(frame);

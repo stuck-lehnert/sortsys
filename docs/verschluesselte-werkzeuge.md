@@ -152,8 +152,13 @@ und Projektkosten enthalten in ihren verschlüsselten Daten nur den Prüfschlüs
 Die API erhält dessen Prüfsumme und bindet sie an die signierte Buchungsrevision.
 Ein späterer Schreibvorgang darf diese Zuordnung weder austauschen noch entfernen.
 Der Mehrinstanztest prüft diese Bindung und die getrennte Ablage in den drei
-Bereichen. Der Abschluss durch den Verantwortlichen benötigt noch den passenden
-Befehl und dessen Auswertung in den Ansichten.
+Bereichen. Browser und API können einen mit diesem Schlüssel signierten
+Rückgabenachweis prüfen. Er gilt für genau einen Mandanten und eine
+Buchungsrevision. Ein gültiger Nachweis beendet das aus der Ausgabe abgeleitete
+Leserecht. Andere Freigaben folgen weiterhin den Berechtigungsregeln. Die
+Rückgabe durch den Verantwortlichen wird erst verfügbar, wenn die API den Befehl
+transaktional annimmt und Werkzeugstatus, Umbuchungen und Projektkosten ihn
+berücksichtigen.
 
 Die Rückgabe aus der Werkzeugansicht gilt für die dort angezeigte Buchung.
 Wurde das Werkzeug zwischenzeitlich erneut ausgegeben, lässt die alte Aktion

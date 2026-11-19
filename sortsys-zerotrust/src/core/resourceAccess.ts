@@ -73,6 +73,103 @@ export async function openResourceCommandSigner(input: unknown): Promise<CryptoK
   }
 }
 
+export type ResourceCommand = {
+  tenant: string;
+  purpose: string;
+  revision: string;
+  issuedAt: string;
+  verificationKey: string;
+  signature: string;
+};
+
+export type ResourceCommandContext = {
+  tenant: string;
+  purpose: string;
+  binding: string;
+};
+
+export function resourceCommandBinding(verificationKey: string): Promise<string> {
+  return publicProofDigest(sized(verificationKey, 32));
+}
+
+export function resourceCommand(input: unknown): ResourceCommand {
+  const value = record(input, [
+    "tenant",
+    "purpose",
+    "revision",
+    "issuedAt",
+    "verificationKey",
+    "signature",
+  ]);
+  sized(value.signature as string, 64);
+  const command = value as ResourceCommand;
+  checkCommandFields(command);
+  return command;
+}
+
+function checkCommandFields(value: Omit<ResourceCommand, "signature">) {
+  identifier(value.tenant);
+  identifier(value.purpose);
+  revision(value.revision);
+  revision(value.issuedAt);
+  if (BigInt(value.issuedAt) > 8_640_000_000_000_000n)
+    throw new InvalidProtectedData();
+  sized(value.verificationKey, 32);
+}
+
+function resourceCommandFrame(value: Omit<ResourceCommand, "signature">) {
+  return frame("sortsys/resource-command/v1", [
+    value.tenant,
+    value.purpose,
+    value.revision,
+    value.issuedAt,
+    value.verificationKey,
+  ]);
+}
+
+export async function signResourceCommand(
+  value: Omit<ResourceCommand, "signature">,
+  key: CryptoKey,
+): Promise<ResourceCommand> {
+  const command = {
+    tenant: value.tenant,
+    purpose: value.purpose,
+    revision: value.revision,
+    issuedAt: value.issuedAt,
+    verificationKey: value.verificationKey,
+  };
+  checkCommandFields(command);
+  const body = resourceCommandFrame(command);
+  const signature = await sign(key, body);
+  await verifyPublicProof(
+    await importSigningKey(command.verificationKey),
+    signature,
+    body,
+  );
+  return { ...command, signature };
+}
+
+/** Authenticity only. Callers enforce the current revision, replay and time
+ * window in their transaction. Historical projections can verify the proof
+ * after that window without treating it as a new command. */
+export async function verifyResourceCommand(
+  input: unknown,
+  expected: ResourceCommandContext,
+): Promise<ResourceCommand> {
+  const value = resourceCommand(input);
+  if (
+    value.tenant !== expected.tenant ||
+    value.purpose !== expected.purpose ||
+    (await resourceCommandBinding(value.verificationKey)) !== expected.binding
+  ) throw new InvalidProtectedData();
+  await verifyPublicProof(
+    await importSigningKey(value.verificationKey),
+    value.signature,
+    resourceCommandFrame(value),
+  );
+  return value;
+}
+
 export function resourceAccessState(input: unknown): ResourceAccessState {
   const hasCommand =
     !!input && typeof input === "object" && Object.hasOwn(input, "commandBinding");

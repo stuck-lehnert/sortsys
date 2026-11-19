@@ -1,13 +1,12 @@
 import {
   creationResourceBinding,
-  digest,
   InvalidProtectedData,
+  resourceCommandBinding,
   signResourceAccess,
   type CreationOrigin,
   type EncryptedObject,
   type IdentityCertificate,
   TOMBSTONE_FORMAT,
-  sized,
 } from "@sortsys/zerotrust/sortsys";
 import { toolCollection, toolDomain, TOOL_MODEL } from "./toolData";
 import { publicId } from "./products";
@@ -61,7 +60,7 @@ function bookingValue(
 
 async function bookingCommandBinding(key: string | undefined) {
   if (key === undefined) return undefined;
-  return digest(sized(key, 32));
+  return resourceCommandBinding(key);
 }
 
 export async function toolResponsibilityPacket(

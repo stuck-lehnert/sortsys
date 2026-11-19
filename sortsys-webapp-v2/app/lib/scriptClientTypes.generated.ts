@@ -246,6 +246,7 @@ export type CreationOrigin = {
     parent?: CreationParent;
     assignee?: IdentityCertificate;
     access?: ResourceAccessState;
+    returned?: ResourceCommand;
 };
 
 export type CreationParent = {
@@ -830,6 +831,15 @@ export type ResourceAccessState = {
     packetSignature: string;
     commandBinding?: string;
     author: IdentityCertificate;
+    signature: string;
+};
+
+export type ResourceCommand = {
+    tenant: string;
+    purpose: string;
+    revision: string;
+    issuedAt: string;
+    verificationKey: string;
     signature: string;
 };
 
@@ -2890,6 +2900,7 @@ export type QueryOutputs = {
         parent?: CreationParent;
         assignee?: IdentityCertificate;
         access?: ResourceAccessState;
+        returned?: ResourceCommand;
     }>;
     "zerotrust.creations.origin": {
         tenant: string;
@@ -2901,6 +2912,7 @@ export type QueryOutputs = {
         parent?: CreationParent;
         assignee?: IdentityCertificate;
         access?: ResourceAccessState;
+        returned?: ResourceCommand;
     } | null;
     "zerotrust.deliveryNotes.locate": {
         id: Id;

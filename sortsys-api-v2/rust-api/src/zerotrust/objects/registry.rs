@@ -1570,6 +1570,9 @@ async fn put_domain_in_transaction(
         return Err(forbidden());
     }
     let signer = if let Some(origin) = &input.creation {
+        if origin.returned.is_some() {
+            return Err(invalid());
+        }
         origin.verify(&guard.authority)?;
         if origin.tenant != context.auth.tenant
             || origin.capability.generation != guard.root.generation.to_string()

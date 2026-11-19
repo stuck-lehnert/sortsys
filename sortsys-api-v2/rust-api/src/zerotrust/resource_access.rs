@@ -165,7 +165,7 @@ pub(super) async fn save(
     }
     if let Some(previous) = &original.access {
         if revision(&previous.revision)?.checked_add(1) != Some(revision(&state.revision)?)
-            || (!previous.active && state.active)
+            || (!original.is_active_booking() && state.active)
             || previous.command_binding.is_some()
                 && previous.command_binding != state.command_binding
         {
@@ -219,7 +219,6 @@ pub(super) async fn save(
         origin.access = Some(state.clone());
         context.transaction.put_protected(record, &origin).await?;
     }
-    let changed_access =
-        original.access.as_ref().map(|previous| previous.active) != Some(state.active);
+    let changed_access = original.access.is_none() || original.is_active_booking() != state.active;
     Ok(changed_access)
 }

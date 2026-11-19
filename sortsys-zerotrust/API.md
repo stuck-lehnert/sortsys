@@ -323,6 +323,22 @@ Zugriffsstand zum Fachinhalt passt. Ein berechtigter, aber manipulierter Client
 kann beides widersprüchlich signieren. Ohne Klartext oder zusätzliche Beweise
 kann der Server diese fachliche Konsistenz nicht garantieren.
 
+### Signierte Befehle für einzelne Ressourcen
+
+`createResourceCommandKey()` erzeugt einen Prüfschlüssel und den zugehörigen
+privaten Seed. `resourceCommandBinding(verificationKey)` berechnet daraus die
+SHA-256-Prüfsumme für `ResourceAccessState.commandBinding`. Der Seed gehört
+in einen Schlüsselumschlag für das Konto, das den Befehl ausführen darf.
+Andere berechtigte Ansichten benötigen nur den Prüfschlüssel.
+
+`signResourceCommand` unterschreibt Mandant, Zweck, Revision und Ausgabezeit
+in Millisekunden. `verifyResourceCommand` prüft den Nachweis gegen den
+erwarteten Mandanten, Zweck und die gespeicherte Bindung. Rust verwendet
+denselben Rahmen für `resource_access::ResourceCommand`. Bei Annahme eines
+Befehls muss die Anwendung in derselben Transaktion Berechtigung, aktuelle
+Revision, Zeitfenster und die bisherige Ausführung prüfen. Historische
+Ansichten verwenden denselben Nachweis zur Signaturprüfung.
+
 ## Wiederholte öffentliche Nachweise
 
 Zertifikate, Rechteregeln und Schlüsselumschläge enthalten öffentliche Metadaten

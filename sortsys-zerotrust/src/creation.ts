@@ -25,11 +25,15 @@ import {
 } from "./core/certificates";
 import {
   resourceAccessState,
+  resourceCommand,
   verifyResourceAccess,
+  verifyResourceCommand,
   type ResourceAccessState,
+  type ResourceCommand,
 } from "./core/resourceAccess";
 
 export const PROJECT_CREATION_SCOPE = "create:project";
+export const TOOL_RETURN_PURPOSE = "tool-return";
 export type CreationNamespace = keyof typeof CREATION_FACETS;
 export const CREATION_FACETS = {
   project: [
@@ -120,6 +124,7 @@ export type CreationOrigin = CreationParent & {
   parent?: CreationParent;
   assignee?: IdentityCertificate;
   access?: ResourceAccessState;
+  returned?: ResourceCommand;
 };
 
 const delegations = createDelegationCodec(
@@ -151,6 +156,8 @@ export function creationOrigin(input: unknown): CreationOrigin {
     !!input && typeof input === "object" && Object.hasOwn(input, "assignee");
   const hasAccess =
     !!input && typeof input === "object" && Object.hasOwn(input, "access");
+  const hasReturn =
+    !!input && typeof input === "object" && Object.hasOwn(input, "returned");
   const value = record(input, [
     "tenant",
     "id",
@@ -161,6 +168,7 @@ export function creationOrigin(input: unknown): CreationOrigin {
     ...(hasParent ? ["parent"] : []),
     ...(hasAssignee ? ["assignee"] : []),
     ...(hasAccess ? ["access"] : []),
+    ...(hasReturn ? ["returned"] : []),
   ]);
   const capability = creationCapability(value.capability);
   if (
@@ -202,6 +210,16 @@ export function creationOrigin(input: unknown): CreationOrigin {
       throw new InvalidProtectedData();
     access = resourceAccessState(value.access);
   }
+  let returned: ResourceCommand | undefined;
+  if (hasReturn) {
+    if (!access?.commandBinding) throw new InvalidProtectedData();
+    returned = resourceCommand(value.returned);
+    if (
+      (access.active && returned.revision !== access.revision) ||
+      (!access.active && BigInt(returned.revision) >= BigInt(access.revision))
+    )
+      throw new InvalidProtectedData();
+  }
   if (resource.module) {
     // The parent is exactly one project root. Reject nesting before recursing.
     const raw = record(value.parent, [
@@ -240,6 +258,7 @@ export function creationOrigin(input: unknown): CreationOrigin {
     ...(parent ? { parent } : {}),
     ...(assignee ? { assignee } : {}),
     ...(access ? { access } : {}),
+    ...(returned ? { returned } : {}),
   };
 }
 export async function creationOriginFrame(
@@ -322,6 +341,7 @@ export async function creationRenewalFrame(
       origin.capability.signature !== master.capability.signature ||
       origin.assignee ||
       origin.access ||
+      origin.returned ||
       origin.parent
     )
       throw new InvalidProtectedData();
@@ -374,7 +394,20 @@ export async function verifyCreationOrigin(
       },
       authority,
     );
+  if (value.returned) {
+    const binding = value.access?.commandBinding;
+    if (!binding) throw new InvalidProtectedData();
+    await verifyResourceCommand(value.returned, {
+      tenant: value.tenant,
+      purpose: TOOL_RETURN_PURPOSE,
+      binding,
+    });
+  }
   return value;
+}
+
+export function isActiveToolBookingOrigin(origin: CreationOrigin): boolean {
+  return origin.access?.active === true && origin.returned === undefined;
 }
 export async function creationAssignmentBinding(
   origin: CreationOrigin,
@@ -444,7 +477,7 @@ export function creationRules(
     effect: "allow",
     actions: ["read", "create", "update", "delete"],
   }));
-  if (origin.assignee && origin.access?.active)
+  if (origin.assignee && isActiveToolBookingOrigin(origin))
     rules.push({
       subject: origin.assignee.user,
       scope: origin.scope,
@@ -454,7 +487,7 @@ export function creationRules(
     });
   if (
     permissions &&
-    origin.access?.active &&
+    isActiveToolBookingOrigin(origin) &&
     origin.capability.namespace === "tool-tracking" &&
     ["master-data", "scope"].includes(origin.facet)
   ) {

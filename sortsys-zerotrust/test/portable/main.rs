@@ -16,7 +16,9 @@ use sortsys_zerotrust::{
     prepared_payload::PreparedPayloadManifest,
     protocol::{EncryptedObject, SealedBox},
     recovery_inventory::{DEFAULT_RECOVERY_LIMITS, RecoveryInventory},
-    resource_access::{ResourceAccessContext, ResourceAccessState},
+    resource_access::{
+        ResourceAccessContext, ResourceAccessState, ResourceCommand, ResourceCommandContext,
+    },
     webauthn::{self, RegistrationCredential},
 };
 
@@ -105,6 +107,7 @@ struct BrowserVector {
     anchor_digest: String,
     delegation: DelegationCertificate<Namespace>,
     access_state: ResourceAccessState,
+    resource_command: ResourceCommand,
     administrative_policy: Policy,
     continued_administration: Policy,
     reissued_administration: Policy,
@@ -455,6 +458,19 @@ fn main() {
     let mut altered = vector.access_state.clone();
     altered.active = false;
     assert!(altered.verify(&access_context, &signer).is_err());
+    let command_context = ResourceCommandContext {
+        tenant: access_context.tenant,
+        purpose: "finish-experiment",
+        binding: vector.access_state.command_binding.as_deref().unwrap(),
+    };
+    vector.resource_command.verify(&command_context).unwrap();
+    assert_eq!(
+        vector.resource_command.revision,
+        vector.access_state.revision
+    );
+    let mut substituted_time = vector.resource_command.clone();
+    substituted_time.issued_at = "1795046400001".into();
+    assert!(substituted_time.verify(&command_context).is_err());
     let expected = DelegationContext {
         tenant: "laboratory:alpha",
         generation: "1",

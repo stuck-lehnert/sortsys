@@ -54,7 +54,7 @@ export type CreationCapability = { tenant: string, id: string, generation: strin
 
 export type CreationOptions = { challenge: string, rp: RelyingParty, user: PasskeyUser, pubKeyCredParams: Array<CredentialParameter>, timeout: number, attestation: "none", authenticatorSelection: AuthenticatorSelection, excludeCredentials: Array<CredentialDescriptor>, };
 
-export type CreationOrigin = { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, };
+export type CreationOrigin = { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, returned?: ResourceCommand, };
 
 export type CreationParent = { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, };
 
@@ -211,6 +211,8 @@ export type RelyingParty = { name: string, id: string, };
 export type RequestOptions = { challenge: string, rpId: string, allowCredentials: Array<CredentialDescriptor>, timeout: number, userVerification: "required", };
 
 export type ResourceAccessState = { tenant: string, resource: string, object: string, revision: string, generation: string, binding: string, active: boolean, packetSignature: string, commandBinding?: string, author: IdentityCertificate, signature: string, };
+
+export type ResourceCommand = { tenant: string, purpose: string, revision: string, issuedAt: string, verificationKey: string, signature: string, };
 
 export type Room = { scope: string, document: string, facet: string, };
 
@@ -523,8 +525,8 @@ export type QueryOutputs = {
   "zerotrust.content.inspect": { pages: Array<ObjectPage>, stamp: string, restoredDocumentScopes: Array<string>, sealedInvoiceScopes: Array<string>, uncheckedDocuments: number, };
   "zerotrust.content.snapshots": { rows: Array<TenantSnapshot>, after: string | null, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
-  "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, }>;
-  "zerotrust.creations.origin": { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, } | null;
+  "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, returned?: ResourceCommand, }>;
+  "zerotrust.creations.origin": { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, returned?: ResourceCommand, } | null;
   "zerotrust.deliveryNotes.locate": { id: Id, projectId: Id, number: string, };
   "zerotrust.deliveryNotes.references": Array<{ object: string, allocation: DeliveryAllocation, }>;
   "zerotrust.documents.get": { format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, } | null;

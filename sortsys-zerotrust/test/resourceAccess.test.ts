@@ -16,12 +16,16 @@ import {
   importSigningKey,
   openResourceCommandSigner,
   publicIdentity,
+  resourceCommandBinding,
   signResourceAccess,
+  signResourceCommand,
   sign,
   sized,
   verify,
   verifyCreationOrigin,
   verifyResourceAccess,
+  verifyResourceCommand,
+  TOOL_RETURN_PURPOSE,
   createDelegatedDomain,
   openBox,
   areaKey,
@@ -152,6 +156,98 @@ test("a command verification key is commit-bound and its signing seed stays sepa
     { ...bound, commandBinding: await digest(sized(alternate.verificationKey, 32)) },
   ]) {
     await expect(verifyResourceAccess(changed, f.expected, () => f.authorityKey.publicKey)).rejects.toThrow();
+  }
+});
+
+test("a signed command is specific to its tenant, purpose, revision and booking key", async () => {
+  const key = await createResourceCommandKey();
+  const other = await createResourceCommandKey();
+  const signer = await openResourceCommandSigner(key);
+  const command = await signResourceCommand({
+    tenant: "test",
+    purpose: TOOL_RETURN_PURPOSE,
+    revision: "7",
+    issuedAt: "1795046400000",
+    verificationKey: key.verificationKey,
+  }, signer);
+  const context = {
+    tenant: command.tenant,
+    purpose: command.purpose,
+    binding: await resourceCommandBinding(key.verificationKey),
+  };
+  expect(await verifyResourceCommand(command, context)).toEqual(command);
+  for (const changed of [
+    { ...command, revision: "8" },
+    { ...command, issuedAt: "1795046400001" },
+    { ...command, issuedAt: "01795046400000" },
+    { ...command, issuedAt: "8640000000000001" },
+    { ...command, verificationKey: other.verificationKey },
+    { ...command, accepted: true },
+  ]) {
+    await expect(verifyResourceCommand(changed, context)).rejects.toThrow();
+  }
+  for (const wrong of [
+    { ...context, tenant: "other-tenant" },
+    { ...context, purpose: "tool-transfer" },
+    { ...context, binding: await resourceCommandBinding(other.verificationKey) },
+  ]) {
+    await expect(verifyResourceCommand(command, wrong)).rejects.toThrow();
+  }
+  await expect(
+    signResourceCommand(command, await openResourceCommandSigner(other)),
+  ).rejects.toThrow();
+});
+
+test("a proved return stops only the temporary booking grants and remains verifiable after closing the record", async () => {
+  const f = await fixture();
+  const key = await createResourceCommandKey();
+  const access = await signResourceAccess({
+    ...f.state,
+    commandBinding: await resourceCommandBinding(key.verificationKey),
+  }, f.creator.signingKey.privateKey);
+  const unsigned = {
+    tenant: f.origin.tenant,
+    purpose: TOOL_RETURN_PURPOSE,
+    revision: access.revision,
+    issuedAt: "1795046400000",
+    verificationKey: key.verificationKey,
+  };
+  const signer = await openResourceCommandSigner(key);
+  const returned = await signResourceCommand(unsigned, signer);
+  const authority = () => f.authorityKey.publicKey;
+  const active = await verifyCreationOrigin({ ...f.origin, access }, authority);
+  const intent = activeBookingReadScope(active.scope);
+  const policy: Policy = {
+    tenant: active.tenant,
+    version: "1",
+    rules: [{
+      subject: "user:4",
+      scope: intent,
+      facet: "master-data",
+      effect: "allow",
+      actions: ["read"],
+    }],
+  };
+  const finished = await verifyCreationOrigin({ ...active, returned }, authority);
+  expect(creationRules(active, policy).map(({ subject }) => subject).sort())
+    .toEqual(["user:1", "user:2", "user:3", "user:4"]);
+  expect(creationRules(finished, policy).map(({ subject }) => subject).sort())
+    .toEqual(["user:1", "user:2"]);
+  const closed = await signResourceAccess({
+    ...access,
+    revision: "2",
+    active: false,
+  }, f.creator.signingKey.privateKey);
+  expect((await verifyCreationOrigin({ ...finished, access: closed }, authority)).returned)
+    .toEqual(returned);
+  const wrongRevision = await signResourceCommand({ ...unsigned, revision: "2" }, signer);
+  for (const origin of [
+    { ...f.origin, returned },
+    { ...f.origin, access: f.state, returned },
+    { ...active, returned: wrongRevision },
+    { ...finished, returned: { ...returned, issuedAt: "1" } },
+  ]) {
+    await expect(verifyCreationOrigin(origin, authority)).rejects.toThrow();
   }
 });
 

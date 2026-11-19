@@ -5,6 +5,7 @@ use crate::{
     protocol::IdentityCertificate,
 };
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 #[cfg(feature = "typescript")]
 use ts_rs::TS;
 
@@ -33,6 +34,73 @@ pub struct ResourceAccessContext<'a> {
     pub object: &'a str,
     pub generation: &'a str,
     pub binding: &'a str,
+}
+
+#[derive(Clone, Deserialize, Serialize)]
+#[cfg_attr(feature = "typescript", derive(TS))]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ResourceCommand {
+    pub tenant: String,
+    pub purpose: String,
+    pub revision: String,
+    pub issued_at: String,
+    pub verification_key: String,
+    pub signature: String,
+}
+
+pub struct ResourceCommandContext<'a> {
+    pub tenant: &'a str,
+    pub purpose: &'a str,
+    pub binding: &'a str,
+}
+
+pub fn resource_command_binding(verification_key: &str) -> Result<String> {
+    let key = sized::<32>(verification_key)?;
+    Ok(crate::crypto::encode(&Sha256::digest(key)))
+}
+
+impl ResourceCommand {
+    pub fn timestamp_millis(&self) -> Result<i64> {
+        let value = revision(&self.issued_at)?;
+        if value > 8_640_000_000_000_000 {
+            return Err(invalid());
+        }
+        Ok(value)
+    }
+
+    pub fn frame(&self) -> Result<Vec<u8>> {
+        identifier(&self.tenant)?;
+        identifier(&self.purpose)?;
+        revision(&self.revision)?;
+        self.timestamp_millis()?;
+        sized::<32>(&self.verification_key)?;
+        Ok(frame(
+            "sortsys/resource-command/v1",
+            &[
+                &self.tenant,
+                &self.purpose,
+                &self.revision,
+                &self.issued_at,
+                &self.verification_key,
+            ],
+        ))
+    }
+
+    /// Timestamp freshness and consumption are part of the caller's
+    /// transaction. This proof can also be verified in a historical view.
+    pub fn verify(&self, expected: &ResourceCommandContext<'_>) -> Result<()> {
+        if self.tenant != expected.tenant
+            || self.purpose != expected.purpose
+            || resource_command_binding(&self.verification_key)? != expected.binding
+        {
+            return Err(invalid());
+        }
+        verify(
+            &sized::<32>(&self.verification_key)?,
+            &self.signature,
+            &self.frame()?,
+        )
+    }
 }
 
 impl ResourceAccessState {

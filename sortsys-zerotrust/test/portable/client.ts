@@ -9,6 +9,7 @@ import {
   createAccountVault,
   createDelegationCodec,
   createIdentity,
+  createResourceCommandKey,
   createZeroTrust,
   objectKeyRecipientBinding,
   digest,
@@ -19,9 +20,13 @@ import {
   preparePayload,
   assemblePayload,
   migrationSealFrame,
+  openResourceCommandSigner,
+  resourceCommandBinding,
   sign,
   signResourceAccess,
+  signResourceCommand,
   verifyResourceAccess,
+  verifyResourceCommand,
   OpenTimestampUnavailable,
   publicIdentity,
   passkeyDeletionFrame,
@@ -244,6 +249,8 @@ export async function exerciseFramework() {
     new TextDecoder().decode(shared) ===
       JSON.stringify({ observation: "Sample remains stable" }),
   );
+  const commandKey = await createResourceCommandKey();
+  const commandBinding = await resourceCommandBinding(commandKey.verificationKey);
   const accessState = await signResourceAccess(
     {
       tenant: context.tenant,
@@ -255,6 +262,7 @@ export async function exerciseFramework() {
       active: true,
       packetSignature: object.signature,
       author: delegation.readers[0]!,
+      commandBinding,
     },
     identity.signingKey.privateKey,
   );
@@ -269,6 +277,23 @@ export async function exerciseFramework() {
     },
     () => identity.signingKey.publicKey,
   );
+  const commandContext = {
+    tenant: context.tenant,
+    purpose: "finish-experiment",
+  };
+  const resourceCommand = await signResourceCommand(
+    {
+      ...commandContext,
+      revision: accessState.revision,
+      issuedAt: "1795046400000",
+      verificationKey: commandKey.verificationKey,
+    },
+    await openResourceCommandSigner(commandKey),
+  );
+  await verifyResourceCommand(resourceCommand, {
+    ...commandContext,
+    binding: commandBinding,
+  });
   require(
     first.kind === "verified" &&
       first.current.value.observation === "Sample remains stable",
@@ -590,6 +615,7 @@ export async function exerciseFramework() {
     signer: (await publicIdentity(identity)).signingKey,
     delegation,
     accessState,
+    resourceCommand,
     object,
     objectShare,
     objectShareBinding,
