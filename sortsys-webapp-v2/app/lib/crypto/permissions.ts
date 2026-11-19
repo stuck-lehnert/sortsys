@@ -154,19 +154,31 @@ function readers(
 export type ProjectAccessLevels = Partial<
   Record<ProjectAccessKey, Record<string, AccessValue>>
 >;
+
+async function memberPolicyContext(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+  domains?: readonly string[],
+) {
+  const context = await administrator(client, signal, domains);
+  if (!(await certifiedMember(client, user, context)))
+    throw new InvalidProtectedData();
+  return context;
+}
+
 export async function memberAreaAccesses(
   client: Client,
   user: string,
   areas: readonly Collection[],
   signal: AbortSignal,
 ): Promise<AccessValue[]> {
-  const context = await administrator(
+  const context = await memberPolicyContext(
     client,
+    user,
     signal,
     areas.map((area) => area.domain),
   );
-  if (!(await certifiedMember(client, user, context)))
-    throw new InvalidProtectedData();
   const level = compileManagedAccess(context.effective, user);
   return areas.map((area) => level(area));
 }
@@ -176,11 +188,9 @@ export async function memberProjectAccesses(
   user: string,
   signal: AbortSignal,
 ): Promise<ProjectAccessLevels> {
-  if (!(await memberAccess(client, user, signal)))
-    throw new InvalidProtectedData();
-  const context = await administrator(client, signal),
-    result: ProjectAccessLevels = {},
-    level = compileManagedAccess(context.effective, user);
+  const context = await memberPolicyContext(client, user, signal);
+  const result: ProjectAccessLevels = {};
+  const level = compileManagedAccess(context.effective, user);
   for (const rule of context.effective.rules) {
     if (rule.subject !== user) continue;
     const part = projectAccessDomain(`${rule.scope}:${rule.facet}`);
@@ -212,10 +222,8 @@ export async function memberAbsenceAccess(
   user: string,
   signal: AbortSignal,
 ): Promise<Record<string, AbsenceAccessLevels>> {
-  if (!(await memberAccess(client, user, signal)))
-    throw new InvalidProtectedData();
-  const context = await administrator(client, signal),
-    level = compileManagedAccess(context.effective, user);
+  const context = await memberPolicyContext(client, user, signal);
+  const level = compileManagedAccess(context.effective, user);
   const ids = new Set(
     context.effective.rules
       .filter((rule) => rule.subject === user)
@@ -237,10 +245,8 @@ export async function memberPersonnelAccess(
   user: string,
   signal: AbortSignal,
 ): Promise<Record<string, PersonnelAccessLevels>> {
-  if (!(await memberAccess(client, user, signal)))
-    throw new InvalidProtectedData();
-  const context = await administrator(client, signal),
-    level = compileManagedAccess(context.effective, user);
+  const context = await memberPolicyContext(client, user, signal);
+  const level = compileManagedAccess(context.effective, user);
   const ids = new Set(
     context.effective.rules
       .filter((rule) => rule.subject === user)
@@ -289,9 +295,7 @@ export async function memberCreationAccesses(
   user: string,
   signal: AbortSignal,
 ): Promise<CreationAccesses> {
-  if (!(await memberAccess(client, user, signal)))
-    throw new InvalidProtectedData();
-  const context = await administrator(client, signal);
+  const context = await memberPolicyContext(client, user, signal);
   const result = {} as CreationAccesses;
   for (const namespace of [
     "project",

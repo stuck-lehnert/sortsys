@@ -125,9 +125,9 @@ Löschen veröffentlicht einen signierten, inhaltsleeren Löschdatensatz. Die
 Freigaben Lesen und Löschen genügen; Bearbeiten wird dafür nicht verlangt. Das
 Projekt verschwindet aus den normalen Listen, seine früheren verschlüsselten
 Fassungen und abhängigen Datensätze werden dadurch noch nicht physisch entfernt.
-Weitere Projektzuweisungen, die übergreifende Kostenauswertung und gemeinsame
-Dokumentbearbeitung sind noch anzuschließen. Der bisherige Klartextbestand
-bleibt bis zur vollständigen Umstellung eingefroren erhalten.
+Der Löschdatensatz sperrt die abhängigen Bereiche bisher nicht automatisch.
+Ein früheres PostgreSQL-Archiv ist eine optionale Quelle für die
+[Einrichtung eines neuen Mandanten](bestandsumstellung.md).
 
 Die Integrationsprüfungen vergleichen
 [Projektfelder und Arbeitsabläufe](../sortsys-webapp-v2/scripts/test-live-projects.ts)

@@ -401,6 +401,20 @@ try {
         recovered.closure,
       );
     }
+  } else if (mode === "owner-project-access") {
+    const { initializeTenant } =
+      await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseProjectAccess } =
+      await import("./test-live-project-module-permissions");
+    const member = createClient(endpoints[0], "project-access-member");
+    try {
+      const privateValues = await exerciseProjectAccess(owner, member);
+      for (const value of privateValues)
+        assert.ok(requests.every((body) => !body.includes(value)));
+    } finally {
+      member.setToken(null);
+    }
   } else if (mode === "owner-print-templates") {
     const { initializeTenant } =
       await import("../app/lib/crypto/initializeTenant");

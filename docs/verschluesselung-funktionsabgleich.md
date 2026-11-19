@@ -228,7 +228,10 @@ Grunddaten, Kontaktbezeichnungen und Statuswechsel sind angeschlossen.
 Projektfreigaben öffnen keine Kalkulationsschlüssel. Mitarbeiter können mit
 begrenzter Freigabe neue Projekte anlegen; Pflichtempfänger und Recovery werden
 dabei berücksichtigt. Auftragswerte, die Belegung bei Weitervergaben und die
-einzelnen Berichtsarten haben unabhängige Projektbereiche. Weitere abhängige
+einzelnen Berichtsarten haben unabhängige Projektbereiche. Ein nativer Test
+erteilt und entzieht für alle 14 Bereiche einzeln Leserechte über zwei
+API-Prozesse. Beim Entzug bestätigt er den Schlüsselwechsel, bei der erneuten
+Freigabe den Zugriff auf bisherige und neue Stände. Weitere abhängige
 Fachbereiche sowie vollständige Such- und Aktivitätsparität fehlen noch. Siehe
 [Projektadapter](verschluesselte-projekte.md).
 

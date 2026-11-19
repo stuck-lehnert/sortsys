@@ -96,6 +96,7 @@ async fn browser_with_tenant(
             | "owner-staging"
             | "owner-print-templates"
             | "owner-planning-recipients"
+            | "owner-project-access"
             | "owner-delivery-batching"
             | "owner-tool-batches"
             | "owner-access-pages"
@@ -215,7 +216,11 @@ async fn browser_with_tenant(
         Duration::from_secs(300)
     } else if matches!(
         mode,
-        "invitations" | "member-renames" | "member-deletion" | "owner-bootstrap"
+        "invitations"
+            | "member-renames"
+            | "member-deletion"
+            | "owner-bootstrap"
+            | "owner-project-access"
     ) {
         Duration::from_secs(180)
     } else {
@@ -1443,6 +1448,23 @@ async fn first_administrator_finishes_setup_before_business_access() {
         .unwrap()
         .into();
     processes::run_browser(&settings, &root, "owner-bootstrap").await;
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn project_access_rotates_each_facet_across_independent_api_instances() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    assert!(config.control_url.starts_with("http://127.0.0.1:"));
+    let mut settings = configuration(config);
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    processes::run_browser(&settings, &root, "owner-project-access").await;
 }
 
 #[tokio::test]

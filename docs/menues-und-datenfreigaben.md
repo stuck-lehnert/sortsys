@@ -177,6 +177,8 @@ Detailansicht prüft das konkrete Projekt, bevor sie Änderungen oder
 Löschaktionen anbietet.
 
 Die Freigabenansicht liest die Projektbereiche aus einem gemeinsam geprüften
+Regelstand und prüft die Identität des ausgewählten Kontos daran. Auch die
+Übersichten für Personal, Abwesenheiten und Anlagerechte lesen jeweils einen
 Regelstand. Unveränderte Bereiche bleiben beim Speichern erhalten. Ein Fehler
 nach einer bereits bestätigten Teilfreigabe setzt deren Anzeige nicht auf den
 alten Stand zurück.
@@ -210,6 +212,12 @@ neue Projekte anzulegen, reicht für Bereiche eines fremden Projekts nicht aus.
 Die lokalen Kryptografie-, Modell- und Browsertests prüfen diese Trennung. Der
 native Lauf über zwei unabhängige API-Instanzen prüft unter anderem
 verschlüsselte Berichte, Werkzeugbuchungen und die Projektkosten nach der
-Bestandsübernahme und nach zwei Seed-Recoveries. Der zusätzliche Test, der jeden
-Projektbereich einzeln freigibt, entzieht und erneut freigibt, ist vorbereitet;
-dieser vollständige Durchlauf steht noch aus.
+Bestandsübernahme und nach zwei Seed-Recoveries.
+
+Ein eigener [Mehrinstanztest](../sortsys-webapp-v2/scripts/test-live-project-module-permissions.ts)
+vergibt die Leserechte für alle 14 Projektbereiche einzeln. Die anderen
+Bereichsschlüssel bleiben gesperrt. Die API des Mitglieds weist auch korrekt
+signierte Änderungen des leseberechtigten Mitglieds ab. Nach dem Entzug
+scheitert das Entschlüsseln neuer Inhalte mit dem zuvor erhaltenen Schlüssel.
+Eine erneute Freigabe macht die Stände vor und nach dem Schlüsselwechsel
+wieder lesbar.
