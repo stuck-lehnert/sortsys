@@ -124,7 +124,9 @@ function pendingDomains(
   selected?: ReadonlySet<string>,
 ): Domain[] {
   const pending = domains
-    .filter((domain) => domain.rotationRequired)
+    .filter((domain) =>
+      domain.rotationRequired && (!selected || selected.has(domain.id)),
+    )
     .slice(0, 8);
   if (pending.length === 8) return pending;
   const existing = new Set([
@@ -259,9 +261,9 @@ export async function finishAccessChanges(
   domains?: readonly string[],
 ): Promise<void> {
   const unique = domains ? [...new Set(domains)] : [];
-  const selected =
-    unique.length > 0 && unique.length <= 16 ? new Set(unique) : undefined;
-  const options = selected ? { domains: [...selected] } : {};
+  const selected = domains === undefined ? undefined : new Set(unique);
+  if (selected?.size === 0) return;
+  const options = selected && selected.size <= 16 ? { domains: unique } : {};
   const readContext = () => administratorPolicyContext(client, signal, unique);
   let context = await readContext();
   let conflictRetries = 0;

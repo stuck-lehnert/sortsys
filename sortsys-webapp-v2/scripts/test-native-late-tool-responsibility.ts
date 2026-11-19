@@ -27,6 +27,7 @@ import {
   approveMemberInvitation,
 } from "../app/lib/crypto/invitations";
 import { acceptVaultWithKey, unlockedAccount } from "../app/lib/crypto/session";
+import { changeAreaActionAccesses } from "../app/lib/crypto/permissions";
 import { synchronizeToolResponsibilityDefaults } from "../app/lib/crypto/toolResponsibilityDefaults";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { newProductRowId, publicId } from "../app/lib/data/products";
@@ -35,7 +36,10 @@ import {
   required,
 } from "../app/lib/data/protectedObjects";
 import { toolCollection } from "../app/lib/data/toolData";
-import { toolResponsibilityPacket } from "../app/lib/data/toolResponsibility";
+import {
+  finishToolBookingRotations,
+  toolResponsibilityPacket,
+} from "../app/lib/data/toolResponsibility";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 
 export async function exerciseLateToolResponsibility(
@@ -434,9 +438,150 @@ export async function exerciseLateToolResponsibility(
     console.log(
       "Native late tool responsibility: earlier active booking checkpointed at invitation approval, closed booking and costs hidden, exact retry unchanged, authentic reader write denied, return revokes access and retained key cannot read later changes",
     );
+    await unlockOwner();
+    await exerciseDelegatedToolReturn(
+      business,
+      peer,
+      member,
+      tools[0]!.id,
+      person.id,
+      unlockOwner,
+      signal,
+    );
   } finally {
     restricted?.dispose();
     business.dispose();
+    await unlockOwner();
+  }
+}
+
+async function exerciseDelegatedToolReturn(
+  owner: ReturnType<typeof createBusinessClient>,
+  peer: Client,
+  formerReader: Client,
+  toolId: string,
+  readerId: string,
+  unlockOwner: () => Promise<unknown>,
+  signal: AbortSignal,
+) {
+  const manager = await required(owner.mutate("users.create", {
+    username: "scoped.tool.manager",
+    firstName: "Werkzeugverwaltung",
+    lastName: "Bereichsfreigabe",
+  }));
+  const invitation = await createMemberInvitation(
+    owner,
+    { id: manager.id, username: "scoped.tool.manager" },
+    {
+      catalogue: "none", customers: "none", contacts: "none", vendors: "none",
+      prices: "none", assistant: false,
+    },
+    signal,
+  );
+  const endpoint = JSON.parse(process.env.SORTSYS_AUTH_TEST_ENDPOINTS!)[1];
+  const managerClient = createClient(endpoint, "native-scoped-tool-manager");
+  const managerPassword = "Scoped-tool-manager-passphrase-2026!";
+  await signInMemberInvitation(
+    managerClient,
+    invitation.link,
+    managerPassword,
+    signal,
+  );
+  const managerAccount = unlockedAccount()!;
+  const unlockManager = () => acceptVaultWithKey(
+    managerAccount.dataKey, managerAccount.vault, managerAccount.username, false,
+  );
+  await unlockOwner();
+  await approveMemberInvitation(owner, invitation.link.invitation.id, signal, duckDriver);
+  const { trackingId } = await required(owner.mutate("tools.track", {
+    id: toolId,
+    data: { responsibleUserId: readerId },
+  }));
+  const tracking = toolCollection("tool-tracking", trackingId, "master-data");
+  const requests = toolCollection("tool-tracking", trackingId, "scope");
+  const tool = toolCollection("tool", toolId, "master-data");
+  await changeAreaActionAccesses(owner, managerAccount.vault.subject, [
+    { area: tracking, patch: { read: true, update: true, grant: true } },
+    { area: requests, patch: { read: true, update: true } },
+    { area: tool, patch: { read: true, update: true } },
+  ], signal);
+
+  async function domains() {
+    const access = await verifiedAccessContext(peer, signal, {
+      domains: [tracking.domain, requests.domain],
+    });
+    const current = access.domains.find((area) => area.id === tracking.domain);
+    const transfers = access.domains.find((area) => area.id === requests.domain);
+    assert.ok(current && transfers);
+    return { current, transfers };
+  }
+  const before = await domains();
+  const operational = createBusinessClient(managerClient, { productDriver: duckDriver });
+  try {
+    await unlockManager();
+    const session = await required(managerClient.query("auth.sessionInfo", undefined));
+    assert.ok(!session.roles.includes(":admin"));
+    const close = { id: toolId, expectedTrackingId: trackingId };
+    if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+      const { exerciseToolResponsibilityBrowser } =
+        await import("./test-tool-responsibility-browser");
+      await exerciseToolResponsibilityBrowser({
+        tenant: managerAccount.tenant,
+        member: {
+          username: "late.tool.member",
+          password: "Late-tool-member-password-2026!",
+        },
+        manager: { username: "scoped.tool.manager", password: managerPassword },
+        activeLabel: "Aktive Ausgabe",
+        closedLabel: "Frühere Ausgabe",
+        toolBrand: "Privater Werkzeugbestand 571943",
+        toolId,
+        bookingDomain: tracking.domain,
+        artifactName: "scoped-tool-return",
+      }, async () => {});
+    } else {
+      await required(operational.mutate("tools.untrack", close));
+    }
+    await unlockOwner();
+    const after = await domains();
+    assert.equal(BigInt(after.current.generation), BigInt(before.current.generation) + 1n);
+    assert.equal(after.current.rotationRequired, false);
+    assert.equal(after.transfers.generation, before.transfers.generation);
+    assert.equal(after.transfers.rotationRequired, true);
+    const definition = await required(peer.query("zerotrust.domains.get", {
+      domain: tracking.domain,
+      generation: after.current.generation,
+    }, { strategy: "network-only" }));
+    assert.equal(definition.keyAuthority?.holder.user, managerAccount.vault.subject);
+    const [, revoked] = await formerReader.query("zerotrust.keys.get", {
+      domain: tracking.domain, generation: after.current.generation,
+    }, { strategy: "network-only" });
+    assert.equal(revoked?.code, "FORBIDDEN");
+
+    const next = await required(owner.mutate("tools.track", {
+      id: toolId,
+      data: { responsibleUserId: readerId },
+    }));
+    await unlockManager();
+    await required(operational.mutate("tools.untrack", close));
+    const [, denied] = await operational.mutate("tools.untrack", {
+      id: toolId, expectedTrackingId: next.trackingId,
+    });
+    assert.ok(denied);
+    await unlockOwner();
+    const active = await required(owner.query("tools.get", { id: toolId }, {
+      strategy: "network-only",
+    }));
+    assert.equal(active.activeTrackingId, next.trackingId);
+    await finishToolBookingRotations(owner, new Set([tracking.scope]), signal);
+    const repaired = await domains();
+    assert.equal(repaired.current.generation, after.current.generation);
+    assert.equal(BigInt(repaired.transfers.generation), BigInt(before.transfers.generation) + 1n);
+    assert.equal(repaired.transfers.rotationRequired, false);
+    console.log("Scoped tool return: manager rotated only the certified facet; exact retry left the new booking untouched; owner resumed the other facet");
+  } finally {
+    operational.dispose();
+    managerClient.setToken(null);
     await unlockOwner();
   }
 }

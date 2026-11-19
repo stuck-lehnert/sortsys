@@ -7,7 +7,7 @@ import {
   type IdentityCertificate,
   TOMBSTONE_FORMAT,
 } from "@sortsys/zerotrust/sortsys";
-import { TOOL_MODEL } from "./toolData";
+import { toolCollection, toolDomain, TOOL_MODEL } from "./toolData";
 import { publicId } from "./products";
 import type { Client, MutateInput } from "@sortsys/v2-client";
 import { required } from "./protectedObjects";
@@ -98,8 +98,8 @@ export function checkToolResponsibility(
     throw new InvalidProtectedData();
 }
 
-/** Remove former recipients from future generations once an administrator has
- * committed the closing packets. Durable markers remain for resumable work. */
+/** Remove former recipients from future generations once the closing packets
+ * commit. Durable markers remain available to a manager of each affected area. */
 export async function finishToolResponsibilityChanges(
   client: Client,
   packets: readonly MutateInput<"zerotrust.objects.save">[],
@@ -110,19 +110,34 @@ export async function finishToolResponsibilityChanges(
       .filter((packet) => packet.resourceAccess?.active === false)
       .map((packet) => packet.resourceAccess!.resource),
   );
+  await finishToolBookingRotations(client, resources, signal);
+}
+
+export async function finishToolBookingRotations(
+  client: Client,
+  resources: ReadonlySet<string>,
+  signal: AbortSignal,
+) {
   if (!resources.size) return;
+  const areas = [...resources].flatMap((scope) => {
+    const booking = toolDomain(`${scope}:master-data`);
+    if (booking?.namespace !== "tool-tracking") throw new InvalidProtectedData();
+    return (["master-data", "scope"] as const).map((facet) =>
+      toolCollection("tool-tracking", booking.id, facet),
+    );
+  });
   const session = await required(
     client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
   );
   signal.throwIfAborted();
-  if (!session.roles.includes(":admin")) return;
-  const { finishAccessChanges } = await import("../crypto/accessRotations");
-  await finishAccessChanges(
-    client,
-    signal,
-    [...resources].flatMap((scope) => [
-      `${scope}:master-data`,
-      `${scope}:scope`,
-    ]),
-  );
+  if (session.roles.includes(":admin")) {
+    const { finishAccessChanges } = await import("../crypto/accessRotations");
+    await finishAccessChanges(client, signal, areas.map((area) => area.domain));
+    return;
+  }
+  const { finishDelegatedAccessChanges } =
+    await import("../crypto/delegatedAccess");
+  await finishDelegatedAccessChanges(client, areas, signal, {
+    leaveUnmanagedPending: true,
+  });
 }

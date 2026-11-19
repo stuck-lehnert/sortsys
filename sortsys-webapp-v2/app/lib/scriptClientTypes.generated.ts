@@ -4230,6 +4230,7 @@ export type MutationInputs = {
     };
     "tools.untrack": {
         id: string;
+        expectedTrackingId?: string;
     };
     "tools.update": {
         id: string;

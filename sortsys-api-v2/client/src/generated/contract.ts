@@ -721,7 +721,7 @@ export type MutationInputs = {
   "tools.trackings.transfers.deny": { id: string; };
   "tools.trackings.transfers.request": { toolTrackingId: string; transferToUserId?: undefined | null | string; projectId?: undefined | null | string; notes?: undefined | null | string; };
   "tools.unarchive": { id: string; };
-  "tools.untrack": { id: string; };
+  "tools.untrack": { id: string; expectedTrackingId?: string; };
   "tools.update": { id: string; data: { brand?: undefined | string; category?: undefined | string; label?: undefined | null | string; purchasePrice?: undefined | null | number; usageCostPerDay?: undefined | null | number; status?: undefined | null | "lost" | "broken"; }; };
   "users.activate": { id: string; };
   "users.archive": { id: string; };

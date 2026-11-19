@@ -176,45 +176,53 @@ export async function finishDelegatedAccessChanges(
   client: Client,
   areas: readonly Collection[],
   signal: AbortSignal,
+  options: { leaveUnmanagedPending?: boolean } = {},
 ): Promise<void> {
   const expected = new Map(areas.map((area) => [area.domain, area]));
   const selected = [...expected.keys()];
+  if (!selected.length) return;
+  const missingCertificates = new Set<string>();
+  let conflictRetries = 0;
   for (let iteration = 0; iteration < 2001; iteration++) {
     const context = await verifiedAccessContext(
       client,
       signal,
-      selected.length > 0 && selected.length <= 16
-        ? { domains: [...selected] }
-        : {},
+      selected.length <= 16 ? { domains: selected } : {},
     );
     const actor = compilePolicy(context.permissions, [context.subject]);
-    const pending = context.domains
-      .filter((domain) => expected.has(domain.id) && domain.rotationRequired)
+    const managedAreas = context.domains
+      .flatMap((domain) => {
+        const collection = expected.get(domain.id);
+        if (
+          !collection ||
+          !domain.rotationRequired ||
+          missingCertificates.has(domain.id)
+        ) return [];
+        if (
+          domain.scope !== collection.scope ||
+          domain.facet !== collection.facet
+        ) throw new InvalidProtectedData();
+        if (
+          !actor.allows(collection.scope, collection.facet, "grant") ||
+          !actor.allows(collection.scope, collection.facet, "read")
+        ) {
+          if (options.leaveUnmanagedPending) return [];
+          throw new InvalidProtectedData();
+        }
+        return [{
+          tenant: context.account.tenant,
+          id: domain.id,
+          scope: collection.scope,
+          facet: collection.facet,
+          generation: domain.generation,
+        }];
+      })
       .slice(0, 8);
-    if (!pending.length) {
+    if (!managedAreas.length) {
       await client.invalidate("products.list");
       return;
     }
     const readership = compileReadership(context.permissions);
-    const managedAreas = pending.map((domain) => {
-      const collection = expected.get(domain.id);
-      if (
-        !collection ||
-        domain.scope !== collection.scope ||
-        domain.facet !== collection.facet ||
-        !actor.allows(collection.scope, collection.facet, "grant") ||
-        !actor.allows(collection.scope, collection.facet, "read")
-      ) {
-        throw new InvalidProtectedData();
-      }
-      return {
-        tenant: context.account.tenant,
-        id: domain.id,
-        scope: collection.scope,
-        facet: collection.facet,
-        generation: domain.generation,
-      };
-    });
     const certificates = await required(
       client.query(
         "zerotrust.keyAuthorities.forAreas",
@@ -228,14 +236,21 @@ export async function finishDelegatedAccessChanges(
       ),
     );
     context.live();
-    if (!Array.isArray(certificates) || certificates.length !== pending.length)
+    if (!Array.isArray(certificates) || certificates.length !== managedAreas.length)
       throw new InvalidProtectedData();
+    const certifiedAreas = managedAreas.flatMap((area, index) => {
+      const certificate = certificates[index];
+      if (certificate) return [{ area, certificate }];
+      if (!options.leaveUnmanagedPending) throw new InvalidProtectedData();
+      missingCertificates.add(area.id);
+      return [];
+    });
     const rotations = await mapConcurrent(
-      managedAreas,
+      certifiedAreas,
       4,
-      async (area, index) => {
+      async ({ area, certificate: input }) => {
         const certificate = await verifyKeyAuthority(
-          certificates[index],
+          input,
           {
             tenant: context.account.tenant,
             generation: context.history.current.generation,
@@ -287,12 +302,19 @@ export async function finishDelegatedAccessChanges(
         return { grants, definition };
       },
     );
-    await publishAccessRotations(
-      client,
-      context.rootPolicy.version,
-      rotations,
-      signal,
-    );
+    try {
+      await publishAccessRotations(
+        client,
+        context.rootPolicy.version,
+        rotations,
+        signal,
+      );
+      conflictRetries = 0;
+    } catch (error) {
+      context.live();
+      if (!isWriteConflict(error) || conflictRetries >= 2) throw error;
+      conflictRetries++;
+    }
   }
   throw new InvalidProtectedData();
 }

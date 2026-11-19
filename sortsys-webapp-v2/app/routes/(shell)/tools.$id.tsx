@@ -193,8 +193,10 @@ export default function ToolDetailPage() {
                   renderIcon: Icons.TakeBack,
                   hideIf: tool.available || !canReturnTool,
                   onClick: async () => {
+                    if (!activeTracking) return;
                     const [, err] = await client.mutate("tools.untrack", {
                       id: tool.id,
+                      expectedTrackingId: activeTracking.id,
                     });
                     if (err) throw err;
                   },

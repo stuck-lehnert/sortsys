@@ -13,6 +13,7 @@ export async function exerciseToolResponsibilityBrowser<T>(
     toolId: string;
     bookingDomain: string;
     artifactName?: string;
+    manager?: { username: string; password: string };
   },
   returnTool: () => Promise<T>,
 ): Promise<T> {

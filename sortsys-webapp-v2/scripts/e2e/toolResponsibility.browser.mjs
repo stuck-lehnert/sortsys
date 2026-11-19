@@ -14,8 +14,10 @@ const scenario = fixture.artifactName ?? "late-tools";
 assert.match(scenario, /^[a-z0-9-]+$/);
 const artifacts = join(dirname(fixturePath), "browser-artifacts", scenario);
 await mkdir(artifacts, { recursive: true });
-const directory = new URL("../../build/client", import.meta.url).pathname;
+const directory = process.env.SORTSYS_E2E_APPLICATION_BUILD ??
+  new URL("../../build/client", import.meta.url).pathname;
 const server = await applicationServer(directory, endpoints[1]);
+let managerServer;
 const expect = playwrightExpect.configure({ timeout: 20_000 });
 const errors = [];
 const leaks = [];
@@ -26,6 +28,7 @@ let page;
 async function close() {
   await browser?.close();
   await server.close();
+  await managerServer?.close();
 }
 for (const signal of ["SIGINT", "SIGTERM"])
   process.once(signal, () => {
@@ -37,6 +40,43 @@ const returned = new Promise((resolve, reject) => {
     else reject(new Error("Unexpected return notification"));
   });
 });
+
+async function signIn(page, origin, credentials) {
+  await page.goto(`${origin}/auth/login`);
+  await page.getByRole("textbox", { name: /^Nutzername/ })
+    .fill(`${credentials.username}@${fixture.tenant}`);
+  await page.getByLabel(/^Passwort/).fill(credentials.password);
+  await page.getByRole("button", { name: "Anmelden", exact: true }).click();
+  await expect(page.getByRole("link", { name: "Einstellungen", exact: true })).toBeVisible();
+}
+
+async function returnFromToolDetail() {
+  managerServer = await applicationServer(directory, endpoints[0]);
+  const manager = await browser.newContext({ viewport: { width: 1600, height: 1000 }, locale: "de-DE" });
+  await manager.tracing.start({ screenshots: true, snapshots: true });
+  const tool = await manager.newPage();
+  tool.on("pageerror", (error) => errors.push(error.message));
+  try {
+    await signIn(tool, managerServer.origin, fixture.manager);
+    await tool.goto(`${managerServer.origin}/tools/${fixture.toolId}`);
+    await expect(tool.getByText("gebucht", { exact: true })).toBeVisible();
+    const actions = tool.getByRole("button", { name: "Aktionen", exact: true }).first();
+    await expect(async () => {
+      if (!(await tool.getByRole("menu").count())) await actions.click();
+      await expect(tool.getByRole("menuitem", { name: "Zurückbuchen", exact: true })).toBeVisible({ timeout: 500 });
+    }).toPass({ timeout: 45_000 });
+    const rotated = tool.waitForResponse((response) =>
+      response.ok() && new URL(response.url()).pathname.includes("zerotrust.access.publish"),
+    { timeout: 45_000 });
+    await tool.getByRole("menuitem", { name: "Zurückbuchen", exact: true }).click();
+    await rotated;
+    await expect(tool.getByText("verfügbar", { exact: true })).toBeVisible({ timeout: 45_000 });
+    await tool.screenshot({ path: join(artifacts, "manager-after-return.png"), fullPage: true });
+  } finally {
+    await manager.tracing.stop({ path: join(artifacts, "manager.zip") });
+    await manager.close();
+  }
+}
 
 try {
   browser = await chromium.launch({
@@ -75,15 +115,7 @@ try {
       if (event.type === "changed") events.push(event);
     });
   });
-  await page.goto(`${server.origin}/auth/login`);
-  await page
-    .getByRole("textbox", { name: /^Nutzername/ })
-    .fill(`${fixture.member.username}@${fixture.tenant}`);
-  await page.getByLabel(/^Passwort/).fill(fixture.member.password);
-  await page.getByRole("button", { name: "Anmelden", exact: true }).click();
-  await expect(
-    page.getByRole("link", { name: "Einstellungen", exact: true }),
-  ).toBeVisible();
+  await signIn(page, server.origin, fixture.member);
   await page.goto(`${server.origin}/tools/trackings`);
   await expect(
     page.getByRole("heading", { name: "Buchungshistorie", exact: true }),
@@ -105,6 +137,7 @@ try {
     path: join(artifacts, "member-active-only.png"),
     fullPage: true,
   });
+  if (fixture.manager) await returnFromToolDetail();
   process.send("booking-visible");
   await returned;
   await expect(active).toHaveCount(0);
@@ -142,6 +175,7 @@ try {
         toolMasterLinkHidden: true,
         costsHidden: true,
         crossInstanceRevocation: true,
+        returnedByScopedManager: Boolean(fixture.manager),
         reload: true,
         plaintextLeaks: leaks,
         pageErrors: errors,

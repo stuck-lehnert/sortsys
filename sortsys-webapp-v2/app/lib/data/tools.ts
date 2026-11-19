@@ -43,7 +43,10 @@ import {
   type ToolPart,
 } from "./toolData";
 import { bookProtectedTools } from "./toolBookings";
-import { finishToolResponsibilityChanges } from "./toolResponsibility";
+import {
+  finishToolBookingRotations,
+  finishToolResponsibilityChanges,
+} from "./toolResponsibility";
 import type { createProtectedProjects } from "./projects";
 import { createProtectedPersonnel } from "./personnel";
 import {
@@ -268,7 +271,12 @@ export function createProtectedTools(
       prepared.close();
     }
   }
-  async function returnTool(resource: string, actorId: string, now: string) {
+  async function returnTool(
+    resource: string,
+    actorId: string,
+    now: string,
+    expectedTrackingId?: string,
+  ) {
     const toolId = addressId(resource);
     const master = toolRequest("tool", resource, "master-data");
     const booking = toolBookingRequest(resource);
@@ -279,6 +287,36 @@ export function createProtectedTools(
         trackingId: activeToolBooking(view, document(view, master)!.value),
       };
     });
+    if (
+      expectedTrackingId !== undefined &&
+      basis.trackingId !== expectedTrackingId
+    ) {
+      // An actor who has already closed this booking can resume its key
+      // rotation. Only the original booking is considered on that path.
+      const expected = toolRequest(
+        "tool-tracking",
+        expectedTrackingId,
+        "master-data",
+      );
+      const alreadyClosed = await runtime.read([expected], (view) => {
+        if (!view.can(expected, "update") || !document(view, expected, true)) {
+          return false;
+        }
+        const row = values(view, expected);
+        return (
+          row.tool_id === toolId &&
+          row.ended_at !== null &&
+          row.ended_by_user_id === actorId
+        );
+      });
+      if (!alreadyClosed) throw new ProtectedWriteConflict();
+      await finishToolBookingRotations(
+        client,
+        new Set([expected.area.scope]),
+        signal,
+      );
+      return;
+    }
     const checkTool = (tx: DataTransaction) => {
       if (
         tx.head(master).sequence !== basis.head.sequence ||
@@ -1050,8 +1088,17 @@ export function createProtectedTools(
         return { success: true };
       }
       if (path === "tools.untrack") {
-        const { id } = record(input, ["id"]);
-        await returnTool(id as string, actorId, now);
+        const { id, expectedTrackingId } = partialAddressRecord(input, [
+          "id",
+          "expectedTrackingId",
+        ]);
+        if (expectedTrackingId !== undefined) addressId(expectedTrackingId);
+        await returnTool(
+          id as string,
+          actorId,
+          now,
+          expectedTrackingId as string | undefined,
+        );
         return { success: true };
       }
       const selected = await requests();

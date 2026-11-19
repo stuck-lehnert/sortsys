@@ -273,8 +273,11 @@ noch aktive Buchungen nach. Ein administrativer Werkzeugabruf gleicht außerdem
 Buchungen bereits registrierter Mitarbeiter ab. Ein nativer Test prüft den
 fehlenden ursprünglichen Aktivitätsnachweis, die spätere Freigabe, verborgene
 Kosten, einen gültig signierten abgewiesenen Schreibversuch und den Entzug nach
-Rückgabe. Für Rückgabe und Umbuchung durch den Verantwortlichen fehlen noch Anschlüsse. Ohne
-Administrationsrecht bleibt der Schlüsselwechsel nach einer Rückgabe vorgemerkt.
+Rückgabe. Die Werkzeugansicht bindet eine Rückgabe an die ausgewählte Buchung.
+Ein berechtigter Benutzer mit bereichsbezogener Schlüsselzuständigkeit kann den
+Schlüsselwechsel ohne globale Administratorrolle ausführen. Für andere Bereiche
+bleibt der Wechsel vorgemerkt. Die automatische Schreibfreigabe für
+Verantwortliche bei Rückgabe und Umbuchung fehlt noch.
 Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
 aus. Siehe
 [Werkzeugverwaltung](verschluesselte-werkzeuge.md).

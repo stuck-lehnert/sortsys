@@ -946,7 +946,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "tools.untrack",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ id: string; }",
+        input_ts: "{ id: string; expectedTrackingId?: string; }",
         output_ts: "{ success: true; }",
     },
     RawContractSpec {

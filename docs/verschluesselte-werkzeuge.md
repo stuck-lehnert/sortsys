@@ -82,8 +82,9 @@ Ein signierter Zuständigkeitsnachweis ist an die genaue verschlüsselte
 Buchungsrevision gebunden. Er wird gemeinsam mit der Buchung veröffentlicht.
 Die Rückgabe oder Umbuchung beendet das abgeleitete Leserecht. Ein fehlender
 Nachweis oder das erneute Senden einer alten Bereichsdefinition stellt es nicht
-wieder her. Schließt ein Administrator die Buchung, verteilt der Browser
-anschließend neue Schlüssel für die betroffenen Bereiche. Ehemalige Empfänger
+wieder her. Nach dem Abschluss kann die Administration neue Schlüssel für die
+betroffenen Bereiche verteilen. Hat die buchende Person eine Schlüsselzuständigkeit
+für einen dieser Bereiche, erledigt ihr Browser den Wechsel direkt. Ehemalige Empfänger
 können damit spätere Änderungen auch mit einem behaltenen alten Schlüssel nicht
 lesen. Bereits entschlüsselte Inhalte lassen sich ihnen nicht entziehen.
 
@@ -144,6 +145,19 @@ Die Kosten der vorherigen Buchung bleiben erhalten. Rückgabe und Ablehnung
 offener Umbuchungsanfragen erfolgen ebenfalls gemeinsam. Eine Rückgabe benötigt
 keinen Kostenschlüssel.
 
+Die Rückgabe aus der Werkzeugansicht gilt für die dort angezeigte Buchung.
+Wurde das Werkzeug zwischenzeitlich erneut ausgegeben, lässt die alte Aktion
+die neue Buchung bestehen. Wer die frühere Buchung selbst abgeschlossen hat,
+kann dieselbe Aktion nach einer unterbrochenen Verbindung wiederholen. Dabei
+kann der Browser einen ausstehenden Schlüsselwechsel fortsetzen.
+
+Im Browsertest gibt eine Person ohne globale Administratorrolle das Werkzeug
+über die Detailansicht zurück. In der zweiten Browsersitzung verschwindet die
+Buchung bei der bisherigen zuständigen Person. Der zugehörige Mehrinstanztest
+prüft den Schlüsselwechsel im freigegebenen Bereich. Der Bereich für
+Umbuchungsanfragen bleibt bis zur Erneuerung durch einen weiteren Berechtigten
+vorgemerkt. Eine Wiederholung der Rückgabe lässt eine spätere Ausgabe bestehen.
+
 Eine verschlüsselte, unveränderliche Bestätigung bindet den ausgeführten Befehl
 an dessen Urheber und vollständige Eingaben. Nach einer verlorenen Antwort wird
 beim Wiederholen das ursprüngliche Ergebnis zurückgegeben. Das erzeugt auch
@@ -172,10 +186,9 @@ die API prüft Signaturen, Schreibrechte und technische Versionsstände.
 Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
 
 - Rechte zum Rückgeben oder Umbuchen folgen noch nicht automatisch aus der
-  Zuständigkeit. Schließt ein berechtigter Benutzer ohne Administrationsrecht
-  die Buchung, bleibt der nötige Schlüsselwechsel zur administrativen
-  Fortsetzung vorgemerkt. Bis dahin werden neue Inhalte des betroffenen
-  Bereichs nicht veröffentlicht.
+  Zuständigkeit. Fehlt der buchenden Person die Schlüsselzuständigkeit, bleibt
+  der Wechsel für den jeweiligen Bereich vorgemerkt. Weitere Schreibvorgänge
+  in diesem Bereich warten bis zur Schlüsselerneuerung.
 - Eine neue Ausgabe und die Annahme einer Umbuchung benötigen derzeit Zugriff
   auf die Werkzeugkosten, um den historischen Kostenstand anzulegen. Eine
   Übernahme dieses Kostenstands ohne Entschlüsselung ist noch anzuschließen.
