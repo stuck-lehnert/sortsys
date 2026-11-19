@@ -12,7 +12,7 @@ import {
   type BusinessDatabase,
   type DuckDriver,
 } from "../database";
-import type { Collection } from "../protectedObjects";
+import type { Collection, CollectionPageRequest } from "../protectedObjects";
 import {
   dataAreaKey,
   dataDocumentKey,
@@ -643,6 +643,15 @@ export class DataRuntime {
     const next = new Map(this.resources);
     const reads = opened ?? new Map<string, DataCollection>();
     let open: DataCollections | null = null;
+    const initial = requests.map((request): CollectionPageRequest => {
+      if (request.ids !== undefined)
+        return { area: request.area, headOnly: true };
+      const previous = next.get(dataAreaKey(request.area));
+      return {
+        area: request.area,
+        known: previous?.complete ? previous.head : undefined,
+      };
+    });
     this.loadingDomains = new Set(
       requests.map((request) => request.area.domain),
     );
@@ -661,19 +670,9 @@ export class DataRuntime {
         ];
         open =
           supplied ??
-          (await this.storage.open(this.controller.signal, domains));
+          (await this.storage.open(this.controller.signal, domains, initial));
       }
-      await open?.prefetch?.(
-        requests.map((request) => {
-          if (request.ids !== undefined)
-            return { area: request.area, headOnly: true };
-          const previous = next.get(dataAreaKey(request.area));
-          return {
-            area: request.area,
-            known: previous?.complete ? previous.head : undefined,
-          };
-        }),
-      );
+      await open?.prefetch?.(initial);
       for (const [key, resource] of next)
         if (open?.readable && !open.readable(resource.request.area))
           next.delete(key);

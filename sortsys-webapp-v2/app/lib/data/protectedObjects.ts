@@ -100,6 +100,10 @@ function pageRequest(
   };
 }
 
+function selectionRequest({ area, ...options }: CollectionPageRequest) {
+  return pageRequest(area, options);
+}
+
 function pageKey(request: QueryInput<"zerotrust.objects.list">): string {
   return JSON.stringify([
     request.domain,
@@ -142,8 +146,26 @@ export async function protectedCollections(
   client: Client,
   signal: AbortSignal,
   selectedDomains?: readonly string[],
+  initial: readonly CollectionPageRequest[] = [],
 ) {
+  if (selectedDomains && initial.length > 0 && initial.length <= 16) {
+    try {
+      return await bindCollections(
+        client,
+        signal,
+        selectedDomains,
+        undefined,
+        initial,
+      );
+    } catch (error) {
+      if (!exceedsResponseBudget(error)) throw error;
+    }
+  }
   return bindCollections(client, signal, selectedDomains);
+}
+
+function exceedsResponseBudget(error: unknown): boolean {
+  return error instanceof RpcClientError && error.data?.httpCode === 413;
 }
 
 /** A read-only content view uses live access proofs and its own page source.
@@ -174,12 +196,15 @@ async function bindCollections(
   signal: AbortSignal,
   selectedDomains?: readonly string[],
   source?: PageSource,
+  initial: readonly CollectionPageRequest[] = [],
 ) {
+  const initialRequests = initial.map(selectionRequest);
   const context = await collectionContext(
     client,
     signal,
     selectedDomains,
     source,
+    initialRequests,
   );
   function live() {
     if (signal.aborted || unlockedAccount() !== context.account)
@@ -198,19 +223,23 @@ async function bindCollections(
       return false;
     return context.access.allows(collection.scope, collection.facet, "read");
   }
+  for (const selection of initial)
+    if (!readable(selection.area)) throw new InvalidProtectedData();
+
   async function prefetch(
     selections: readonly CollectionPageRequest[],
   ): Promise<void> {
     if (!selections.length) return;
     for (const selection of selections)
       if (!readable(selection.area)) throw new InvalidProtectedData();
+    const missing = selections.filter(
+      (selection) => !context.pages.has(pageKey(selectionRequest(selection))),
+    );
     const groups: CollectionPageRequest[][] = [];
-    for (let offset = 0; offset < selections.length; offset += 16)
-      groups.push(selections.slice(offset, offset + 16));
+    for (let offset = 0; offset < missing.length; offset += 16)
+      groups.push(missing.slice(offset, offset + 16));
     await mapConcurrent(groups, 4, async (group) => {
-      const requests = group.map(({ area, ...options }) =>
-        pageRequest(area, options),
-      );
+      const requests = group.map(selectionRequest);
       let pages: ObjectPage[];
       try {
         const input = { selections: requests };
@@ -222,8 +251,7 @@ async function bindCollections(
               }),
             );
       } catch (error) {
-        if (!(error instanceof RpcClientError) || error.data?.httpCode !== 413)
-          throw error;
+        if (!exceedsResponseBudget(error)) throw error;
         // Split only a response-budget rejection. Permission, integrity and
         // snapshot failures must discard the read instead of falling back.
         if (group.length === 1) return;
@@ -235,8 +263,9 @@ async function bindCollections(
       if (!Array.isArray(pages) || pages.length !== group.length)
         throw new InvalidProtectedData();
       for (const [index, selection] of group.entries()) {
-        if (!readable(selection.area)) throw new InvalidProtectedData();
-        context.pages.set(pageKey(requests[index]!), pages[index]!);
+        const page = pages[index];
+        if (!readable(selection.area) || !page) throw new InvalidProtectedData();
+        context.pages.set(pageKey(requests[index]!), page);
       }
     });
   }
@@ -290,6 +319,7 @@ async function collectionContext(
   signal: AbortSignal,
   selection?: string | readonly string[],
   source?: PageSource,
+  initialRequests: QueryInput<"zerotrust.objects.list">[] = [],
 ) {
   let options: QueryInput<"zerotrust.access.snapshot"> = {};
   if (typeof selection === "string") {
@@ -297,6 +327,7 @@ async function collectionContext(
   } else if (selection !== undefined) {
     options = { domains: [...selection] };
   }
+  if (initialRequests.length) options.pages = { selections: initialRequests };
   const {
     account,
     history,
@@ -305,6 +336,7 @@ async function collectionContext(
     permissions,
     domains,
     origins,
+    pages: initialPages,
     live,
   } = await verifiedAccessContext(client, signal, options);
   const author = createObjectAuthorVerifier(
@@ -312,8 +344,14 @@ async function collectionContext(
     { account, history, live },
     rootPolicy,
   );
+  const pages = new Map<string, ObjectPage>();
+  for (const [index, request] of initialRequests.entries()) {
+    const page = initialPages?.[index];
+    if (!page) throw new InvalidProtectedData();
+    pages.set(pageKey(request), page);
+  }
   return {
-    pages: new Map<string, ObjectPage>(),
+    pages,
     source,
     account,
     history,

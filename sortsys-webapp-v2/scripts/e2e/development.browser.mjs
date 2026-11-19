@@ -375,15 +375,19 @@ async function changeGaebText(page, key, value) {
 }
 
 function rpcInput(request, procedure) {
+  return rpcInputs(request, procedure)[0];
+}
+
+function rpcInputs(request, procedure) {
   const url = new URL(request.url());
   const paths = decodeURIComponent(url.pathname).split("/").at(-1).split(",");
-  const index = paths.indexOf(procedure);
-  if (index === -1) return;
+  if (!paths.includes(procedure)) return [];
   const encoded = url.searchParams.get("input");
   const wire = encoded === null ? request.postDataJSON() : JSON.parse(encoded);
-  return url.searchParams.get("batch") === "1"
-    ? wire?.[String(index)]?.json
-    : wire?.json;
+  if (url.searchParams.get("batch") !== "1") return [wire?.json];
+  return paths.flatMap((path, index) =>
+    path === procedure ? [wire?.[String(index)]?.json] : [],
+  );
 }
 
 async function deferGaebRequests(editors, procedure, shouldWait, work) {
@@ -615,6 +619,21 @@ try {
     await expect(product).toBeVisible();
   });
   await scenario("product-prefix-search", async (page) => {
+    const catalogueDomain = "catalog:products:master-data";
+    let initialCatalogueBatched = false;
+    page.on("request", (request) => {
+      if (
+        rpcInputs(request, "zerotrust.access.snapshot").some(
+          (input) =>
+            input?.domains?.includes(catalogueDomain) &&
+            input.pages?.selections?.some(
+              (selection) =>
+                selection.domain === catalogueDomain && !selection.headOnly,
+            ),
+        )
+      )
+        initialCatalogueBatched = true;
+    });
     await login(page, "john.doe");
     await expect(
       page.getByRole("link", { name: "Einstellungen", exact: true }),
@@ -624,6 +643,11 @@ try {
       .getByText("Haftgrund, manuell angepasst", { exact: true })
       .click();
     await expect(page).toHaveURL(/\/products\/[^/]+$/);
+    assert.equal(
+      initialCatalogueBatched,
+      true,
+      "The catalogue's first encrypted page travels with its access snapshot",
+    );
     const productUrl = page.url();
     const edit = async () => {
       await expect(

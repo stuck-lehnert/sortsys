@@ -122,10 +122,23 @@ pub(in crate::zerotrust) async fn check_snapshot(
 pub(super) async fn first(
     service: &crate::auth::AuthService,
     request: &RequestContext,
-    input: AccessInput,
+    mut input: AccessInput,
 ) -> RpcResult<AccessSnapshot> {
+    let pages = input.pages.take();
     let selected = input.selected_domains()?;
     let include_domains = input.include_domains.unwrap_or(true);
+    if let Some(pages) = &pages {
+        let domains = selected.ok_or_else(invalid)?;
+        if !include_domains || input.known.is_some() {
+            return Err(invalid());
+        }
+        if persistence::selected_domains(pages)?
+            .iter()
+            .any(|domain| !domains.contains(domain))
+        {
+            return Err(invalid());
+        }
+    }
     if let Some(known) = &input.known {
         sized::<32>(known)?;
         let mut context = metadata_context_for_domains(service, request, Some(&[])).await?;
@@ -143,6 +156,7 @@ pub(super) async fn first(
                 snapshot,
                 after: None,
                 unchanged: true,
+                pages: None,
             });
         }
     }
@@ -171,6 +185,11 @@ pub(super) async fn first(
     let snapshot = snapshot(&mut context, include_domains, selected).await?;
     let history = super::super::setup::metadata_history(&mut context.transaction).await?;
     let domains = page_domains(&mut context, include_domains, &domains).await?;
+    let pages = if let Some(pages) = pages {
+        Some(persistence::selected_pages(&mut context, pages).await?)
+    } else {
+        None
+    };
     context.transaction.validate().await?;
     Ok(AccessSnapshot {
         subject: context.security.subject,
@@ -182,6 +201,7 @@ pub(super) async fn first(
         snapshot,
         after,
         unchanged: false,
+        pages,
     })
 }
 

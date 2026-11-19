@@ -1,5 +1,10 @@
 import assert from "node:assert/strict";
-import type { Client, QueryResult } from "@sortsys/v2-client";
+import {
+  RpcClientError,
+  type Client,
+  type QueryInput,
+  type QueryResult,
+} from "@sortsys/v2-client";
 import {
   protectedCollections,
   required,
@@ -57,6 +62,7 @@ export async function exerciseBatchedReads(
   area: Collection,
   snapshot: string,
   signal: AbortSignal,
+  transmissions: readonly string[][],
 ) {
   const access = await required(peer.query("zerotrust.access.snapshot", {}));
   const [history, policy, origins, domains, session] = await Promise.all([
@@ -247,6 +253,16 @@ export async function exerciseBatchedReads(
   const changed = { ...area, prefix: "staged:319" };
   const inspected = { ...area, prefix: "staged:318" };
   const oldHead = (BigInt(snapshot) - 1n).toString();
+  const readProcedures = new Set([
+    "zerotrust.access.snapshot",
+    "zerotrust.objects.pages",
+    "zerotrust.objects.list",
+    "zerotrust.keys.history",
+  ]);
+  const readTransmissions = (start: number) =>
+    transmissions
+      .slice(start)
+      .filter((paths) => paths.some((path) => readProcedures.has(path)));
   const calls: string[] = [];
   const observed: Client = {
     ...peer,
@@ -271,6 +287,7 @@ export async function exerciseBatchedReads(
       return reply;
     }) as Client["query"],
   };
+  const separateStart = transmissions.length;
   const refreshed = await protectedCollections(observed, signal, [area.domain]);
   calls.length = 0;
   await refreshed.prefetch([
@@ -292,12 +309,116 @@ export async function exerciseBatchedReads(
     );
     assert.equal(metadata, snapshot);
     assert.deepEqual(calls, ["zerotrust.objects.pages"]);
+    assert.deepEqual(readTransmissions(separateStart), [
+      ["zerotrust.access.snapshot"],
+      ["zerotrust.objects.pages"],
+    ]);
   } finally {
     for (const collection of collections) collection.close();
   }
   console.log(
     "Native conditional reads: three collection selections use one request, only the changed selection carries encrypted data",
   );
+
+  const initial = [
+    { area: cached, known: snapshot },
+    { area: changed, known: oldHead },
+    { area: inspected, headOnly: true },
+  ];
+  const batchedStart = transmissions.length;
+  const bundled = await protectedCollections(
+    client,
+    signal,
+    [area.domain],
+    initial,
+  );
+  await bundled.prefetch(initial);
+  const bundledCollections = initial.map(({ area }) => bundled(area));
+  try {
+    assert.equal(await bundledCollections[0]!.readIfChanged(snapshot), null);
+    const updated = await bundledCollections[1]!.readIfChanged(oldHead);
+    assert.deepEqual(updated?.map((object) => object.value), [
+      { title: "Geheime Kalkulationszeile 319", amount: 592.375 },
+    ]);
+    assert.equal(await bundledCollections[2]!.inspect(), snapshot);
+    assert.deepEqual(readTransmissions(batchedStart), [
+      ["zerotrust.access.snapshot"],
+    ]);
+  } finally {
+    for (const collection of bundledCollections) collection.close();
+  }
+  const foreign = "testing:missing:master-data";
+  const rejected: [QueryInput<"zerotrust.access.snapshot">, string][] = [
+    [{ pages: { selections: [first] } }, "BAD_REQUEST"],
+    [
+      { domains: [foreign], pages: { selections: [first] } },
+      "BAD_REQUEST",
+    ],
+    [
+      {
+        domains: [area.domain],
+        includeDomains: false,
+        pages: { selections: [first] },
+      },
+      "BAD_REQUEST",
+    ],
+    [
+      {
+        domains: [area.domain],
+        pages: {
+          selections: [
+            first,
+            { ...second, snapshot: (BigInt(snapshot) + 1n).toString() },
+          ],
+        },
+      },
+      "CONFLICT",
+    ],
+  ];
+  for (const [input, expected] of rejected) {
+    const [value, error] = await peer.query("zerotrust.access.snapshot", input);
+    assert.equal(value, null);
+    assert.equal(error?.code, expected);
+  }
+  console.log(
+    "Native initial reads: access, key packages and three collection selections use one HTTP request; mismatched domains and snapshots are rejected",
+  );
+
+  const overBudget: Client = {
+    ...client,
+    query: (async (path, input, options) => {
+      const access = input as QueryInput<"zerotrust.access.snapshot">;
+      if (path === "zerotrust.access.snapshot" && access.pages) {
+        return [
+          null,
+          new RpcClientError({
+            message: "Protected collection batch exceeds the response limit",
+            code: -32600,
+            data: { code: "BAD_REQUEST", httpCode: 413 },
+          }),
+        ];
+      }
+      return client.query(path, input, options);
+    }) as Client["query"],
+  };
+  const fallbackStart = transmissions.length;
+  const fallback = await protectedCollections(
+    overBudget,
+    signal,
+    [area.domain],
+    initial,
+  );
+  await fallback.prefetch(initial);
+  const fallbackCollection = fallback(changed);
+  try {
+    assert.equal((await fallbackCollection.readIfChanged(oldHead))?.length, 1);
+    assert.deepEqual(readTransmissions(fallbackStart), [
+      ["zerotrust.access.snapshot"],
+      ["zerotrust.objects.pages"],
+    ]);
+  } finally {
+    fallbackCollection.close();
+  }
 
   const trusted = await protectedCollections(client, signal);
   await trusted.prefetch([{ area }]);

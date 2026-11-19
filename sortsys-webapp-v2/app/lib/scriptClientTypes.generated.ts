@@ -1371,6 +1371,7 @@ export type QueryInputs = {
         domain?: string;
         domains?: Array<string>;
         includeDomains?: boolean;
+        pages?: ListBatchInput;
     };
     "zerotrust.content.inspect": {
         operation: string;
@@ -2873,6 +2874,7 @@ export type QueryOutputs = {
         snapshot: string;
         after: string | null;
         unchanged: boolean;
+        pages?: Array<ObjectPage>;
     };
     "zerotrust.content.inspect": {
         pages: Array<ObjectPage>;

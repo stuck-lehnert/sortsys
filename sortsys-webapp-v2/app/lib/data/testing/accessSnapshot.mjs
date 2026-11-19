@@ -2,7 +2,7 @@ import { creationResource } from "@sortsys/zerotrust/sortsys";
 
 /** Build the new public transport envelope from existing cryptographic test
  * fixtures. This simulates transport only; native tests exercise transactions. */
-export async function accessSnapshotFixture(client, input = {}) {
+export async function accessSnapshotFixture(client, input = {}, readPages) {
   const read = async (path, parameters) => {
     const [value, error] = await client.query(path, parameters);
     if (error) throw error;
@@ -50,6 +50,12 @@ export async function accessSnapshotFixture(client, input = {}) {
     after: offset + 64 < ids.length ? pageIds.at(-1) : null,
   };
   if (input.after !== undefined) return [page, null];
+  let pages;
+  if (input.pages) {
+    const [result, error] = await readPages(input.pages);
+    if (error) return [null, error];
+    pages = result;
+  }
   return [
     {
       subject: `user:${session.user.id}`,
@@ -58,6 +64,7 @@ export async function accessSnapshotFixture(client, input = {}) {
       policy,
       ...page,
       unchanged: false,
+      ...(pages ? { pages } : {}),
     },
     null,
   ];

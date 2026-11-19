@@ -172,7 +172,14 @@ export async function exerciseNativeStaging(
     console.log(
       "Native staging: 320 encrypted records use two upload requests (4/1 parts); a forged signature prevents publication; invisible parts, cross-instance commit, lost reply and exact retry verified",
     );
-    await exerciseBatchedReads(owner, peer, area, publishedSequence, signal);
+    await exerciseBatchedReads(
+      owner,
+      peer,
+      area,
+      publishedSequence,
+      signal,
+      transmissions,
+    );
 
     const fresh = await protectedCollection(owner, area, signal);
     try {

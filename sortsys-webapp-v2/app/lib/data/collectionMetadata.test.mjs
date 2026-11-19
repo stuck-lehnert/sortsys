@@ -68,13 +68,24 @@ test("small runtime reads select new and retained areas and discard a revoked re
         values(view, second),
       ]),
     ).toEqual([["Private entry 1"], ["Private entry 2"]]);
+    const inputs = fixture.calls
+      .filter((call) => metadataPaths.has(call.path))
+      .map((call) => call.input);
+    expect(inputs.map((input) => input.domains)).toEqual([
+      [first.area.domain],
+      [second.area.domain, first.area.domain],
+    ]);
     expect(
-      fixture.calls
-        .filter((call) => metadataPaths.has(call.path))
-        .map((call) => call.input),
-    ).toEqual([
-      { domains: [first.area.domain] },
-      { domains: [second.area.domain, first.area.domain] },
+      inputs.map((input) =>
+        input.pages.selections.map((selection) => selection.domain),
+      ),
+    ).toEqual([[first.area.domain], [second.area.domain]]);
+    const finalChecks = fixture.calls
+      .filter((call) => call.path === "zerotrust.objects.pages")
+      .flatMap((call) => call.input.selections);
+    expect(finalChecks).toMatchObject([
+      { domain: first.area.domain, headOnly: true, snapshot: "1" },
+      { domain: second.area.domain, headOnly: true, snapshot: "1" },
     ]);
 
     const [previous] = await fixture.client.query("zerotrust.policy.get");

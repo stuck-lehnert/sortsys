@@ -366,7 +366,7 @@ export type QueryInputs = {
   "users.supervisors.getDefault": void;
   "users.vacations.list": { from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; };
   "zerotrust.access.page": { snapshot: string, after: string, includeDomains: boolean, };
-  "zerotrust.access.snapshot": { known?: string, domain?: string, domains?: Array<string>, includeDomains?: boolean, };
+  "zerotrust.access.snapshot": { known?: string, domain?: string, domains?: Array<string>, includeDomains?: boolean, pages?: ListBatchInput, };
   "zerotrust.content.inspect": { operation: string, approval: ContentEpoch, pages?: ListBatchInput, start?: boolean, };
   "zerotrust.content.snapshots": { after?: string, };
   "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', subject?: string, };
@@ -522,7 +522,7 @@ export type QueryOutputs = {
   "users.supervisors.getDefault": { userId: null | string; };
   "users.vacations.list": { id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: "vacation" | "other"; label: null | string; status: "denied" | "requested" | "approved"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[];
   "zerotrust.access.page": { snapshot: string, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, after: string | null, };
-  "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, };
+  "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, pages?: Array<ObjectPage>, };
   "zerotrust.content.inspect": { pages: Array<ObjectPage>, stamp: string, restoredDocumentScopes: Array<string>, sealedInvoiceScopes: Array<string>, uncheckedDocuments: number, };
   "zerotrust.content.snapshots": { rows: Array<TenantSnapshot>, after: string | null, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;

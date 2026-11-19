@@ -346,6 +346,8 @@ struct AccessInput {
     #[serde(default)]
     #[ts(optional)]
     include_domains: Option<bool>,
+    #[ts(optional)]
+    pages: Option<ListBatchInput>,
 }
 
 impl AccessInput {
@@ -415,6 +417,9 @@ struct AccessSnapshot {
     snapshot: String,
     after: Option<String>,
     unchanged: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pages: Option<Vec<ObjectPage>>,
 }
 
 #[derive(Deserialize, TS)]

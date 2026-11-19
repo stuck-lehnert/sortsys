@@ -531,6 +531,14 @@ behält ihre eigene Berechtigungsprüfung.
 Ein Transportpaket garantiert keine gemeinsame Transaktion. Die atomare
 Veröffentlichung gehört ausdrücklich zu `zerotrust.access.publish`.
 
+Beim Öffnen verschlüsselter Listen kann die erste Antwort die Zugriffsübersicht,
+bis zu 16 Datenauswahlen und deren Schlüsselpakete enthalten. Die API prüft
+die Zugriffe und liest die Daten in derselben Transaktion. Die Webapp prüft
+die Zugriffs- und Schlüsselnachweise, bevor sie die Datensätze entschlüsselt.
+Passt die Auswahl nicht in die Antwort, ruft die Webapp die Seiten in
+kleineren Paketen ab. Vor der Anzeige prüft die Webapp die Versionsstände
+erneut.
+
 Beim gezielten Laden bekannter Datensatzkennungen werden jeweils 32 Abrufe
 gemeinsam vorbereitet. Erst nach deren Antworten öffnet der Browser die
 Chiffrate mit höchstens 16 parallelen Prüfungen. Damit belegt die Auswahl von

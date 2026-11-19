@@ -24,6 +24,7 @@ export interface DataStorage {
   open(
     signal: AbortSignal,
     domains?: readonly string[],
+    initial?: readonly CollectionPageRequest[],
   ): Promise<DataCollections>;
   commit(
     groups: PreparedWrites[],
@@ -37,14 +38,14 @@ export interface DataStorage {
 }
 export function encryptedDataStorage(client: Client): DataStorage {
   return {
-    open: (signal, domains) => {
+    open: (signal, domains, initial) => {
       // Selected inventories fit in one security snapshot. Larger selections
       // keep the paged inventory rather than combine unrelated snapshots.
       const selected =
         domains && domains.length > 0 && domains.length <= 16
           ? domains
           : undefined;
-      return protectedCollections(client, signal, selected);
+      return protectedCollections(client, signal, selected, initial);
     },
     commit: (groups, guards, signal) =>
       commitProtectedWrites(client, groups, signal, guards),

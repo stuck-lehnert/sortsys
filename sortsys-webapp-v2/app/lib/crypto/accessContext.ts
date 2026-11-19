@@ -126,6 +126,7 @@ async function readAccessContext(
     "snapshot",
     "after",
     "unchanged",
+    ...(options.pages ? ["pages"] : []),
   ]);
   if (input.subject !== account.vault.subject) throw new InvalidProtectedData();
   if (
@@ -141,6 +142,13 @@ async function readAccessContext(
     selected = new Set(options.domains);
   }
   if (selected && input.after !== null) throw new InvalidProtectedData();
+  if (
+    options.pages &&
+    (!Array.isArray(input.pages) ||
+      input.pages.length !== options.pages.selections.length ||
+      input.unchanged)
+  )
+    throw new InvalidProtectedData();
   const history = await verifyAccountHistory(input.history, account);
   live();
   const identity = history.identityCertificate(input.subject);
@@ -261,6 +269,7 @@ async function readAccessContext(
     permissions,
     domains,
     origins: origins.filter((origin) => origin !== null).map(creationOrigin),
+    pages: input.pages,
     live,
   };
 }

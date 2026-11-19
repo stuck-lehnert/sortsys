@@ -149,6 +149,59 @@ export async function protectedTenant(
       code: "CONFLICT",
     }),
   ];
+  function objectPage(input) {
+    const domain = domains.get(input.domain);
+    const head = String(domain.head);
+    if (input.snapshot != null && input.snapshot !== head) {
+      return conflict();
+    }
+    if (input.headOnly || input.known === head) {
+      return [
+        {
+          snapshot: head,
+          keyGeneration: "1",
+          after: null,
+          objects: [],
+          recipientAccess: [],
+        },
+        null,
+      ];
+    }
+    const values = [...objects.values()]
+      .filter(
+        (item) =>
+          item.scope === domain.area.scope &&
+          item.facet === domain.area.facet &&
+          item.object.startsWith(input.prefix) &&
+          (input.after == null || item.object > input.after),
+      )
+      .sort((left, right) => compareText(left.object, right.object));
+    return [
+      {
+        snapshot: head,
+        keyGeneration: "1",
+        after: values.length > 32 ? values[31].object : null,
+        objects: structuredClone(values.slice(0, 32)),
+        recipientAccess: values
+          .slice(0, 32)
+          .flatMap((value) =>
+            recipients.has(value.object)
+              ? [structuredClone(recipients.get(value.object))]
+              : [],
+          ),
+      },
+      null,
+    ];
+  }
+  async function readPages(input) {
+    const pages = [];
+    for (const selection of input.selections) {
+      const [page, error] = objectPage(selection);
+      if (error) return [null, error];
+      pages.push(page);
+    }
+    return [pages, null];
+  }
   const client = {
     loggedIn: () => true,
     listenAuthState: () => () => {},
@@ -158,7 +211,7 @@ export async function protectedTenant(
       switch (path) {
         case "zerotrust.access.snapshot":
         case "zerotrust.access.page":
-          return accessSnapshotFixture(client, input);
+          return accessSnapshotFixture(client, input, readPages);
         case "zerotrust.documents.messages.state":
           return [{ current: "0", checkpoint: null }, null];
         case "zerotrust.status":
@@ -333,50 +386,8 @@ export async function protectedTenant(
           }
           return [structuredClone(input.ids ? saved : saved[0]), null];
         }
-        case "zerotrust.objects.list": {
-          const domain = domains.get(input.domain);
-          const head = String(domain.head);
-          if (input.snapshot != null && input.snapshot !== head) {
-            return conflict();
-          }
-          if (input.headOnly || input.known === head) {
-            return [
-              {
-                snapshot: head,
-                keyGeneration: "1",
-                after: null,
-                objects: [],
-                recipientAccess: [],
-              },
-              null,
-            ];
-          }
-          const values = [...objects.values()]
-            .filter(
-              (item) =>
-                item.scope === domain.area.scope &&
-                item.facet === domain.area.facet &&
-                item.object.startsWith(input.prefix) &&
-                (input.after == null || item.object > input.after),
-            )
-            .sort((left, right) => compareText(left.object, right.object));
-          return [
-            {
-              snapshot: head,
-              keyGeneration: "1",
-              after: values.length > 32 ? values[31].object : null,
-              objects: structuredClone(values.slice(0, 32)),
-              recipientAccess: values
-                .slice(0, 32)
-                .flatMap((value) =>
-                  recipients.has(value.object)
-                    ? [structuredClone(recipients.get(value.object))]
-                    : [],
-                ),
-            },
-            null,
-          ];
-        }
+        case "zerotrust.objects.list":
+          return objectPage(input);
         case "zerotrust.objects.pages": {
           const pages = [];
           for (const selection of input.selections) {
