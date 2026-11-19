@@ -1,6 +1,6 @@
 import { test, expect } from "bun:test";
 import { row } from "./rowCodec.test.mjs";
-import { pricePayload, productMatches, productPayload, publicId } from "./products";
+import { createProductMatcher, pricePayload, productPayload, publicId } from "./products";
 
 test("product objects bind their canonical identity and exclude price/personnel columns", () => {
   const product = row("products", { id: "9223372036854775807", custom_id: "17", name: "Anschlussprofil", description: "Fensterlaibung abdichten", base_unit: "m" });
@@ -37,9 +37,9 @@ test("price objects require their own format, table and identity", () => {
 
 test("local product search includes descriptions and combines word prefixes", () => {
   const product = { customId: 4711, name: "Profil", brand: null, description: "Für äußere Fensterlaibungen", regieReportName: null };
-  expect(productMatches(product, "ÄUẞERE Fenst")).toBe(true);
-  expect(productMatches(product, "471 Pro")).toBe(true);
-  expect(productMatches(product, "Fenst Innen")).toBe(false);
+  expect(createProductMatcher("ÄUẞERE Fenst")(product)).toBe(true);
+  expect(createProductMatcher("471 Pro")(product)).toBe(true);
+  expect(createProductMatcher("Fenst Innen")(product)).toBe(false);
 });
 
 test("a verified historical vendor deletion cannot erase a newly assigned vendor during a price patch", async () => {

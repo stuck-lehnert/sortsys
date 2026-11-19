@@ -1,7 +1,8 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import { createPrefixMatcher } from "../search/prefixQuery";
 import { addressId, partialAddressRecord } from "./addressBook";
-import { newProductRowId, prefixMatches, publicId } from "./products";
+import { newProductRowId, publicId } from "./products";
 import { businessSchema } from "./schema";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DuckDriver } from "./database";
@@ -53,13 +54,9 @@ export function createProtectedVendors(
           if (!vendor) throw new InvalidProtectedData();
           return vendor;
         }
+        const matches = createPrefixMatcher(data.search as string | undefined);
         return vendors
-          .filter((vendor) =>
-            prefixMatches(
-              [vendor.name, vendor.description],
-              data.search as string | undefined,
-            ),
-          )
+          .filter((vendor) => matches([vendor.name, vendor.description]))
           .sort((a, b) =>
             a.name.toLowerCase().localeCompare(b.name.toLowerCase()),
           );

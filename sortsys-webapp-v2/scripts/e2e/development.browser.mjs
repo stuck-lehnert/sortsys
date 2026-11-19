@@ -99,6 +99,9 @@ function auditPage(page) {
       "Handwerkerstraße 12a",
       "Untergrund vorbereiten",
       "Haftgrund, manuell angepasst",
+      "WDVS-Sockelschiene-684217",
+      "wdvs-sockelschiene",
+      "sockelschiene-wdvs",
       "Treppenhausrenovierung Musterstraße",
       "Treppenhaus im Live-Abgleich",
       "Gemeinsam bearbeiteter Leistungsumfang",
@@ -516,6 +519,57 @@ try {
       path: join(artifacts, "administrator-offers.png"),
       fullPage: true,
     });
+  });
+  await scenario("product-prefix-search", async (page) => {
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
+    await page.goto(`${server.origin}/products`);
+    await page
+      .getByText("Haftgrund, manuell angepasst", { exact: true })
+      .click();
+    await expect(page).toHaveURL(/\/products\/[^/]+$/);
+    const productUrl = page.url();
+    const edit = async () => {
+      await expect(
+        page.getByRole("heading", { name: /Haftgrund, manuell angepasst/ }),
+      ).toBeVisible();
+      await page.keyboard.press("Control+e");
+      const editor = page.getByRole("dialog", { name: "Produkt bearbeiten" });
+      await expect(editor).toBeVisible();
+      return editor;
+    };
+    const editor = await edit();
+    const description = editor.getByRole("textbox", { name: "Beschreibung" });
+    const original = await description.inputValue();
+    await description.fill("WDVS-Sockelschiene-684217");
+    await editor.getByRole("button", { name: "Speichern", exact: true }).click();
+    await expect(editor).toBeHidden();
+    try {
+      await expect(page.getByText("WDVS-Sockelschiene-684217")).toBeVisible();
+      await page.keyboard.press("Control+k");
+      const palette = page.getByRole("dialog", { name: "Befehlspalette" });
+      const search = palette.getByRole("searchbox", {
+        name: "Befehl oder Suche",
+      });
+      await search.fill("wdvs-sockelschiene");
+      const result = palette.getByRole("option", {
+        name: /Haftgrund, manuell angepasst/,
+      });
+      await expect(result).toBeVisible();
+      await search.fill("sockelschiene-wdvs");
+      await expect(
+        palette.getByText("Keine Treffer.", { exact: true }),
+      ).toBeVisible();
+      await expect(result).toHaveCount(0);
+    } finally {
+      await page.goto(productUrl);
+      const restore = await edit();
+      await restore.getByRole("textbox", { name: "Beschreibung" }).fill(original);
+      await restore.getByRole("button", { name: "Speichern", exact: true }).click();
+      await expect(restore).toBeHidden();
+    }
   });
   await scenario("seeded-gaeb-link-and-download", async (page) => {
     await login(page, "john.doe");

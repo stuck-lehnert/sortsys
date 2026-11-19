@@ -5,6 +5,7 @@ import type {
   QueryResult,
 } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import { createPrefixMatcher } from "../search/prefixQuery";
 import type { BusinessDatabase, DuckDriver } from "./database";
 import { decodeBusinessRow } from "./rowCodec";
 import type { BusinessRow } from "./rowCodec";
@@ -329,43 +330,21 @@ function wireProduct(payload: ProductPayload): Product {
   };
 }
 
-/** Current browser matching covers case-insensitive word prefixes and AND
- * terms, including descriptions. PostgreSQL punctuation/URL tokenization is
- * still audited separately; this must not be advertised as identical FTS. */
-export function prefixMatches(
-  values: unknown[],
-  search: string | null | undefined,
-): boolean {
-  const terms =
-    search
-      ?.trim()
-      .toLowerCase()
-      .match(/[\p{L}\p{N}_]+/gu) ?? [];
-  if (search?.trim() && !terms.length) return false;
-  const words =
-    values
-      .join(" ")
-      .toLowerCase()
-      .match(/[\p{L}\p{N}_]+/gu) ?? [];
-  return terms.every((term) => words.some((word) => word.startsWith(term)));
-}
-export function productMatches(
-  product: Pick<
-    Product,
-    "customId" | "name" | "brand" | "description" | "regieReportName"
-  >,
-  search: string | null | undefined,
-): boolean {
-  return prefixMatches(
-    [
+export function createProductMatcher(search: string | null | undefined) {
+  const matches = createPrefixMatcher(search);
+  return (
+    product: Pick<
+      Product,
+      "customId" | "name" | "brand" | "description" | "regieReportName"
+    >,
+  ) =>
+    matches([
       product.customId,
       product.name,
       product.brand,
       product.description,
       product.regieReportName,
-    ],
-    search,
-  );
+    ]);
 }
 
 /** A catalogue reader never requests or opens procurement keys. Price records
@@ -454,12 +433,13 @@ export async function openProtectedProducts(
     ): Promise<QueryResult<"products.list">> {
       return read((products) => {
         const category = input?.category?.trim();
+        const matches = createProductMatcher(input?.search);
         return products
           .map(wireProduct)
           .filter(
             (product) =>
               (!category || product.categories.includes(category)) &&
-              productMatches(product, input?.search),
+              matches(product),
           )
           .map((product) =>
             category ? { ...product, categories: [category] } : product,

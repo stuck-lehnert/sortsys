@@ -5,7 +5,7 @@ import { runLiveLlm } from "../liveLlm";
 import { uiText } from "../i18n";
 import { openPrivateLlm, newAssistantId, assistantId } from "./privateLlm";
 import { required } from "./protectedObjects";
-import { PRODUCT_COLLECTION, productMatches } from "./products";
+import { createProductMatcher, PRODUCT_COLLECTION } from "./products";
 import { readAssistantAccess } from "./assistantStore";
 import {
   normalizeScanResult,
@@ -87,9 +87,7 @@ export function scanProductSearch(catalogue: Product[], input: unknown) {
     throw new InvalidProtectedData();
   const limit = Math.max(1, Math.min(25, (args.limit as number) ?? 12));
   const find = (text: string) =>
-    catalogue
-      .filter((product) => productMatches(product, text))
-      .slice(0, limit);
+    catalogue.filter(createProductMatcher(text)).slice(0, limit);
   let found = find(args.query);
   if (!found.length) {
     const excluded = new Set([

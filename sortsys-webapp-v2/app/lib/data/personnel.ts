@@ -1,7 +1,8 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
-import { newProductRowId, prefixMatches, publicId } from "./products";
+import { newProductRowId, publicId } from "./products";
+import { createPrefixMatcher } from "../search/prefixQuery";
 import type { DuckDriver } from "./database";
 import { readableAreas } from "./readableAreas";
 import { acquireDataRuntime } from "./runtime/session";
@@ -283,23 +284,21 @@ export function createProtectedPersonnel(
           if (!user) throw new InvalidProtectedData();
           return user;
         }
+        const matches = createPrefixMatcher(search);
         return users
           .filter(
             (user) =>
               (data.includeArchived || !user.archivedAt) &&
               (data.deactivated == null ||
                 !!user.deactivatedAt === data.deactivated) &&
-              prefixMatches(
-                [
-                  user.firstName,
-                  user.lastName,
-                  user.username,
-                  user.email,
-                  user.phone,
-                  user.contractType,
-                ],
-                search,
-              ),
+              matches([
+                user.firstName,
+                user.lastName,
+                user.username,
+                user.email,
+                user.phone,
+                user.contractType,
+              ]),
           )
           .sort((a, b) =>
             a.lastName === null

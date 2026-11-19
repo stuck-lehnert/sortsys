@@ -107,7 +107,8 @@ export async function exerciseBackupInitialization(
         id: "91",
         custom_id: "1",
         name: "Fassadenfarbe",
-        description: "Matte Silikonharzfarbe aus dem bisherigen Katalog",
+        description:
+          "Matte Silikonharzfarbe für das WDVS-System. https://shop.beispiel.de/putz",
         base_unit: "l",
         other_units: "{}",
       }),
@@ -140,6 +141,14 @@ export async function exerciseBackupInitialization(
       );
       assert.equal(products.length, 1);
       assert.equal(products[0]!.name, "Fassadenfarbe");
+      for (const search of ["WDVS-Sys", "shop.beispiel.de/putz"]) {
+        const hits = await required(business.query("products.list", { search }));
+        assert.deepEqual(hits.map(({ name }) => name), ["Fassadenfarbe"]);
+      }
+      for (const search of ["System-WDVS", "putz"]) {
+        const hits = await required(business.query("products.list", { search }));
+        assert.deepEqual(hits, []);
+      }
     } finally {
       business.dispose();
     }

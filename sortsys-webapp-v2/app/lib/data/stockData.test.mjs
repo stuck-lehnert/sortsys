@@ -1,7 +1,8 @@
 import { expect, test } from "bun:test";
 import { row } from "./rowCodec.test.mjs";
 import { managedAccess } from "../crypto/accessProfiles";
-import { pricePayload, prefixMatches, publicId } from "./products";
+import { pricePayload, publicId } from "./products";
+import { createPrefixMatcher } from "../search/prefixQuery";
 import { priceChanges } from "./prices";
 import { vendorChanges, vendorPayload } from "./vendorData";
 
@@ -15,8 +16,8 @@ test("supplier payloads contain only their bound name, description and row metad
   expect(vendorPayload({ ...payload, vendor: { ...vendor, values: { ...vendor.values, name: "Ä".repeat(127), description: "Ä".repeat(255) } } }, object).vendor.values.name).toBe("Ä".repeat(127));
   expect(() => vendorChanges({ name: " " }, true)).toThrow();
   expect(() => vendorChanges({ description: "x".repeat(256) }, false)).toThrow();
-  expect(prefixMatches([vendor.values.name, vendor.values.description], "Anschluss Fugen")).toBe(true);
-  expect(prefixMatches([vendor.values.name, vendor.values.description], "0")).toBe(false);
+  expect(createPrefixMatcher("Anschluss Fugen")([vendor.values.name, vendor.values.description])).toBe(true);
+  expect(createPrefixMatcher("0")([vendor.values.name, vendor.values.description])).toBe(false);
 });
 
 test("price inputs retain floats and reject invalid dates, references, extra fields and implicit coercion", () => {

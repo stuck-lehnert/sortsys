@@ -610,6 +610,12 @@ Berechtigungsprüfung. Bereits mitgelieferte Pakete benötigen keinen weiteren
 Abruf. Fehlerhafte oder fehlende Pakete werden abgewiesen; sie lösen keine
 zusätzlichen Einzelabrufe aus.
 
+Kennt der Browser die Objektkennungen bereits, ruft er bis zu 32 Objekte
+zusammen ab. Die API fragt deren Speicherorte im DuckDB-Dienst ebenfalls
+gemeinsam ab. Im Mehrinstanztest benötigen 320 ausgewählte Produkte zehn
+Abfragen ihrer Speicherorte. Die Prüfung von Freigaben und Signaturen gilt
+weiterhin für jedes einzelne Objekt.
+
 Schreibanfragen nennen außerdem den vollständig geprüften Katalogstand. Zwei
 reguläre Clients können dadurch nicht gleichzeitig dieselbe Artikelnummer für
 verschiedene Produkte auf Grundlage eines veralteten Stands vergeben. Ein
@@ -617,11 +623,11 @@ berechtigter Client kann weiterhin absichtlich fachlich ungültige Inhalte
 signieren; diese Grenze der Inhaltsprüfung bleibt bestehen.
 
 Die lokale Suche berücksichtigt Beschreibung, Namen, Marke, Artikelnummer und
-Regiebezeichnung. Wortanfänge und die Verknüpfung mehrerer Suchwörter sind
-implementiert. PostgreSQLs vollständige Wortzerlegung, insbesondere bei URLs,
-Bindestrichen und anderen Satzzeichen, ist damit noch nicht nachgebildet. Die
-normale Produktoberfläche verwendet diesen lokalen Zugriff für Listen, Suche,
-Anlegen, Bearbeiten, Kategorien und Einheitenvorschläge. Abonnierte Listen
+Regiebezeichnung. `WDVS-Sys` findet beispielsweise `WDVS-System`.
+`WDVS Sys` findet auch getrennt stehende Wörter, unabhängig von ihrer
+Reihenfolge. Der Suchbegriff bleibt im Browser. Die Produktoberfläche
+verwendet den lokalen Zugriff für Listen, Suche, Anlegen, Bearbeiten,
+Kategorien und Einheitenvorschläge. Abonnierte Listen
 werden nach einer lokalen Änderung aktualisiert. Der
 [Ereignisabgleich](verschluesselte-synchronisierung.md) aktualisiert sie auch
 bei Änderungen über eine andere API-Instanz. Nach Verbindungsabbrüchen werden
@@ -683,6 +689,12 @@ und englische `websearch_to_tsquery`-Abfragen mit einer einfachen Wortabfrage.
 Sie erzeugte Ausschnitte über `ts_headline` und sortierte nach `ts_rank_cd`
 sowie stabilen weiteren Kriterien. Kaufmännische Listen verwendeten dagegen auch
 `ILIKE` über Bezeichnung, Referenz und Kundenname.
+
+Der lokale Präfixabgleich für Katalog, Lieferanten, Personal, Werkzeuge und
+Skripte wurde anhand von 45 Suchfällen mit der früheren SQL-Abfrage in
+PostgreSQL 18.6 verglichen. Darunter sind Bindestriche, Artikelnummern, URLs,
+Dateipfade und E-Mail-Adressen. Seltene Schreibweisen und länderspezifische
+Regeln des PostgreSQL-Textparsers sind nur teilweise abgedeckt.
 
 Ein Austausch gegen ein beliebiges JavaScript-`includes` oder die ungeprüfte
 Standardsuche einer anderen Datenbank wäre daher keine Funktionsgleichheit. Auch

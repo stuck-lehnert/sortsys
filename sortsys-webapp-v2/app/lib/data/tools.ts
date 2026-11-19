@@ -14,7 +14,8 @@ import {
 } from "./atomicWrites";
 import { createResourceAreas } from "./createProjectArea";
 import type { DuckDriver } from "./database";
-import { newProductRowId, prefixMatches, publicId } from "./products";
+import { newProductRowId, publicId } from "./products";
+import { createPrefixMatcher } from "../search/prefixQuery";
 import {
   protectedCollections,
   required,
@@ -628,7 +629,9 @@ export function createProtectedTools(
               "category",
               "status",
             ]);
-            const search = addressText(p.search, false, 1000);
+            const matches = createPrefixMatcher(
+              addressText(p.search, false, 1000),
+            );
             const brand = addressText(p.brand, false, 127);
             const category = addressText(p.category, false, 127);
             if (
@@ -647,10 +650,12 @@ export function createProtectedTools(
                 (tool) =>
                   (!brand || tool.brand === brand) &&
                   (!category || tool.category === category) &&
-                  prefixMatches(
-                    [tool.customId, tool.brand, tool.category, tool.label],
-                    search,
-                  ) &&
+                  matches([
+                    tool.customId,
+                    tool.brand,
+                    tool.category,
+                    tool.label,
+                  ]) &&
                   (!p.status ||
                     (p.status === "available"
                       ? tool.available && tool.status === null

@@ -10,7 +10,8 @@ import {
   wireClientScript,
 } from "./clientScriptData";
 import type { DuckDriver } from "./database";
-import { newProductRowId, prefixMatches } from "./products";
+import { createPrefixMatcher } from "../search/prefixQuery";
+import { newProductRowId } from "./products";
 import { required } from "./protectedObjects";
 import { businessSchema } from "./schema";
 import { acquireDataRuntime } from "./runtime/session";
@@ -80,6 +81,7 @@ export function createProtectedClientScripts(
       }
       if (path !== "clientScripts.list") throw new InvalidProtectedData();
       const options = listOptions(input);
+      const matches = createPrefixMatcher(options.search);
       const result = await runtime.read([request], (view) =>
         view
           .documents(request)
@@ -87,7 +89,7 @@ export function createProtectedClientScripts(
           .filter(
             (script) =>
               (options.includeDisabled || script.enabled) &&
-              prefixMatches([script.name, script.description], options.search),
+              matches([script.name, script.description]),
           )
           .sort(
             (left, right) =>
