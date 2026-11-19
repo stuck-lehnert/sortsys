@@ -26,9 +26,9 @@ export function toolReturnKeyDependencies(booking: ToolPart): DataRequest[] {
   return usage ? [pointer, usage] : [pointer];
 }
 
-/** Both projections must refer to the same checkout and former key before
- * changing the binding. The historical cost record is a separate facet. */
-export function replaceToolReturnKey(
+/** Both projections must refer to the checkout and agree on its previous
+ * binding, which can be absent on an earlier issue. */
+export function publishToolReturnKey(
   transaction: DataTransaction,
   request: DataRequest<ToolPart>,
   booking: ToolPart,
@@ -38,7 +38,6 @@ export function replaceToolReturnKey(
   const { toolId, pointer, usage } = returnKeyRecords(booking);
   const current = toolBookingPointer(transaction, toolId);
   if (
-    previousKey === undefined ||
     current?.trackingId !== booking.id ||
     current.returnKey !== previousKey
   )

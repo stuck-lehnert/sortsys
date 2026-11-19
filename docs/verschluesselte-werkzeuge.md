@@ -64,12 +64,14 @@ Werkzeugbezeichnung. Damit bleibt sie auch ohne Freigabe der Werkzeugstammdaten
 verständlich. Ein Link zu deren Detailansicht erscheint nur bei lesbaren
 Stammdaten.
 
-Wurde die Buchung vor der Registrierung des Mitarbeiters angelegt, führt die
-Bestätigung seiner Einladung die Lesefreigabe nach. Der Browser des Administrators
-liest dafür die zuständige Person aus dem entschlüsselten Buchungsdatensatz.
-Fehlt dessen Aktivitätsnachweis noch, erhält derselbe Inhalt eine neue signierte
-Fassung. Eine wiederholte Prüfung verändert weder die Buchung noch die Freigaben
-erneut. Bereits zurückgegebene Werkzeuge bleiben für diesen Zugang gesperrt.
+Die Bestätigung einer Einladung gibt auch offene Buchungen frei, die vor der
+Registrierung des Mitarbeiters angelegt oder aus einem Sicherungsarchiv
+übernommen wurden. Der Browser des Administrators liest dafür die zuständige
+Person aus dem entschlüsselten Buchungsdatensatz. Wenn der Rückgabeschlüssel
+fehlt, erzeugt er ihn für das bestätigte Konto und speichert ihn zusammen mit
+der Lesefreigabe. Die Buchungsnummer und die historischen Preise bleiben
+erhalten. Eine wiederholte Prüfung verwendet den gespeicherten Schlüssel.
+Bereits zurückgegebene Werkzeuge bleiben für diesen Zugang gesperrt.
 
 Die nachträgliche Freigabe ist an einen eigenen, signierten Auftrag und den
 aktuellen Aktivitätsnachweis der Buchung gebunden. Der Auftrag allein öffnet
@@ -171,10 +173,9 @@ bestätigten Rückgabezeitpunkt. Der Browser lädt mehrere solcher Nachweise
 gebündelt. Eine spätere Rücksicherung darf den bestätigten Abschluss nicht
 aufheben.
 
-Bei vor der Registrierung oder aus einem Sicherungsarchiv angelegten Buchungen
-kann der persönliche Rückgabeschlüssel fehlen. Für solche Buchungen steht die
-Rückgabe aus der Werkzeugverwaltung zur Verfügung. Bei der nächsten Ausgabe
-erzeugt der Browser einen Rückgabeschlüssel.
+Bis zur Bestätigung der Einladung kann die Werkzeugverwaltung die Buchung
+zurücknehmen. Für die nachträgliche Einrichtung des Rückgabeschlüssels ist
+eine Administratorberechtigung erforderlich.
 
 Die Rückgabe aus der Werkzeugansicht gilt für die dort angezeigte Buchung.
 Wurde das Werkzeug zwischenzeitlich erneut ausgegeben, lässt die alte Aktion

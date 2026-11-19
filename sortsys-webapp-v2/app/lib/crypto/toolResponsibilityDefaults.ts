@@ -4,6 +4,7 @@ import {
   InvalidProtectedData,
   policy,
   reconcilePolicyRules,
+  type CreationOrigin,
   type Policy,
   type Rule,
 } from "@sortsys/zerotrust/sortsys";
@@ -19,7 +20,7 @@ import { toolDomain, toolRequest, type ToolPart } from "../data/toolData";
 import { prepareToolReturnKeys } from "../data/toolReturnKey";
 import { renewToolResponsibilityOrigins } from "./renewToolResponsibilityOrigins";
 import {
-  replaceToolReturnKey,
+  publishToolReturnKey,
   toolReturnKeyDependencies,
 } from "./renewToolReturnKeys";
 
@@ -74,9 +75,13 @@ function activeTracking(view: DataView, part: ToolPart): boolean {
   return tracking.require("ended_at") === null;
 }
 
-function hasEarlierReturnKey(part: ToolPart, generation: string): boolean {
-  if (!part.returnKey) return false;
-  return part.returnKey.recipient.generation !== generation;
+function needsToolReturnKey(
+  part: ToolPart,
+  origin: CreationOrigin,
+  generation: string,
+): boolean {
+  if (!part.returnKey) return true;
+  return !origin.access && part.returnKey.recipient.generation !== generation;
 }
 
 export async function synchronizeToolResponsibilityDefaults(
@@ -121,14 +126,21 @@ export async function synchronizeToolResponsibilityDefaults(
     const generation = context.history.current.generation;
     const dependencies = await lease.runtime.read(selected, (view) =>
       selected.flatMap((request) => {
-        if (origins.get(request.area.domain)?.access) return [];
+        const origin = origins.get(request.area.domain)!;
         const booking = view.documents(request)[0]?.value;
         if (
           !booking ||
           !activeTracking(view, booking) ||
-          !hasEarlierReturnKey(booking, generation)
+          !needsToolReturnKey(booking, origin, generation)
         )
           return [];
+        try {
+          const responsible = publicId(booking.rows[0]!.values.responsible_user_id);
+          context.history.identityCertificate(`user:${responsible}`);
+        } catch (error) {
+          if (error instanceof InvalidProtectedData) return [];
+          throw error;
+        }
         return toolReturnKeyDependencies(booking);
       }),
     );
@@ -160,11 +172,11 @@ export async function synchronizeToolResponsibilityDefaults(
         const active = activeTracking(transaction, document.value) &&
           origin.returned === undefined;
         bookings.push({ scope: request.area.scope, responsible, active });
-        if (!active || !known || origin.access) continue;
-        if (!hasEarlierReturnKey(document.value, generation)) {
+        if (!active || !known) continue;
+        if (!needsToolReturnKey(document.value, origin, generation)) {
           // Attest the actual state with a fresh signed revision. The
           // policy publication guards the exact source of the grant.
-          transaction.edit(request, document.id, () => {});
+          if (!origin.access) transaction.edit(request, document.id, () => {});
           continue;
         }
         const makeKey = await prepareToolReturnKeys(
@@ -175,7 +187,7 @@ export async function synchronizeToolResponsibilityDefaults(
         );
         if (!makeKey) throw new InvalidProtectedData();
         const replacement = await makeKey(document.value.id);
-        replaceToolReturnKey(transaction, request, document.value, replacement);
+        publishToolReturnKey(transaction, request, document.value, replacement);
       }
       return activeBookingIntents(previous.permissions, bookings, certified);
     });

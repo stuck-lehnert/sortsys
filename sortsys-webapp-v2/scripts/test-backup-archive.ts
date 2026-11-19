@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
-import type { Client } from "@sortsys/v2-client";
+import { createClient, type Client } from "@sortsys/v2-client";
 import { digest, sign } from "@sortsys/zerotrust/sortsys";
 import { sourceSql } from "./test-backup-initialization";
 import { row } from "../app/lib/data/testing/businessRow.mjs";
@@ -22,6 +22,7 @@ import { cliGaebProcessor as gaebTestProcessor } from "./lib/gaebProcessor";
 import { commercialDocumentStore } from "../app/lib/data/commercialDocumentContent";
 import { allocateDeliveryNote } from "../app/lib/data/deliveryRegistry";
 import { administratorContext } from "../app/lib/crypto/administration";
+import { signIn } from "../app/lib/crypto/session";
 import { deliveryAdoptionFrame } from "../app/lib/backups/deliveryNumbers";
 import {
   oldScan,
@@ -36,7 +37,9 @@ import { assistantPayload } from "../app/lib/data/privateLlm";
 import { scanEntry } from "../app/lib/data/scanHistoryData";
 import { importResult } from "../app/lib/data/imports";
 import { publicId } from "../app/lib/data/products";
+import { toolCollection } from "../app/lib/data/toolData";
 import { invoiceXml } from "./test-live-billing";
+import { enrollToolResponsibleMember } from "./test-native-tool-recovery";
 
 export async function exerciseBackupArchive(
   owner: Client,
@@ -154,7 +157,7 @@ export async function exerciseBackupArchive(
         id: "103",
         tool_id: "102",
         project_id: "92",
-        responsible_user_id: "87",
+        responsible_user_id: "89",
         started_by_user_id: "87",
         started_at: "2026-10-11T08:00:00Z",
         tool_usage_cost_per_day: 11.625,
@@ -550,6 +553,65 @@ export async function exerciseBackupArchive(
       })
     )[1],
   );
+  const endpoints = JSON.parse(process.env.SORTSYS_AUTH_TEST_ENDPOINTS!);
+  const member = createClient(endpoints[0], "archived-tool-responsibility");
+  const credentials = {
+    tenant: draft.link.tenant,
+    username: draft.username,
+    password: draft.password,
+  };
+  const memberPassword = "Archive-tool-responsibility-password-2026!";
+  await enrollToolResponsibleMember(
+    owner,
+    member,
+    { id: "2p", username: "new.invitation" },
+    credentials,
+    memberPassword,
+  );
+  const worker = createBusinessClient(member, { productDriver: duckDriver });
+  try {
+    const visible = await required(worker.query("tools.trackings.list", {}));
+    assert.deepEqual(visible.map(({ id }) => id), ["37"]);
+    assert.equal(visible[0]?.canReturnOwn, true);
+    assert.equal(visible[0]?.toolUsageCostPerDay, null);
+    assert.ok((await worker.query("tools.get", { id: "36" }))[1]);
+    if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+      const { exerciseToolResponsibilityBrowser } =
+        await import("./test-tool-responsibility-browser");
+      await exerciseToolResponsibilityBrowser({
+        tenant: credentials.tenant,
+        member: { username: "new.invitation", password: memberPassword },
+        activeLabel: "Private Werkzeugdaten 651297",
+        toolBrand: "Private Werkzeugdaten 651297",
+        toolId: "36",
+        bookingDomain: toolCollection("tool-tracking", "37", "master-data").domain,
+        artifactName: "adopted-tool-return",
+        selfReturn: true,
+      }, async () => {});
+    } else {
+      await required(worker.mutate("tools.trackings.return", { trackingId: "37" }));
+    }
+    const remaining = await required(worker.query("tools.trackings.list", {}, {
+      strategy: "network-only",
+    }));
+    assert.deepEqual(remaining, []);
+  } finally {
+    worker.dispose();
+    member.setToken(null);
+    await signIn(owner, credentials);
+  }
+  const ownerView = createBusinessClient(peer, { productDriver: duckDriver });
+  try {
+    assert.equal((await required(ownerView.query("tools.get", { id: "36" }))).available, true);
+    const costs = await required(ownerView.query("projects.costs.get", { projectId: "2s" }));
+    const usage = costs.toolTrackings.find(({ id }) => id === "37");
+    assert.ok(usage?.endedAt instanceof Date);
+    assert.equal(usage.endedByUserId, "2p");
+    assert.equal(usage.toolUsageCostPerDay, 11.625);
+  } finally {
+    ownerView.dispose();
+  }
+  console.log("Adopted tool checkout: late invitation activates own return, with preserved project costs across API replicas");
   console.log(
     "Local backup archive verified: encrypted SQL and static PDF, source readback on a second replica, preserved user identities and lifecycle, interrupted adoption resumed from ciphertext, all business adapters, description search, exact attachment bytes and isolated per-user scan histories from the explicitly selected original tenant.",
   );

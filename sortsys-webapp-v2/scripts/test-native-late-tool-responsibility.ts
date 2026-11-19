@@ -10,6 +10,7 @@ import {
 } from "@sortsys/v2-client";
 import {
   areaKey,
+  base64,
   bytes,
   decryptObject,
   domainBoxSigner,
@@ -31,13 +32,14 @@ import { acceptVaultWithKey, unlockedAccount } from "../app/lib/crypto/session";
 import { changeAreaActionAccesses } from "../app/lib/crypto/permissions";
 import { synchronizeToolResponsibilityDefaults } from "../app/lib/crypto/toolResponsibilityDefaults";
 import { createBusinessClient } from "../app/lib/data/businessClient";
+import { addressId } from "../app/lib/data/addressBook";
 import { newProductRowId, publicId } from "../app/lib/data/products";
 import {
   protectedCollection,
   required,
 } from "../app/lib/data/protectedObjects";
 import { TOOL_MODEL, toolCollection } from "../app/lib/data/toolData";
-import { signToolReturn } from "../app/lib/data/toolReturnKey";
+import { prepareToolReturnKeys, signToolReturn } from "../app/lib/data/toolReturnKey";
 import {
   finishToolBookingRotations,
   toolResponsibilityPacket,
@@ -98,7 +100,11 @@ export async function exerciseLateToolResponsibility(
       }),
     );
     const tools: MutateResult<"tools.create">[] = [];
-    for (const label of ["Aktive Ausgabe", "Frühere Ausgabe"]) {
+    for (const label of [
+      "Aktive Ausgabe",
+      "Frühere Ausgabe",
+      "Projektbuchung vor der Registrierung",
+    ]) {
       const customId = await required(
         business.query("tools.suggestNextCustomId", undefined),
       );
@@ -115,6 +121,9 @@ export async function exerciseLateToolResponsibility(
         ),
       );
     }
+    const project = await required(business.mutate("projects.create", {
+      title: "Projekt für die nachträgliche Werkzeugfreigabe",
+    }));
     const bookings = [];
     for (const tool of tools) {
       const operationId = publicId(newProductRowId());
@@ -125,12 +134,22 @@ export async function exerciseLateToolResponsibility(
           data: {
             responsibleUserId: person.id,
             comment: "Vertrauliche Ausgabe vor der Registrierung",
+            ...(tool === tools[2] ? { projectId: project.id } : {}),
           },
         }),
       );
       bookings.push(result.trackings[0]!);
     }
     assert.equal(stripOneState, false);
+    const projectBookingId = bookings[2]!.trackingId;
+    const projectBookingArea = toolCollection("tool-tracking", projectBookingId, "master-data");
+    const initialProjectBooking = await required(peer.query(
+      "zerotrust.creations.origin",
+      { domain: projectBookingArea.domain },
+      { strategy: "network-only" },
+    ));
+    assert.ok(initialProjectBooking?.access?.active);
+    assert.equal(initialProjectBooking.access.commandBinding, undefined);
     await required(business.mutate("tools.untrack", { id: tools[1]!.id }));
     const area = toolCollection(
       "tool-tracking",
@@ -189,6 +208,7 @@ export async function exerciseLateToolResponsibility(
       ),
     );
     assert.ok(checkpoint?.access?.active);
+    assert.ok(checkpoint.access.commandBinding);
     assert.equal(checkpoint.assignee, undefined);
     assert.equal(
       BigInt(checkpoint.access.revision),
@@ -245,14 +265,25 @@ export async function exerciseLateToolResponsibility(
       restricted.query("tools.trackings.list", {}),
     );
     assert.deepEqual(
-      assigned.map((booking) => booking.id),
-      [bookings[0]!.trackingId],
+      assigned.map((booking) => booking.id).sort(),
+      [bookings[0]!.trackingId, projectBookingId].sort(),
     );
-    assert.equal(assigned[0]!.toolUsageCostPerDay, null);
-    assert.equal(
-      assigned[0]!.toolSummary?.brand,
-      "Privater Werkzeugbestand 571943",
-    );
+    for (const booking of assigned) {
+      assert.equal(booking.toolUsageCostPerDay, null);
+      assert.equal(booking.canReturnOwn, true);
+      assert.equal(booking.toolSummary?.brand, "Privater Werkzeugbestand 571943");
+    }
+    assert.ok((await restricted.query("tools.get", { id: tools[2]!.id }))[1]);
+    await required(restricted.mutate("tools.trackings.return", { trackingId: projectBookingId }));
+    await unlockOwner();
+    const returnedProjectTool = await required(peer.query("tools.get", { id: tools[2]!.id }));
+    assert.equal(returnedProjectTool.available, true);
+    const costs = await required(peer.query("projects.costs.get", { projectId: project.id }));
+    const returnedUsage = costs.toolTrackings.find(({ id }) => id === projectBookingId);
+    assert.ok(returnedUsage?.endedAt instanceof Date);
+    assert.equal(returnedUsage.endedByUserId, person.id);
+    assert.equal(returnedUsage.toolUsageCostPerDay, 23.875);
+    await acceptVaultWithKey(account.dataKey, account.vault, account.username, false);
     for (const forbidden of [
       toolCollection("tool", tools[0]!.id, "master-data"),
       toolCollection("tool-tracking", bookings[0]!.trackingId, "procurement"),
@@ -538,14 +569,17 @@ async function exerciseOwnToolReturn(
   assert.ok(request);
   const verified = request.command;
   const returnedAt = new Date(Number(verified.issuedAt));
+  const unknownKey = base64(new Uint8Array(32).fill(5));
+  assert.match(await resourceCommandBinding(unknownKey), /^[-_]/);
   const selection = {
     verificationKeys: [
       await resourceCommandBinding(verified.verificationKey),
       verified.verificationKey,
+      unknownKey,
     ],
   };
   assert.deepEqual(await required(peer.query("zerotrust.toolReturns.lookup", selection)), [
-    null, verified,
+    null, verified, null,
   ]);
   const after = await required(peer.query("zerotrust.objects.get", { id: area.prefix }, {
     strategy: "network-only",
@@ -749,6 +783,49 @@ async function exerciseDelegatedToolReturn(
     assert.equal(BigInt(repaired.transfers.generation), BigInt(before.transfers.generation) + 1n);
     assert.equal(repaired.transfers.rotationRequired, false);
     console.log("Scoped tool return: manager rotated only the certified facet; exact retry left the new booking untouched; owner resumed the other facet");
+
+    stage = "deny a first return key to a delegated booking editor";
+    await required(owner.mutate("tools.untrack", { id: toolId }));
+    const pending = await required(owner.mutate("users.create", {
+      username: "pending.tool.responsible",
+      firstName: "Noch nicht registriert",
+    }));
+    const unkeyed = await required(owner.mutate("tools.track", {
+      id: toolId,
+      data: { responsibleUserId: pending.id },
+    }));
+    const source = toolCollection("tool-tracking", unkeyed.trackingId, "master-data");
+    await changeAreaActionAccesses(owner, managerAccount.vault.subject, [
+      { area: source, patch: { read: true, update: true } },
+    ], signal);
+    await unlockManager();
+    const editable = await protectedCollection(managerClient, source, signal);
+    try {
+      const [stored] = await editable.read();
+      assert.ok(stored);
+      const value = TOOL_MODEL.decode(stored.value, source.prefix, source);
+      assert.equal(value.returnKey, undefined);
+      value.rows[0]!.values.comment = "Zulässige Ergänzung ohne Rückgabeschlüssel";
+      await editable.write([await editable.packet(source.prefix, value, stored.envelope)]);
+      const current = await editable.get(source.prefix);
+      value.rows[0]!.values.responsible_user_id = addressId(manager.id);
+      const prepare = await prepareToolReturnKeys(managerClient, addressId(manager.id), signal);
+      assert.ok(prepare);
+      value.returnKey = await prepare(unkeyed.trackingId);
+      const packet = await editable.packet(source.prefix, value, current.envelope);
+      assert.ok(packet.resourceAccess?.commandBinding);
+      const [accepted, error] = await managerClient.mutate("zerotrust.objects.batch", {
+        objects: [packet],
+        heads: [{ domain: source.domain, sequence: await editable.inspect() }],
+      });
+      assert.equal(accepted, null);
+      assert.ok(error instanceof RpcClientError);
+      assert.equal(error.code, "FORBIDDEN");
+      assert.equal((await editable.get(source.prefix)).envelope.signature, current.envelope.signature);
+    } finally {
+      editable.close();
+    }
+    console.log("A delegated editor can update an unkeyed checkout but cannot install its first return key");
   } catch (cause) {
     throw new Error(`Scoped tool return failed while attempting to ${stage}`, { cause });
   } finally {

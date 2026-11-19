@@ -269,20 +269,20 @@ mit einem an die genaue Ausgangsrevision gebundenen Nachweis. Hatte die offene
 Buchung bereits einen Rückgabeschlüssel, ersetzt ihn der Browser gemeinsam mit
 den Nachweisen im Werkzeugstatus und in der Projektsicht. Ein alter
 Rückgabeschlüssel bleibt auch mit einer gültigen neuen Anmeldung gesperrt.
-Die Bestätigung einer späteren Einladung führt Leserechte für vorher angelegte,
-noch aktive Buchungen nach. Ein administrativer Werkzeugabruf gleicht außerdem
-Buchungen bereits registrierter Mitarbeiter ab. Ein nativer Test prüft den
-fehlenden ursprünglichen Aktivitätsnachweis, die spätere Freigabe, verborgene
-Kosten, einen gültig signierten abgewiesenen Schreibversuch und den Entzug nach
-Rückgabe. Die Werkzeugansicht bindet eine Rückgabe an die ausgewählte Buchung.
+Die Bestätigung einer späteren Einladung richtet für offene Bestandsbuchungen
+die Lesefreigabe und bei Bedarf den ersten Rückgabeschlüssel ein. Der
+Mehrinstanztest verwendet dafür auch eine aus einem früheren PostgreSQL-Archiv
+übernommene Buchung. Das Werkzeug wird in der Buchungsliste zurückgegeben und
+die Projektkosten behalten ihren ursprünglichen Tagessatz. Die Werkzeugansicht
+bindet eine Rückgabe an die ausgewählte Buchung.
 Ein berechtigter Benutzer mit bereichsbezogener Schlüsselzuständigkeit kann den
 Schlüsselwechsel ohne globale Administratorrolle ausführen. Für andere Bereiche
 bleibt der Wechsel vorgemerkt. Für neue Buchungen an registrierte Mitarbeiter
 ermöglicht ein buchungseigener Schlüssel die Rückgabe direkt aus der Liste.
 Werkzeugstatus und Projektkosten berücksichtigen den bestätigten Abschluss.
-Buchungen ohne Rückgabeschlüssel können über die Werkzeugverwaltung
-abgeschlossen werden. Die eigenständige Umbuchung mit ausschließlich
-abgeleitetem Leserecht steht noch aus.
+Bis zur Einladungsbestätigung können offene Buchungen über die
+Werkzeugverwaltung abgeschlossen werden. Die eigenständige Umbuchung mit
+ausschließlich abgeleitetem Leserecht steht noch aus.
 Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
 aus. Siehe
 [Werkzeugverwaltung](verschluesselte-werkzeuge.md).

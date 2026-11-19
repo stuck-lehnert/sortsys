@@ -339,24 +339,30 @@ export async function exerciseToolBookingBatches(
     await denyAction("create:tool-tracking", "create", false);
 
     let winner: string | null = null;
+    let contenderFailure: unknown;
     let race = true;
     install(async (url, next, options) => {
       if (race && isBookingPublication(url, options, input.operationId)) {
         race = false;
-        winner = (
-          await required(
-            peer.mutate("tools.track", {
-              id: second.id,
-              data: { responsibleUserId: session.user.id },
-            }),
-          )
-        ).trackingId;
+        try {
+          const booked = await required(peer.mutate("tools.track", {
+            id: second.id,
+            data: { responsibleUserId: session.user.id },
+          }));
+          winner = booked.trackingId;
+        } catch (error) {
+          contenderFailure = error;
+          throw error;
+        }
       }
       return next();
     });
     assert.ok((await owner.mutate("tools.trackMany", input))[1]);
     assert.equal(race, false);
-    assert.ok(winner);
+    if (!winner)
+      throw new Error("The second API instance did not publish its booking", {
+        cause: contenderFailure,
+      });
     install(null);
     assert.equal((await bookings(peer, first.id))[0]!.endedAt, null);
     assert.equal((await bookings(peer, second.id))[0]!.id, winner);

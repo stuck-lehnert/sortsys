@@ -19,6 +19,15 @@ const COMMAND_BINDINGS: &str = "tool-booking-command-bindings";
 const BOOKING_COMMANDS: &str = "tool-booking-commands";
 const BOOKING_RENEWALS: &str = "tool-booking-renewals";
 
+pub(super) fn command_binding_record(collection: &str, binding: &str) -> RecordKey {
+    // Base64url digests may start with punctuation. The metadata key requires
+    // an alphanumeric first byte, and ':' is outside the digest alphabet.
+    if binding.starts_with(['-', '_']) {
+        return key(collection, &format!("binding:{binding}"));
+    }
+    key(collection, binding)
+}
+
 #[derive(Deserialize, Serialize)]
 struct BookingRenewal {
     origin_signature: String,
@@ -54,7 +63,7 @@ pub(super) async fn check_command_binding(
         }
         return Ok(());
     };
-    let by_binding = key(COMMAND_BINDINGS, binding);
+    let by_binding = command_binding_record(COMMAND_BINDINGS, binding);
     let saved = transaction
         .many::<String>(vec![by_binding.clone(), by_booking.clone()])
         .await?;
@@ -77,6 +86,14 @@ async fn bind_booking_command(
     let booking = key(BOOKING_COMMANDS, &origin.scope);
     let previous: Option<String> = context.transaction.read(booking.clone()).await?;
     let Some(old_binding) = previous.as_deref() else {
+        // Installing a return capability on an already published checkout
+        // belongs to tenant administration, even when another reader has
+        // ordinary update rights on the booking.
+        if next.command_binding.is_some()
+            && (!next.active || (next.revision != "1" && !context.auth.is_admin()))
+        {
+            return Err(forbidden());
+        }
         return check_command_binding(
             &mut context.transaction,
             &origin.scope,
@@ -135,7 +152,7 @@ async fn bind_booking_command(
     {
         return Err(conflict());
     }
-    let replacement = key(COMMAND_BINDINGS, new_binding);
+    let replacement = command_binding_record(COMMAND_BINDINGS, new_binding);
     if context
         .transaction
         .read::<String>(replacement.clone())
@@ -172,7 +189,7 @@ pub(super) fn booking_write_keys(packet: &SaveInput) -> Vec<RecordKey> {
         if let Some(binding) = &state.command_binding
             && super::crypto::sized::<32>(binding).is_ok()
         {
-            records.push(key(COMMAND_BINDINGS, binding));
+            records.push(command_binding_record(COMMAND_BINDINGS, binding));
             records.push(super::tool_returns::receipt_key(binding));
         }
     }
@@ -363,4 +380,26 @@ pub(super) async fn save(
     }
     let changed_access = original.access.is_none() || original.is_active_booking() != state.active;
     Ok(changed_access)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn return_bindings_and_receipts_accept_every_base64url_prefix() {
+        for byte in [0, 248, 252] {
+            let binding = crate::zerotrust::crypto::encode(&[byte; 32]);
+            let reservation = command_binding_record(COMMAND_BINDINGS, &binding);
+            let receipt = super::super::tool_returns::receipt_key(&binding);
+            reservation.validate().unwrap();
+            receipt.validate().unwrap();
+            assert_eq!(reservation.key, receipt.key);
+            if byte == 0 {
+                assert_eq!(reservation.key, binding);
+            } else {
+                assert_eq!(reservation.key, format!("binding:{binding}"));
+            }
+        }
+    }
 }

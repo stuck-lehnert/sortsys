@@ -4,7 +4,7 @@ use super::{
     creation::{CreationOrigin, TOOL_RETURN_PURPOSE},
     crypto::{invalid, revision},
     objects::{conflict, persistence, registry},
-    resource_access::check_command_binding,
+    resource_access::{check_command_binding, command_binding_record},
     wire::{Action, Facet},
 };
 use crate::{
@@ -50,7 +50,7 @@ struct ReturnReceipt {
 }
 
 pub(super) fn receipt_key(binding: &str) -> RecordKey {
-    key(RECEIPTS, binding)
+    command_binding_record(RECEIPTS, binding)
 }
 
 fn verify_command(command: &ResourceCommand, tenant: &str, binding: &str) -> RpcResult<()> {
