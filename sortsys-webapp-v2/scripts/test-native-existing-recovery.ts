@@ -29,6 +29,7 @@ import {
   unlockedAccount,
 } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
+import { parsePrivateFileUrl } from "../app/lib/data/projectFileData";
 import { required } from "../app/lib/data/protectedObjects";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 
@@ -52,6 +53,19 @@ const changedPassword = "Concurrent-owner-password-2026!";
 const recoveredPassword = "Seed-restored-owner-password-2026!";
 const repeatedPassword = "Second-seed-restored-owner-password-2026!";
 const privateTitle = "Vertrauliche wiederhergestellte Position 684193";
+const reportDay = "2026-10-21";
+const reportSummary = "Abgenommenes Fassadenmuster 584216";
+const photoName = "Baustellenfoto Recovery 584216.png";
+const photoMime = "image/png";
+// A 4×3 original and an independent 2×1 thumbnail.
+const photoBytes = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGNIMLgARww4OQA8thCB8fEjXwAAAABJRU5ErkJggg==",
+  "base64",
+);
+const thumbnailBytes = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGN4MEHxwQRFAAx8AyPyTiS5AAAAAElFTkSuQmCC",
+  "base64",
+);
 const source = JSON.parse(
   await readFile(join(root, "owner-recovery.json"), "utf8"),
 );
@@ -99,6 +113,47 @@ async function rejectsUnchanged(
   await assert.rejects(() => commitRecovery(second, plan), RecoveryNotStarted);
   assert.equal((await head()).generation, "1");
 }
+
+type Business = ReturnType<typeof createBusinessClient>;
+
+async function assertReportPhoto(
+  business: Business,
+  projectId: string,
+  reportId: string,
+  fileId: string,
+) {
+  const report = await required(
+    business.query("projects.dailyReports.get", { projectId, day: reportDay }),
+  );
+  assert.equal(report.id, reportId);
+  assert.equal(report.summary, reportSummary);
+  assert.deepEqual(
+    report.photos.map((photo) => photo.id),
+    [fileId],
+  );
+  const photo = report.photos[0]!;
+  assert.equal(photo.fileName, photoName);
+  assert.equal(photo.projectId, projectId);
+  for (const [source, thumbnail, expected] of [
+    [photo.downloadUrl, false, photoBytes],
+    [photo.previewUrl, true, thumbnailBytes],
+  ] as const) {
+    assert.ok(source);
+    const reference = parsePrivateFileUrl(source);
+    assert.equal(reference.projectId, projectId);
+    assert.equal(reference.fileId, fileId);
+    assert.equal(reference.thumbnail, thumbnail);
+    const blob = await business.files.blob(
+      reference.projectId,
+      reference.fileId,
+      reference.revision,
+      reference.thumbnail,
+    );
+    assert.equal(blob.type, photoMime);
+    assert.deepEqual(Buffer.from(await blob.arrayBuffer()), expected);
+  }
+}
+
 try {
   const [disclosed, denied] = await first.mutate("zerotrust.recovery.account", {
     tenant,
@@ -135,6 +190,49 @@ try {
       description: "Unverändert nach zwei Wiederherstellungen",
     }),
   );
+  const project = await required(
+    business.mutate("projects.create", {
+      title: "Fassadenarbeiten für die Wiederherstellungsprüfung",
+    }),
+  );
+  await required(
+    business.mutate("projects.dailyReports.create", {
+      projectId: project.id,
+      day: reportDay,
+      summary: "Fassadenmuster vor der Abnahme",
+      workHours: [],
+    }),
+  );
+  const photoId = await business.files.upload({
+    projectId: project.id,
+    name: photoName,
+    mime: photoMime,
+    blob: new Blob([photoBytes], { type: photoMime }),
+    inspect: async () => ({
+      thumbnail: new Blob([thumbnailBytes], { type: photoMime }),
+      width: 2,
+      height: 1,
+    }),
+  });
+  const reportKey = { projectId: project.id, day: reportDay };
+  await required(
+    business.mutate("projects.dailyReports.photos.add", {
+      ...reportKey,
+      fileId: photoId,
+    }),
+  );
+  const report = await required(
+    business.query("projects.dailyReports.get", reportKey),
+  );
+  assert.ok(report.revision);
+  await required(
+    business.mutate("projects.dailyReports.update", {
+      ...reportKey,
+      expectedRevision: report.revision,
+      data: { summary: reportSummary },
+    }),
+  );
+  await assertReportPhoto(business, project.id, report.id, photoId);
   business.dispose();
   const draft = await recoveryDraft(
     first,
@@ -245,6 +343,7 @@ try {
     (await required(business.query("products.get", { id: product.id }))).name,
     privateTitle,
   );
+  await assertReportPhoto(business, project.id, report.id, photoId);
   business.dispose();
   await lockCryptoSession();
   const nextDraft = await recoveryDraft(
@@ -286,6 +385,7 @@ try {
     (await required(business.query("products.get", { id: product.id }))).name,
     privateTitle,
   );
+  await assertReportPhoto(business, project.id, report.id, photoId);
   business.dispose();
   const forbidden = [
     source.phrase,
@@ -296,6 +396,10 @@ try {
     recoveredPassword,
     repeatedPassword,
     privateTitle,
+    reportSummary,
+    photoName,
+    photoBytes.toString("base64").replace(/=+$/, ""),
+    thumbnailBytes.toString("base64").replace(/=+$/, ""),
   ];
   for (const secret of forbidden)
     assert.equal(
@@ -311,6 +415,7 @@ try {
       aliasRaceRejected: true,
       repeatedSeedRotation: true,
       businessContentsPreserved: true,
+      reportPhotoPreserved: true,
     }),
   );
 } finally {

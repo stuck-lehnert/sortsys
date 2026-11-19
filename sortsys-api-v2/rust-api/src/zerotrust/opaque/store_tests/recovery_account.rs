@@ -36,6 +36,7 @@ async fn seed_recovery_retains_the_primary_account_and_rejects_concurrent_creden
     assert_eq!(result["passwordRaceRejected"], true);
     assert_eq!(result["aliasRaceRejected"], true);
     assert_eq!(result["repeatedSeedRotation"], true);
+    assert_eq!(result["reportPhotoPreserved"], true);
     let after = tenant
         .scan::<Account>("accounts", None, None)
         .await

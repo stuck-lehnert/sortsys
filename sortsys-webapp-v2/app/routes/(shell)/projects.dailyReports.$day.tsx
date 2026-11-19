@@ -1,13 +1,17 @@
-import { projectFiles as privateProjectFiles } from "~/lib/client";
+import {
+  client,
+  projectFiles as privateProjectFiles,
+  protectedContent,
+} from "~/lib/client";
 import { inspectProjectFile } from "~/lib/fileInspection";
 import { uiText } from "~/lib/i18n";
 import { useMemo, useRef, useState } from "react";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
+import { useProtectedState } from "~/hooks/useProtectedState";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
-import { client } from "~/lib/client";
 import { NotFound } from "./_404";
 import { MyHeader } from "~/components/MyHeader";
 import { AttrList } from "~/components/AttrList";
@@ -20,7 +24,10 @@ import { useTitle } from "~/hooks/useTitle";
 import { MyTable } from "~/components/MyTable";
 import { MyExpandable } from "~/components/MyExpandable";
 import { MyDropdown } from "~/components/MyDropdown";
+import { FileResourceImage } from "~/components/FileResourceImage";
+import ProjectFilePreviewModal from "~/components/ProjectFilePreviewModal";
 import { Icons } from "~/lib/icons";
+import type { ProjectFileTarget } from "~/lib/projectFileLinks";
 import {
   renderStructuredPdf,
   formatPdfNumber,
@@ -41,9 +48,11 @@ export default function DailyProjectReportDetailPage() {
   const sessionInfo = useSessionInfo();
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [pdfExportErr, setPdfExportErr] = useState<string | null>(null);
-  const [photoErr, setPhotoErr] = useState<string | null>(null);
+  const [photoErr, setPhotoErr] = useProtectedState<string | null>(null);
   const [isPhotoUploading, setIsPhotoUploading] = useState(false);
   const [removingPhotoId, setRemovingPhotoId] = useState<string | null>(null);
+  const [selectedPhoto, setSelectedPhoto, contentContext] =
+    useProtectedState<ProjectFileTarget | null>(null);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
 
   const dayKey = useMemo(() => {
@@ -253,6 +262,9 @@ export default function DailyProjectReportDetailPage() {
         .toISOString()
         .slice(0, 10)
         .replace(/[^\w\-]+/g, "-");
+      contentContext.throwIfAborted();
+      if (contentContext !== protectedContent.context())
+        throw new DOMException("Aborted", "AbortError");
       const blob = new Blob([pdfData] as any, { type: "application/pdf" });
       deliverBlob(
         blob,
@@ -265,6 +277,11 @@ export default function DailyProjectReportDetailPage() {
       );
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
+      if (
+        contentContext.aborted ||
+        contentContext !== protectedContent.context()
+      )
+        return;
       setPdfExportErr(
         (err as Error)?.message ||
           uiText("Unbekannter Fehler beim PDF-Export."),
@@ -295,19 +312,20 @@ export default function DailyProjectReportDetailPage() {
     void exportDailyReportToPdf("open");
   });
 
+  const canManagePhotos =
+    sessionInfo.supportsProjectFiles() &&
+    sessionInfo.canAccess(
+      `project:${id}:daily-reports`,
+      "master-data",
+      "update",
+    );
+  const canAddPhotos =
+    canManagePhotos &&
+    sessionInfo.canAccess(`project:${id}`, "attachment", "read") &&
+    sessionInfo.canAccess(`project:${id}`, "attachment", "create");
+
   async function uploadDailyReportPhotos(fileList: FileList | null) {
-    if (
-      !fileList?.length ||
-      !report ||
-      !dayKey ||
-      !sessionInfo.canAccess(
-        `project:${id}:daily-reports`,
-        "master-data",
-        "update",
-      ) ||
-      !sessionInfo.canAccess(`project:${id}`, "attachment", "create")
-    )
-      return;
+    if (!fileList?.length || !report || !dayKey || !canAddPhotos) return;
     if (isPhotoUploading) return;
 
     setPhotoErr(null);
@@ -316,6 +334,7 @@ export default function DailyProjectReportDetailPage() {
     try {
       const files = Array.from(fileList);
       for (const file of files) {
+        contentContext.throwIfAborted();
         if (!file.type.toLowerCase().startsWith("image/")) {
           throw new Error(
             uiText(
@@ -330,8 +349,9 @@ export default function DailyProjectReportDetailPage() {
           name: file.name,
           mime: file.type || "application/octet-stream",
           blob: file,
-          inspect: () => inspectProjectFile(file),
+          inspect: () => inspectProjectFile(file, contentContext),
         });
+        contentContext.throwIfAborted();
 
         const [, attachErr] = await client.mutate(
           "projects.dailyReports.photos.add",
@@ -361,7 +381,7 @@ export default function DailyProjectReportDetailPage() {
   }
 
   async function removeDailyReportPhoto(fileId: string) {
-    if (!report || !dayKey) return;
+    if (!report || !dayKey || !canManagePhotos || contentContext.aborted) return;
     if (removingPhotoId) return;
 
     setPhotoErr(null);
@@ -397,13 +417,6 @@ export default function DailyProjectReportDetailPage() {
   const hasWeather =
     !!report.weather && !!Object.values(report.weather).find((v) => !!v);
   const photos = report.photos ?? [];
-  const canManagePhotos =
-    sessionInfo.supportsProjectFiles() &&
-    sessionInfo.canAccess(
-      `project:${id}:daily-reports`,
-      "master-data",
-      "update",
-    );
 
   return (
     <>
@@ -435,13 +448,7 @@ export default function DailyProjectReportDetailPage() {
                   ? uiText("Fotos werden hochgeladen...")
                   : uiText("Fotos hinzufügen"),
                 renderIcon: Icons.Create,
-                hideIf:
-                  !canManagePhotos ||
-                  !sessionInfo.canAccess(
-                    `project:${id}`,
-                    "attachment",
-                    "create",
-                  ),
+                hideIf: !canAddPhotos,
                 disabled: isPhotoUploading,
                 onClick: () => photoInputRef.current?.click(),
               },
@@ -627,13 +634,18 @@ export default function DailyProjectReportDetailPage() {
               return (
                 <div key={photo.id} className="daily-report-photo-card">
                   {imageUrl ? (
-                    <a
-                      href={photo.downloadUrl || imageUrl}
-                      target="_blank"
-                      rel="noreferrer"
+                    <button
+                      type="button"
+                      className="daily-report-photo-preview"
+                      onClick={() =>
+                        setSelectedPhoto({
+                          projectId: report.projectId,
+                          fileId: photo.id,
+                        })
+                      }
                     >
-                      <img src={imageUrl} alt={photo.fileName} />
-                    </a>
+                      <FileResourceImage src={imageUrl} alt={photo.fileName} />
+                    </button>
                   ) : (
                     <div className="daily-report-photo-placeholder">
                       {uiText("Keine Vorschau")}
@@ -666,6 +678,13 @@ export default function DailyProjectReportDetailPage() {
           </div>
         </MyExpandable>
       )}
+      {selectedPhoto?.projectId === report.projectId &&
+        photos.some((photo) => photo.id === selectedPhoto.fileId) && (
+          <ProjectFilePreviewModal
+            target={selectedPhoto}
+            onClose={() => setSelectedPhoto(null)}
+          />
+        )}
     </>
   );
 }

@@ -89,6 +89,18 @@ body.ss-theme-dark {
   min-width: 0;
 }
 
+.daily-report-photo-preview {
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  padding: 0;
+}
+
+.daily-report-photo-preview:focus-visible {
+  outline: 2px solid var(--ss-focus-ring);
+  outline-offset: -2px;
+}
+
 .daily-report-photo-card img,
 .daily-report-photo-placeholder {
   aspect-ratio: 4 / 3;

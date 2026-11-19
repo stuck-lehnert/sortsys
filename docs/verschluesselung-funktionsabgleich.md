@@ -226,8 +226,13 @@ ihre Kosten nach zwei Recoveries. Der
 [native Fachablauf](../sortsys-webapp-v2/scripts/test-native-business-workflows.ts)
 prüft außerdem Anlage, Stundenänderung, historische Stundensätze, veraltete
 Formulare und verlorene oder falsche Speicherantworten über zwei API-Instanzen.
-Fotos und die Recovery dieser neu bearbeiteten Berichte stehen noch aus. Für
-persönliche Abwesenheiten und die Einsatzplanung bestehen eigene Adapter. Die
+Der [Recovery-Test](../sortsys-webapp-v2/scripts/test-native-existing-recovery.ts)
+bearbeitet einen Bericht mit Foto und prüft nach zwei Recoveries den Bericht,
+die Zuordnung und die exakten Dateibytes von Original und Vorschaubild. Für
+die Vorschau braucht das Konto Leserechte für den Bericht und die
+Projektdateien. Im Browser wird der Bericht nach Entzug der Dateifreigabe
+weiter angezeigt, und die geöffnete Fotovorschau schließt sich. Für persönliche
+Abwesenheiten und die Einsatzplanung bestehen eigene Adapter. Die
 Projektkostenübersicht verwendet die erfassten Stunden und Stundensätze.
 
 **Regieberichte.** Bestandsübernahme, Liste, Datumsfilter, Bearbeitung und

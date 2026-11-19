@@ -124,6 +124,8 @@ function auditPage(page) {
       "Saugfähigkeit",
       "Rechnung Innenanstrich Vereinsheim",
       "Mitarbeiterzahlung Browserprüfung 682143",
+      "Geprüfte Fensterabdichtung 765324",
+      "Baustellenfoto 765324.png",
     ]) {
       if (body.includes(marker) || query.includes(marker))
         plaintextLeaks.push(marker);
@@ -921,6 +923,147 @@ try {
       }
     },
   );
+  await scenario("daily-report-encrypted-photos", async (page) => {
+    const projectTitle = "Fenstersanierung Pirckheimer-Gymnasium";
+    const summary = "Geprüfte Fensterabdichtung 765324";
+    const photoName = "Baustellenfoto 765324.png";
+    const day = "2026-10-21";
+    const reportPath = `/projects/${seeded.projectId}/dailyReports/${day}`;
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
+    await page
+      .getByRole("group", { name: "Arbeit erfassen", exact: true })
+      .getByRole("button", { name: "Bautagesbericht", exact: true })
+      .click();
+    const form = page.getByRole("dialog", {
+      name: "Bautagesbericht erstellen",
+      exact: true,
+    });
+    await form.getByRole("combobox", { name: /^Projekt/ }).fill(projectTitle);
+    await page.getByRole("option", { name: projectTitle, exact: true }).click();
+    await form.getByLabel("Beschreibung der Arbeiten").fill(summary);
+    await form.locator('input[type="date"]').fill(day);
+    await form.getByRole("button", { name: "Erstellen", exact: true }).click();
+    await expect(form).toBeHidden();
+    await page.goto(`${server.origin}${reportPath}`);
+    await expect(page.getByText(summary, { exact: true })).toBeVisible();
+
+    const encoded = await page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 80;
+      canvas.height = 48;
+      const context = canvas.getContext("2d");
+      context.fillStyle = "#54655a";
+      context.fillRect(0, 0, 80, 48);
+      context.fillStyle = "#f2d383";
+      context.fillRect(12, 8, 56, 32);
+      return canvas.toDataURL("image/png").split(",")[1];
+    });
+    const original = Buffer.from(encoded, "base64");
+    await page.getByRole("button", { name: "Aktionen", exact: true }).click();
+    await expect(
+      page.getByRole("menuitem", { name: "Fotos hinzufügen", exact: true }),
+    ).toBeVisible();
+    await page.keyboard.press("Escape");
+    await page.locator('input[type="file"][accept="image/*"]').setInputFiles({
+      name: photoName,
+      mimeType: "image/png",
+      buffer: original,
+    });
+    function photoButton(browserPage) {
+      return browserPage.getByRole("button", { name: photoName, exact: true });
+    }
+    async function expectPhoto(image, width) {
+      await expect(image).toHaveAttribute("src", /^blob:/);
+      await image.scrollIntoViewIfNeeded();
+      await expect
+        .poll(() => image.evaluate((element) => element.naturalWidth))
+        .toBe(width);
+    }
+    await expectPhoto(page.getByRole("img", { name: photoName }), 80);
+    await page.reload();
+    const tile = photoButton(page);
+    await expectPhoto(tile.getByRole("img"), 80);
+    await tile.focus();
+    await tile.press("Enter");
+    const preview = page.getByRole("dialog", { name: "Dateivorschau" });
+    await expectPhoto(preview.getByRole("img", { name: photoName }), 80);
+    const [download] = await Promise.all([
+      page.waitForEvent("download"),
+      preview.getByRole("button", { name: "Herunterladen", exact: true }).click(),
+    ]);
+    assert.equal(download.suggestedFilename(), photoName);
+    assert.deepEqual(await readFile(await download.path()), original);
+    await preview
+      .getByRole("button", { name: "Schließen", exact: true })
+      .click();
+    await expect(preview).toBeHidden();
+    await expect(page).toHaveURL(`${server.origin}${reportPath}`);
+
+    const memberServer = await applicationServer(
+      applicationBuild,
+      endpoints[0],
+    );
+    servers.add(memberServer);
+    const memberContext = await applicationContext();
+    const member = await memberContext.newPage();
+    const memberAudit = auditPage(member);
+    try {
+      await login(member, "frank.doe", "123456", memberServer.origin);
+      await expect(
+        member.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await member.goto(`${memberServer.origin}${reportPath}`);
+      await expect(
+        member.getByText(
+          "Die angeforderte Ressource konnte nicht aufgelöst werden.",
+        ),
+      ).toBeVisible();
+
+      const permissions = await openMemberPermissions(page);
+      const projects = permissions
+        .getByRole("heading", { name: "Projektzugriff", exact: true })
+        .locator("xpath=ancestor::section[1]");
+      await projects
+        .getByRole("combobox", { name: "Projekt", exact: true })
+        .fill(projectTitle);
+      await page.getByRole("option", { name: projectTitle, exact: true }).click();
+      const reportAccess = "Bautagesberichte und Arbeitszeiten";
+      const fileAccess = "Projektdateien";
+      const save = (field) =>
+        saveResourceAccess(projects, "Projektzugriff speichern", field, 60_000);
+      await selectAccess(page, projects, reportAccess, "Lesen");
+      await save(reportAccess);
+      await expect(member.getByText(summary, { exact: true })).toBeVisible();
+      await expect(member.getByText(photoName, { exact: true })).toHaveCount(0);
+      await expect(member.getByRole("img", { name: photoName })).toHaveCount(0);
+
+      await selectAccess(page, projects, fileAccess, "Lesen");
+      await save(fileAccess);
+      await expectPhoto(photoButton(member).getByRole("img"), 80);
+      await photoButton(member).click();
+      const memberPreview = member.getByRole("dialog", {
+        name: "Dateivorschau",
+      });
+      await expectPhoto(memberPreview.getByRole("img", { name: photoName }), 80);
+
+      await selectAccess(page, projects, fileAccess, "Kein Zugriff");
+      await save(fileAccess);
+      await expect(memberPreview).toBeHidden();
+      await expect(member.getByText(summary, { exact: true })).toBeVisible();
+      await expect(member.getByText(photoName, { exact: true })).toHaveCount(0);
+
+      await selectAccess(page, projects, reportAccess, "Kein Zugriff");
+      await save(reportAccess);
+      await expect(member.getByText(summary, { exact: true })).toHaveCount(0);
+      memberAudit.assertClean();
+    } finally {
+      await memberContext.close();
+      await memberServer.close();
+    }
+  });
   await scenario("local-document-search", async (page) => {
     await login(page, "john.doe");
     await expect(
