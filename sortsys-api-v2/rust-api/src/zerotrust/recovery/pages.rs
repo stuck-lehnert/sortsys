@@ -1,9 +1,12 @@
 //! Seed-authorized, bounded reads of one recovery inventory. A page never
 //! freezes a whole database transaction across requests or assumes sticky sessions.
 use super::*;
-use sortsys_zerotrust::{pagination::SnapshotPage, recovery::RecoveryPageAccess};
+use sortsys_zerotrust::{
+    pagination::SnapshotPage, recovery::RecoveryPageAccess,
+    recovery_inventory::RECOVERY_INVENTORY_PAGE_ITEMS,
+};
 
-const PAGE_SIZE: usize = 64;
+const DEFINITIONS_PER_READ: usize = 64;
 const KEY_PAGE_BYTES: usize = 4 * 1024 * 1024;
 
 #[derive(Deserialize, TS)]
@@ -131,7 +134,7 @@ async fn domain_page(
         .scan_with_limit::<super::super::objects::DomainDescriptor>(
             "domain-catalog",
             after,
-            PAGE_SIZE,
+            RECOVERY_INVENTORY_PAGE_ITEMS,
         )
         .await?;
     let mut items = Vec::new();
@@ -179,69 +182,74 @@ async fn key_page(
     let generation = &root.profile.authority.generation;
     let collection = format!("recovery-inventory-{generation}");
     let page = transaction
-        .scan_with_limit::<RecoveryKeyReference>(&collection, after, PAGE_SIZE)
+        .scan_with_limit::<RecoveryKeyReference>(&collection, after, RECOVERY_INVENTORY_PAGE_ITEMS)
         .await?;
-    let mut keys = Vec::with_capacity(page.records.len() * 2);
-    for row in &page.records {
-        let reference = row.value.as_ref().ok_or_else(invalid)?;
-        if reference.authority_generation != *generation
-            || super::super::objects::registry::recovery_key(reference)? != row.record
-        {
-            return Err(invalid());
-        }
-        keys.push(definition_key(
-            &reference.domain,
-            &reference.generation,
-            generation,
-        )?);
-        keys.extend(super::super::objects::registry::domain_keys(
-            &reference.domain,
-        ));
-    }
-    transaction.prefetch(keys).await?;
     let mut items = Vec::new();
     let mut bytes = 0usize;
     let mut last = None;
-    for row in page.records {
-        let reference = row.value.ok_or_else(invalid)?;
-        let definition: DomainDefinition = transaction
-            .read(definition_key(
+    // Definitions can carry many recipient envelopes. Fetch a small group at
+    // a time and stop once the browser page reaches its byte budget.
+    for rows in page.records.chunks(DEFINITIONS_PER_READ) {
+        let mut keys = Vec::with_capacity(rows.len() * 3);
+        for row in rows {
+            let reference = row.value.as_ref().ok_or_else(invalid)?;
+            if reference.authority_generation != *generation
+                || super::super::objects::registry::recovery_key(reference)? != row.record
+            {
+                return Err(invalid());
+            }
+            keys.push(definition_key(
                 &reference.domain,
                 &reference.generation,
                 generation,
-            )?)
-            .await?
-            .ok_or_else(invalid)?;
-        let domain =
-            super::super::objects::registry::retained_domain(transaction, &reference.domain)
-                .await?;
-        if definition.tenant != root.profile.authority.tenant
-            || definition.id != reference.domain
-            || definition.generation != reference.generation
-            || definition.scope != domain.scope
-            || definition.facet != domain.facet
-            || revision(&reference.generation)? > revision(&domain.generation)?
-            || definition.recovery_envelope.recipient != format!("recovery:{generation}")
-        {
-            return Err(invalid());
+            )?);
+            keys.extend(super::super::objects::registry::domain_keys(
+                &reference.domain,
+            ));
         }
-        let size = serde_json::to_vec(&definition).map_err(internal)?.len();
-        if !items.is_empty() && bytes.saturating_add(size) > KEY_PAGE_BYTES {
-            return Ok(SnapshotPage {
-                snapshot,
-                items,
-                after: last,
-            });
-        }
-        bytes = bytes.saturating_add(size);
-        last = Some(
-            Cursor::Keys {
-                domain: reference.domain,
-                generation: reference.generation,
+        transaction.prefetch(keys).await?;
+
+        for row in rows {
+            let reference = row.value.as_ref().ok_or_else(invalid)?;
+            let definition: DomainDefinition = transaction
+                .read(definition_key(
+                    &reference.domain,
+                    &reference.generation,
+                    generation,
+                )?)
+                .await?
+                .ok_or_else(invalid)?;
+            let domain =
+                super::super::objects::registry::retained_domain(transaction, &reference.domain)
+                    .await?;
+            if definition.tenant != root.profile.authority.tenant
+                || definition.id != reference.domain
+                || definition.generation != reference.generation
+                || definition.scope != domain.scope
+                || definition.facet != domain.facet
+                || revision(&reference.generation)? > revision(&domain.generation)?
+                || definition.recovery_envelope.recipient != format!("recovery:{generation}")
+            {
+                return Err(invalid());
             }
-            .encode()?,
-        );
-        items.push(RecoveryInventoryItem::Key(Box::new(definition)));
+            let size = serde_json::to_vec(&definition).map_err(internal)?.len();
+            if !items.is_empty() && bytes.saturating_add(size) > KEY_PAGE_BYTES {
+                return Ok(SnapshotPage {
+                    snapshot,
+                    items,
+                    after: last,
+                });
+            }
+            bytes = bytes.saturating_add(size);
+            last = Some(
+                Cursor::Keys {
+                    domain: reference.domain.clone(),
+                    generation: reference.generation.clone(),
+                }
+                .encode()?,
+            );
+            items.push(RecoveryInventoryItem::Key(Box::new(definition)));
+        }
     }
     Ok(SnapshotPage {
         snapshot,

@@ -1,5 +1,8 @@
 import { expect, test } from "bun:test";
 import { recoveryFixture } from "./support/recoveryFixture";
+import { createRecoveryCodec } from "../src/core/recovery";
+import { sortsysDomainCodec } from "../src/domains";
+import { sortsysSetupCodec } from "../src/setup";
 import {
   areaKey,
   base64,
@@ -12,6 +15,7 @@ import {
   createRecoveryPhrase,
   decryptObject,
   encryptObject,
+  FACETS,
   finishOpaqueLogin,
   importSigningKey,
   InvalidProtectedData,
@@ -33,6 +37,24 @@ import {
   verifyTrustHistory,
 } from "../src/sortsys";
 import { server } from "@serenity-kit/opaque";
+
+test("seed recovery can use the final reserved key slot and retain the historical key", async () => {
+  const f = await recoveryFixture();
+  const codec = createRecoveryCodec(FACETS, sortsysDomainCodec, sortsysSetupCodec, {
+    inventoryLimits: { domains: 1, keyGenerations: 2 },
+  });
+  const { plan } = await codec.prepareRecovery({
+    oldPhrase: f.phrase,
+    newPhrase: f.newPhrase,
+    password: f.password,
+    source: f.source,
+    register: f.register,
+  });
+
+  expect(plan.domains.map((domain) => domain.generation)).toEqual(["2"]);
+  expect(plan.oldKeyEnvelopes).toHaveLength(1);
+  await codec.verifyRecoveryTransition(plan);
+});
 
 test("recovery can retain an existing principal while replacing its credential and signing keys", async () => {
   const f = await recoveryFixture();

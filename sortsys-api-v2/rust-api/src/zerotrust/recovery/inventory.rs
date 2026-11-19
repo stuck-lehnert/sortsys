@@ -59,13 +59,7 @@ pub(super) async fn reserve_recovery(
         return Err(super::conflict());
     }
     let next = inventory
-        .reserve(
-            RecoveryInventory {
-                domains: 0,
-                key_generations: inventory.domains,
-            },
-            DEFAULT_RECOVERY_LIMITS,
-        )
+        .rotate(DEFAULT_RECOVERY_LIMITS)
         .map_err(|_| capacity_reached())?;
     transaction.put_protected(record_key(), &next).await
 }

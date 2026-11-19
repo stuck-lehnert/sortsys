@@ -63,7 +63,8 @@ import type { SnapshotPage, SnapshotPageRequest } from "../snapshotPages";
 import {
   DEFAULT_RECOVERY_LIMITS,
   recoveryInventory,
-  reserveRecoveryInventory,
+  RECOVERY_INVENTORY_PAGE_ITEMS,
+  rotateRecoveryInventory,
   type RecoveryLimits,
 } from "../recoveryInventory";
 
@@ -133,6 +134,25 @@ export function createRecoveryCodec<
   const { createDomain, domainFrame, domainBoxSigner, verifyDomain } =
     domainCodec;
   const { createTenantSetup, tenantSetupFrame } = setupCodec;
+
+  function recoveryDomain(
+    input: unknown,
+  ): RecoverySource<F, C>["domains"][number] {
+    const { id, scope, facet, generation } = record(input, [
+      "id",
+      "scope",
+      "facet",
+      "generation",
+    ]);
+    identifier(id);
+    identifier(scope);
+    revision(generation);
+    if (typeof facet !== "string" || !allowedFacets.has(facet)) {
+      throw new InvalidProtectedData();
+    }
+    return { id, scope, facet: facet as F, generation };
+  }
+
   function recoverySource(input: unknown): RecoverySource<F, C> {
     const source = record(input, [
       "challengeId",
@@ -160,16 +180,6 @@ export function createRecoveryCodec<
       source.domainProofs.length > source.keys.length
     )
       throw new InvalidProtectedData();
-    const domains = source.domains.map((input) => {
-      const domain = record(input, ["id", "scope", "facet", "generation"]);
-      identifier(domain.id);
-      identifier(domain.scope);
-      revision(domain.generation);
-      if (!allowedFacets.has(domain.facet as string)) {
-        throw new InvalidProtectedData();
-      }
-      return { ...domain } as RecoverySource<F, C>["domains"][number];
-    });
     return {
       challengeId: source.challengeId as string,
       challenge: source.challenge,
@@ -177,7 +187,7 @@ export function createRecoveryCodec<
       catalog: sealedBox(source.catalog),
       catalogVersion: source.catalogVersion as string,
       policyVersion: source.policyVersion as string,
-      domains,
+      domains: source.domains.map(recoveryDomain),
       domainProofs: [...source.domainProofs] as DomainDefinition<F, C>[],
       keys: source.keys.map(sealedBox),
     };
@@ -243,21 +253,15 @@ export function createRecoveryCodec<
     const keys = new Set<string>();
     for await (const page of readSnapshotPages({
       read: (request) => input.read(request, head),
-      maxItems: 64,
+      maxItems: RECOVERY_INVENTORY_PAGE_ITEMS,
       snapshot,
       ...(input.signal ? { signal: input.signal } : {}),
     })) {
       for (const item of page) {
         const entry = record(item, ["kind", "value"]);
         if (entry.kind === "domain") {
-          const [domain] = recoverySource({
-            ...metadata,
-            domains: [entry.value],
-            domainProofs: [],
-            keys: [],
-          }).domains;
-          if (!domain || domains.has(domain.id))
-            throw new InvalidProtectedData();
+          const domain = recoveryDomain(entry.value);
+          if (domains.has(domain.id)) throw new InvalidProtectedData();
           domains.set(domain.id, domain);
           source.domains.push(domain);
         } else if (entry.kind === "key") {
@@ -403,24 +407,16 @@ export function createRecoveryCodec<
     }
     const tenant = source.authority.tenant;
     const generation = source.authority.generation;
-    revision(generation);
-    revision(source.policyVersion);
     const nextGeneration = (BigInt(generation) + 1n).toString();
     const nextPolicyVersion = (BigInt(source.policyVersion) + 1n).toString();
     revision(nextGeneration);
     revision(nextPolicyVersion);
-    revision(source.catalogVersion);
-    sized(source.challenge, 32);
-    identifier(source.challengeId);
     const publishedDomains = new Map(
       source.domains.map((domain) => [domain.id, domain]),
     );
-    if (
-      source.domains.length > inventoryLimits.domains ||
-      source.keys.length > inventoryLimits.keyGenerations ||
-      publishedDomains.size !== source.domains.length
-    )
+    if (publishedDomains.size !== source.domains.length) {
       throw new InvalidProtectedData();
+    }
     if (
       normalizeRecoveryPhrase(input.oldPhrase) ===
       normalizeRecoveryPhrase(input.newPhrase)
@@ -557,16 +553,12 @@ export function createRecoveryCodec<
       }
     }
     for (const domain of source.domains) {
-      identifier(domain.id);
-      identifier(domain.scope);
-      revision(domain.generation);
       if (!archived.has(`${domain.id}\0${domain.generation}`)) {
         throw new InvalidProtectedData();
       }
     }
-    reserveRecoveryInventory(
+    rotateRecoveryInventory(
       { domains: source.domains.length, keyGenerations: archived.size },
-      { domains: 0, keyGenerations: source.domains.length },
       inventoryLimits,
     );
     const { subject, username } = existing ?? createAdministrator();

@@ -673,16 +673,19 @@ Berechtigungen und Inhaltsschema müssen weiterhin geprüft werden. Für den
 Recovery-Katalog verbindet `security.recovery.loadRecoverySource` die Seiten mit
 dem zuvor gelesenen Kopf. `recoveryPageFrame` beziehungsweise Rusts
 `recovery::RecoveryPageAccess::frame` binden eine Anfrage an Mandant, Generation,
-Challenge, Snapshot und Cursor. Der Transport-Callback erhält keine Seed-Phrase.
+Challenge, Snapshot und Cursor. Eine Seite enthält höchstens
+`RECOVERY_INVENTORY_PAGE_ITEMS` Einträge. Der Transport-Callback erhält keine
+Seed-Phrase.
 
 Die Standardkapazität beträgt 2.000 Bereiche und 50.000 Schlüsselstände.
-`RecoveryInventory` zählt Bereiche und veröffentlichte Schlüsselgenerationen;
-ältere Generationen bleiben nach einem Phrase-Wechsel mitgezählt. Rusts
-`RecoveryInventory::reserve` und TypeScripts `reserveRecoveryInventory` prüfen
-dieselben Grenzen und lassen zusätzlich Platz für eine vollständige
-Schlüsselrotation. Der Speicheradapter muss den neuen Zähler zusammen mit den
-Schlüsseln gegen den gelesenen Stand veröffentlichen. Ein gewöhnlicher Zähler
-im Speicher eines API-Prozesses reicht dafür nicht aus.
+`RecoveryInventory` zählt Bereiche und veröffentlichte Schlüsselgenerationen.
+Ältere Generationen zählen nach einem Phrase-Wechsel weiter. Für einzelne
+Schlüsseländerungen lassen `RecoveryInventory::reserve` in Rust und
+`reserveRecoveryInventory` in TypeScript je Bereich einen Schlüsselstand frei.
+Für die Recovery verbrauchen `RecoveryInventory::rotate` und
+`rotateRecoveryInventory` je Bereich einen Stand aus dieser Reserve. Der
+Speicheradapter muss den neuen Zähler zusammen mit den Schlüsseln gegen den
+gelesenen Stand veröffentlichen.
 
 Andere Anwendungen können `recovery.inventoryLimits` bei `createZeroTrust`
 angeben und dieselben `RecoveryLimits` an ihren Rust-Adapter übergeben. Die

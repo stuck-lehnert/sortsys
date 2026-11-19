@@ -266,8 +266,7 @@ try {
     username: "builder",
     password: originalPassword,
   });
-  // More than 64 keys exercises the server's inventory pagination and the
-  // encrypted catalogue tree through its actual read/write endpoints.
+  // More than 64 keys spans multiple datastore reads and encrypted catalogue leaves.
   await provisionOwnedCollections(
     owner,
     subject,

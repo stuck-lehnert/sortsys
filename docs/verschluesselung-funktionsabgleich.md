@@ -573,24 +573,20 @@ Servermigrationen betreffen nur öffentliche Hüllen und Referenzen.
 
 Die Browser lesen Berechtigungsverzeichnisse inzwischen in geprüften Seiten
 mit höchstens 128 Bereichen. Die Vertrauenskette und die signierten Regeln
-werden nur mit der ersten Seite übertragen. Das behebt die bisherigen
-Gesamtgrenzen noch nicht: Registrierung, weitere Verwaltungsabrufe und
-Wiederherstellungspläne begrenzen weiterhin den gesamten Bestand auf
-2.000 Inhaltsbereiche beziehungsweise 50.000 bisherige Schlüsselhüllen je
-Recovery-Plan. Eine gemeinsame, gegen Rücksetzen geschützte Zählung prüft jetzt
-auch zusätzliche Schlüsselgenerationen und den Recovery-Commit. Die
-Kapazitätsprüfung reserviert Platz für eine weitere vollständige
-Schlüsselrotation. Diese Werte begrenzen reale Bestände, nicht nur einzelne
-Netzwerkpakete. Der fertige Plan wird inzwischen in hashgeprüften Teilen von
-höchstens 128 KiB übertragen und erst vollständig aktiviert. Dieser Transport
-ist auf 512 Teile und 64 MiB begrenzt. Er beseitigt die einzelne große
-Plananfrage. Ein nativer Lasttest veröffentlicht 96 Bereiche mit je 105
-Schlüsselgenerationen über die regulären Endpunkte. Nach einer Seed-Recovery
-über eine zweite API-Instanz bleiben die beiden gespeicherten Inhalte aus der
-ersten und letzten Generation lesbar. Der Zähler stimmt mit allen 10.080
-historischen Generationen und den anschließend neu angelegten Schlüsseln
-überein. Das belegt noch keine Such- oder Bediengeschwindigkeit bei großen
-Fachbeständen und hebt die Grenze von 2.000 Bereichen nicht auf.
+werden nur mit der ersten Seite übertragen. Der gesamte Bestand ist auf 2.000
+Inhaltsbereiche und 50.000 Schlüsselgenerationen begrenzt. Ein gegen Rücksetzen
+geschützter Zähler erfasst neue Schlüsselgenerationen beim Veröffentlichen
+und bei einer Recovery. Einzelne Schlüsseländerungen lassen Platz für eine
+vollständige Rotation. Die Recovery kann diesen Platz nutzen. Der Browser
+liest den Bestand seitenweise mit bis zu 256 Einträgen je Anfrage. Er überträgt
+den Plan in hashgeprüften Teilen von höchstens 128 KiB. Die API aktiviert ihn erst
+nach Erhalt aller Teile. Je Plan sind höchstens 512 Teile und 64 MiB zulässig.
+
+Ein nativer Lasttest veröffentlicht 96 Bereiche mit je 105 Schlüsselgenerationen
+über die regulären Endpunkte. Nach einer Seed-Recovery über eine zweite
+API-Instanz bleiben die gespeicherten Inhalte aus der ersten und letzten
+Generation lesbar. Der Zähler entspricht den 10.080 historischen Generationen
+und den anschließend neu angelegten Schlüsseln.
 
 Die Prüfung betrifft die heutigen Browseradapter für
 [Produkte](../sortsys-webapp-v2/app/lib/data/products.ts),

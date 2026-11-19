@@ -44,9 +44,36 @@
       "expected": null
     },
     {
-      "name": "recovery must not publish a next inventory above its capacity",
+      "name": "ordinary publication cannot spend the recovery reserve",
       "current": { "domains": 2000, "keyGenerations": 48000 },
       "addition": { "domains": 0, "keyGenerations": 2000 },
+      "expected": null
+    }
+  ],
+  "rotations": [
+    {
+      "name": "recovery spends the reserved keys at the ordinary limit",
+      "current": { "domains": 2000, "keyGenerations": 48000 },
+      "expected": { "domains": 2000, "keyGenerations": 50000 }
+    },
+    {
+      "name": "a previous recovery can leave enough room for another",
+      "current": { "domains": 2000, "keyGenerations": 46000 },
+      "expected": { "domains": 2000, "keyGenerations": 48000 }
+    },
+    {
+      "name": "recovery cannot exceed the capacity",
+      "current": { "domains": 2000, "keyGenerations": 48001 },
+      "expected": null
+    },
+    {
+      "name": "another recovery needs capacity after the reserve is used up",
+      "current": { "domains": 2000, "keyGenerations": 50000 },
+      "expected": null
+    },
+    {
+      "name": "recovery cannot repair an inconsistent inventory counter",
+      "current": { "domains": 3, "keyGenerations": 1 },
       "expected": null
     }
   ]

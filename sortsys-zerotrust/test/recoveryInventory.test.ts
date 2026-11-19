@@ -3,6 +3,7 @@ import {
   DEFAULT_RECOVERY_LIMITS,
   recoveryInventory,
   reserveRecoveryInventory,
+  rotateRecoveryInventory,
 } from "../src/index";
 import fixture from "./fixtures/recovery-inventory.json";
 
@@ -25,6 +26,17 @@ test("browser and server use the same inventory capacity vectors", () => {
           fixture.limits,
         ),
       ).toEqual(vector.expected);
+    }
+  }
+});
+
+test("browser and server use the same recovery rotation vectors", () => {
+  for (const { name, current, expected } of fixture.rotations) {
+    const rotate = () => rotateRecoveryInventory(current, fixture.limits);
+    if (expected === null) {
+      expect(rotate, name).toThrow();
+    } else {
+      expect(rotate(), name).toEqual(expected);
     }
   }
 });

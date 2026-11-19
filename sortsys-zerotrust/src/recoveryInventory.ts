@@ -14,6 +14,7 @@ export const DEFAULT_RECOVERY_LIMITS: Readonly<RecoveryLimits> = Object.freeze({
   domains: 2_000,
   keyGenerations: 50_000,
 });
+export const RECOVERY_INVENTORY_PAGE_ITEMS = 256;
 
 function count(value: unknown): asserts value is number {
   if (
@@ -46,24 +47,41 @@ export function recoveryInventory(
   return { domains: value.domains, keyGenerations: value.keyGenerations };
 }
 
-/** Reserve both the publication and one subsequent tenant-wide key rotation.
- * The caller must publish this counter atomically with the actual key records. */
-export function reserveRecoveryInventory(
+function addInventory(
   input: RecoveryInventory,
   addition: RecoveryInventory,
-  limits: RecoveryLimits = DEFAULT_RECOVERY_LIMITS,
+  limits: RecoveryLimits,
 ): RecoveryInventory {
   const current = recoveryInventory(input, limits);
   recoveryInventory(addition, limits);
-  const next = recoveryInventory(
+  return recoveryInventory(
     {
       domains: current.domains + addition.domains,
       keyGenerations: current.keyGenerations + addition.keyGenerations,
     },
     limits,
   );
+}
+
+/** Reserve ordinary publication and one subsequent tenant-wide key rotation.
+ * The caller must publish this counter atomically with the actual key records. */
+export function reserveRecoveryInventory(
+  input: RecoveryInventory,
+  addition: RecoveryInventory,
+  limits: RecoveryLimits = DEFAULT_RECOVERY_LIMITS,
+): RecoveryInventory {
+  const next = addInventory(input, addition, limits);
   if (next.keyGenerations + next.domains > limits.keyGenerations) {
     throw new InvalidProtectedData();
   }
   return next;
+}
+
+/** Recovery can use the space reserved by ordinary key publication. */
+export function rotateRecoveryInventory(
+  input: RecoveryInventory,
+  limits: RecoveryLimits = DEFAULT_RECOVERY_LIMITS,
+): RecoveryInventory {
+  const current = recoveryInventory(input, limits);
+  return addInventory(current, { domains: 0, keyGenerations: current.domains }, limits);
 }

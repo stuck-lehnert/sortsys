@@ -2,7 +2,11 @@ import assert from "node:assert/strict";
 import { readFile, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { createClient } from "@sortsys/v2-client";
-import { createDomain, publicIdentity } from "@sortsys/zerotrust/sortsys";
+import {
+  createDomain,
+  publicIdentity,
+  RECOVERY_INVENTORY_PAGE_ITEMS,
+} from "@sortsys/zerotrust/sortsys";
 import {
   recoveryDraft,
   recoveryPlan,
@@ -44,11 +48,13 @@ const secret = "VERTRAULICHER_GROSSBESTAND_738491";
 const secrets = [password, nextPassword, source.phrase, secret];
 const originalFetch = globalThis.fetch;
 let encryptedRequests = 0;
+let inventoryPages = 0;
 globalThis.fetch = new Proxy(originalFetch, {
   apply(target, receiver, args) {
     const url = new URL(
       args[0] instanceof Request ? args[0].url : String(args[0]),
     );
+    if (url.pathname.endsWith("/zerotrust.recovery.page")) inventoryPages++;
     const texts = [...url.searchParams.values()];
     if (typeof args[1]?.body === "string") texts.push(args[1].body);
     for (const text of texts) {
@@ -154,6 +160,10 @@ try {
   );
   const plan = await recoveryPlan(recovery, draft);
   assert.ok(plan.oldKeyEnvelopes.length > 10_000);
+  const expectedInventoryPages =
+    Math.ceil(plan.domains.length / RECOVERY_INVENTORY_PAGE_ITEMS) +
+    Math.ceil(plan.oldKeyEnvelopes.length / RECOVERY_INVENTORY_PAGE_ITEMS);
+  assert.equal(inventoryPages, expectedInventoryPages);
   await commitRecovery(recovery, plan);
   await signIn(recovery, {
     tenant: source.tenant,
@@ -184,10 +194,11 @@ try {
       domains: plan.domains.length,
       originalKeys: plan.oldKeyEnvelopes.length,
       finalKeys: plan.oldKeyEnvelopes.length + plan.domains.length,
+      inventoryPages,
     }),
   );
   console.log(
-    `Recovery scale verified: ${plan.oldKeyEnvelopes.length} historical keys, old and current ciphertext readable after recovery`,
+    `Recovery scale verified: ${plan.oldKeyEnvelopes.length} historical keys in ${inventoryPages} inventory requests, old and current ciphertext readable after recovery`,
   );
 } finally {
   globalThis.fetch = originalFetch;

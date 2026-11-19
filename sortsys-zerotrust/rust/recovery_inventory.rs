@@ -14,6 +14,7 @@ pub const DEFAULT_RECOVERY_LIMITS: RecoveryLimits = RecoveryLimits {
     domains: 2_000,
     key_generations: 50_000,
 };
+pub const RECOVERY_INVENTORY_PAGE_ITEMS: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -33,11 +34,10 @@ impl RecoveryInventory {
         Ok(self)
     }
 
-    /// Leave capacity for a subsequent tenant-wide key rotation as well.
-    pub fn reserve(self, addition: Self, limits: RecoveryLimits) -> Result<Self> {
+    fn add(self, addition: Self, limits: RecoveryLimits) -> Result<Self> {
         self.validate(limits)?;
         addition.validate(limits)?;
-        let next = Self {
+        Self {
             domains: self
                 .domains
                 .checked_add(addition.domains)
@@ -47,7 +47,12 @@ impl RecoveryInventory {
                 .checked_add(addition.key_generations)
                 .ok_or_else(invalid)?,
         }
-        .validate(limits)?;
+        .validate(limits)
+    }
+
+    /// Leave capacity for a subsequent tenant-wide key rotation as well.
+    pub fn reserve(self, addition: Self, limits: RecoveryLimits) -> Result<Self> {
+        let next = self.add(addition, limits)?;
         if next
             .key_generations
             .checked_add(next.domains)
@@ -57,6 +62,17 @@ impl RecoveryInventory {
             return Err(invalid());
         }
         Ok(next)
+    }
+
+    /// Recovery can use the space reserved by ordinary key publication.
+    pub fn rotate(self, limits: RecoveryLimits) -> Result<Self> {
+        self.add(
+            Self {
+                domains: 0,
+                key_generations: self.domains,
+            },
+            limits,
+        )
     }
 }
 
@@ -68,6 +84,7 @@ mod tests {
     struct Fixture {
         limits: RecoveryLimits,
         cases: Vec<Case>,
+        rotations: Vec<Rotation>,
     }
 
     #[derive(Deserialize)]
@@ -78,6 +95,13 @@ mod tests {
         expected: Option<RecoveryInventory>,
     }
 
+    #[derive(Deserialize)]
+    struct Rotation {
+        name: String,
+        current: RecoveryInventory,
+        expected: Option<RecoveryInventory>,
+    }
+
     #[test]
     fn browser_and_server_use_the_same_capacity_vectors() {
         let fixture: Fixture =
@@ -85,6 +109,10 @@ mod tests {
         assert_eq!(fixture.limits, DEFAULT_RECOVERY_LIMITS);
         for case in fixture.cases {
             let actual = case.current.reserve(case.addition, fixture.limits).ok();
+            assert_eq!(actual, case.expected, "{}", case.name);
+        }
+        for case in fixture.rotations {
+            let actual = case.current.rotate(fixture.limits).ok();
             assert_eq!(actual, case.expected, "{}", case.name);
         }
     }
@@ -110,5 +138,6 @@ mod tests {
                 )
                 .is_err()
         );
+        assert!(current.rotate(limits).is_err());
     }
 }

@@ -164,16 +164,17 @@ Schlüsselveröffentlichungen. Auch historische Generationen zählen weiter.
 Vor einer Recovery vergleicht die API den Zähler mit dem vollständigen
 veröffentlichten Bestand. Abweichungen und überschrittene Kapazitäten verhindern
 den Commit. Die aktuelle Phrase und die bisherigen Konten bleiben dann aktiv.
-Die gemeinsame Kapazitätsprüfung hält außerdem Platz für eine weitere
-vollständige Schlüsselrotation frei. Das hebt die Gesamtgrenze nicht auf.
+Einzelne Schlüsseländerungen halten Platz für eine vollständige Rotation frei.
+Eine Recovery darf diesen Platz nutzen. Ist der Bestand danach voll, brauchen
+weitere Schlüsseländerungen und eine erneute Recovery mehr Kapazität.
 
-Beim Lesen einer Bestandsseite lädt die API die referenzierten Bereiche und
-Schlüsseldefinitionen gemeinsam aus dem Datendienst. Vor dem Veröffentlichen
-liest sie auch die Schreibziele und deren unabhängige Sicherheitsnachweise in
-begrenzten Sammelanfragen. Die Versionsprüfung umfasst weiterhin jeden
-Datensatz, einschließlich zuvor nicht vorhandener Einträge. Ändert eine zweite
-API-Instanz währenddessen einen dieser Stände, wird die gesamte Veröffentlichung
-abgewiesen.
+Der Browser liest bis zu 256 Einträge je Bestandsseite. Die API lädt die
+Schlüsseldefinitionen daraus in Gruppen von bis zu 64 mit ihren referenzierten
+Bereichen. Große Schlüsseldefinitionen können eine Seite verkürzen. Vor dem
+Veröffentlichen liest die API auch die Schreibziele und ihre unabhängigen
+Sicherheitsnachweise in Sammelanfragen. Die Versionsprüfung erfasst jeden
+Datensatz, auch bisher unbelegte Schlüssel. Ändert eine zweite API-Instanz
+einen der gelesenen Stände, wird die gesamte Veröffentlichung abgewiesen.
 
 Der Browser prüft zusätzlich die signierte Definition der jeweils angegebenen
 aktuellen Bereichsgeneration. Sie bindet die Bereichszuordnung und den Inhaltstyp
@@ -359,9 +360,8 @@ Der native Lasttest legt 96 Bereiche mit jeweils 105 Generationen über die
 regulären API-Endpunkte an. Eine anschließende Seed-Recovery übernimmt alle
 10.080 historischen Schlüsselstände. Die zuvor unter der ersten und letzten
 Generation gespeicherten Inhalte bleiben lesbar; der geschützte Bestandszähler
-enthält danach auch die neuen Recovery-Generationen. Der Test prüft damit
-Schlüsselbestände oberhalb der früheren 10.000er-Grenze, aber keine größere
-Zahl von Inhaltsbereichen.
+enthält danach auch die neuen Recovery-Generationen. Der Browser benötigt in
+diesem Test 41 Anfragen für das Bereichsverzeichnis und den Schlüsselbestand.
 
 Ein weiterer Mehrinstanztest erzeugt Schlüsselgenerationen mit dem eigenen
 Signaturschlüssel eines beauftragten Bereichsverwalters. Neue Leser erhalten
