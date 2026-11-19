@@ -14,6 +14,7 @@ export const LOGO_QUERIES = new Set(["settings.tenantLogo.get"]);
 export const MAX_LOGO_BYTES = 10 * 1024 * 1024;
 export const MAX_LOGO_INPUT_BYTES = 20 * 1024 * 1024;
 export const LOGO_TYPES = ["image/png", "image/jpeg", "image/webp"] as const;
+const LOGO_VERSION = /^(?:legacy|[a-f0-9]{32})$/;
 export type LogoImage = {
   id: string;
   fileName: string;
@@ -61,7 +62,11 @@ export function logoImage(input: unknown): LogoImage {
   if ((value.width === null) !== (value.height === null))
     throw new InvalidProtectedData();
   const manifest = content(value.content, "organization", value.id as string);
-  if (!manifest.size || manifest.size > MAX_LOGO_BYTES)
+  if (
+    !manifest.size ||
+    manifest.size > MAX_LOGO_BYTES ||
+    !LOGO_VERSION.test(manifest.version)
+  )
     throw new InvalidProtectedData();
   return { ...value, content: manifest } as LogoImage;
 }
@@ -105,9 +110,8 @@ export function readLogoResource(input: string): {
   id: string;
   version: string;
 } {
-  const match =
-    /^sortsys-logo:([1-9a-v][0-9a-v]{0,12}):(legacy|[a-f0-9]{32})$/.exec(input);
-  if (!match) throw new InvalidProtectedData();
+  const match = /^sortsys-logo:([1-9a-v][0-9a-v]{0,12}):([^:]+)$/.exec(input);
+  if (!match || !LOGO_VERSION.test(match[2]!)) throw new InvalidProtectedData();
   addressId(match[1]);
   return { id: match[1]!, version: match[2]! };
 }

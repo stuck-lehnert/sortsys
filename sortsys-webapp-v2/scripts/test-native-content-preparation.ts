@@ -62,6 +62,12 @@ import {
 } from "./test-native-gaeb-replay";
 import { invoiceXml } from "./test-live-billing";
 import {
+  preparePrintFilesForRestore,
+  rejectCorruptPrintRestore,
+  savedPrintAsset,
+  savedPrintHeader,
+} from "./test-organization-print-restore";
+import {
   prepareToolBookingRestore,
   rejectRestoreWithoutBookingParents,
 } from "./test-tool-booking-restore";
@@ -124,6 +130,31 @@ async function uploadRestorePhoto(
   return id;
 }
 
+async function inspectLatestTestSnapshot(
+  peer: Client,
+  operator: Client,
+  tenant: string,
+  signal: AbortSignal,
+) {
+  const backup = await required(
+    operator.mutate("admin.storage.snapshots.create", {
+      tenant,
+      operation: crypto.randomUUID(),
+    }),
+  );
+  const prepared = await required(
+    peer.mutate("zerotrust.content.prepare", {
+      snapshotOperation: backup.id,
+      operation: crypto.randomUUID(),
+    }),
+  );
+  return inspectPreparedContent(
+    peer,
+    await approvePreparedContent(peer, prepared, signal),
+    signal,
+  );
+}
+
 async function checkAttachmentReview(
   owner: Client,
   peer: Client,
@@ -133,25 +164,8 @@ async function checkAttachmentReview(
   photoId: string,
 ) {
   const signal = new AbortController().signal;
-  async function inspectSnapshot() {
-    const backup = await required(
-      operator.mutate("admin.storage.snapshots.create", {
-        tenant,
-        operation: crypto.randomUUID(),
-      }),
-    );
-    const prepared = await required(
-      peer.mutate("zerotrust.content.prepare", {
-        snapshotOperation: backup.id,
-        operation: crypto.randomUUID(),
-      }),
-    );
-    return inspectPreparedContent(
-      peer,
-      await approvePreparedContent(peer, prepared, signal),
-      signal,
-    );
-  }
+  const inspectSnapshot = () =>
+    inspectLatestTestSnapshot(peer, operator, tenant, signal);
   const collection = await protectedCollection(
     owner,
     fileCollection(projectId),
@@ -1129,6 +1143,11 @@ export async function exerciseContentPreparation(
   );
   const checkEditors = await holdEditorPackets(peer, project.id);
   const photoId = await uploadRestorePhoto(owner, peer, project.id);
+  const print = await preparePrintFilesForRestore(
+    peer,
+    photoBytes,
+    thumbnailBytes,
+  );
   const contract = await adoptOrder(owner, project.id);
   const finalizeConfirmation = prepareConfirmation(owner, contract);
   const ownerSession = await required(
@@ -1176,6 +1195,7 @@ export async function exerciseContentPreparation(
     projectId: project.id,
     fileId: photoId,
   }));
+  await print.replace();
   const booking = await replaceBooking();
   const confirmation = await finalizeConfirmation(peer);
   const invoice = await issueInvoiceAfterBackup(owner, peer, project.id, contract);
@@ -1348,14 +1368,18 @@ export async function exerciseContentPreparation(
     missingPhotos: 0,
     uncheckedPhotos: 0,
   });
+  assert.deepEqual(reportPreview.restoredPrintFiles, {
+    files: 2,
+    incompleteLogo: false,
+  });
   const fileVerification = transmissions
     .slice(beforeFileVerification)
     .flat()
     .filter((path) => path === "zerotrust.fileChunks.getMany");
   assert.equal(
     fileVerification.length,
-    1,
-    "The document, photo and thumbnail share a block request",
+    2,
+    "Project files share one block request, and print files and logo share another",
   );
   assert.equal(reportPreview.retainedDocuments, 2);
   assert.equal(reportPreview.uncheckedDocuments, 0);
@@ -1587,6 +1611,7 @@ export async function exerciseContentPreparation(
   assert.equal(editor.aborted, true);
   assert.equal(peer.context.context().aborted, false);
   await checkEditors(await contentEpochFingerprint(approval));
+  await print.check();
   await checkGaebReplayAfterRestore(peer, replay, published.content);
   await confirmation.check();
   await invoice.check();
@@ -1788,6 +1813,8 @@ export async function exerciseContentPreparation(
             SORTSYS_RESTORE_E2E_AFTER: originalTitle,
             SORTSYS_RESTORE_E2E_PHOTO: restorePhotoName,
             SORTSYS_RESTORE_E2E_REPORT_DAY: reportDay,
+            SORTSYS_RESTORE_E2E_PRINT_ASSET: savedPrintAsset,
+            SORTSYS_RESTORE_E2E_PRINT_HEADER: savedPrintHeader,
           },
         },
       );
@@ -1807,6 +1834,9 @@ export async function exerciseContentPreparation(
     );
     assert.equal(restoredInBrowser.title, originalTitle);
   }
+  await rejectCorruptPrintRestore(owner, () =>
+    inspectLatestTestSnapshot(peer, operator, tenant, previewSignal),
+  );
   await checkPlanningReview(tenant, owner, peer, operator);
   await rejectSnapshotWithoutLockedCase(tenant, owner, peer, operator);
   await booking.checkMemberAndReturn();

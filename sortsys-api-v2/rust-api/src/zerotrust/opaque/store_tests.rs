@@ -182,11 +182,12 @@ async fn browser_with_tenant(
         }
     } else if mode == "editors" && std::env::var("TEST_OFFICE_PERMISSIONS").as_deref() == Ok("1") {
         Duration::from_secs(600)
-    } else if matches!(mode, "administration" | "owner-content-preparation")
-        && std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() == Ok("1")
+    } else if mode == "owner-content-preparation"
+        || (mode == "administration"
+            && std::env::var("SORTSYS_NATIVE_BROWSER").as_deref() == Ok("1"))
     {
-        // These cases combine multiple signed transitions with real browser
-        // sessions. Their individual interaction deadlines stay unchanged.
+        // Preparing and checking several real DuckDB copies also takes time
+        // without Chromium. Individual interaction deadlines stay unchanged.
         Duration::from_secs(420)
     } else if matches!(
         mode,
@@ -201,7 +202,6 @@ async fn browser_with_tenant(
             | "llm"
             | "editors"
             | "owner-staging"
-            | "owner-content-preparation"
             | "owner-print-templates"
             | "owner-tool-batches"
             | "owner-planning-recipients"

@@ -527,11 +527,15 @@ Werkzeugbuchungen, Auftragsbestätigungen und ausgestellter Rechnungen. Die
 Vorschau prüft auch die Projekt- und Personalbezüge lesbarer Planungseinträge.
 Bei Projektdateien prüft der Browser die Ordner, die Blöcke für Originale
 und Vorschaubilder sowie die Fotoverknüpfungen aus Bautagesberichten.
+Für das Organisationslogo und Dateien der Druckvorlage prüft er die
+Dateieinträge und Blöcke gemeinsam. Beschädigte Blöcke sperren die Freigabe.
 Fehlende Leserechte erscheinen in der Vorschau. Im Produktionsbrowser sind
 Abbruch und Bestätigung über zwei getrennte API-Prozesse geprüft. Danach sind
 ein wiederhergestelltes Bautagesberichtsfoto, die gesperrte Auftragsbestätigung
-und der Zahlungsstand der vorhandenen Rechnung sichtbar. Ein vollständiger
-Abgleich aller verschlüsselten Fachdaten steht noch aus.
+und der Zahlungsstand der vorhandenen Rechnung sichtbar. Der Test öffnet auch
+das wiederhergestellte Logo und erzeugt aus der Druckvorlage mit eingebundenem
+Bild eine PDF-Vorschau. Ein vollständiger Abgleich aller verschlüsselten
+Fachdaten steht noch aus.
 Ein Test startet den Datendienst aus einem vollständigen DuckDB-Dateisatz neu
 und prüft Anmeldung, ein Projekt, dessen Anhang und einen weiteren
 Phrase-Wechsel. Die [Betriebsdokumentation](deployment.md#sicherungen-und-wiederanlauf)

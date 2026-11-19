@@ -17,6 +17,8 @@ const before = env.SORTSYS_RESTORE_E2E_BEFORE;
 const after = env.SORTSYS_RESTORE_E2E_AFTER;
 const photo = env.SORTSYS_RESTORE_E2E_PHOTO;
 const reportDay = env.SORTSYS_RESTORE_E2E_REPORT_DAY;
+const printAsset = env.SORTSYS_RESTORE_E2E_PRINT_ASSET;
+const printHeader = env.SORTSYS_RESTORE_E2E_PRINT_HEADER;
 assert.ok(
   project &&
     confirmationCase &&
@@ -24,7 +26,9 @@ assert.ok(
     before &&
     after &&
     photo &&
-    reportDay,
+    reportDay &&
+    printAsset &&
+    printHeader,
 );
 const artifacts = join(process.argv[2], "browser-artifacts", "content-restore");
 await mkdir(artifacts, { recursive: true });
@@ -60,7 +64,16 @@ try {
     if (!url.pathname.startsWith("/api/v2/")) return;
     if (url.pathname.includes("zerotrust.content.activate")) activations++;
     const wire = (request.postData() ?? "") + decodeURIComponent(url.search);
-    if ([before, after, finalizedText, paymentReference, photo].some((text) => wire.includes(text))) {
+    const privateTexts = [
+      before,
+      after,
+      finalizedText,
+      paymentReference,
+      photo,
+      printAsset,
+      printHeader,
+    ];
+    if (privateTexts.some((text) => wire.includes(text))) {
       leaks.push(url.pathname);
     }
   });
@@ -99,6 +112,9 @@ try {
   await expect(dialog.getByText("Projekte", { exact: true })).toBeVisible();
   await expect(dialog.getByText("Dateien", { exact: true })).toBeVisible();
   await expect(dialog.getByText("Ordner", { exact: true })).toBeVisible();
+  const printFiles = dialog.getByText("Druckdateien", { exact: true });
+  await expect(printFiles).toBeVisible();
+  await expect(printFiles.locator("..").locator("dd")).toHaveText("2");
   await expect(
     dialog.getByText("Erhaltene Dokumente", { exact: true }),
   ).toBeVisible();
@@ -127,6 +143,28 @@ try {
   await expect
     .poll(() => thumbnail.evaluate((image) => image.naturalWidth))
     .toBe(2);
+  await page.goto(`${server.origin}/admin?tab=logo`);
+  const logo = page.getByRole("img", { name: "Organisationslogo", exact: true });
+  await expect(logo).toBeVisible();
+  await expect.poll(() => logo.evaluate((image) => image.naturalWidth)).toBe(4);
+  await page
+    .getByRole("tab", { name: "Dokumentvorlagen", exact: true })
+    .click();
+  await expect(page.getByText(printAsset, { exact: true })).toBeVisible();
+  const printPreview = page.getByTitle("PDF ansehen", { exact: true });
+  await expect(printPreview).toBeVisible();
+  const previewFrame = await (await printPreview.elementHandle()).contentFrame();
+  assert.ok(previewFrame);
+  await previewFrame.waitForFunction(
+    () => !!window.PDFViewerApplication?.pdfDocument,
+  );
+  const printPreviewText = await previewFrame.evaluate(async () => {
+    const pdf = window.PDFViewerApplication.pdfDocument;
+    const firstPage = await pdf.getPage(1);
+    const text = await firstPage.getTextContent();
+    return text.items.map(({ str }) => str).join(" ").replace(/\s+/g, " ");
+  });
+  assert.ok(printPreviewText.includes(printHeader), printPreviewText);
   await page.goto(`${server.origin}/gaeb/${confirmationCase}`);
   await page
     .getByRole("button", {
@@ -166,6 +204,7 @@ try {
       lockedConfirmationVisible: true,
       invoicePaymentVisible: true,
       restoredPhotoVisible: true,
+      restoredPrintFilesVisible: true,
       errors,
       leaks,
     }),

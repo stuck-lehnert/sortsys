@@ -129,8 +129,13 @@ Fehlt ein Block oder weicht er vom signierten Dateieintrag ab, bleibt die
 Freigabe gesperrt. Fehlende Projektzuordnungen und nicht mehr vorhandene
 Fotos aus Bautagesberichten erscheinen als Hinweise in der Vorschau.
 Bei fehlender Lesefreigabe ist die Prüfung der betroffenen Verknüpfung
-nicht möglich. Die Vorschau beschränkt sich auf die hier beschriebenen
-Verknüpfungen.
+nicht möglich.
+
+Für das Organisationslogo und die Dateien der Druckvorlage prüft der Browser
+ebenfalls die signierten Dateieinträge und ihre Blöcke. Fehlt etwa ein Block
+des eingebundenen Briefpapiers, kann der vorbereitete Stand nicht freigegeben
+werden. War das Logo im Altsystem noch nicht fertig verarbeitet, weist die
+Vorschau darauf hin. Das Bild lässt sich nach der Rücksicherung neu hochladen.
 
 Erst **Fachdaten wiederherstellen** gibt den vorbereiteten Stand frei. Die
 Freigabe erfordert die Administratorrolle und den Schlüssel der

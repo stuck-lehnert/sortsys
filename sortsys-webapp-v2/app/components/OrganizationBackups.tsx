@@ -14,6 +14,7 @@ import {
   RestoreInvoiceConflict,
   RestorePlanningConflict,
 } from "~/lib/backups/contentRestore";
+import { RestorePrintFileConflict } from "~/lib/backups/organizationPrintReview";
 import { RestoreProjectFileConflict } from "~/lib/backups/projectFileReview";
 import { client } from "~/lib/client";
 import { unlockedAccount } from "~/lib/crypto/session";
@@ -29,7 +30,7 @@ type CheckedBackup = {
   report: Verification;
 };
 type ReviewProblem =
-  "booking" | "document" | "invoice" | "planning" | "file" | null;
+  "booking" | "document" | "invoice" | "planning" | "file" | "print" | null;
 type Review =
   | { status: "checking"; backup: Backup; operation: string }
   | {
@@ -90,6 +91,11 @@ function reviewFailure(problem: ReviewProblem) {
       "In der Sicherung ist eine Datei unvollständig oder die Ordnerstruktur ist ungültig. Wählen Sie eine andere Sicherung.",
       "This backup contains an incomplete file or an invalid folder structure. Choose a different backup.",
     );
+  if (problem === "print")
+    return uiText(
+      "Das Organisationslogo, die Druckvorlage oder eine ihrer Dateien ist in der Sicherung unvollständig oder beschädigt. Wählen Sie eine andere Sicherung.",
+      "The organization logo, print template or one of its files is incomplete or damaged in this backup. Choose a different backup.",
+    );
   return uiText(
     "Die Sicherung konnte nicht geprüft werden.",
     "The backup could not be checked.",
@@ -99,6 +105,7 @@ function reviewFailure(problem: ReviewProblem) {
 function RestoreCounts({ report }: { report: Verification }) {
   const count = new Intl.NumberFormat(currentLocaleTag());
   const files = report.restoredFiles;
+  const print = report.restoredPrintFiles;
   const entries = [
     { label: uiText("Projekte", "Projects"), value: report.projects },
     { label: uiText("Kunden", "Customers"), value: report.customers },
@@ -106,6 +113,12 @@ function RestoreCounts({ report }: { report: Verification }) {
     { label: uiText("Dateien", "Files"), value: files.files },
     { label: uiText("Ordner", "Folders"), value: files.folders },
   ];
+  if (print && print.files > 0) {
+    entries.push({
+      label: uiText("Druckdateien", "Print files"),
+      value: print.files,
+    });
+  }
   if (report.retainedDocuments > 0) {
     entries.push({
       label: uiText("Erhaltene Dokumente", "Retained documents"),
@@ -191,6 +204,22 @@ function RestoreCounts({ report }: { report: Verification }) {
             "Some files or links could not be checked with the current read access.",
           )}
         </p>
+      )}
+      {print === null && (
+        <p className="text-sm text-muted">
+          {uiText(
+            "Für das Organisationslogo und die Druckvorlage fehlt die Lesefreigabe zur Prüfung.",
+            "The organization logo and print template could not be checked with the current read access.",
+          )}
+        </p>
+      )}
+      {print?.incompleteLogo && (
+        <MyCallout color="yellow">
+          {uiText(
+            "Das bisherige Organisationslogo war im Altsystem noch nicht fertig verarbeitet. Laden Sie das Logo nach der Wiederherstellung erneut hoch.",
+            "The old system had not finished processing the organization logo. Upload the logo again after restoring this backup.",
+          )}
+        </MyCallout>
       )}
       {report.uncheckedDocuments > 0 && (
         <p className="text-sm text-muted">
@@ -299,6 +328,7 @@ export default function OrganizationBackups() {
         else if (error instanceof RestoreInvoiceConflict) problem = "invoice";
         else if (error instanceof RestorePlanningConflict) problem = "planning";
         else if (error instanceof RestoreProjectFileConflict) problem = "file";
+        else if (error instanceof RestorePrintFileConflict) problem = "print";
         setReview({
           status: "failed",
           backup,

@@ -12,6 +12,7 @@ import {
 import { storeFileContent, verifyFileContent } from "./fileContent";
 import { legacyLogo } from "./migrateLogo";
 import { createProtectedLogo } from "./organizationLogo";
+import { contentId } from "./projectFileData";
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 
@@ -182,6 +183,21 @@ test("logo manifests reject unbound references and damaged blocks", async () => 
   try {
     await tenant.store.upload(file());
     const saved = (await tenant.plain(LOGO_COLLECTION, LOGO_OBJECT)).image;
+    const withVersion = (version) => ({
+      ...saved,
+      content: {
+        ...saved.content,
+        version,
+        parts: saved.content.parts.map((part, index) => ({
+          ...part,
+          id: contentId("organization", saved.id, version, index),
+        })),
+      },
+    });
+    expect(readLogoResource(logoResource(logoImage(withVersion("legacy"))))).toEqual({
+      id: saved.id,
+      version: "legacy",
+    });
     for (const bad of [
       { ...saved, extra: true },
       { ...saved, mimeType: "image/svg+xml" },
@@ -190,6 +206,7 @@ test("logo manifests reject unbound references and damaged blocks", async () => 
       { ...saved, fileName: "../logo.png" },
       { ...saved, id: "2" },
       { ...saved, content: { ...saved.content, size: 11 * 1024 * 1024 } },
+      withVersion("legacy-thumbnail"),
     ])
       expect(() => logoImage(bad)).toThrow();
     expect(() =>
