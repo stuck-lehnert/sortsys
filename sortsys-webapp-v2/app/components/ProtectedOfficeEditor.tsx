@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Loading } from "@sortsys/react-components";
+import { RpcClientError } from "@sortsys/v2-client";
 import { client, projectFiles } from "~/lib/client";
 import { openCryptPad } from "~/lib/cryptpadBridge";
 import type { OfficeDraftRecovery } from "~/lib/data/projectFiles";
@@ -54,6 +55,7 @@ export function ProtectedOfficeEditor({
     file: string;
     ready: boolean;
     error: boolean;
+    connectionPaused: boolean;
     draftUnavailable: boolean;
     draft: OfficeDraftRecovery | null;
   } | null>(null);
@@ -86,7 +88,14 @@ export function ProtectedOfficeEditor({
       checkAgain = false,
       epoch: string | null = null;
     let shared = false,
-      contentVersion = "";
+      contentVersion = "",
+      canEdit = false;
+    let review: OfficeDraftRecovery | null = null;
+    let connectionPaused = false;
+    let editorError = false;
+    let retrySave = false;
+    let reconnectDelay = 1000;
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     let subscription: { unsubscribe(): void } | undefined;
     const frame = document.createElement("iframe");
     let recoveryFrame: HTMLIFrameElement | undefined;
@@ -102,7 +111,7 @@ export function ProtectedOfficeEditor({
       ready: boolean,
       error: boolean,
       draftUnavailable = false,
-      draft: OfficeDraftRecovery | null = null,
+      draft: OfficeDraftRecovery | null = review,
     ) => {
       if (!controller.signal.aborted)
         setState({
@@ -111,12 +120,14 @@ export function ProtectedOfficeEditor({
           file: fileId,
           ready,
           error,
+          connectionPaused,
           draftUnavailable,
           draft,
         });
     };
     const dispose = () => {
       controller.abort();
+      clearTimeout(reconnectTimer);
       subscription?.unsubscribe();
       bridge?.close();
       frame.remove();
@@ -131,8 +142,23 @@ export function ProtectedOfficeEditor({
     context.addEventListener("abort", discardContext, { once: true });
     if (context.aborted) discardContext();
     update(false, false);
+    const pauseConnection = () => {
+      if (!ready || controller.signal.aborted) return;
+      connectionPaused = true;
+      update(true, editorError);
+      if (reconnectTimer !== undefined) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = undefined;
+        void check();
+      }, reconnectDelay);
+      reconnectDelay = Math.min(reconnectDelay * 2, 8000);
+    };
     const check = async () => {
       if (!ready || controller.signal.aborted) return;
+      if (!navigator.onLine) {
+        pauseConnection();
+        return;
+      }
       if (checking) {
         checkAgain = true;
         return;
@@ -143,13 +169,30 @@ export function ProtectedOfficeEditor({
         live();
         if (
           status.epoch !== epoch ||
+          status.canEdit !== canEdit ||
           (!shared && status.epoch && status.contentVersion !== contentVersion)
         ) {
           dispose();
           setAttempt((value) => value + 1);
+        } else if (!navigator.onLine) {
+          pauseConnection();
+        } else if (connectionPaused) {
+          clearTimeout(reconnectTimer);
+          reconnectTimer = undefined;
+          if (!retrySave) reconnectDelay = 1000;
+          connectionPaused = false;
+          update(true, editorError);
+          if (retrySave && !editorError) {
+            retrySave = false;
+            bridge?.saveCurrent();
+          }
         }
-      } catch {
+      } catch (error) {
         if (!controller.signal.aborted) {
+          if (RpcClientError.isUnavailable(error)) {
+            pauseConnection();
+            return;
+          }
           dispose();
           setState({
             context,
@@ -157,6 +200,7 @@ export function ProtectedOfficeEditor({
             file: fileId,
             ready: false,
             error: true,
+            connectionPaused: false,
             draftUnavailable: false,
             draft: null,
           });
@@ -169,6 +213,19 @@ export function ProtectedOfficeEditor({
         }
       }
     };
+    if (!controller.signal.aborted) {
+      const reconnect = () => void check();
+      window.addEventListener("online", reconnect);
+      window.addEventListener("offline", pauseConnection);
+      controller.signal.addEventListener(
+        "abort",
+        () => {
+          window.removeEventListener("online", reconnect);
+          window.removeEventListener("offline", pauseConnection);
+        },
+        { once: true },
+      );
+    }
     void (async () => {
       live();
       const session = await projectFiles.office(
@@ -179,10 +236,10 @@ export function ProtectedOfficeEditor({
       live();
       epoch = session.epoch;
       contentVersion = session.contentVersion;
+      canEdit = session.canEdit;
       let content = session.document;
       let fileName = session.fileName;
       let recovered: OfficeDraftRecovery | undefined;
-      let review: OfficeDraftRecovery | null = null;
       if (session.previousSession) {
         const useConfirmed =
           confirmedVersion?.context === context &&
@@ -265,16 +322,32 @@ export function ProtectedOfficeEditor({
             throw new Error("Editor cannot save");
           await projectFiles.saveOffice(projectId, fileId, epoch, document);
           live();
+          reconnectDelay = 1000;
         },
         onReady: () => {
           if (!controller.signal.aborted) {
             ready = true;
+            editorError = false;
             update(true, false, false, review);
             void check();
           }
         },
         onError: () => {
-          if (!controller.signal.aborted) update(ready, true, false, review);
+          if (!controller.signal.aborted) {
+            editorError = true;
+            update(ready, true);
+          }
+        },
+        onSaveError: (error) => {
+          if (controller.signal.aborted) return;
+          if (RpcClientError.isUnavailable(error)) {
+            retrySave = true;
+            pauseConnection();
+          } else {
+            editorError = true;
+            update(ready, true);
+            void check();
+          }
         },
         onSession: (value) => {
           shared = value;
@@ -311,9 +384,11 @@ export function ProtectedOfficeEditor({
     selectedDraft,
   ]);
 
+  const interactive =
+    current?.ready && !current.error && !current.connectionPaused;
   return (
     <div className="project-files-office-editor-shell">
-      {current?.ready && current.draft && !current.error && (
+      {interactive && current?.draft && (
         <div
           className="project-files-office-draft-review"
           role="region"
@@ -345,7 +420,11 @@ export function ProtectedOfficeEditor({
           <MyButton
             kind="tertiary"
             onClick={() =>
-              setConfirmedVersion({ context, project: projectId, file: fileId })
+              setConfirmedVersion({
+                context,
+                project: projectId,
+                file: fileId,
+              })
             }
           >
             {uiText("Gespeicherten Dateistand öffnen", "Open saved file")}
@@ -398,11 +477,21 @@ export function ProtectedOfficeEditor({
           )}
         </div>
       )}
+      {current?.connectionPaused && !current.error && (
+        <div className="project-files-office-status" role="status">
+          <MyCallout color="yellow">
+            {uiText(
+              "Verbindung unterbrochen. Der Editor bleibt offen und wartet auf die erneute Rechteprüfung.",
+              "Connection interrupted. The editor stays open while access is checked again.",
+            )}
+          </MyCallout>
+        </div>
+      )}
       <div
         ref={container}
         className="project-files-office-editor"
-        aria-hidden={!current?.ready}
-        inert={!current?.ready}
+        aria-hidden={!interactive}
+        inert={!interactive}
         style={{ visibility: current?.ready ? "visible" : "hidden" }}
       />
     </div>

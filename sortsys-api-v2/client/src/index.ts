@@ -455,7 +455,8 @@ export function createClient(
         } catch (e) {
           if (e instanceof RpcClientError) {
             _autoLogoutOnAuthError(e, requestAuthScope);
-            if ((e as any)?.code === "ConnectionRefused") return [null, null];
+            if (_strategy !== "network-only" && e.code === "ConnectionRefused")
+              return [null, null];
             return [null, e];
           }
 
@@ -609,7 +610,11 @@ export function createClient(
         } catch (e) {
           if (e instanceof RpcClientError) {
             _autoLogoutOnAuthError(e, requestAuthScope);
-            if ((e as any)?.code === "ConnectionRefused") return [null, null];
+            if (
+              opts?.strategy !== "network-only" &&
+              e.code === "ConnectionRefused"
+            )
+              return [null, null];
             return [null, e];
           }
 

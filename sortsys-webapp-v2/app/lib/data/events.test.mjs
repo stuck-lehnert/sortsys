@@ -30,8 +30,9 @@ async function until(test) {
   }
 }
 
-for (const failFirst of [false, true]) {
-  test(`initial event admission releases held reads and reconnects resynchronize (first attempt fails: ${failFirst})`, async () => {
+for (const scenario of ["unchanged", "changed", "failed admission"]) {
+  test(`reconnecting resynchronizes data with ${scenario} event authorization`, async () => {
+    const failFirst = scenario === "failed admission";
     const fixture = await protectedTenant([]);
     fixture.client.mutate = async () => [
       { ticket: "disposable-test-ticket", subject: "user:1", generation: "1" },
@@ -40,6 +41,7 @@ for (const failFirst of [false, true]) {
     const original = globalThis.WebSocket;
     const sockets = [];
     const fingerprint = base64(new Uint8Array(32).fill(8));
+    const changedFingerprint = base64(new Uint8Array(32).fill(9));
     class TestSocket {
       static OPEN = 1;
       readyState = 1;
@@ -60,7 +62,13 @@ for (const failFirst of [false, true]) {
         const proof = JSON.parse(payload);
         expect(proof.ticket).toBe("disposable-test-ticket");
         expect(typeof proof.proof).toBe("string");
-        this.message({ type: "ready", fingerprint });
+        this.message({
+          type: "ready",
+          fingerprint:
+            scenario === "changed" && sockets.length > 1
+              ? changedFingerprint
+              : fingerprint,
+        });
       }
       close() {
         if (this.readyState === 3) return;
@@ -111,12 +119,14 @@ for (const failFirst of [false, true]) {
       }
       await until(() => changes.some((change) => change.all));
       expect(admissions).toBe(1);
-      expect(changes.at(-1)).toEqual({
-        reset: false,
-        all: true,
-        control: true,
-        domains: {},
-      });
+      const last = changes.at(-1);
+      expect(last.reset).toBe(scenario === "changed");
+      expect(last.all).toBe(true);
+      expect(last.control).toBe(scenario !== "unchanged");
+      expect(last.domains).toEqual({});
+      expect(last.reconnected).toBe(
+        scenario === "unchanged" ? true : undefined,
+      );
     } finally {
       controller.abort();
       await watched;

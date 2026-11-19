@@ -14,18 +14,17 @@ vorhandenen Funktionen, nativen Mehrinstanztests und noch offenen Prüfungen.
 Vergleichbare Suchergebnisse oder eine bestimmte Geschwindigkeit werden nicht
 allein aus der Wahl von DuckDB abgeleitet.
 
-Ein früherer Produktionsbuild hat alle 18 Browserabläufe mit zwei API-Instanzen
-in einem Rust-Testprozess bestanden. Für die aktuelle Fassung baut der Test den
-Musterbestand mit zwei getrennten API-Prozessen und einem gemeinsamen
-DuckDB-Dienst auf. Der frische Aufbau prüft beide Beispielkonten und 50
-Geschäftsvorgänge sowie den Erhalt manueller Änderungen nach einem Neustart
-des Seedings.
+Der vollständige Browserlauf vom 19. November hat den Musterbestand mit
+zwei getrennten API-Prozessen und einem gemeinsamen DuckDB-Dienst angelegt.
+Er hat beide Beispielkonten und 50 Geschäftsvorgänge geprüft. Ein zweiter
+Start des Seedings hat manuelle Änderungen am Bestand erhalten.
 
-Browserläufe mit Kopien dieses Bestands haben Anmeldung, GAEB-Autosave,
+Die 25 Browserabläufe dieses Durchlaufs umfassen Anmeldung, GAEB-Autosave,
 gemeinsame Bearbeitung, Projektanhänge, Dokumentensuche und gesperrte
-Direktlinks geprüft. Die zuerst beim Neuladen unterbrochene Prüfung der
-Werkzeugansicht ist separat durchgelaufen. Der gemeinsame Durchlauf aller
-Browserabläufe steht für die aktuelle Fassung aus.
+Direktlinks. Dazu kommen kontenübergreifende Prüfungen für Werkzeuge,
+Rechnungen, Freigaben und Stellvertretungen sowie Sicherung und Diagnose
+in der Betreiberverwaltung. Für spätere Änderungen gelten die
+Funktionsprüfungen in den jeweiligen Abschnitten.
 
 ## Zugang und Freigaben
 
@@ -445,8 +444,10 @@ Browsereditoren. Neben gemeinsamer Bearbeitung und Lesezugängen decken die
 DOCX-Browsertests den Rechteentzug während einer Speicheranfrage über zwei
 API-Instanzen ab. Nach der Herabstufung öffnet derselbe Link die Datei zum
 Lesen. Die API weist den alten Schreibvorgang ab, und ein berechtigtes Konto
-kann den Entwurf anschließend ausdrücklich übernehmen. Der Funktionsabgleich
-für weitere Dateifunktionen und die Wiederverbindung läuft weiter. Siehe
+kann den Entwurf anschließend ausdrücklich übernehmen. Ein Chromium-Test
+mit dem echten Dienst prüft die Wiederverbindung nach einem API- und
+WebSocket-Abbruch und das automatische Speichern nach dem fehlgeschlagenen
+Upload. Weitere Office-Dateifunktionen brauchen noch einen Vergleich. Siehe
 [Editorprüfungen](editoren-ohne-klartextserver.md).
 
 **diagrams.net.** Diagramme verwenden denselben geschützten Editorablauf und

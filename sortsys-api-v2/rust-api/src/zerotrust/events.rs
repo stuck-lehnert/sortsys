@@ -525,7 +525,9 @@ impl Snapshot {
         self.subject == next.subject
             && self.generation == next.generation
             && self.version == next.version
-            && self.fingerprint == next.fingerprint
+            && self.content == next.content
+            && self.capabilities == next.capabilities
+            && self.roles == next.roles
             && self.allowed == next.allowed
             && self.signing_key == next.signing_key
     }
@@ -545,14 +547,15 @@ async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcR
     let repository = service.records()?.tenant(&auth.tenant)?;
     let mut transaction = repository.transaction()?;
     let guard = metadata_security(&mut transaction, auth).await?;
-    // A reconnect uses the same fingerprint as a live refresh. Include the
-    // verified content head even when no permission or role has changed.
+    // Content restores and key changes can happen while a socket is closed
+    // even when the member's effective rights have not changed.
     let content = transaction
         .content_epoch()
         .await?
         .map(|head| head.fingerprint())
         .transpose()?;
     let domains = super::objects::metadata_catalog(&mut transaction).await?;
+    let key_version = super::objects::metadata_domain_access_version(&mut transaction).await?;
     // Hash scope/facet pairs and combine action bits once. The small retained
     // masks distinguish revocation from an added right without rescanning rules.
     let capabilities = capabilities(&guard.policy, &guard.subject, &guard.inherited);
@@ -578,7 +581,19 @@ async fn snapshot(service: &crate::auth::AuthService, auth: &AuthResult) -> RpcR
         .collect::<Vec<_>>();
     rights.sort();
     let fingerprint = encode(&Sha256::digest(
-        serde_json::to_vec(&(rights, &roles, &content)).map_err(internal)?,
+        serde_json::to_vec(&(
+            &auth.tenant,
+            &guard.subject,
+            guard.root.generation,
+            guard.root.policy_version,
+            &guard.policy.signature,
+            &guard.signing_key,
+            &key_version,
+            &content,
+            rights,
+            &roles,
+        ))
+        .map_err(internal)?,
     ));
     transaction.validate().await?;
     Ok(Snapshot {
@@ -886,7 +901,7 @@ mod tests {
         authority.generation = "2".into();
         assert!(!before.same_access(&authority));
         let mut rights = baseline();
-        rights.fingerprint = "changed-rights-or-roles".into();
+        rights.capabilities.insert([1; 32], 1);
         assert!(!before.same_access(&rights));
         let mut domains = baseline();
         domains.allowed.clear();

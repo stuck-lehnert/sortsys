@@ -11,6 +11,7 @@ pub(super) use registry::{
 mod access_inventory;
 mod creation_renewals;
 mod domain_access;
+pub(super) use domain_access::version as metadata_domain_access_version;
 pub(super) mod invoice_case;
 pub(super) use access_inventory::check_snapshot as metadata_check_inventory_snapshot;
 pub(super) mod registry;

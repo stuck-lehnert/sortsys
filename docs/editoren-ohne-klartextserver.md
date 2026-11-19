@@ -141,6 +141,22 @@ Für eine Datei ohne gemeinsame Sitzung darf ein Leser eine unabhängige,
 schreibgeschützte Kopie öffnen. Diese erhält keine Speicherfreigabe für das
 Projekt.
 
+Fällt die sortsys-API während einer Rechteprüfung kurz aus, bleibt der
+Editor im geöffneten Tab erhalten. Der Dialog pausiert die Bedienung und
+fragt die Rechte erneut ab. Erst wenn die Prüfung denselben Dateizugang
+und Editorraum bestätigt, kann die Arbeit dort weitergehen. Bei der
+erneuten Anmeldung am WebSocket werden versäumte Datenänderungen
+abgerufen. Dazu wird ein unveränderter Sicherheitsstand anhand von
+Richtlinie, Schlüsseln und aktuellem Mandantenstand erkannt. Ein Entzug
+der Freigabe schließt den bisherigen Editorraum weiterhin.
+
+Scheitert ein verschlüsselter Upload vorübergehend, fordert sortsys nach
+erfolgreicher Rechteprüfung einen frischen Dateistand aus dem Editor an.
+Bei weiteren Ausfällen wächst der Abstand zwischen den Versuchen. Ein
+Chromium-Test unterbricht die API-Abfrage, trennt den WebSocket und lässt
+anschließend einen Upload mit HTTP 503 scheitern. Nach der Wiederverbindung
+enthält die bestätigte DOCX-Datei beide Änderungen aus demselben Editorfenster.
+
 Der
 [Mehrinstanztest](../sortsys-webapp-v2/scripts/test-live-file-permissions.ts)
 prüft die getrennten Zugänge, einen gemeinsamen Sitzungsgewinner, die

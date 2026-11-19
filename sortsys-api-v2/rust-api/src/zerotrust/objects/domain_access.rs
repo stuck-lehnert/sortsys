@@ -21,8 +21,14 @@ struct DomainAccess {
     recipients: BTreeMap<String, BTreeSet<String>>,
 }
 
+const COLLECTION: &str = "domain-access";
+
 pub(super) fn record(id: &str) -> sortsys_zerotrust::metadata::RecordKey {
-    key("domain-access", id)
+    key(COLLECTION, id)
+}
+
+pub(in crate::zerotrust) async fn version(transaction: &mut Transaction) -> RpcResult<String> {
+    transaction.collection_version(COLLECTION).await
 }
 
 pub(super) async fn check(transaction: &mut Transaction, area: &DomainRecord) -> RpcResult<()> {

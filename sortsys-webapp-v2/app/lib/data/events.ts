@@ -21,6 +21,7 @@ export type EncryptedChange = {
   domains: Record<string, string | null>;
   staged?: boolean;
   toolReturns?: boolean;
+  reconnected?: true;
 };
 
 export function eventFingerprint(value: unknown): string {
@@ -144,8 +145,8 @@ export async function watchEncryptedEvents(
               // The first connection establishes the baseline. It must not
               // interrupt work already admitted under the current policy.
               // A changed baseline after disconnection drops the old context.
-              const reset =
-                fingerprint !== null && fingerprint !== value.fingerprint;
+              const previous = fingerprint;
+              const reset = previous !== null && previous !== value.fingerprint;
               fingerprint = value.fingerprint as string;
               ready = true;
               delay = 250;
@@ -157,7 +158,17 @@ export async function watchEncryptedEvents(
                 initialAdmission = undefined;
                 admitted();
               } else {
-                onChange({ reset, all: true, control: true, domains: {} });
+                if (previous !== null && !reset) {
+                  onChange({
+                    reset: false,
+                    all: true,
+                    control: false,
+                    domains: {},
+                    reconnected: true,
+                  });
+                } else {
+                  onChange({ reset, all: true, control: true, domains: {} });
+                }
               }
               return;
             }

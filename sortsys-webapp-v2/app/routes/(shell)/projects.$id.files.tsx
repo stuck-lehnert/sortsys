@@ -9,6 +9,7 @@ import { projectFiles as privateProjectFiles } from "~/lib/client";
 import { Loading, Select, SelectItem } from "@sortsys/react-components";
 import { Button as UIAction } from "@sortsys/react-components";
 import { Input as UIInput } from "@heroui/react";
+import { RpcClientError } from "@sortsys/v2-client";
 import { uiText } from "~/lib/i18n";
 import { Modal, useNotifications } from "@sortsys/react-components";
 import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
@@ -194,9 +195,10 @@ export default function ProjectFilesPage() {
   );
   const [videoError, setVideoError] = useState<string | null>(null);
   const [activeDwgFileId, setActiveDwgFileId] = useState<string | null>(null);
-  const [activeOfficeFileId, setActiveOfficeFileId] = useState<string | null>(
-    null,
-  );
+  const [officeSelection, setOfficeSelection] = useState<{
+    file: ProjectFileEntry;
+    context: AbortSignal;
+  } | null>(null);
   const [activePreviewFileId, setActivePreviewFileId] = useState<string | null>(
     null,
   );
@@ -219,7 +221,7 @@ export default function ProjectFilesPage() {
     setActiveImageIndex(null);
     setActiveVideoFileId(null);
     setActiveDwgFileId(null);
-    setActiveOfficeFileId(null);
+    setOfficeSelection(null);
     setActivePreviewFileId(null);
     setActiveGaebFileId(null);
     setActiveFallbackFileId(null);
@@ -305,10 +307,19 @@ export default function ProjectFilesPage() {
     return attachments.find((file) => file.id === activeDwgFileId) ?? null;
   }, [activeDwgFileId, attachments]);
 
-  const activeOfficeFile = useMemo(() => {
-    if (!activeOfficeFileId) return null;
-    return attachments.find((file) => file.id === activeOfficeFileId) ?? null;
-  }, [activeOfficeFileId, attachments]);
+  const listedOfficeFile = attachments.find(
+    (file) =>
+      file.id === officeSelection?.file.id && file.projectId === project.id,
+  );
+  // Keep the already open editor mounted while the list cannot be reached.
+  // An access change or a successful list without the file clears the choice.
+  const canKeepOfficeSelection =
+    supportsProjectFiles &&
+    officeSelection?.file.projectId === project.id &&
+    !officeSelection.context.aborted &&
+    RpcClientError.isUnavailable(projectFilesErr);
+  const activeOfficeFile =
+    listedOfficeFile ?? (canKeepOfficeSelection ? officeSelection.file : null);
   const activePreviewFile = useMemo(() => {
     return attachments.find((file) => file.id === activePreviewFileId) ?? null;
   }, [activePreviewFileId, attachments]);
@@ -349,11 +360,18 @@ export default function ProjectFilesPage() {
   }, [activeDwgFileId, attachments]);
 
   useEffect(() => {
-    if (!activeOfficeFileId) return;
-    if (attachments.some((entry) => entry.id === activeOfficeFileId)) return;
-
-    setActiveOfficeFileId(null);
-  }, [activeOfficeFileId, attachments]);
+    if (!officeSelection) return;
+    if (listedOfficeFile) {
+      const context = privateProjectFiles.editorContext();
+      if (
+        listedOfficeFile !== officeSelection.file ||
+        context !== officeSelection.context
+      )
+        setOfficeSelection({ file: listedOfficeFile, context });
+    } else if (!canKeepOfficeSelection) {
+      setOfficeSelection(null);
+    }
+  }, [officeSelection, listedOfficeFile, canKeepOfficeSelection]);
   useEffect(() => {
     if (
       activePreviewFileId &&
@@ -430,11 +448,11 @@ export default function ProjectFilesPage() {
   };
 
   const openOfficeEditor = (file: ProjectFileEntry) => {
-    setActiveOfficeFileId(file.id);
+    setOfficeSelection({ file, context: privateProjectFiles.editorContext() });
   };
 
   const closeOfficeEditor = useCallback(() => {
-    setActiveOfficeFileId(null);
+    setOfficeSelection(null);
     closeFileLocation();
 
     void client.invalidate("projects.files.list");

@@ -15,6 +15,46 @@ function success(data: unknown) {
   );
 }
 
+test("network-only queries and streams preserve a connection failure", async () => {
+  const client = createClient("https://api.example.test", "network-failure", {
+    cache: memoryCache().cache,
+    fetch: Object.assign(
+      async () => {
+        throw new TypeError("Failed to fetch");
+      },
+      { preconnect() {} },
+    ),
+  });
+  const options = { strategy: "network-only" } as const;
+  const [value, failure] = await client.query(
+    "auth.sessionInfo",
+    undefined,
+    options,
+  );
+  expect(value).toBeNull();
+  expect(failure?.code).toBe("ConnectionRefused");
+  const [latest, streamFailure] = await firstValueFrom(
+    client.streamQuery("auth.sessionInfo", undefined, { ...options }),
+  );
+  expect(latest).toBeNull();
+  expect(streamFailure?.code).toBe("ConnectionRefused");
+});
+
+test("a gateway response preserves its status for the caller", async () => {
+  const client = createClient("https://api.example.test", "gateway-failure", {
+    cache: memoryCache().cache,
+    fetch: Object.assign(
+      async () => new Response("Bad Gateway", { status: 502 }),
+      { preconnect() {} },
+    ),
+  });
+  const [value, failure] = await client.query("auth.sessionInfo", undefined, {
+    strategy: "network-only",
+  });
+  expect(value).toBeNull();
+  expect(failure?.data?.httpCode).toBe(502);
+});
+
 for (const kind of ["query", "mutation"] as const) {
   test(`40 independent asynchronous ${kind} calls use two authenticated requests through the public client`, async () => {
     const requests: Array<{ authorization: string | null; paths: string[] }> =

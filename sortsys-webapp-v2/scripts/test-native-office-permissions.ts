@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import JSZip from "jszip";
-import { chromium, type Page } from "playwright";
+import {
+  chromium,
+  type Page,
+  type Route,
+  type WebSocketRoute,
+} from "playwright";
 import { expect } from "playwright/test";
 import type { Client } from "@sortsys/v2-client";
 import type { AccessValue } from "../app/lib/crypto/accessProfiles";
@@ -11,6 +16,8 @@ import { applicationServer } from "./e2e/applicationServer.mjs";
 import { officeTestDocument } from "./lib/officeTestPage";
 
 const sourceText = "OFFICE_PERMISSION_SNAPSHOT_487562";
+const reconnectEdit = "_OFFICE_BEFORE_API_INTERRUPTION_593816";
+const failedSaveEdit = "_OFFICE_UNCONFIRMED_DURING_UPLOAD_219853";
 const unconfirmedEdit = "_PENDING_OFFICE_EDIT_716204";
 const fileName = "Vertrauliches Aufmaßprotokoll.docx";
 const mime =
@@ -55,7 +62,13 @@ function observePlaintext(page: Page, leaks: string[]) {
     const url = new URL(request.url());
     if (!url.pathname.startsWith("/api/v2/")) return;
     const payload = [decodeURIComponent(url.search), request.postData() ?? ""];
-    for (const marker of [sourceText, unconfirmedEdit, fileName]) {
+    for (const marker of [
+      sourceText,
+      reconnectEdit,
+      failedSaveEdit,
+      unconfirmedEdit,
+      fileName,
+    ]) {
       if (payload.some((value) => value.includes(marker))) leaks.push(marker);
     }
   });
@@ -119,8 +132,27 @@ export async function testOfficeRevocation({
       executablePath: process.env.SORTSYS_E2E_CHROMIUM,
     });
     const leaks: string[] = [];
-    const member = await (await browser.newContext({ locale: "de-DE" })).newPage();
+    const member = await (
+      await browser.newContext({ locale: "de-DE" })
+    ).newPage();
     observePlaintext(member, leaks);
+    let apiSocket: WebSocketRoute | undefined;
+    let readySockets = 0;
+    await member.routeWebSocket(
+      (url) => url.pathname === "/api/v2/zerotrust/events",
+      (socket) => {
+        apiSocket = socket;
+        const upstream = socket.connectToServer();
+        upstream.onMessage((message) => {
+          if (
+            typeof message === "string" &&
+            JSON.parse(message)?.type === "ready"
+          )
+            readySockets++;
+          socket.send(message);
+        });
+      },
+    );
     const path = `${app.origin}/projects/${projectId}/files/${fileId}`;
     await signIn(
       member,
@@ -130,12 +162,100 @@ export async function testOfficeRevocation({
     );
     await member.goto(path);
     const writer = await documentEngine(member);
-    const confirmed = await fileStatus();
-    assert.ok(confirmed.epoch);
+    const opened = await fileStatus();
+    assert.ok(opened.epoch);
     const initial = await savedText();
     assert.ok(initial.includes(sourceText));
     assert.ok(!initial.includes(unconfirmedEdit));
     console.log("Office permissions: actual editor ready with write access");
+
+    const input = writer.locator("#area_id");
+    await input.press("Control+End");
+    await input.pressSequentially(reconnectEdit);
+    const attachmentDomain = `project:${projectId}:attachment`;
+    const accessSnapshot = (url: URL) =>
+      url.pathname.startsWith("/api/v2/") &&
+      url.pathname.includes("zerotrust.access.snapshot");
+    let failedChecks = 0;
+    const interruptAccess = async (route: Route) => {
+      const query = new URL(route.request().url()).searchParams.get("input");
+      const body = route.request().postData();
+      if (
+        !query?.includes(attachmentDomain) &&
+        !body?.includes(attachmentDomain)
+      ) {
+        return route.continue();
+      }
+      failedChecks++;
+      await route.abort("internetdisconnected");
+    };
+    await member.route(accessSnapshot, interruptAccess);
+    try {
+      await member.evaluate(() => window.dispatchEvent(new Event("online")));
+      const paused = member.getByText(/^Verbindung unterbrochen\./);
+      await expect(paused).toBeVisible({ timeout: officeTimeout });
+      assert.ok(failedChecks > 0);
+      assert.equal(writer.isDetached(), false);
+      await expect(
+        member.locator("div.project-files-office-editor"),
+      ).toHaveAttribute("inert", "");
+      const previous = apiSocket;
+      assert.ok(previous);
+      const before = readySockets;
+      await previous.close({ code: 1001 });
+      await expect
+        .poll(() => readySockets, { timeout: officeTimeout })
+        .toBeGreaterThan(before);
+      assert.equal(writer.isDetached(), false);
+    } finally {
+      await member.unroute(accessSnapshot, interruptAccess);
+    }
+    await expect(member.getByText(/^Verbindung unterbrochen\./)).toHaveCount(
+      0,
+      {
+        timeout: officeTimeout,
+      },
+    );
+    assert.equal(writer.isDetached(), false);
+    await expect
+      .poll(savedText, { timeout: officeTimeout })
+      .toContain(reconnectEdit);
+    await expect(member).toHaveURL(path);
+    console.log(
+      "Office permissions: the same editor saved its draft after reconnecting to the API",
+    );
+
+    const upload = (url: URL) =>
+      url.pathname.startsWith("/api/v2/") &&
+      url.pathname.includes("zerotrust.fileChunks.putMany");
+    let failedUploads = 0;
+    const interruptUpload = async (route: Route) => {
+      failedUploads++;
+      await route.fulfill({ status: 503 });
+    };
+    await member.route(upload, interruptUpload);
+    try {
+      await input.pressSequentially(failedSaveEdit);
+      await expect
+        .poll(() => failedUploads, { timeout: officeTimeout })
+        .toBeGreaterThan(0);
+      await expect(member.getByText(/^Verbindung unterbrochen\./)).toBeVisible({
+        timeout: officeTimeout,
+      });
+      assert.equal(writer.isDetached(), false);
+    } finally {
+      await member.unroute(upload, interruptUpload);
+    }
+    await expect
+      .poll(savedText, { timeout: officeTimeout })
+      .toContain(failedSaveEdit);
+    assert.ok((await savedText()).includes(reconnectEdit));
+    assert.equal(writer.isDetached(), false);
+    const confirmed = await fileStatus();
+    assert.equal(confirmed.epoch, opened.epoch);
+    console.log(
+      "Office permissions: a failed upload was followed by a fresh editor snapshot",
+    );
 
     const fileKey = fileObject(projectId, fileId);
     let waiting = false;
@@ -176,7 +296,6 @@ export async function testOfficeRevocation({
         }
       },
     );
-    const input = writer.locator("#area_id");
     await input.press("Control+End");
     await input.pressSequentially(unconfirmedEdit);
     await expect.poll(() => waiting, { timeout: officeTimeout }).toBe(true);
@@ -235,7 +354,9 @@ export async function testOfficeRevocation({
     await expect
       .poll(() => replacement.isDetached(), { timeout: officeTimeout })
       .toBe(true);
-    await expect(officeFrame(member)).toHaveCount(0, { timeout: officeTimeout });
+    await expect(officeFrame(member)).toHaveCount(0, {
+      timeout: officeTimeout,
+    });
     assert.deepEqual(leaks, []);
     console.log("Office permissions: full revocation closed the live reader");
   } finally {

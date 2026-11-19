@@ -616,7 +616,10 @@ export function createBusinessClient(
     if (change.reset) {
       llmActivity.cancelAll();
       reset();
-    } else if (change.control || change.all || editorKeyChanged) {
+    } else if (
+      !change.reconnected &&
+      (change.control || change.all || editorKeyChanged)
+    ) {
       resetEditors();
       if (change.control) contentAccess.refresh();
     }
@@ -669,9 +672,10 @@ export function createBusinessClient(
           ).refresh(
             change.domains["catalog:products:master-data"] ?? undefined,
           );
-        } catch {
+        } catch (error) {
           if (!signal.aborted) {
-            reset();
+            if (!change.reconnected || !RpcClientError.isUnavailable(error))
+              reset();
             notify();
           }
         }
@@ -684,9 +688,10 @@ export function createBusinessClient(
       ) {
         try {
           await (await files).refresh(change.all ? undefined : change.domains);
-        } catch {
+        } catch (error) {
           if (!signal.aborted) {
-            reset();
+            if (!change.reconnected || !RpcClientError.isUnavailable(error))
+              reset();
             notify();
           }
         }

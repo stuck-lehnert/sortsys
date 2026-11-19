@@ -47,6 +47,13 @@ export class RpcClientError<
       { cause },
     );
   }
+
+  static isUnavailable(error: unknown): error is RpcClientError {
+    if (!(error instanceof RpcClientError)) return false;
+    if (error.code === "ConnectionRefused") return true;
+    const status = error.data?.httpCode;
+    return status === 502 || status === 503 || status === 504;
+  }
 }
 
 type OperationKind = "query" | "mutation";
@@ -253,7 +260,11 @@ export class RpcBatchClient {
 
       const response = await this.fetchImpl(url, init);
       if (!response.ok) {
-        throw new Error(`RPC request failed with HTTP ${response.status}`);
+        throw new RpcClientError({
+          message: `RPC request failed with HTTP ${response.status}`,
+          code: -32603,
+          data: { code: "HTTP_ERROR", httpCode: response.status },
+        });
       }
       const payload = (await response.json()) as WireResult[];
       if (!Array.isArray(payload) || payload.length !== operations.length) {

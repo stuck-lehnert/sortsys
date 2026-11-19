@@ -27,6 +27,7 @@ type Options = {
   save: (document: Blob) => Promise<void>;
   onReady: () => void;
   onError: () => void;
+  onSaveError?: (error: unknown) => void;
   onDirty?: (dirty: boolean) => void;
   onSession?: (shared: boolean) => void;
 };
@@ -46,6 +47,7 @@ function identifier(value: unknown): value is string {
 
 export function openCryptPad(options: Options): {
   close(): void;
+  saveCurrent(): void;
   export(
     format:
       | "docx"
@@ -263,10 +265,11 @@ export function openCryptPad(options: Options): {
                 reply(txid);
                 options.onDirty?.(false);
               }
-            } catch {
+            } catch (error) {
               if (!closed) {
                 reply(txid, { error: "SAVE_FAILED" });
-                options.onError();
+                if (options.onSaveError) options.onSaveError(error);
+                else options.onError();
               }
             }
           })
@@ -318,6 +321,10 @@ export function openCryptPad(options: Options): {
   iframe.referrerPolicy = "no-referrer";
   iframe.src = `${origin.origin}/integration/`;
   return {
+    saveCurrent() {
+      if (!ready || closed || !options.canEdit) return;
+      post({ msg: { q: "MANUAL_SAVE" }, txid: crypto.randomUUID() });
+    },
     export(format) {
       if (
         closed ||
