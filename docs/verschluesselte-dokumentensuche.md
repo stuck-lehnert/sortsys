@@ -31,6 +31,13 @@ Dokumenttext, bei PowerPoint-Dateien (`PPTX`) den Folientext. In Excel-Dateien
 (`XLSX`) liest er gespeicherte Zellwerte. `TXT` und `CSV` sind bei UTF-8-Kodierung
 ebenfalls durchsuchbar.
 
+Bei E-Mails im Format `EML` oder `MSG` erfasst der Browser Betreff, Absender,
+Empfänger und Nachrichtentext. So lässt sich eine Materialfreigabe auch finden,
+wenn die Projektdatei nur „E-Mail.msg“ heißt. Externe Bilder werden nicht
+geladen. Inhalte eingebetteter Anhänge
+sind durchsuchbar, wenn diese Dateien separat als Projektanhänge abgelegt
+werden und ein unterstütztes Textformat haben.
+
 Der Browser verschlüsselt den Text mit den Metadaten der zugehörigen Version.
 Nach dem Speichern einer neuen Fassung zeigt die Suche nur deren Text. Scans
 ohne Textschicht, ältere Dateien ohne ausgelesenen Text und Dateien, deren
@@ -85,5 +92,7 @@ Die [Vergleichsfälle](../sortsys-webapp-v2/app/lib/search/documentQuery.test.mj
 prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der
 [native Mehrinstanztest](../sortsys-webapp-v2/scripts/test-native-document-search.ts)
 prüft getrennte Dateifreigaben, Versionswechsel, eine Löschung während der Suche
-und den Entzug von Freigaben bei geöffnetem Client-Cache. Der Browsertest sucht
-nach Text aus hochgeladenen PDF-, Word-, Excel- und PowerPoint-Dateien.
+und den Entzug von Freigaben bei geöffnetem Client-Cache. Nach einem
+Versionswechsel einer E-Mail findet er nur den Text der aktuellen Fassung. Die
+Browsertests suchen in PDF-, Word-, Excel- und PowerPoint-Dateien sowie in EML-
+und MSG-Nachrichten.

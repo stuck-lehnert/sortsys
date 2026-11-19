@@ -4254,13 +4254,36 @@ test("an actual locally extracted PDF is searchable in the document worker witho
         import.meta.url,
       ),
     );
-    const matches = await page.evaluate(
-      (data) => window.cryptoFixture.searchExtractedDocument(data),
-      Array.from(bytes),
+    const { matches } = await page.evaluate(
+      (file) => window.cryptoFixture.searchExtractedDocument(file),
+      { data: Array.from(bytes), name: "Anlage.pdf", mime: "application/pdf", query: "Materialfreigabe" },
     );
     assert.equal(matches.length, 1);
-    assert.equal(matches[0].id, "pdf");
+    assert.equal(matches[0].id, "Anlage.pdf");
     assert.ok(matches[0].excerpt.highlights.length > 0);
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
+test("uploaded EML and MSG text can be searched locally without network resources", async () => {
+  const { context, page, external } = await open();
+  try {
+    for (const format of ["eml", "msg"]) {
+      const bytes = await readFile(
+        new URL(`../../../sortsys-api-v2/seed-assets/materialfreigabe.${format}`, import.meta.url),
+      );
+      const name = `Anlage.${format.toUpperCase()}`;
+      const { matches, textMethod } = await page.evaluate(
+        (file) => window.cryptoFixture.searchExtractedDocument(file),
+        { data: Array.from(bytes), name, mime: "application/octet-stream", query: "Musterfläche" },
+      );
+      assert.equal(textMethod, `${format}-browser`);
+      assert.deepEqual(matches.map(({ id }) => id), [name]);
+      assert.match(matches[0].excerpt.text, /die Musterfläche ist freigegeben/);
+      assert.ok(matches[0].excerpt.highlights.length > 0);
+    }
     assert.deepEqual(external, []);
   } finally {
     await context.close();

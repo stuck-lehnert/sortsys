@@ -1,15 +1,15 @@
 import { fetchFileResource, useFileResourceContext } from "~/lib/fileResources";
 import { useEffect, useMemo, useState } from "react";
+import { MAX_EMAIL_BYTES, type EmailFormat } from "~/lib/attachmentPreview";
 import type { EmailAttachment, EmailPreview } from "~/lib/emailPreview";
 import { emailPreviewDocument, escapeEmailHtml } from "~/lib/emailSanitizer";
+import { readEmailInWorker } from "~/lib/emailWorkerClient";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { MyButton } from "./MyButton";
 import { MyCallout } from "./MyCallout";
 import { Icons } from "~/lib/icons";
 import { downloadBlob } from "~/lib/utils";
 import "./attachmentViewers.css";
-
-const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
 
 function attachmentSize(size: number): string {
   if (size < 1024) return `${size.toLocaleString(currentLocaleTag())} B`;
@@ -58,7 +58,7 @@ async function readEmailBytes(url: string, signal: AbortSignal): Promise<ArrayBu
 }
 
 export default function EmailAttachmentViewer({ url, format }: {
-  url: string; format: "eml" | "msg";
+  url: string; format: EmailFormat;
 }) {
   const context = useFileResourceContext(url);
   const [state, setState] = useState<{ url: string; format: string; context: AbortSignal | null; mail: EmailPreview | null; error: string | null } | null>(null);
@@ -68,32 +68,18 @@ export default function EmailAttachmentViewer({ url, format }: {
 
   useEffect(() => {
     const abort = new AbortController();
-    let worker: Worker | undefined;
-    let timeout: ReturnType<typeof setTimeout> | undefined;
     setState(null);
-    const cancel = () => { abort.abort(); worker?.terminate(); clearTimeout(timeout); };
+    const cancel = () => abort.abort();
     context?.addEventListener("abort", cancel, { once: true });
     if (context?.aborted) cancel();
 
     void (async () => {
       const bytes = await readEmailBytes(url, abort.signal);
-      if (abort.signal.aborted) return;
-      // A worker can be terminated if a malformed compound file stalls its parser.
-      worker = new Worker(new URL("../lib/emailPreview.worker.ts", import.meta.url), { type: "module" });
-      const parsed = await new Promise<EmailPreview>((resolve, reject) => {
-        timeout = setTimeout(() => reject(new Error("email-timeout")), 20_000);
-        abort.signal.addEventListener("abort", () => reject(new DOMException("Aborted", "AbortError")), { once: true });
-        worker!.onmessage = (event: MessageEvent<{ mail?: EmailPreview; error?: string }>) => {
-          if (event.data.mail) resolve(event.data.mail);
-          else reject(new Error(event.data.error ?? "invalid-email"));
-        };
-        worker!.onerror = () => reject(new Error("invalid-email"));
-        worker!.postMessage({ bytes, format }, [bytes]);
-      });
+      const parsed = await readEmailInWorker(bytes, format, "preview", abort.signal);
       if (!abort.signal.aborted) setState({ url, format, context, mail: parsed, error: null });
     })().catch(cause => {
       if (!abort.signal.aborted) setState({ url, format, context, mail: null, error: cause instanceof Error ? cause.message : "invalid-email" });
-    }).finally(() => { worker?.terminate(); clearTimeout(timeout); });
+    });
 
     return () => { context?.removeEventListener("abort", cancel); cancel(); };
   }, [url, format, retry, context]);

@@ -1,4 +1,5 @@
 import { parseFragment, type DefaultTreeAdapterMap } from "parse5";
+import { MAX_EMAIL_BODY_LENGTH } from "./attachmentPreview";
 import { emailContentId, MAX_INLINE_IMAGE_BYTES, safeEmailImageData } from "./emailImages";
 import { safeEmailStyles } from "./emailStyles";
 
@@ -14,6 +15,44 @@ const DROP_CONTENT = new Set([
   "select", "option", "link", "meta", "base", "audio", "video", "source",
 ]);
 const VOID_TAGS = new Set(["br", "hr", "col"]);
+const TEXT_BLOCK_TAGS = new Set([
+  "address", "blockquote", "br", "caption", "dd", "div", "dt", "h1", "h2",
+  "h3", "h4", "h5", "h6", "hr", "li", "p", "pre", "section", "td", "th", "tr",
+]);
+
+type EmailNode = DefaultTreeAdapterMap["element"] | DefaultTreeAdapterMap["textNode"];
+
+function renderEmailTree(
+  html: string,
+  render: (node: EmailNode, children: () => string) => string,
+) {
+  if (html.length > MAX_EMAIL_BODY_LENGTH) throw new Error("email-too-large");
+  // parse5 creates an inert syntax tree without loading resources or running scripts.
+  const root = parseFragment(html);
+  let remainingNodes = 50_000;
+
+  function visit(node: DefaultTreeAdapterMap["childNode"], depth: number): string {
+    if (--remainingNodes < 0 || depth > 80) throw new Error("email-too-large");
+    if ("tagName" in node) {
+      if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || DROP_CONTENT.has(node.tagName)) return "";
+      return render(node, () => node.childNodes.map((child) => visit(child, depth + 1)).join(""));
+    }
+    if (node.nodeName === "#text") {
+      return render(node as DefaultTreeAdapterMap["textNode"], () => "");
+    }
+    return "";
+  }
+
+  return root.childNodes.map((node) => visit(node, 0)).join("");
+}
+
+export function emailHtmlText(html: string): string {
+  return renderEmailTree(html, (node, children) => {
+    if (!("tagName" in node)) return node.value;
+    const text = children();
+    return TEXT_BLOCK_TAGS.has(node.tagName) ? `\n${text}\n` : text;
+  }).replace(/[^\S\n]+/g, " ").replace(/ *\n[ \n]*/g, "\n").trim();
+}
 
 export function escapeEmailHtml(value: string): string {
   return value.replace(/[&<>"']/g, character => ({
@@ -38,23 +77,16 @@ export function sanitizeEmailHtml(html: string, inlineImages = new Map<string, s
 }
 
 export function renderEmailHtml(html: string, inlineImages = new Map<string, string>()) {
-  if (html.length > 3 * 1024 * 1024) throw new Error("email-too-large");
-  // parse5 creates an inert syntax tree: parsing never loads images or runs scripts.
-  const root = parseFragment(html);
-  let remainingNodes = 50_000;
   let imageBytes = 0;
   let imageCount = 0;
   let blockedImages = 0;
   const inlineImageIds = new Set<string>();
   const checkedImages = new Map<string, string | null>();
 
-  const render = (node: DefaultTreeAdapterMap["childNode"], depth: number): string => {
-    if (--remainingNodes < 0 || depth > 80) throw new Error("email-too-large");
-    if (node.nodeName === "#text") return escapeEmailHtml((node as DefaultTreeAdapterMap["textNode"]).value);
-    if (!("tagName" in node)) return "";
+  const output = renderEmailTree(html, (node, children) => {
+    if (!("tagName" in node)) return escapeEmailHtml(node.value);
 
     const tag = node.tagName;
-    if (node.namespaceURI !== "http://www.w3.org/1999/xhtml" || DROP_CONTENT.has(tag)) return "";
     const attribute = (name: string) => node.attrs.find(attr => attr.name === name && !attr.namespace)?.value ?? "";
     const styles = () => {
       const legacy: string[] = [];
@@ -88,8 +120,8 @@ export function renderEmailHtml(html: string, inlineImages = new Map<string, str
       return alt ? `<span class="email-image-unavailable">${alt}</span>` : "";
     }
 
-    const children = node.childNodes.map(child => render(child, depth + 1)).join("");
-    if (!ALLOWED_TAGS.has(tag)) return children;
+    const content = children();
+    if (!ALLOWED_TAGS.has(tag)) return content;
 
     const attrs: string[] = [];
     if (tag === "a") {
@@ -108,10 +140,9 @@ export function renderEmailHtml(html: string, inlineImages = new Map<string, str
     if (["ltr", "rtl", "auto"].includes(dir)) attrs.push(`dir="${dir}"`);
     const attributes = attrs.length ? " " + attrs.join(" ") : "";
     const outputTag = tag === "font" ? "span" : tag;
-    return `<${outputTag}${attributes}${styles()}>${VOID_TAGS.has(tag) ? "" : children + `</${outputTag}>`}`;
-  };
+    return `<${outputTag}${attributes}${styles()}>${VOID_TAGS.has(tag) ? "" : content + `</${outputTag}>`}`;
+  });
 
-  const output = root.childNodes.map(node => render(node, 0)).join("");
   return { html: output, blockedImages, inlineImageIds };
 }
 

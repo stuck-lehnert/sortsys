@@ -437,6 +437,8 @@ unveränderten Benutzerquelle gespeichert.
 **Dokumentvolltext mit Sprachen, Ranking und Ausschnitten.** Dateinamen und
 vorhandener extrahierter Text sind lokal durchsuchbar. Der Browser liest PDFs,
 Office-Dateien und UTF-8-Text beim Hochladen und bei neuen Dateiversionen aus.
+Bei EML und MSG erfasst derselbe Browserparser wie in der Vorschau Betreff,
+Adressen und Nachrichtentext.
 Sprachverarbeitung, Ranking und vergleichbare Ausschnitte
 sind inzwischen für deutsche und englische Wortformen, Phrasen, Ausschlüsse und
 Wortanfänge angeschlossen. Ein Worker bewertet Treffer und erzeugt sichere

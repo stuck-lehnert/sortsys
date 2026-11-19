@@ -126,20 +126,21 @@ window.cryptoFixture = {
       excerpt: matches[0].excerpt,
     };
   },
-  async searchExtractedDocument(data) {
+  async searchExtractedDocument({ data, name, mime, query }) {
     const { inspectProjectFile } = await import("../../app/lib/fileInspection");
     const { createDocumentSearch } =
       await import("../../app/lib/search/documentSearch");
     const inspection = await inspectProjectFile(
-      new Blob([new Uint8Array(data)], { type: "application/pdf" }),
+      new File([new Uint8Array(data)], name, { type: mime }),
     );
     const search = createDocumentSearch();
     try {
-      return await search.search(
-        [{ id: "pdf", name: "Anlage.pdf", text: inspection.text ?? null }],
-        "Materialfreigabe",
+      const matches = await search.search(
+        [{ id: name, name, text: inspection.text ?? null }],
+        query,
         new AbortController().signal,
       );
+      return { matches, textMethod: inspection.textMethod };
     } finally {
       search.clear();
     }

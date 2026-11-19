@@ -1,4 +1,5 @@
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
+import { attachmentPreviewKind, MAX_EMAIL_BYTES } from "./attachmentPreview";
 import { MAX_DOCUMENT_ARCHIVE_BYTES } from "./boundedZip";
 
 export type FileInspection = {
@@ -156,15 +157,25 @@ export async function inspectProjectFile(
   if (!mime || mime === "application/octet-stream") {
     mime = mimeType(details?.mime ?? "");
   }
-  if (mime.startsWith("image/")) return inspectImage(file, signal);
   let name = details?.name ?? "";
   if (!name && typeof File !== "undefined" && file instanceof File) {
     name = file.name;
   }
-  const format = textFormat(mime, name);
-  if (!format) return {};
+  const preview = attachmentPreviewKind({ fileName: name, mimeType: mime });
 
   try {
+    if (preview === "eml" || preview === "msg") {
+      if (file.size > MAX_EMAIL_BYTES) return { textFailed: true };
+      const { readEmailInWorker } = await import("./emailWorkerClient");
+      const bytes = await file.arrayBuffer();
+      const text = await readEmailInWorker(bytes, preview, "text", signal);
+      signal?.throwIfAborted();
+      if (new TextEncoder().encode(text).length > MAX_TEXT_BYTES) return { textFailed: true };
+      return { text, textMethod: `${preview}-browser` };
+    }
+    if (mime.startsWith("image/")) return await inspectImage(file, signal);
+    const format = textFormat(mime, name);
+    if (!format) return {};
     if (format === "pdf") return await inspectPdf(file, signal);
     if (format === "txt" || format === "csv") {
       if (file.size > MAX_TEXT_BYTES) return { textFailed: true };

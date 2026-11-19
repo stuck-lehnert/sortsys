@@ -1,12 +1,10 @@
 import PostalMime, { type Address } from "postal-mime";
 import MsgReaderModule from "@kenjiuno/msgreader";
-import { renderEmailHtml } from "./emailSanitizer";
+import { emailHtmlText, renderEmailHtml } from "./emailSanitizer";
+import { MAX_EMAIL_BODY_LENGTH, MAX_EMAIL_BYTES, type EmailFormat } from "./attachmentPreview";
 import { emailContentId, MAX_INLINE_IMAGE_BYTES, rasterImageType } from "./emailImages";
 import { decodeMsgHtml, supportedMsgEncoding } from "./msgTextEncoding";
 import { decompressMsgRtf, rtfToText } from "./msgRtf";
-
-export const MAX_EMAIL_BYTES = 25 * 1024 * 1024;
-const MAX_BODY_BYTES = 3 * 1024 * 1024;
 
 // The CommonJS package is a constructor in Bun, but its browser bundle exposes
 // an object containing that constructor as `default`.
@@ -54,7 +52,11 @@ function bytes(value: ArrayBuffer | Uint8Array | string): ArrayBuffer {
   return value instanceof ArrayBuffer ? value : new Uint8Array(value).buffer;
 }
 
-export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): Promise<EmailPreview> {
+async function decodeEmail(
+  bytesIn: ArrayBuffer,
+  format: EmailFormat,
+  includeAttachments: boolean,
+): Promise<EmailPreview> {
   if (bytesIn.byteLength > MAX_EMAIL_BYTES) throw new Error("email-too-large");
   if (!bytesIn.byteLength) throw new Error("invalid-email");
 
@@ -80,12 +82,12 @@ export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): P
       date: mail.date ?? "",
       text: mail.text ?? "",
       html: mail.html ?? "",
-      attachments: mail.attachments.map(attachment => ({
+      attachments: includeAttachments ? mail.attachments.map(attachment => ({
         fileName: safeEmailFileName(attachment.filename ?? "attachment"),
         mimeType: attachment.mimeType,
         contentId: attachment.contentId ?? null,
         content: bytes(attachment.content),
-      })),
+      })) : [],
       blockedImages: 0,
     };
   } else {
@@ -125,7 +127,7 @@ export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): P
       date: mail.clientSubmitTime ?? mail.messageDeliveryTime ?? transport?.date ?? "",
       text: mail.body || (!html && mail.compressedRtf ? rtfToText(decompressMsgRtf(mail.compressedRtf)) : ""),
       html,
-      attachments: (mail.attachments ?? []).map(attachment => {
+      attachments: includeAttachments ? (mail.attachments ?? []).map(attachment => {
         const extracted = reader.getAttachment(attachment);
         return {
           fileName: safeEmailFileName(extracted.fileName),
@@ -133,15 +135,28 @@ export async function parseEmail(bytesIn: ArrayBuffer, format: "eml" | "msg"): P
           contentId: attachment.pidContentId ?? null,
           content: new Uint8Array(extracted.content).buffer,
         };
-      }),
+      }) : [],
       blockedImages: 0,
     };
   }
 
-  if (result.attachments.length > 100 || result.html.length > MAX_BODY_BYTES || result.text.length > MAX_BODY_BYTES) {
+  if (result.html.length > MAX_EMAIL_BODY_LENGTH || result.text.length > MAX_EMAIL_BODY_LENGTH) {
     throw new Error("email-too-large");
   }
+  return result;
+}
 
+export async function extractEmailText(
+  bytesIn: ArrayBuffer,
+  format: EmailFormat,
+): Promise<string> {
+  const { subject, from, to, cc, text, html } = await decodeEmail(bytesIn, format, false);
+  const body = html ? emailHtmlText(html) : text.trim();
+  return [subject, from, to, cc, body].filter(Boolean).join("\n");
+}
+
+export async function parseEmail(bytesIn: ArrayBuffer, format: EmailFormat): Promise<EmailPreview> {
+  const result = await decodeEmail(bytesIn, format, true);
   const images = new Map<string, string>();
   let imageBytes = 0;
   for (const attachment of result.attachments) {

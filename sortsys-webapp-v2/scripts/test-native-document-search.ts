@@ -74,6 +74,18 @@ function findDocuments(client: ReturnType<typeof createBusinessClient>, query: s
   return required(client.query("projects.files.search", { query, limit: 50n }));
 }
 
+function approvalEmail(text: string): Blob {
+  const message = [
+    "From: Bauleitung <bauleitung@example.test>",
+    "Subject: Materialfreigabe der Bauleitung",
+    "MIME-Version: 1.0",
+    "Content-Type: text/plain; charset=utf-8",
+    "",
+    text,
+  ].join("\r\n");
+  return new Blob([message], { type: "message/rfc822" });
+}
+
 try {
   await signIn(owner, login);
   await initializeTenant(owner, signal, duckDriver);
@@ -253,9 +265,9 @@ try {
   const newVersionText = "Neufassung Innenputzfreigabe";
   const versioned = await ownerBusiness.files.upload({
     projectId: visible.id,
-    name: "Prüfprotokoll.txt",
-    mime: "text/plain",
-    blob: new Blob([oldVersionText], { type: "text/plain" }),
+    name: "Prüfprotokoll.eml",
+    mime: "message/rfc822",
+    blob: approvalEmail(oldVersionText),
   });
   const originalMatches = await findDocuments(ownerBusiness, `"${oldVersionText}"`);
   assert.deepEqual(originalMatches.map(({ id }) => id), [versioned]);
@@ -263,7 +275,7 @@ try {
     visible.id,
     versioned,
     1n,
-    new Blob([newVersionText], { type: "text/plain" }),
+    approvalEmail(newVersionText),
   );
   assert.equal(saved.version, 2n);
 
@@ -359,7 +371,7 @@ try {
   assert.ok(results[0]!.excerpt!.text.startsWith("… "));
   const revisedMatches = await findDocuments(memberBusiness, `"${newVersionText}"`);
   assert.deepEqual(revisedMatches.map(({ id }) => id), [versioned]);
-  assert.equal(revisedMatches[0]?.excerpt?.text, newVersionText);
+  assert.ok(revisedMatches[0]?.excerpt?.text.includes(newVersionText));
   assert.deepEqual(await findDocuments(memberBusiness, `"${oldVersionText}"`), []);
   const excluded = await required(
     memberBusiness.query("projects.files.search", {
@@ -412,16 +424,16 @@ try {
     administrator.username,
     false,
   );
-  const invalidUtf8 = new Uint8Array([0xff]);
+  const invalidEmail = new Uint8Array([0xff]);
   const failedSave = await ownerBusiness.files.save(
     visible.id,
     versioned,
     2n,
-    new Blob([invalidUtf8], { type: "text/plain" }),
+    new Blob([invalidEmail], { type: "message/rfc822" }),
   );
   assert.equal(failedSave.version, 3n);
   const file = await ownerBusiness.files.blob(visible.id, versioned);
-  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), invalidUtf8);
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), invalidEmail);
   assert.deepEqual(await findDocuments(ownerBusiness, `"${newVersionText}"`), []);
   const filenameMatches = await findDocuments(ownerBusiness, "Prüfprotokoll");
   assert.deepEqual(filenameMatches.map(({ id }) => id), [versioned]);

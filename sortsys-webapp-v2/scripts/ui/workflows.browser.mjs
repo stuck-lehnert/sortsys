@@ -1822,33 +1822,44 @@ test("production email worker reads Outlook MSG and MIME EML messages", async ()
     ],
   ]) {
     const result = await page.evaluate(
-      ({ path, format, bytes }) =>
-        new Promise((resolve, reject) => {
-          const worker = new Worker(path, { type: "module" });
-          const timeout = setTimeout(() => {
-            worker.terminate();
-            reject(new Error("Production email worker timed out"));
-          }, 5000);
-          worker.onmessage = (event) => {
-            clearTimeout(timeout);
-            worker.terminate();
-            resolve(event.data);
-          };
-          worker.onerror = (event) => {
-            clearTimeout(timeout);
-            worker.terminate();
-            reject(new Error(event.message));
-          };
-          const buffer = new Uint8Array(bytes).buffer;
-          worker.postMessage({ bytes: buffer, format }, [buffer]);
-        }),
+      async ({ path, format, bytes }) => {
+        function read(mode) {
+          return new Promise((resolve, reject) => {
+            const worker = new Worker(path, { type: "module" });
+            const timeout = setTimeout(() => {
+              worker.terminate();
+              reject(new Error("Production email worker timed out"));
+            }, 5000);
+            worker.onmessage = ({ data }) => {
+              clearTimeout(timeout);
+              worker.terminate();
+              resolve(data);
+            };
+            worker.onerror = (event) => {
+              clearTimeout(timeout);
+              worker.terminate();
+              reject(new Error(event.message));
+            };
+            const buffer = new Uint8Array(bytes).buffer;
+            worker.postMessage({ bytes: buffer, format, mode }, [buffer]);
+          });
+        }
+
+        const [preview, text] = await Promise.all([read("preview"), read("text")]);
+        return { preview, text };
+      },
       { path: `/assets/${worker}`, format, bytes: Array.from(bytes) },
     );
-    assert.equal(result.error, undefined);
-    assert.equal(result.mail.subject, subject);
-    if (htmlText) assert.ok(result.mail.html.includes(htmlText));
+    assert.equal(result.preview.mode, "preview");
+    assert.equal(result.preview.value.subject, subject);
+    assert.equal(result.text.mode, "text");
+    assert.ok(result.text.value.includes(subject));
+    if (htmlText) {
+      assert.ok(result.preview.value.html.includes(htmlText));
+      assert.ok(result.text.value.includes(htmlText));
+    }
     if (format === "msg")
-      assert.equal(result.mail.attachments[0].fileName, "Lieferschein.txt");
+      assert.equal(result.preview.value.attachments[0].fileName, "Lieferschein.txt");
   }
 });
 

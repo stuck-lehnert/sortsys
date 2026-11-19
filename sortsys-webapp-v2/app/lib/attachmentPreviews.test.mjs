@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { attachmentPreviewKind } from "./attachmentPreview.ts";
-import { parseEmail, safeEmailFileName, isSafeInlineImage, MAX_EMAIL_BYTES } from "./emailPreview.ts";
+import { attachmentPreviewKind, MAX_EMAIL_BYTES } from "./attachmentPreview.ts";
+import { extractEmailText, parseEmail, safeEmailFileName, isSafeInlineImage } from "./emailPreview.ts";
 import { sanitizeEmailHtml, renderEmailHtml, safeEmailLink, emailPreviewDocument } from "./emailSanitizer.ts";
 import { safeEmailStyles } from "./emailStyles.ts";
 import { decode, encode, decodeMsgHtml, supportedMsgEncoding } from "./msgTextEncoding.ts";
@@ -23,6 +23,26 @@ describe("attachment dispatch", () => {
 });
 
 describe("email conversion", () => {
+  test("search text uses the visible HTML and excludes attachment contents for EML and MSG", async () => {
+    for (const [format, message] of [
+      ["eml", toBytes(makeEmlFixture())],
+      ["msg", makeMsgFixture({ rich: true })],
+    ]) {
+      const text = await extractEmailText(message, format);
+      expect(text).toMatch(/Frank Müller.*frank@example.test/);
+      expect(text).toContain("Aufmaß vor Ort\n12. November");
+      expect(text).toContain("Pirckheimer-Gymnasium");
+      expect(text).not.toMatch(/tracker\.invalid|emailPreviewCompromised|<table/);
+      expect(text).not.toMatch(/Synthetic test attachment|Ware geliefert|Fensterdetails\.pdf/);
+    }
+  });
+
+  test("extracts RTF-only Outlook text and rejects an unrelated file", async () => {
+    const text = await extractEmailText(makeMsgFixture({ rtfOnly: true }), "msg");
+    expect(text).toContain("Grüße\nLieferung morgen.");
+    await expect(extractEmailText(toBytes("not an email"), "eml")).rejects.toThrow("invalid-email");
+  });
+
   test("decodes MIME headers, quoted-printable text, and binary attachments", async () => {
     const result = await parseEmail(toBytes([
       "From: =?UTF-8?Q?Frank_M=C3=BCller?= <frank@example.test>",
