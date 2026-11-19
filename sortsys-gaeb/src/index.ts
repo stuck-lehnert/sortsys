@@ -1,4 +1,9 @@
-export { GaebEditor, type GaebEditorProps } from "./components/GaebEditor";
+export {
+  GaebEditor,
+  type GaebEditorDraft,
+  type GaebEditorHandle,
+  type GaebEditorProps,
+} from "./components/GaebEditor";
 export { EditorIconButton } from "./components/EditorIconButton";
 export { GaebDocument, type GaebEntry } from "./core/document";
 export { createGaebXml } from "./core/templates";

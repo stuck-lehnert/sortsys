@@ -18,6 +18,7 @@ export function GaebRibbon(props: {
   collapsed: boolean;
   onCollapsedChange: (collapsed: boolean) => void;
   workflow?: ReactNode;
+  insertActions?: ReactNode;
   history: ReactNode;
   formatting: ReactNode;
   position: ReactNode;
@@ -127,6 +128,9 @@ export function GaebRibbon(props: {
               <Group label={t("Anlagen", "Attachments")}>
                 {props.attachments}
               </Group>
+            )}
+            {props.insertActions && (
+              <Group label={t("Datei", "File")}>{props.insertActions}</Group>
             )}
           </TabPanel>
           <TabPanel id="view" className="gaeb-ribbon-panel">

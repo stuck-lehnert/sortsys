@@ -220,8 +220,8 @@ Feldes „Bauvorhaben“ ohne Preisfreigabe über zwei API-Instanzen geprüft, e
 Rechteentzug und erneute Nur-Lesen-Freigabe. Ein eigener Browserfall prüft zwei
 gleichzeitig bearbeitete Absätze einer X83-Position. Bei Vorgangsdokumenten und
 GAEB-Projektanhängen kann ein signierter, verschlüsselter Wiederanlaufpunkt das
-Nachlesen auf die neueren Nachrichten begrenzen. Das spätere Zusammenführen
-heruntergeladener Teilentwürfe fehlt noch.
+Nachlesen auf die neueren Nachrichten begrenzen. Teilentwürfe lassen sich für
+dasselbe bearbeitbare Dokument unter den aktuellen Freigaben zusammenführen.
 
 **Projektgrunddaten und Projektkontakte.** Getrennte Bereiche je Projekt,
 Grunddaten, Kontaktbezeichnungen und Statuswechsel sind angeschlossen.

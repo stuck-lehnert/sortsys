@@ -2838,7 +2838,7 @@ try {
         "data-save-state",
         "saved",
       );
-      await member.reload();
+      await member.goto(`${memberServer.origin}${path}`);
       await expect(
         member.getByText("Vorgang nicht geladen", { exact: true }),
       ).toBeVisible();
@@ -2857,6 +2857,8 @@ try {
       await expect(
         member.locator('[data-gaeb-field="project:title"]'),
       ).toBeDisabled();
+      await member.getByRole("tab", { name: "Einfügen", exact: true }).click();
+      await expect(member.getByRole("button", { name: "Teilentwurf öffnen" })).toHaveCount(0);
       await expect(member.locator('[data-gaeb-field$=":UP"]')).toHaveCount(0);
       await member.screenshot({
         path: join(artifacts, "member-gaeb-readonly-after-regrant.png"),

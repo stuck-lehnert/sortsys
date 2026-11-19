@@ -74,6 +74,14 @@ import {
   type RichSelection,
 } from "./GaebDocumentCanvas";
 
+export type GaebEditorDraft = { base: string; source: string };
+
+export type GaebEditorHandle = {
+  save: () => Promise<boolean>;
+  snapshot: () => GaebEditorDraft | undefined;
+  applyDraft: (expected: GaebEditorDraft, source: string) => boolean;
+};
+
 export type GaebEditorProps = {
   searchPositions?: PositionSearch;
   positionLibraryScope?: string;
@@ -116,16 +124,14 @@ export type GaebEditorProps = {
   onActiveField?: (key: string | null) => void;
   sharedFields?: SharedFields;
   onLiveSelection?: (selection: LiveSelection) => void;
-  editorRef?: React.Ref<{
-    save: () => Promise<boolean>;
-    snapshot?: () => string | undefined;
-  }>;
+  editorRef?: React.Ref<GaebEditorHandle>;
   savedLabel?: string;
   onDirtyChange?: (dirty: boolean) => void;
   viewPreferences?: GaebViewPreferences;
   onViewPreferencesChange?: (preferences: GaebViewPreferences) => void;
   onPrint?: (xml: string, referenceXml?: string) => Promise<void>;
   toolbarActions?: React.ReactNode;
+  insertActions?: React.ReactNode;
   workflowNotice?: React.ReactNode;
 };
 type Drafts = Map<string, () => void>;
@@ -209,6 +215,7 @@ export function GaebEditor({
   onViewPreferencesChange,
   onPrint,
   toolbarActions,
+  insertActions,
   workflowNotice,
 }: GaebEditorProps) {
   const useLocalPositionLibrary = !searchPositions && !contentView;
@@ -595,10 +602,26 @@ export function GaebEditor({
       save: () => save(true),
       snapshot: () => {
         flushDrafts();
-        return modelRef.current?.source;
+        const current = modelRef.current;
+        return current
+          ? { base: savedRef.current, source: current.source }
+          : undefined;
+      },
+      applyDraft(expected, source) {
+        if (!editable) return false;
+        flushDrafts();
+        if (
+          savedRef.current !== expected.base ||
+          modelRef.current?.source !== expected.source ||
+          (sharedFields && sharedFields.project(source, fileName) !== source)
+        ) {
+          return false;
+        }
+        change(() => source);
+        return true;
       },
     }),
-    [save, flushDrafts],
+    [save, flushDrafts, editable, sharedFields, fileName, change],
   );
   useEffect(() => {
     if (!recoveryKey || !canEdit) {
@@ -1261,6 +1284,7 @@ export function GaebEditor({
         collapsed={view.ribbonCollapsed}
         onCollapsedChange={(value) => updateView({ ribbonCollapsed: value })}
         workflow={toolbarActions}
+        insertActions={insertActions}
         history={
           <>
             <EditorIconButton

@@ -10,9 +10,11 @@ import {
   useSyncExternalStore,
 } from "react";
 import { Button, Loading, Modal } from "@sortsys/react-components";
+import Upload from "@carbon/icons-react/es/Upload";
 import {
   GaebEditor,
   GaebDocument,
+  EditorIconButton,
   GAEB_CONTENT_FACETS,
   gaebNetAmount,
   mergeGaebDocuments,
@@ -21,6 +23,8 @@ import {
   SharedFields,
   type Collaborator,
   type ConnectionStatus,
+  type GaebEditorDraft,
+  type GaebEditorHandle,
 } from "@sortsys/gaeb";
 import "@sortsys/gaeb/styles.css";
 import { useCommercialDialogFrame } from "./CommercialDialogFrame";
@@ -35,6 +39,13 @@ import { errorHttpStatus } from "~/lib/errorTelemetry";
 import { uiText, useI18n } from "~/lib/i18n";
 import type { CommercialDetail } from "~/lib/commercial";
 import { isWriteConflict } from "~/lib/data/atomicWrites";
+import { unlockedAccount } from "~/lib/crypto/session";
+import {
+  gaebViewDraft,
+  mergeGaebViewDraft,
+  readGaebViewDraft,
+  type GaebViewDraft,
+} from "~/lib/gaebViewDraft";
 import type { connectProtectedGaebLive } from "~/lib/data/gaebLive";
 import type { LiveReplay } from "~/lib/data/liveCheckpoints";
 import type {
@@ -50,6 +61,12 @@ export type GaebSavedRevision = {
 };
 
 type Session = DocumentEditorSession;
+type DraftScope = { context: AbortSignal; resource: string };
+type DraftDownload = DraftScope & {
+  snapshot: GaebEditorDraft;
+  fileName: string;
+  view?: GaebViewDraft;
+};
 export type GaebWorkspaceHandle = {
   save: () => Promise<boolean>;
   requestClose: () => Promise<void>;
@@ -128,21 +145,28 @@ export default function GaebFileModal({
   const view = useGaebViewPreferences(retry);
   const [dirty, setDirty] = useState(false);
   const [discard, setDiscard] = useState(false);
-  const [frozenDraft, setFrozenDraft] = useState<{
-    xml: string;
-    fileName: string;
-    partial: boolean;
-  } | null>(null);
+  const [archivedDraft, setArchivedDraft] = useState<DraftDownload | null>(null);
+  const frozenDraft =
+    archivedDraft?.context === context && archivedDraft.resource === resource
+      ? archivedDraft
+      : null;
+  const [selectedDraft, setSelectedDraft] = useState<
+    (DraftScope & { draft: GaebViewDraft }) | null
+  >(null);
+  const draftToRestore =
+    selectedDraft?.context === context && selectedDraft.resource === resource
+      ? selectedDraft.draft
+      : null;
+  const [draftError, setDraftError] = useState("");
+  const [restoringDraft, setRestoringDraft] = useState(false);
+  const draftInput = useRef<HTMLInputElement>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [contentView, setContentView] = useState<
     DocumentContentView | undefined
   >();
   const [referenceXml, setReferenceXml] = useState<string>();
   const latest = useRef<Session | null>(null);
-  const editor = useRef<{
-    save: () => Promise<boolean>;
-    snapshot?: () => string | undefined;
-  }>(null);
+  const editor = useRef<GaebEditorHandle>(null);
   const live = useRef<
     | ReturnType<typeof connectXmlLive>
     | ReturnType<typeof connectProtectedGaebLive>
@@ -162,6 +186,24 @@ export default function GaebFileModal({
     [context, resource, documentKind],
   );
   useEffect(() => () => sharedFields.destroy(), [sharedFields]);
+  const draftDownload = useCallback(
+    (snapshot: GaebEditorDraft, value: Session): DraftDownload => {
+      const access = value.contentView?.access;
+      let view: GaebViewDraft | undefined;
+      if (access?.complete === false) {
+        const account = unlockedAccount();
+        if (!account) throw new Error("invalid-gaeb-draft");
+        view = gaebViewDraft(
+          { tenant: account.tenant, document: resource },
+          value.fileName,
+          access.readable,
+          snapshot,
+        );
+      }
+      return { context, resource, snapshot, fileName: value.fileName, view };
+    },
+    [context, resource],
+  );
   const loadCurrent = useCallback(async (): Promise<Session> => {
     assertCurrent();
     let value: Session | null;
@@ -178,16 +220,23 @@ export default function GaebFileModal({
       const previous = latest.current;
       if (value.frozen) {
         if (previous && !previous.frozen) {
-          const draft =
-            editor.current?.snapshot?.() ??
-            sharedFields.project(previous.xml, previous.fileName);
-          let unpublished = draft !== previous.xml;
+          let snapshot: GaebEditorDraft | undefined;
+          try {
+            snapshot = editor.current?.snapshot();
+          } catch {
+            // An unfinished field must not prevent adopting the final revision.
+          }
+          snapshot ??= {
+            base: previous.xml,
+            source: sharedFields.project(previous.xml, previous.fileName),
+          };
+          let unpublished = snapshot.source !== snapshot.base;
           if (unpublished) {
             try {
               unpublished =
                 mergeGaebDocuments(
-                  previous.xml,
-                  draft,
+                  snapshot.base,
+                  snapshot.source,
                   value.xml,
                   value.fileName,
                 ) !== value.xml;
@@ -196,11 +245,7 @@ export default function GaebFileModal({
             }
           }
           if (unpublished) {
-            setFrozenDraft({
-              xml: draft,
-              fileName: previous.fileName,
-              partial: previous.contentView?.access.complete === false,
-            });
+            setArchivedDraft(draftDownload(snapshot, previous));
           }
         }
         live.current?.close();
@@ -223,6 +268,7 @@ export default function GaebFileModal({
     documentId,
     assertCurrent,
     sharedFields,
+    draftDownload,
     context,
     resource,
   ]);
@@ -233,7 +279,10 @@ export default function GaebFileModal({
     setFailure("");
     setRemoteXml(undefined);
     setDirty(false);
-    setFrozenDraft(null);
+    setArchivedDraft(null);
+    setSelectedDraft(null);
+    setDraftError("");
+    setRestoringDraft(false);
     setCollaborators([]);
     latest.current = null;
     void loadCurrent()
@@ -412,7 +461,7 @@ export default function GaebFileModal({
           typeof liveProgress === "object" ? liveProgress : undefined;
         assertCurrent();
         const current = latest.current;
-        if (!current) {
+        if (!current || current.frozen || !current.canEdit) {
           throw new Error("save-failed");
         }
         const merged = mergeGaebDocuments(
@@ -554,29 +603,105 @@ export default function GaebFileModal({
       setDiscard(true);
     }
   };
-  const downloadFrozenDraft = () => {
-    if (!frozenDraft) return;
-    assertCurrent();
-    const data = frozenDraft.partial
-      ? JSON.stringify(
-          {
-            format: "sortsys-gaeb-view-draft-v1",
-            fileName: frozenDraft.fileName,
-            xml: frozenDraft.xml,
-          },
-          null,
-          2,
-        )
-      : frozenDraft.xml;
-    const type = frozenDraft.partial ? "application/json" : "application/xml";
-    const url = URL.createObjectURL(new Blob([data], { type }));
-    const link = window.document.createElement("a");
-    link.href = url;
-    link.download = frozenDraft.partial
-      ? `${frozenDraft.fileName}.teilansicht.json`
-      : frozenDraft.fileName;
-    link.click();
-    setTimeout(() => URL.revokeObjectURL(url), 0);
+  const downloadDraft = () => {
+    try {
+      assertCurrent();
+      let draft = frozenDraft;
+      if (!draft) {
+        const snapshot = editor.current?.snapshot();
+        const current = latest.current;
+        if (!snapshot || !current || snapshot.base === snapshot.source) {
+          throw new Error("invalid-gaeb-draft");
+        }
+        draft = draftDownload(snapshot, current);
+      }
+      const data = draft.view ? JSON.stringify(draft.view) : draft.snapshot.source;
+      const type = draft.view ? "application/json" : "application/xml";
+      const url = URL.createObjectURL(new Blob([data], { type }));
+      const link = window.document.createElement("a");
+      link.href = url;
+      link.download = draft.view
+        ? `${draft.fileName}.teilansicht.json`
+        : draft.fileName;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 0);
+    } catch {
+      if (!context.aborted) {
+        setDraftError(uiText(
+          "Der Entwurf konnte nicht heruntergeladen werden.",
+          "The draft could not be downloaded.",
+        ));
+      }
+    }
+  };
+  const selectDraft = async (file: File) => {
+    try {
+      assertCurrent();
+      setDraftError("");
+      const account = unlockedAccount();
+      if (!account) throw new Error("invalid-gaeb-draft");
+      const draft = await readGaebViewDraft(
+        file,
+        { tenant: account.tenant, document: resource },
+        context,
+      );
+      assertCurrent();
+      setSelectedDraft({ context, resource, draft });
+    } catch {
+      if (!context.aborted && requested.current.resource === resource) {
+        setDraftError(uiText(
+          "Die Datei ist kein Teilentwurf für dieses Dokument.",
+          "This file is not a partial draft for this document.",
+        ));
+      }
+    }
+  };
+  const restoreDraft = async () => {
+    if (!draftToRestore || restoringDraft) return;
+    setRestoringDraft(true);
+    setDraftError("");
+    try {
+      const current = await loadCurrent();
+      const snapshot = editor.current?.snapshot();
+      if (!snapshot || editable === false) throw new Error("invalid-gaeb-draft");
+      const merged = await mergeGaebViewDraft(
+        draftToRestore, snapshot, current, context,
+      );
+      assertCurrent();
+      if (
+        latest.current?.version !== current.version ||
+        latest.current?.xml !== current.xml ||
+        !latest.current.canEdit ||
+        latest.current.frozen ||
+        !editor.current?.applyDraft(snapshot, merged)
+      ) {
+        throw new Error("merge-conflict");
+      }
+      setArchivedDraft(null);
+      setSelectedDraft(null);
+    } catch (error) {
+      if (!context.aborted && requested.current.resource === resource) {
+        const conflict = error instanceof Error && error.message === "merge-conflict";
+        setDraftError(conflict
+          ? uiText(
+              "Der Entwurf überschneidet sich mit neueren Änderungen.",
+              "The draft overlaps with newer changes.",
+            )
+          : uiText(
+              "Der Entwurf lässt sich mit den aktuellen Dokumentrechten und Inhalten nicht übernehmen.",
+              "The draft cannot be applied with the current document permissions and contents.",
+            ));
+      }
+    } finally {
+      if (!context.aborted && requested.current.resource === resource) {
+        setRestoringDraft(false);
+      }
+    }
+  };
+  const cancelDraft = () => {
+    if (restoringDraft) return;
+    setSelectedDraft(null);
+    setDraftError("");
   };
   const content = failure ? (
     <div className="gaeb-empty" role="alert">
@@ -613,9 +738,40 @@ export default function GaebFileModal({
         );
       }}
       toolbarActions={toolbarActions}
+      insertActions={
+        session.contentView && canEdit && !session.frozen && editable !== false
+          ? (
+            <>
+              <input
+                ref={draftInput}
+                type="file"
+                accept=".json,application/json"
+                aria-label={uiText("GAEB-Teilentwurf", "GAEB partial draft")}
+                hidden
+                onChange={(event) => {
+                  const file = event.currentTarget.files?.[0];
+                  event.currentTarget.value = "";
+                  if (file) void selectDraft(file);
+                }}
+              />
+              <EditorIconButton
+                showLabel
+                icon={Upload}
+                label={uiText("Teilentwurf öffnen", "Open partial draft")}
+                onClick={() => draftInput.current?.click()}
+              />
+            </>
+          )
+          : undefined
+      }
       workflowNotice={
         <>
           {workflowNotice}
+          {draftError && !draftToRestore && !discard && (
+            <MyCallout kind="error" title={uiText("Lokaler Entwurf", "Local draft")}>
+              {draftError}
+            </MyCallout>
+          )}
           {collaborationWarning && (
             <MyCallout
               kind="warning"
@@ -636,7 +792,7 @@ export default function GaebFileModal({
                 "Das Dokument wurde inzwischen abgeschlossen. Noch nicht übernommene lokale Änderungen bleiben als separater Entwurf verfügbar.",
                 "The document has been finalized. Local changes which were not included remain available as a separate draft.",
               )}
-              <Button kind="ghost" size="sm" onClick={downloadFrozenDraft}>
+              <Button kind="ghost" size="sm" onClick={downloadDraft}>
                 {uiText("Entwurf herunterladen", "Download draft")}
               </Button>
             </MyCallout>
@@ -733,6 +889,29 @@ export default function GaebFileModal({
         </Modal>
       )}
       <Modal
+        open={!!draftToRestore}
+        passiveModal
+        modalHeading={uiText("Teilentwurf zusammenführen", "Merge partial draft")}
+        closeButtonLabel={uiText("Schließen", "Close")}
+        onRequestClose={cancelDraft}
+      >
+        <p>
+          {uiText(
+            "Der Entwurf wird mit dem aktuellen Dokument zusammengeführt. Anschließend speichert der Editor die Änderungen automatisch.",
+            "The draft is merged with the current document. The editor then saves the changes automatically.",
+          )}
+        </p>
+        {draftError && <p role="alert">{draftError}</p>}
+        <div className="flex justify-end gap-2 pt-4">
+          <Button kind="ghost" disabled={restoringDraft} onClick={cancelDraft}>
+            {uiText("Abbrechen", "Cancel")}
+          </Button>
+          <Button disabled={restoringDraft} onClick={() => void restoreDraft()}>
+            {uiText("Zusammenführen", "Merge")}
+          </Button>
+        </div>
+      </Modal>
+      <Modal
         open={discard}
         passiveModal
         modalHeading={
@@ -757,14 +936,15 @@ export default function GaebFileModal({
                 "Your changes could not be saved automatically yet. You can continue editing while autosave retries.",
               )}
         </p>
+        {draftError && <p role="alert">{draftError}</p>}
         <div className="flex flex-wrap justify-end gap-2 pt-4">
           <Button kind="ghost" onClick={() => setDiscard(false)}>
             {frozenDraft
               ? uiText("Zurück zum Dokument", "Back to document")
               : uiText("Weiter bearbeiten", "Continue editing")}
           </Button>
-          {frozenDraft && (
-            <Button onClick={downloadFrozenDraft}>
+          {(frozenDraft || dirty) && (
+            <Button onClick={downloadDraft}>
               {uiText("Entwurf herunterladen", "Download draft")}
             </Button>
           )}

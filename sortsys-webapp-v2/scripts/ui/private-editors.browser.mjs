@@ -371,9 +371,65 @@ test("the actual GAEB modal edits a partial text view without sending invented a
     const download = await downloading;
     assert.ok(download.suggestedFilename().endsWith(".teilansicht.json"));
     const draft = JSON.parse(await readFile(await download.path(), "utf8"));
-    assert.equal(draft.format, "sortsys-gaeb-view-draft-v1");
-    assert.ok(draft.xml.includes("Ungespeicherter Entwurf 821947"));
-    assert.ok(!draft.xml.includes("592.375"));
+    assert.equal(draft.format, "sortsys-gaeb-view-draft-v2");
+    assert.equal(draft.document, "commercial:2:3");
+    assert.ok(draft.base.includes("Positionstext im tatsächlichen Dialog überarbeitet"));
+    assert.ok(draft.source.includes("Ungespeicherter Entwurf 821947"));
+    assert.ok(!`${draft.base}${draft.source}`.includes("592.375"));
+    await page.getByRole("tab", { name: "Einfügen", exact: true }).click();
+    assert.equal(await page.getByRole("button", { name: "Teilentwurf öffnen" }).count(), 0);
+
+    await page.reload();
+    await page.waitForFunction(() => window.privateEditorFixture);
+    const newerText = "Leistungsbeschreibung aus der neuen Fassung";
+    await page.evaluate(
+      (description) => window.privateEditorFixture.gaebPartialPublication({ description }),
+      newerText,
+    );
+    await page.waitForFunction(() => window.gaebPublicationModal.ready());
+    await page.getByRole("tab", { name: "Einfügen", exact: true }).click();
+    const input = page.getByLabel("GAEB-Teilentwurf", { exact: true });
+    const dialog = page.getByRole("dialog", { name: "Teilentwurf zusammenführen" });
+    async function selectDraft(value) {
+      await input.setInputFiles({
+        name: "Auftrag.x86.teilansicht.json",
+        mimeType: "application/json",
+        buffer: Buffer.from(JSON.stringify(value)),
+      });
+    }
+    await selectDraft({ ...draft, document: "commercial:2:4" });
+    await page.getByText("Die Datei ist kein Teilentwurf für dieses Dokument.", { exact: true }).waitFor();
+    assert.equal(await dialog.count(), 0);
+
+    await selectDraft({
+      ...draft,
+      source: draft.source.replace("</Description>", "</Description><UP>999.000</UP>"),
+    });
+    await dialog.getByRole("button", { name: "Zusammenführen", exact: true }).click();
+    await dialog.getByRole("alert").filter({ hasText: "Dokumentrechten" }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.gaebPublicationModal.calls()), []);
+    await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+
+    await selectDraft({
+      ...draft,
+      source: draft.source.replace(
+        "Positionstext im tatsächlichen Dialog überarbeitet",
+        "Vollständig anderer Positionstext im Entwurf",
+      ),
+    });
+    await dialog.getByRole("button", { name: "Zusammenführen", exact: true }).click();
+    await dialog.getByRole("alert").filter({ hasText: "überschneidet" }).waitFor();
+    assert.deepEqual(await page.evaluate(() => window.gaebPublicationModal.calls()), []);
+    await dialog.getByRole("button", { name: "Abbrechen", exact: true }).click();
+
+    await selectDraft(draft);
+    await dialog.getByRole("button", { name: "Zusammenführen", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+    await page.waitForFunction(() => window.gaebPublicationModal.calls().length > 0);
+    const restored = await page.evaluate(() => window.gaebPublicationModal.calls().at(-1).xml);
+    assert.ok(restored.includes("Ungespeicherter Entwurf 821947"));
+    assert.ok(restored.includes(newerText));
+    assert.ok(!restored.includes("592.375"));
   } finally {
     await context.close();
   }

@@ -1,7 +1,7 @@
 import type { Root } from "react-dom/client";
 
 export function mountPublicationModal(): void;
-export function mountPartialPublicationModal(): Promise<void>;
+export function mountPartialPublicationModal(options?: { description?: string }): Promise<void>;
 export function mountSignedPublicationModal(): Promise<void>;
 export function mountFinancialPublicationModal(options?: {
   referenced?: boolean;

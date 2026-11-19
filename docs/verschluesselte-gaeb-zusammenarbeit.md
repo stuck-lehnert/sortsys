@@ -401,10 +401,17 @@ in sämtlichen Kanälen bestätigt sind. Auch eine bereits gespeicherte gültige
 Bestätigung darf keine späteren Änderungen verdecken. Der Editor zeigt danach
 die signierte native Datei an und legt keinen alten Live-Text darüber. Noch
 nicht übernommene lokale Änderungen bleiben im geöffneten Dialog als separat
-herunterladbarer Entwurf erhalten. Ein Entwurf aus einer Teilansicht wird als
-JSON mit entsprechender Kennzeichnung gesichert. Er wird nicht als vollständige
-GAEB-Datei angeboten; ein eigener Arbeitsablauf zum späteren Zusammenführen
-dieses Entwurfs fehlt noch.
+herunterladbarer Entwurf erhalten. Ein Teilentwurf enthält den Ausgangsstand und
+die bearbeitete Teilansicht als JSON-Datei. Beide Stände enthalten den damals
+sichtbaren Dokumenttext im Klartext.
+
+Sobald dasselbe Dokument wieder bearbeitbar ist, lässt sich die Datei über
+**Einfügen → Teilentwurf öffnen** auswählen. Der Browser vergleicht den
+Ausgangsstand mit dem Entwurf und der aktuellen Fassung. Änderungen an
+verschiedenen Stellen werden zusammengeführt und automatisch gespeichert.
+Bei überlappenden Änderungen erscheint ein Konflikthinweis. Für die Übernahme
+gelten die aktuellen Lese- und Schreibrechte. Bei älteren JSON-Entwürfen ohne
+Ausgangsstand bleibt die manuelle Textübernahme möglich.
 
 Die API prüft dabei die technische Reihenfolge und die Schreibberechtigung. Ob
 eine XML-Datei die bestätigten Texte tatsächlich enthält, prüfen die Clients.

@@ -18,6 +18,8 @@ import { I18nProvider } from "../../app/lib/i18n";
 import { documentContentView } from "../../app/lib/data/documentEditor";
 import { documentEditorAccess } from "../../app/lib/data/documentEditor";
 import { browserGaebXml } from "@sortsys/gaeb";
+import { base64, createAccountVault, createIdentity } from "@sortsys/zerotrust/sortsys";
+import { acceptVault } from "../../app/lib/crypto/session";
 
 export function mountPublicationModal({
   initialContent,
@@ -187,9 +189,19 @@ export function mountPublicationModal({
   );
 }
 
-export async function mountPartialPublicationModal() {
-  const { openView } = await import("./gaeb-partial.fixture.jsx");
-  const partial = await openView();
+export async function mountPartialPublicationModal({ description } = {}) {
+  const { nativeSource, openView } = await import("./gaeb-partial.fixture.jsx");
+  const partial = await openView(
+    false, "offer", ["scope"], ["scope"], nativeSource("86", description),
+  );
+  const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
+  const vault = await createAccountVault(
+    exportKey,
+    "gaeb-draft-fixture",
+    "user:1",
+    await createIdentity(),
+  );
+  await acceptVault(exportKey, vault, "gaeb-editor", false);
   const signal = new AbortController().signal;
   mountPublicationModal({
     documentKind: partial.kind,

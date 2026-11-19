@@ -17,13 +17,13 @@ const CHANGED_TEXT = "Überarbeitete Leistungsbeschreibung ohne Preisfreigabe";
 const FILE_NAME = "Auftrag.x86";
 const KIND = "offer";
 
-function nativeSource(phase = "86") {
+export function nativeSource(phase = "86", description = ORIGINAL_TEXT) {
   const item = [
     '<Item ID="item-1" RNoPart="0001">',
     "<Qty>3.125</Qty><QU>m²</QU>",
     ...(phase === "83" ? [] : ["<UP>592.375</UP><IT>1851.17</IT>"]),
     "<Description><CompleteText><DetailTxt><Text>",
-    `<p><span>${ORIGINAL_TEXT}</span></p>`,
+    `<p><span>${description}</span></p>`,
     "</Text></DetailTxt></CompleteText></Description>",
     "<!--Unbekannte Herstellerangabe 927461-->",
     "</Item>",

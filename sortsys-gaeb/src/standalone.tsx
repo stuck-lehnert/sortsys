@@ -7,6 +7,7 @@ import {
   GAEB_PHASES,
   phaseCanEdit,
   MAX_GAEB_BYTES,
+  type GaebEditorHandle,
   type GaebPhase,
   gaebDocumentName,
   mergeGaebDocuments,
@@ -32,7 +33,7 @@ function App() {
   const [error, setError] = useState("");
   const [hasRecent, setHasRecent] = useState(false);
   const dirty = useRef(false);
-  const editor = useRef<{ save: () => Promise<boolean> }>(null);
+  const editor = useRef<GaebEditorHandle>(null);
   const latestXml = useRef("");
   const originalXml = useRef("");
   useEffect(() => {

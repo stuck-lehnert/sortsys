@@ -42,11 +42,11 @@ Object.assign(window, {
         await import("./gaeb-publication.fixture.jsx");
       mountPublicationModal();
     },
-    async gaebPartialPublication() {
+    async gaebPartialPublication(options?: { description?: string }) {
       iframe.remove();
       const { mountPartialPublicationModal } =
         await import("./gaeb-publication.fixture.jsx");
-      await mountPartialPublicationModal();
+      await mountPartialPublicationModal(options);
     },
     async gaebSignedPublication() {
       iframe.remove();
