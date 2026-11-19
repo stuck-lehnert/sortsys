@@ -49,6 +49,7 @@ enum Event {
 #[derive(Default)]
 struct PendingChanges {
     all: bool,
+    control: bool,
     refresh: bool,
     visible: bool,
     tool_returns: bool,
@@ -81,6 +82,7 @@ impl PendingChanges {
             Event::Account(user) if user == subject => {
                 self.visible = true;
                 self.all = true;
+                self.control = true;
                 self.refresh = true;
             }
             Event::ObjectRecipient(user, domain) if user == subject => {
@@ -192,6 +194,7 @@ impl Hub {
         tenants.insert(tenant.to_owned(), Arc::downgrade(&channel));
         tokio::spawn(async move {
             let _slot = slot;
+            let mut interrupted = false;
             loop {
                 let page = tokio::select! {
                     _ = stopped.changed() => break,
@@ -200,7 +203,7 @@ impl Hub {
                 let page = match page {
                     Ok(page) => page,
                     Err(_) => {
-                        let _ = outgoing.send(Event::Resync);
+                        interrupted = true;
                         tokio::select! {
                             _ = stopped.changed() => break,
                             _ = tokio::time::sleep(Duration::from_secs(1)) => continue,
@@ -216,6 +219,7 @@ impl Hub {
                 if durable_head < observed_head {
                     cursor = page.head;
                     let _ = outgoing.send(Event::Resync);
+                    interrupted = false;
                     continue;
                 }
                 if page.events.is_empty() && page.head != cursor {
@@ -223,6 +227,7 @@ impl Hub {
                     // spin on a durable head that has no replayable entries.
                     cursor = page.head;
                     let _ = outgoing.send(Event::Resync);
+                    interrupted = false;
                     continue;
                 }
                 for event in page.events {
@@ -242,6 +247,10 @@ impl Hub {
                             let _ = outgoing.send(event);
                         }
                     }
+                }
+                if interrupted {
+                    interrupted = false;
+                    let _ = outgoing.send(Event::Resync);
                 }
             }
         });
@@ -728,6 +737,7 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
         }
         let PendingChanges {
             mut all,
+            mut control,
             refresh,
             visible,
             tool_returns,
@@ -738,7 +748,9 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
         let mut reset = false;
         if refresh {
             let next = snapshot(&state.auth, &authenticate(state, &ticket).await?).await?;
-            all |= !current.same_access(&next);
+            let changed = !current.same_access(&next);
+            all |= changed;
+            control |= changed;
             reset = current.resets_for(&next);
             current = next;
             if current.generation != ticket.generation {
@@ -756,9 +768,8 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
                     || domain.starts_with("tool-tracking:")
                     || domain.ends_with(":tool-usage:master-data")
             });
-        // A new key generation requires fresh authorization and a reload of
-        // that domain. Only an actual access change invalidates every view.
-        let control = all || reset;
+        // Replaying a gap can refresh data without invalidating the verified
+        // access context. Actual losses still retire the affected session.
         let domains = domains
             .into_iter()
             .map(|(domain, sequence)| (domain, sequence.map(|n| n.to_string())))
@@ -797,6 +808,21 @@ async fn serve(socket: &mut WebSocket, state: &Arc<EventService>) -> RpcResult<(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn journal_resync_and_account_changes_have_distinct_invalidation() {
+        let mut changes = PendingChanges::default();
+        changes.include(Event::Resync, "user:1");
+        assert!(changes.all && changes.visible && changes.refresh);
+        assert!(!changes.control);
+
+        changes.include(Event::Account("user:2".into()), "user:1");
+        assert!(!changes.control);
+
+        changes.include(Event::Account("user:1".into()), "user:1");
+        assert!(changes.control);
+    }
+
     #[test]
     fn recipient_hints_only_refresh_the_intended_members_object_view() {
         let domain = "project:2:planning:master-data";

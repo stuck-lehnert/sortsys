@@ -65,6 +65,10 @@ import { createContentAccess } from "./menuAccess";
 import { announceDataChanges, listenDataChanges } from "./runtime/changes";
 import { latestQuery } from "./runtime/latestQuery";
 import { pendingReads } from "./runtime/pendingReads";
+import {
+  invalidateReadableAreas,
+  setReadableAreasConnection,
+} from "./readableAreas";
 import { TOOL_QUERIES, TOOL_MUTATIONS, toolQueryAffected } from "./toolData";
 import {
   PERSONNEL_QUERIES,
@@ -502,6 +506,7 @@ export function createBusinessClient(
       adapters.affected(path, domains, false);
   }
   const stopDataChanges = listenDataChanges(base, (domains, options) => {
+    if (!domains || options?.control) invalidateReadableAreas(base);
     const changed = affectedQueries(domains, options?.control === true);
     const affected = (path: string) =>
       changed(path) ||
@@ -551,6 +556,7 @@ export function createBusinessClient(
   function restartEvents() {
     eventsController?.abort();
     eventsController = null;
+    setReadableAreasConnection(base, false);
     if (
       !options.realtime ||
       closed ||
@@ -581,6 +587,7 @@ export function createBusinessClient(
           remoteChange,
           current.signal,
           admitted,
+          (connected) => setReadableAreasConnection(base, connected),
         ),
       )
       .catch(admitted);
@@ -593,6 +600,8 @@ export function createBusinessClient(
       options.onRemoteChange?.(change);
       return;
     }
+    if (Object.values(change.domains).includes(null))
+      invalidateReadableAreas(base);
     if (change.reset) announceDataChanges(base);
     else if (change.control || change.all)
       announceDataChanges(base, undefined, { revalidate: true });
@@ -616,10 +625,7 @@ export function createBusinessClient(
     if (change.reset) {
       llmActivity.cancelAll();
       reset();
-    } else if (
-      !change.reconnected &&
-      (change.control || change.all || editorKeyChanged)
-    ) {
+    } else if (change.control || editorKeyChanged) {
       resetEditors();
       if (change.control) contentAccess.refresh();
     }
@@ -673,9 +679,8 @@ export function createBusinessClient(
             change.domains["catalog:products:master-data"] ?? undefined,
           );
         } catch (error) {
-          if (!signal.aborted) {
-            if (!change.reconnected || !RpcClientError.isUnavailable(error))
-              reset();
+          if (!signal.aborted && !RpcClientError.isUnavailable(error)) {
+            reset();
             notify();
           }
         }
@@ -689,9 +694,8 @@ export function createBusinessClient(
         try {
           await (await files).refresh(change.all ? undefined : change.domains);
         } catch (error) {
-          if (!signal.aborted) {
-            if (!change.reconnected || !RpcClientError.isUnavailable(error))
-              reset();
+          if (!signal.aborted && !RpcClientError.isUnavailable(error)) {
+            reset();
             notify();
           }
         }
@@ -700,6 +704,7 @@ export function createBusinessClient(
     synchronization = work.catch(() => undefined);
   }
   function reset() {
+    invalidateReadableAreas(base);
     reads.clear();
     resetEditors();
     adapters.reset();
@@ -1755,6 +1760,11 @@ export function createBusinessClient(
     return choices;
   }
   const toolResourceActions = {
+    search(search: string) {
+      return readResourceChoices(async () =>
+        (await toolStore()).searchChoices(search),
+      );
+    },
     tools(cancellation?: AbortSignal) {
       return readResourceChoices(
         async () => (await toolStore()).choices(),
@@ -2109,9 +2119,23 @@ export function createBusinessClient(
       if (technical(path)) return base.streamQuery(path, input, opts);
       return new Observable<[unknown | null, RpcClientError | null]>(
         (subscriber) => {
+          let displayedContext: AbortSignal | undefined;
+          let displayedAccess: AbortSignal | undefined;
           const observer = latestQuery(
             () => query(path, input),
-            (value) => subscriber.next(value),
+            (value) => {
+              const [data, error] = value;
+              if (
+                displayedContext === controller.signal &&
+                displayedAccess === contentAccess.context() &&
+                RpcClientError.isUnavailable(error)
+              )
+                return;
+              displayedContext = data === null ? undefined : controller.signal;
+              displayedAccess =
+                data === null ? undefined : contentAccess.context();
+              subscriber.next(value);
+            },
             (error) => subscriber.next([null, RpcClientError.from(error)]),
           );
           listeners.set(observer.refresh, path);

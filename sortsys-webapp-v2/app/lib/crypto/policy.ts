@@ -9,6 +9,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import type { trustedHistory } from "./session";
 import type { PolicyPublication } from "../data/atomicWrites";
+import { invalidateReadableAreas } from "../data/readableAreas";
 
 type PolicyContext = {
   account: { tenant: string };
@@ -146,6 +147,7 @@ export async function publishSignedPolicy(
     const current = await readVerifiedPolicy(client, context);
     if (current.signature !== packet.signature)
       throw new InvalidProtectedData();
+    invalidateReadableAreas(client);
     return current;
   } catch (error) {
     context.live();

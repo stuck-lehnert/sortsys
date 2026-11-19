@@ -1,6 +1,6 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { ReactNode } from "react";
-import type { QueryResult } from "@sortsys/v2-client";
+import { RpcClientError, type QueryResult } from "@sortsys/v2-client";
 import { Loading } from "@sortsys/react-components";
 import { useLocation, Link } from "react-router";
 import { SessionProfileProvider, useSessionInfo } from "~/hooks/useSessionInfo";
@@ -63,7 +63,18 @@ export function CryptoUnlocked({ children }: { children: ReactNode }) {
     const subscription = client
       .streamQuery("zerotrust.status", undefined, { strategy: "network-only" })
       .subscribe(([status, failure]) => {
-        setMetadata({ session: sessionKey, status, error: !!failure });
+        setMetadata((previous) => {
+          const active = unlockedAccount();
+          if (
+            previous?.session === sessionKey &&
+            previous.status?.accessReady &&
+            active?.tenant === previous.status.tenant &&
+            active.vault.subject === `user:${session.user.id}` &&
+            RpcClientError.isUnavailable(failure)
+          )
+            return previous;
+          return { session: sessionKey, status, error: !!failure };
+        });
       });
     return () => subscription.unsubscribe();
   }, [sessionKey]);

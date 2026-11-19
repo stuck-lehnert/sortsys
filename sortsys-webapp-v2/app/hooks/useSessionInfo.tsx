@@ -9,7 +9,7 @@ import {
   useSyncExternalStore,
   type ReactNode,
 } from "react";
-import { type Client, type QueryResult } from "@sortsys/v2-client";
+import { RpcClientError, type Client, type QueryResult } from "@sortsys/v2-client";
 import { client, contentAccess, projectFiles } from "~/lib/client";
 import { Button, Loading } from "@sortsys/react-components";
 import {
@@ -85,8 +85,8 @@ export function SessionInfoProvider({
     }
     let active = true;
     const subscription = sessionClient
-      .streamQuery("auth.sessionInfo", undefined, { strategy: "network-first" })
-      .subscribe(([data]) => {
+      .streamQuery("auth.sessionInfo", undefined, { strategy: "network-only" })
+      .subscribe(([data, error]) => {
         if (
           !active ||
           accountContext.aborted ||
@@ -98,7 +98,15 @@ export function SessionInfoProvider({
           !data ||
           (account && account.vault.subject !== `user:${data.user.id}`)
         ) {
-          setLoaded(null);
+          setLoaded((previous) => {
+            if (
+              previous?.context === accountContext &&
+              account?.vault.subject === `user:${previous.data.user.id}` &&
+              RpcClientError.isUnavailable(error)
+            )
+              return previous;
+            return null;
+          });
           return;
         }
         // A login alias can change without replacing the unlocked identity.

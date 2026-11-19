@@ -102,8 +102,9 @@ erlaubt keine neue Anlage.
 
 ## Laufende Aktualisierung
 
-Änderungshinweise über den WebSocket verwerfen die bisherige Menüfreigabe.
-Während der Prüfung des neuen Stands bleiben die betroffenen Aktionen gesperrt.
+Änderungen an den Freigaben verwerfen die bisherige Menüfreigabe. Während
+der Prüfung des neuen Stands bleiben die betroffenen Aktionen gesperrt.
+Ein Datenabgleich bei unveränderten Freigaben lässt das Menü geöffnet.
 Das funktioniert auch, wenn Verwaltung und Benutzer an unterschiedlichen
 API-Instanzen verbunden sind. Ein Kontowechsel verwirft laufende Abfragen; eine
 verspätete Antwort kann die alten Aktionen nicht wieder einschalten. Bei einem

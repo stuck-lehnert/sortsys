@@ -621,6 +621,103 @@ try {
     await page.reload();
     await expect(product).toBeVisible();
   });
+  await scenario("stable-refresh-and-warm-search", async (page) => {
+    let socket;
+    let fingerprint;
+    await page.routeWebSocket("**/zerotrust/events", (route) => {
+      const upstream = route.connectToServer();
+      upstream.onMessage((payload) => {
+        const frame = JSON.parse(payload.toString());
+        if (frame.type === "ready" || frame.type === "changed") {
+          socket = route;
+          fingerprint = frame.fingerprint;
+        }
+        route.send(payload);
+      });
+    });
+    let accessSnapshots = 0;
+    let controlReads = 0;
+    const controlProcedures = (request) =>
+      ["auth.sessionInfo", "zerotrust.status"].reduce(
+        (count, path) => count + rpcInputs(request, path).length,
+        0,
+      );
+    page.on("request", (request) => {
+      accessSnapshots += rpcInputs(request, "zerotrust.access.snapshot").length;
+      controlReads += controlProcedures(request);
+    });
+
+    await login(page, "john.doe");
+    await expect(
+      page.getByRole("link", { name: "Einstellungen", exact: true }),
+    ).toBeVisible();
+    socket = undefined;
+    fingerprint = undefined;
+    await page.goto(`${server.origin}/products`);
+    await expect(
+      page.getByText("Haftgrund, manuell angepasst", { exact: true }),
+    ).toBeVisible();
+    await expect.poll(() => typeof fingerprint).toBe("string");
+
+    await page.keyboard.press("Control+k");
+    const palette = page.getByRole("dialog", { name: "Befehlspalette" });
+    const search = palette.getByRole("searchbox", { name: "Befehl oder Suche" });
+    const searchPanel = palette.locator("[data-searching]");
+    const project = palette.getByRole("option", {
+      name: /Fenstersanierung Pirckheimer-Gymnasium/,
+    });
+    await search.fill("pirckheimer");
+    await expect(project).toBeVisible();
+    await expect(searchPanel).toHaveAttribute("data-searching", "false");
+    const warmedSnapshots = accessSnapshots;
+    for (const term of ["pirckheimer-g", "pirckheimer-gym"]) {
+      await search.fill(term);
+      await expect(project).toBeVisible();
+      await expect(searchPanel).toHaveAttribute("data-searching", "false");
+    }
+    assert.equal(
+      accessSnapshots,
+      warmedSnapshots,
+      "Refining the search reuses the verified directory and local data",
+    );
+    await palette.getByText("Schließen", { exact: true }).click();
+    await expect(palette).toBeHidden();
+
+    const product = page.getByText("Haftgrund, manuell angepasst", {
+      exact: true,
+    });
+    const mountedProduct = await product.elementHandle();
+    const sendRefresh = (control) =>
+      socket.send(
+        JSON.stringify({
+          type: "changed",
+          fingerprint,
+          all: true,
+          control,
+          reset: false,
+          domains: {},
+        }),
+      );
+    const previousControlReads = controlReads;
+    sendRefresh(false);
+    await expect.poll(() => accessSnapshots).toBeGreaterThan(warmedSnapshots);
+    assert.equal(controlReads, previousControlReads);
+    assert.equal(await mountedProduct.evaluate((node) => node.isConnected), true);
+
+    let failedControlReads = 0;
+    await page.route("**/api/v2/**", async (route) => {
+      const count = controlProcedures(route.request());
+      if (!count) return route.continue();
+      await route.fulfill({ status: 503, body: "Temporarily unavailable" });
+      failedControlReads += count;
+    });
+    sendRefresh(true);
+    await expect.poll(() => failedControlReads).toBeGreaterThanOrEqual(2);
+    await page.waitForTimeout(6_000);
+    await expect(product).toBeVisible();
+    assert.equal(await mountedProduct.evaluate((node) => node.isConnected), true);
+    await mountedProduct.dispose();
+  });
   await scenario("product-prefix-search", async (page) => {
     const catalogueDomain = "catalog:products:master-data";
     let initialCatalogueBatched = false;
@@ -1400,6 +1497,23 @@ try {
     for (const target of ["/admin", "/offers", "/projects", "/products"]) {
       await expect(page.locator(`nav a[href="${target}"]`)).toHaveCount(0);
     }
+    await page.keyboard.press("Control+k");
+    const palette = page.getByRole("dialog", { name: "Befehlspalette" });
+    const search = palette.getByRole("searchbox", { name: "Befehl oder Suche" });
+    for (const [term, deniedResult] of [
+      ["Haftgrund", /Haftgrund, manuell angepasst/],
+      ["Pirckheimer-Gymnasium", /Fenstersanierung Pirckheimer-Gymnasium/],
+    ]) {
+      await search.fill(term);
+      await expect(
+        palette.getByText("Keine Treffer.", { exact: true }),
+      ).toBeVisible();
+      await expect(
+        palette.getByRole("option", { name: deniedResult }),
+      ).toHaveCount(0);
+    }
+    await palette.getByText("Schließen", { exact: true }).click();
+    await expect(palette).toBeHidden();
     await page.screenshot({
       path: join(artifacts, "member-dashboard.png"),
       fullPage: true,

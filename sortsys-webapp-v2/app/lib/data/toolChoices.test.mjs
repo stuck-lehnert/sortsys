@@ -189,6 +189,9 @@ test("tool and booking choices read only permitted master data and reuse one acc
       }
     }
     expect(JSON.stringify(tenant.calls)).not.toContain("Sanierung Nordflügel");
+    expect(await store.searchChoices("sanierung nord")).toEqual(tools);
+    expect(await store.searchChoices("73")).toEqual(tools);
+    expect(await store.searchChoices("fehlend")).toEqual([]);
     store.close();
     const calls = tenant.calls.length;
     await expect(store.choices()).rejects.toThrow();

@@ -218,11 +218,12 @@ async function bindCollections(
     if (signal.aborted || unlockedAccount() !== context.account)
       throw new InvalidProtectedData();
   }
+  const domainById = new Map(
+    context.domains.map((domain) => [domain.id, domain]),
+  );
   function readable(collection: Collection): boolean {
     live();
-    const domain = context.domains.find(
-      (domain) => domain.id === collection.domain,
-    );
+    const domain = domainById.get(collection.domain);
     if (
       !domain ||
       domain.scope !== collection.scope ||

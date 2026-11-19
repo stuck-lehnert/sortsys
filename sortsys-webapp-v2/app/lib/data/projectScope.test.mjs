@@ -2,7 +2,11 @@ import { afterEach, expect, test } from "bun:test";
 import { ACTIONS } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
-import { readableAreas } from "./readableAreas";
+import {
+  invalidateReadableAreas,
+  readableAreas,
+  setReadableAreasConnection,
+} from "./readableAreas";
 import {
   PROJECT_ACCESS_KEYS,
   projectAccessArea,
@@ -15,6 +19,40 @@ import { deliveryCollection, deliveryDomain } from "./deliveryNoteData";
 import { regieCollection, regieDomain } from "./regieReportData";
 
 afterEach(() => lockCryptoSession());
+
+test("area searches reuse a verified directory only in the connected lifetime", async () => {
+  const area = dailyCollection("2");
+  const anotherArea = dailyCollection("3");
+  const fixture = await protectedTenant([area]);
+  const signal = new AbortController().signal;
+  const read = (lifetime = signal) =>
+    readableAreas(fixture.client, lifetime, (domain) => {
+      if (domain === area.domain) return area;
+      if (domain === anotherArea.domain) return anotherArea;
+      return null;
+    });
+  const snapshots = () =>
+    fixture.calls.filter(({ path }) => path === "zerotrust.access.snapshot").length;
+
+  setReadableAreasConnection(fixture.client, true);
+  expect(await Promise.all([read(), read()])).toEqual([[area], [area]]);
+  expect(await read()).toEqual([area]);
+  expect(snapshots()).toBe(1);
+  expect(await read(new AbortController().signal)).toEqual([area]);
+  expect(snapshots()).toBe(2);
+
+  await fixture.addArea(anotherArea);
+  invalidateReadableAreas(fixture.client);
+  expect(await read()).toEqual([area, anotherArea]);
+  expect(snapshots()).toBe(3);
+
+  setReadableAreasConnection(fixture.client, false);
+  expect(await read()).toEqual([area, anotherArea]);
+  expect(await read()).toEqual([area, anotherArea]);
+  expect(snapshots()).toBe(5);
+  await expect(read(AbortSignal.abort())).rejects.toThrow();
+});
+
 test("the shared project inventory has canonical, independent module bindings", () => {
   expect(PROJECT_ACCESS_KEYS).toHaveLength(14);
   expect(new Set(PROJECT_ACCESS_KEYS).size).toBe(14);

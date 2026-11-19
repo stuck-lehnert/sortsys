@@ -3,7 +3,8 @@ import { uiText } from "~/lib/i18n";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
-import { client } from "~/lib/client";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
+import { client, contentAccess, toolResources } from "~/lib/client";
 import {
   contactName,
   customerName,
@@ -37,12 +38,23 @@ function actionMatches(action: UserAction, query: string) {
 type SearchLink = Omit<PaletteEntry, "run" | "group"> & { href: string };
 type SearchResults = {
   query: string;
+  accessContext: AbortSignal;
   links: SearchLink[];
   finished: boolean;
 };
 
 function useEntitySearchEntries(query: string, close: () => void) {
   const navigate = useNavigate();
+  const access = useSessionInfo();
+  const accessContext = contentAccess.context();
+  const projects = access.canDo("view:projects");
+  const tools = access.canDo("view:tools");
+  const users = access.canDo("view:users");
+  const products = access.canDo("view:products");
+  const customers = access.canDo("view:customers");
+  const contacts = access.canDo("view:contacts");
+  const vendors = access.canDo("view:productVendors");
+  const deliveryNotes = access.canDo("view:deliveryNotes");
   const trimmedQuery = normalizeSearch(query);
   const [results, setResults] = useState<SearchResults | null>(null);
 
@@ -53,19 +65,26 @@ function useEntitySearchEntries(query: string, close: () => void) {
     const groups: SearchLink[][] = [];
     let active = true;
     const publish = (finished: boolean) => {
-      if (active)
-        setResults({ query: trimmedQuery, links: groups.flat(), finished });
+      if (active && !accessContext.aborted)
+        setResults({
+          query: trimmedQuery,
+          accessContext,
+          links: groups.flat(),
+          finished,
+        });
     };
 
     // Reserve each group's place before its query completes. A slow category
     // does not hide ready matches, and the final order stays deterministic.
     function load<Row>(
-      request: Promise<readonly [readonly Row[] | null, unknown]>,
+      enabled: boolean,
+      request: () => Promise<readonly [readonly Row[] | null, unknown]>,
       link: (row: Row) => SearchLink,
     ) {
+      if (!enabled) return Promise.resolve();
       const index = groups.length;
       groups.push([]);
-      return request.then(([rows]) => {
+      return request().then(([rows]) => {
         if (!active || !rows?.length) return;
         groups[index] = rows.slice(0, 8).map(link);
         publish(false);
@@ -74,54 +93,56 @@ function useEntitySearchEntries(query: string, close: () => void) {
 
     const timeout = window.setTimeout(() => {
       const filter = { search: trimmedQuery };
-      const rawNumber = trimmedQuery.startsWith("#")
-        ? trimmedQuery.slice(1)
-        : trimmedQuery;
-      const autoId = Number.parseInt(rawNumber, 10);
+      const number = /^#?(\d+)$/.exec(trimmedQuery);
+      const autoId = number ? Number(number[1]) : NaN;
       const work = [
-        load(client.query("projects.list", filter), (project) => ({
+        load(projects, () => client.query("projects.list", filter), (project) => ({
           id: `project:${project.id}`,
           title: project.title,
           subtitle: uiText("Projekt"),
           icon: Icons.Project,
           href: `/projects/${project.id}`,
         })),
-        load(client.query("tools.list", filter), (tool) => ({
-          id: `tool:${tool.id}`,
-          title: `${tool.customId} ${toolTitle(tool)}`,
-          subtitle: uiText("Werkzeug"),
-          icon: Icons.Tool,
-          href: `/tools/${tool.id}`,
-        })),
-        load(client.query("users.list", filter), (user) => ({
+        load(
+          tools,
+          async () => [await toolResources.search(trimmedQuery), null],
+          (tool) => ({
+            id: `tool:${tool.id}`,
+            title: `${tool.customId} ${toolTitle(tool)}`,
+            subtitle: uiText("Werkzeug"),
+            icon: Icons.Tool,
+            href: `/tools/${tool.id}`,
+          }),
+        ),
+        load(users, () => client.query("users.list", filter), (user) => ({
           id: `user:${user.id}`,
           title: userFullName(user),
           subtitle: uiText("Benutzer"),
           icon: Icons.User,
           href: `/users/${user.id}`,
         })),
-        load(client.query("products.list", filter), (product) => ({
+        load(products, () => client.query("products.list", filter), (product) => ({
           id: `product:${product.id}`,
           title: `${product.customId} ${productTitle(product)}`,
           subtitle: uiText("Produkt"),
           icon: Icons.Product,
           href: `/products/${product.id}`,
         })),
-        load(client.query("customers.list", filter), (customer) => ({
+        load(customers, () => client.query("customers.list", filter), (customer) => ({
           id: `customer:${customer.id}`,
           title: customerName(customer),
           subtitle: uiText("Kunde"),
           icon: Icons.Customer,
           href: `/customers/${customer.id}`,
         })),
-        load(client.query("contacts.list", filter), (contact) => ({
+        load(contacts, () => client.query("contacts.list", filter), (contact) => ({
           id: `contact:${contact.id}`,
           title: contactName(contact),
           subtitle: uiText("Kontakt"),
           icon: Icons.Contact,
           href: `/contacts/${contact.id}`,
         })),
-        load(client.query("products.vendors.list", filter), (vendor) => ({
+        load(vendors, () => client.query("products.vendors.list", filter), (vendor) => ({
           id: `productVendor:${vendor.id}`,
           title: vendor.name,
           subtitle: uiText("Händler"),
@@ -129,12 +150,13 @@ function useEntitySearchEntries(query: string, close: () => void) {
           href: `/products/vendors/${vendor.id}`,
         })),
       ];
-      if (Number.isFinite(autoId)) {
-        const request = client
-          .query("deliveryNotes.get", { autoId })
-          .then(([note]) => [note ? [note] : null, null] as const);
+      if (deliveryNotes && Number.isSafeInteger(autoId) && autoId > 0) {
+        const request = async () => {
+          const [note] = await client.query("deliveryNotes.get", { autoId });
+          return [note ? [note] : null, null] as const;
+        };
         work.push(
-          load(request, (note) => ({
+          load(true, request, (note) => ({
             id: `deliveryNote:${note.id}`,
             title: uiText(
               `Lieferschein #${note.autoId}`,
@@ -150,15 +172,29 @@ function useEntitySearchEntries(query: string, close: () => void) {
         );
       }
       void Promise.allSettled(work).then(() => publish(true));
-    }, 180);
+    }, 120);
 
     return () => {
       active = false;
       window.clearTimeout(timeout);
     };
-  }, [trimmedQuery]);
+  }, [
+    trimmedQuery,
+    accessContext,
+    projects,
+    tools,
+    users,
+    products,
+    customers,
+    contacts,
+    vendors,
+    deliveryNotes,
+  ]);
 
-  const current = results?.query === trimmedQuery ? results : null;
+  const current =
+    results?.query === trimmedQuery && results.accessContext === accessContext
+      ? results
+      : null;
   const entries: PaletteEntry[] = useMemo(
     () =>
       (current?.links ?? []).map(({ href, ...link }) => ({
@@ -250,7 +286,10 @@ export function showCommandPaletteModal(modals: MyModalsInterface) {
           onInputChange={setQuery}
           filter={() => true}
         >
-          <div className="flex min-h-0 w-full flex-col gap-4">
+          <div
+            className="flex min-h-0 w-full flex-col gap-4"
+            data-searching={searching}
+          >
             <SearchField className="w-full" variant="secondary">
               <Label>{uiText("Befehl oder Suche", "Command or search")}</Label>
               <SearchField.Group>

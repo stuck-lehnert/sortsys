@@ -9,6 +9,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import { mapConcurrent } from "./runtime/concurrentReads";
+import { invalidateReadableAreas } from "./readableAreas";
 
 // Recipient envelopes, integrity witnesses and notifications all participate in
 // the same server transaction. Its record budget also bounds small definitions.
@@ -84,6 +85,7 @@ export async function publishDomainDefinitions(
       live();
       if (!matches) throw new InvalidProtectedData();
     });
+    invalidateReadableAreas(client);
   }
   const encoder = new TextEncoder();
   let batch: DomainDefinition[] = [];

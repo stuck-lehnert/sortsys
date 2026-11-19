@@ -136,6 +136,14 @@ Projektdaten oder Berechtigungen löst weiterhin eine neue Prüfung aus.
 Eine WebSocket-Meldung stößt die betroffenen Abfragen einmal an. Diese warten
 mit dem Lesen, bis der lokale Datenstand aktualisiert ist.
 
+Bei verbundenem WebSocket teilen Suchabfragen das geprüfte Verzeichnis der
+freigegebenen Bereiche für bis zu 15 Sekunden. Das spart beim Weiterfiltern
+in der Befehlspalette einen neuen Abruf des Verzeichnisses. Änderungen an
+Freigaben, Änderungen am Verzeichnis und ein Verbindungsabbruch verwerfen
+es sofort. Jeder neue Abruf verschlüsselter Inhalte prüft die Freigabe erneut.
+Die Werkzeugtreffer in der Befehlspalette verwenden die Stammdaten. Buchungen
+werden für die Werkzeugansicht und deren Verfügbarkeitsfilter geladen.
+
 Vorgangslisten teilen auch dann die noch laufende Aufbereitung ihrer Grunddaten,
 wenn sich Suchtext oder Statusfilter unterscheiden. Jede Ansicht filtert und
 kopiert ihr Ergebnis anschließend selbst. Änderungen an einem Bereich, den der

@@ -512,19 +512,32 @@ export function createProtectedTools(
   function active(view: DataView, request: PartRequest) {
     return !document(view, request)!.value.deleted;
   }
+  function isToolMaster(request: PartRequest) {
+    const part = toolDomain(request.area.domain)!;
+    return part.namespace === "tool" && part.facet === "master-data";
+  }
+  function toolChoices(view: DataView, selected: PartRequest[]) {
+    return matching(selected, "tool", "master-data")
+      .filter((request) => document(view, request, true) && active(view, request))
+      .map((request) => toolChoice(view, request));
+  }
   return {
     close: lease.close,
     async choices(): Promise<ToolChoice[]> {
-      return readAll(
-        (view, selected) =>
-          matching(selected, "tool", "master-data")
-            .filter((request) => active(view, request))
-            .map((request) => toolChoice(view, request)),
-        (request) => {
-          const part = toolDomain(request.area.domain)!;
-          return part.namespace === "tool" && part.facet === "master-data";
-        },
+      return readAll(toolChoices, isToolMaster);
+    },
+    async searchChoices(search: string): Promise<ToolChoice[]> {
+      const matches = createPrefixMatcher(addressText(search, false, 1000));
+      const selected = (await requests()).filter(isToolMaster);
+      const result = await runtime.read(selected, (view) =>
+        toolChoices(view, selected)
+          .filter((tool) =>
+            matches([tool.customId, tool.brand, tool.category, tool.label]),
+          )
+          .sort((a, b) => a.customId - b.customId),
       );
+      live();
+      return result;
     },
     async trackingChoices(): Promise<ToolTrackingChoice[]> {
       return readAll(

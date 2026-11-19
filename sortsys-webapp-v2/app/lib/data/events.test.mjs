@@ -124,9 +124,6 @@ for (const scenario of ["unchanged", "changed", "failed admission"]) {
       expect(last.all).toBe(true);
       expect(last.control).toBe(scenario !== "unchanged");
       expect(last.domains).toEqual({});
-      expect(last.reconnected).toBe(
-        scenario === "unchanged" ? true : undefined,
-      );
     } finally {
       controller.abort();
       await watched;

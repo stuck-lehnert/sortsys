@@ -21,7 +21,6 @@ export type EncryptedChange = {
   domains: Record<string, string | null>;
   staged?: boolean;
   toolReturns?: boolean;
-  reconnected?: true;
 };
 
 export function eventFingerprint(value: unknown): string {
@@ -38,6 +37,7 @@ export async function watchEncryptedEvents(
   onChange: (change: EncryptedChange) => void,
   signal: AbortSignal,
   initialAdmission?: () => void,
+  connectionChanged?: (connected: boolean) => void,
 ): Promise<void> {
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
@@ -93,6 +93,7 @@ export async function watchEncryptedEvents(
           socket.onclose = null;
           socket.onerror = null;
           socket.close();
+          if (ready) connectionChanged?.(false);
           error ? reject(error) : resolve();
         };
         const abort = () => finish();
@@ -158,18 +159,14 @@ export async function watchEncryptedEvents(
                 initialAdmission = undefined;
                 admitted();
               } else {
-                if (previous !== null && !reset) {
-                  onChange({
-                    reset: false,
-                    all: true,
-                    control: false,
-                    domains: {},
-                    reconnected: true,
-                  });
-                } else {
-                  onChange({ reset, all: true, control: true, domains: {} });
-                }
+                onChange({
+                  reset,
+                  all: true,
+                  control: previous === null || reset,
+                  domains: {},
+                });
               }
+              connectionChanged?.(true);
               return;
             }
             if (raw?.type === "document-message" && ready) {
