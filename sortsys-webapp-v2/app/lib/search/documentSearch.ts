@@ -1,41 +1,79 @@
 import {
   createDocumentMatcher,
+  createDocumentTokenizer,
   matchDocuments,
+  MAX_CACHED_DOCUMENT_WORDS,
   type SearchDocument,
   type SearchMatch,
 } from "./documentQuery";
 
 export type SearchRequest = { query: string; documents: SearchDocument[] };
 
-/** A disposable worker owns no persistent plaintext cache. Bounded messages
- * avoid cloning a whole decrypted tenant catalogue into one worker request. */
-export async function searchDocuments(
-  documents: SearchDocument[],
-  query: string,
-  signal: AbortSignal,
-): Promise<SearchMatch[]> {
-  signal.throwIfAborted();
-  if (typeof document === "undefined") {
-    return matchDocuments(createDocumentMatcher(query), documents, signal);
+/** Bounded worker messages and token storage for one verified file adapter. */
+export function createDocumentSearch() {
+  let worker: Worker | undefined;
+  let nativeTokenizer: ReturnType<typeof createDocumentTokenizer> | undefined;
+  let cancel: (() => void) | undefined;
+
+  function discard() {
+    worker?.terminate();
+    worker = undefined;
+    nativeTokenizer = undefined;
   }
-  const worker = new Worker(
-    new URL("./documentSearch.worker.ts", import.meta.url),
-    { type: "module" },
-  );
-  try {
-    return await new Promise<SearchMatch[]>((resolve, reject) => {
+
+  function clear() {
+    if (cancel) cancel();
+    else discard();
+  }
+
+  async function search(
+    documents: SearchDocument[],
+    query: string,
+    signal: AbortSignal,
+  ): Promise<SearchMatch[]> {
+    signal.throwIfAborted();
+    if (typeof document === "undefined") {
+      nativeTokenizer ??= createDocumentTokenizer(MAX_CACHED_DOCUMENT_WORDS);
+      const matcher = createDocumentMatcher(query, nativeTokenizer);
+      return matchDocuments(matcher, documents, signal);
+    }
+
+    if (cancel) clear();
+    worker ??= new Worker(
+      new URL("./documentSearch.worker.ts", import.meta.url),
+      { type: "module" },
+    );
+    const current = worker;
+    return new Promise<SearchMatch[]>((resolve, reject) => {
       const results: SearchMatch[] = [];
       let offset = 0;
-      const abort = () => reject(signal.reason);
-      signal.addEventListener("abort", abort, { once: true });
-      function finish(error?: unknown) {
+
+      function finish() {
         signal.removeEventListener("abort", abort);
-        if (error) reject(error);
-        else resolve(results);
+        current.onmessage = null;
+        current.onerror = null;
+        current.onmessageerror = null;
+        cancel = undefined;
       }
+
+      function fail(error: unknown) {
+        finish();
+        discard();
+        reject(error);
+      }
+
+      const abort = () => fail(signal.reason);
+      cancel = () =>
+        fail(new DOMException("Document search cancelled", "AbortError"));
+      signal.addEventListener("abort", abort, { once: true });
+
       function next() {
-        if (signal.aborted) return finish(signal.reason);
-        if (offset >= documents.length) return finish();
+        if (signal.aborted) return abort();
+        if (offset >= documents.length) {
+          finish();
+          resolve(results);
+          return;
+        }
         const batch: SearchDocument[] = [];
         let size = 0;
         while (offset < documents.length && batch.length < 16) {
@@ -46,21 +84,26 @@ export async function searchDocuments(
           offset++;
           size += length;
         }
-        worker.postMessage({ query, documents: batch } satisfies SearchRequest);
+        try {
+          current.postMessage({ query, documents: batch } satisfies SearchRequest);
+        } catch (error) {
+          fail(error);
+        }
       }
-      worker.onmessage = (
+
+      current.onmessage = (
         event: MessageEvent<{ matches?: SearchMatch[]; failed?: boolean }>,
       ) => {
-        if (event.data.failed || !Array.isArray(event.data.matches))
-          return finish(new Error("Local document search failed"));
+        if (event.data?.failed || !Array.isArray(event.data?.matches))
+          return fail(new Error("Local document search failed"));
         results.push(...event.data.matches);
         next();
       };
-      worker.onerror = () =>
-        finish(new Error("Local document search worker failed"));
+      current.onerror = current.onmessageerror = () =>
+        fail(new Error("Local document search worker failed"));
       next();
     });
-  } finally {
-    worker.terminate();
   }
+
+  return { search, clear };
 }

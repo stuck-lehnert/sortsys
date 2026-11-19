@@ -313,7 +313,10 @@ function createWorkflowApi() {
                 fileName: "Fixture report.pdf",
                 mimeType: "application/pdf",
                 textExtractionStatus: "ready",
-                excerpt: "Beton <<Müller>> Bauleitung",
+                excerpt: {
+                  text: "Beton Müller Bauleitung",
+                  highlights: [{ start: 6, end: 12 }],
+                },
                 rank: 1,
                 modifiedAt: date,
               },
@@ -943,11 +946,14 @@ for (const [locale, theme, layout, viewport] of [
 
   test(`actual document results retain search spacing in ${variant}`, async () => {
     await page.setViewportSize(viewport);
-    await openApplication("/documents?q=mueller", locale, theme);
+    await openApplication("/documents", locale, theme);
+    const search = page.getByRole("search");
+    const input = search.getByRole("searchbox");
+    await input.fill("mueller");
+    await input.press("Enter");
     await page
       .getByRole("link", { name: "Fixture report.pdf", exact: true })
       .waitFor();
-    const search = page.getByRole("search");
     const results = page.getByRole("region", {
       name: /Suchergebnisse|Search results/,
     });
@@ -957,7 +963,6 @@ for (const [locale, theme, layout, viewport] of [
     assert.equal(await results.locator("mark").textContent(), "Müller");
     await checkPageLayout(`documents-${variant}`);
 
-    const input = search.getByRole("searchbox");
     await input.fill("empty");
     await input.press("Enter");
     await page

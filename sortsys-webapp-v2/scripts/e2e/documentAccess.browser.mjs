@@ -30,16 +30,43 @@ try {
   await page.getByRole("button", { name: "Anmelden", exact: true }).click();
   await expect(page.getByRole("link", { name: "Einstellungen", exact: true }))
     .toBeVisible();
-  const textQuery = encodeURIComponent("Suchfenster OR Rückbau Asbest Genehmigung");
-  await page.goto(`${server.origin}/documents?q=${textQuery}`);
+  const documentsPage = `${server.origin}/documents`;
+  const textQuery = "Suchfenster OR Rückbau Asbest Genehmigung";
+  const fileNameQuery = "Freigegebener Plan";
+  const searchRequests = [];
+  page.on("request", (request) => {
+    searchRequests.push(
+      decodeURIComponent(request.url()),
+      request.postData() ?? "",
+    );
+  });
+  await page.goto(documentsPage);
+  const search = page.getByRole("searchbox", { name: "Dokumente durchsuchen" });
+  await search.fill(textQuery);
+  await search.press("Enter");
   const hit = page.getByRole("link", { name: fixture.fileName, exact: true });
   await expect(hit).toBeVisible();
   await expect(page.locator(".documents-search__excerpt mark"))
     .toHaveText("Suchfenster");
-  const fileNameQuery = encodeURIComponent("Freigegebener Plan");
-  await page.goto(`${server.origin}/documents?q=${fileNameQuery}`);
+  await expect(page).toHaveURL(documentsPage);
+  await search.fill(fileNameQuery);
+  await search.press("Enter");
   await expect(hit).toBeVisible();
   await expect(page.locator(".documents-search__excerpt")).toHaveCount(0);
+  await expect(page).toHaveURL(documentsPage);
+  await page.reload();
+  await expect(search).toHaveValue("");
+  await expect(hit).toHaveCount(0);
+  await search.fill(fileNameQuery);
+  await search.press("Enter");
+  await expect(hit).toBeVisible();
+  assert.ok(searchRequests.length > 0);
+  assert.ok(
+    searchRequests.every((request) =>
+      !request.includes(textQuery) && !request.includes(fileNameQuery),
+    ),
+    "Document search terms must stay out of browser requests, including on reload",
+  );
   await expect(page.getByRole("link", { name: fixture.projectTitle, exact: true }))
     .toHaveCount(0);
   await hit.click();

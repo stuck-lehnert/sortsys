@@ -6,6 +6,8 @@ export type DocumentExcerpt = { text: string; highlights: TextRange[] };
 export type DocumentMatch = { rank: number; excerpt: DocumentExcerpt | null };
 export type SearchDocument = { id: string; name: string; text: string | null };
 export type SearchMatch = DocumentMatch & { id: string };
+
+export const MAX_CACHED_DOCUMENT_WORDS = 200_000;
 type Word = { plain: string; german: string; english: string };
 type Atom = {
   lastWord: Word;
@@ -23,13 +25,22 @@ type ClauseHits = {
 
 const wordPattern = () => /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu;
 
-/** Search semantics belong to the local query provider. The UI must not filter
- * its results again. No index, query or excerpt is sent to the API. */
-export function createDocumentMatcher(query: string) {
-  if (query.length > 1000) throw new RangeError("Document query is too long");
-  const cache = new Map<string, Word>();
+type Token = TextRange & { word: Word };
+type ReadToken = (
+  word: Word,
+  start: number,
+  end: number,
+  position: number,
+) => void;
+
+export function createDocumentTokenizer(maxCachedWords = 0) {
+  const words = new Map<string, Word>();
+  const documents = new Map<string, Token[]>();
+  let remainingWords = maxCachedWords;
+  let remainingCharacters = maxCachedWords * 10;
+
   function word(input: string): Word {
-    const known = cache.get(input);
+    const known = words.get(input);
     if (known) return known;
     const plain = input.normalize("NFKC").toLowerCase();
     // Identifiers and malformed giant words need no linguistic processing.
@@ -42,11 +53,55 @@ export function createDocumentMatcher(query: string) {
             english: englishStemmer(plain),
           };
     if (input.length <= 256 && plain.length <= 256) {
-      if (cache.size >= 1024) cache.delete(cache.keys().next().value!);
-      cache.set(input, result);
+      if (words.size >= 1024) words.delete(words.keys().next().value!);
+      words.set(input, result);
     }
     return result;
   }
+
+  function scan(text: string, read: ReadToken, remember: boolean): number {
+    const cached = remember ? documents.get(text) : undefined;
+    if (cached) {
+      for (const [position, { word, start, end }] of cached.entries()) {
+        read(word, start, end, position);
+      }
+      return cached.length;
+    }
+
+    // Keep the first sequences that fit. Large files and full caches still
+    // stream through the same matcher without displacing a warm working set.
+    let entry: Token[] | null = null;
+    if (remember && remainingWords > 0 && text.length <= remainingCharacters) {
+      entry = [];
+    }
+    let position = 0;
+    for (const match of text.matchAll(wordPattern())) {
+      const token = word(match[0]);
+      const start = match.index;
+      const end = start + match[0].length;
+      if (entry && position >= remainingWords) entry = null;
+      entry?.push({ word: token, start, end });
+      read(token, start, end, position);
+      position++;
+    }
+    if (entry && position > 0) {
+      documents.set(text, entry);
+      remainingWords -= position;
+      remainingCharacters -= text.length;
+    }
+    return position;
+  }
+
+  return { word, scan };
+}
+
+/** Search semantics belong to the local query provider. The UI must not filter
+ * its results again. No index, query or excerpt is sent to the API. */
+export function createDocumentMatcher(
+  query: string,
+  tokenizer = createDocumentTokenizer(),
+) {
+  if (query.length > 1000) throw new RangeError("Document query is too long");
   const atoms: Atom[] = [];
   const clauses: number[][] = [[]];
   for (const match of query.matchAll(/-?"[^"]*(?:"|$)|[^\s"]+/gu)) {
@@ -59,7 +114,7 @@ export function createDocumentMatcher(query: string) {
     const text = excluded ? input.slice(1) : input;
     const phrase = text.startsWith('"');
     const words = [...text.matchAll(wordPattern())].map((value) =>
-      word(value[0]),
+      tokenizer.word(value[0]),
     );
     const groups = phrase ? [words] : words.map((value) => [value]);
     for (const group of groups) {
@@ -87,15 +142,13 @@ export function createDocumentMatcher(query: string) {
     return token.german === term.german || token.english === term.english;
   }
 
-  function scan(text: string, hit: (value: Hit) => void): number {
+  function scan(text: string, hit: (value: Hit) => void, remember = false): number {
     const preceding: { word: Word; start: number }[] = [];
-    let position = 0;
-    for (const match of text.matchAll(wordPattern())) {
-      const current = word(match[0]);
+    function visitToken(current: Word, tokenStart: number, end: number, position: number) {
       for (let index = 0; index < atoms.length; index++) {
         const atom = atoms[index]!;
         if (!matches(current, atom.lastWord, atom.phrase)) continue;
-        let start = match.index;
+        let start = tokenStart;
         if (atom.precedingWords.length) {
           const first = preceding.length - atom.precedingWords.length;
           if (
@@ -108,20 +161,14 @@ export function createDocumentMatcher(query: string) {
           }
           start = preceding[first]!.start;
         }
-        hit({
-          atom: index,
-          position,
-          start,
-          end: match.index + match[0].length,
-        });
+        hit({ atom: index, position, start, end });
       }
       if (precedingWordLimit) {
-        preceding.push({ word: current, start: match.index });
+        preceding.push({ word: current, start: tokenStart });
         if (preceding.length > precedingWordLimit) preceding.shift();
       }
-      position++;
     }
-    return position;
+    return tokenizer.scan(text, visitToken, remember);
   }
 
   function excerpt(
@@ -181,7 +228,7 @@ export function createDocumentMatcher(query: string) {
         best: null,
       }));
       scan(name, (hit) => names[hit.atom]!++);
-      const length = scan(text ?? "", (hit) => {
+      function recordBodyHit(hit: Hit) {
         body[hit.atom]!++;
         const atom = atoms[hit.atom]!;
         if (atom.excluded) return;
@@ -207,7 +254,8 @@ export function createDocumentMatcher(query: string) {
             range: { start: first.start, end: hit.end },
           };
         }
-      });
+      }
+      const length = scan(text ?? "", recordBodyHit, true);
       const lengthPenalty = 1 + Math.log1p(length) / 12;
       let rank = -1;
       let winningClause = 0;

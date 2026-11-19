@@ -16,8 +16,8 @@ import { formatDate } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { uiText } from "~/lib/i18n";
 import { from } from "rxjs";
-import { useEffect, useState } from "react";
-import { Link, useSearchParams } from "react-router";
+import { useState } from "react";
+import { Link } from "react-router";
 import type { QueryResult } from "@sortsys/v2-client";
 
 type DocumentSearchResult = QueryResult<"projects.files.search">[number];
@@ -27,15 +27,10 @@ export function meta() {
 }
 
 export default function DocumentsPage() {
-  const [searchParams, setSearchParams] = useSearchParams();
-  const query = searchParams.get("q")?.trim() ?? "";
-  const [input, setInput] = useState(query);
+  const [query, setQuery] = useState("");
+  const [input, setInput] = useState("");
 
   useTitle(() => uiText("Dokumente", "Documents"), []);
-
-  useEffect(() => {
-    setInput(query);
-  }, [query]);
 
   const [results, error] = useClientStream(
     () =>
@@ -55,8 +50,8 @@ export default function DocumentsPage() {
       <MyHeader
         title={uiText("Dokumente", "Documents")}
         subtitle={uiText(
-          "PDF-Inhalte und Dateinamen projektübergreifend durchsuchen",
-          "Search PDF contents and file names across projects",
+          "Dateinamen und Dokumenttexte projektübergreifend durchsuchen",
+          "Search file names and document text across projects",
         )}
       />
 
@@ -66,7 +61,7 @@ export default function DocumentsPage() {
         onSubmit={(event: React.FormEvent<HTMLFormElement>) => {
           event.preventDefault();
           const nextQuery = input.trim();
-          setSearchParams(nextQuery.length >= 2 ? { q: nextQuery } : {});
+          setQuery(nextQuery);
         }}
       >
         <TextInput
@@ -112,8 +107,8 @@ export default function DocumentsPage() {
           <Icons.DocumentAdd aria-hidden="true" />
           <p>
             {uiText(
-              "Die Suche berücksichtigt freigegebene Dateinamen und ausgelesene PDF-Texte. Scans ohne Textschicht sind über ihren Dateinamen auffindbar.",
-              "Search covers accessible file names and extracted PDF text. Scans without a text layer can be found by their file name.",
+              "Die Suche berücksichtigt freigegebene Dateinamen und ausgelesene Dokumenttexte. Scans ohne Textschicht sind über ihren Dateinamen auffindbar.",
+              "Search covers accessible file names and extracted document text. Scans without a text layer can be found by their file name.",
             )}
           </p>
         </Tile>

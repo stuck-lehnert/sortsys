@@ -51,7 +51,7 @@ import {
 } from "./officeCapsule";
 import { officeRecipients, sameOfficeRecipients } from "./officeRecipients";
 import { mapConcurrent } from "./runtime/concurrentReads";
-import { searchDocuments } from "../search/documentSearch";
+import { createDocumentSearch } from "../search/documentSearch";
 import {
   createDocumentMatcher,
   type SearchDocument,
@@ -130,6 +130,8 @@ export function createProtectedProjectFiles(
   let closed = false;
   let pending: Promise<unknown> = Promise.resolve();
   let searchController: AbortController | null = null;
+  const documentSearch = createDocumentSearch();
+  let searchPolicy: Collections["root"] | undefined;
   const urls = new Set<string>();
   const live = () => {
     signal.throwIfAborted();
@@ -150,6 +152,7 @@ export function createProtectedProjectFiles(
   async function close() {
     closed = true;
     searchController?.abort();
+    documentSearch.clear();
     signal.removeEventListener("abort", abort);
     for (const url of urls) {
       URL.revokeObjectURL(url);
@@ -201,6 +204,17 @@ export function createProtectedProjectFiles(
     return { area: fileCollection(id), known: stores.get(id)?.head };
   }
 
+  function checkSearchPolicy({ root }: Collections) {
+    if (
+      !searchPolicy ||
+      root.generation !== searchPolicy.generation ||
+      root.policyVersion !== searchPolicy.policyVersion
+    ) {
+      documentSearch.clear();
+      searchPolicy = root;
+    }
+  }
+
   async function reload(
     ids: string[],
     visible?: Set<string>,
@@ -217,6 +231,7 @@ export function createProtectedProjectFiles(
       const open =
         openedCollections ??
         (await protectedCollections(client, signal, selectedDomains, pages));
+      checkSearchPolicy(open);
       await open.prefetch(pages);
       if (visible) {
         for (const id of candidate.keys()) {
@@ -252,6 +267,7 @@ export function createProtectedProjectFiles(
         }
       }
       if (changed) {
+        documentSearch.clear();
         await validateFileRows(candidate);
       }
       live();
@@ -902,7 +918,7 @@ export function createProtectedProjectFiles(
         });
       }
     }
-    const matches = await searchDocuments(documents, query, active);
+    const matches = await documentSearch.search(documents, query, active);
     const offset = scope?.offset ?? 0;
     const ranked = matches
       .map(({ id, rank, excerpt }) => ({ ...entries.get(id)!, rank, excerpt }))
@@ -936,6 +952,7 @@ export function createProtectedProjectFiles(
     // change. Compare every searched head, including collections with no
     // matches, before returning a ranked result for this snapshot.
     const current = await protectedCollections(client, active);
+    checkSearchPolicy(current);
     const currentReadable =
       projectId === null
         ? readableProjectsWithFiles(current)

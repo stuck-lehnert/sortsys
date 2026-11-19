@@ -1420,9 +1420,12 @@ try {
       await expect(
         peer.getByRole("link", { name: "Einstellungen", exact: true }),
       ).toBeVisible();
-      await peer.goto(
-        `${peerServer.origin}/documents?q=${encodeURIComponent('"lose Bestandteile"')}`,
-      );
+      await peer.goto(`${peerServer.origin}/documents`);
+      const peerSearch = peer.getByRole("searchbox", {
+        name: "Dokumente durchsuchen",
+      });
+      await peerSearch.fill('"lose Bestandteile"');
+      await peerSearch.press("Enter");
       await expect(
         peer.getByText("Keine passenden Dokumente gefunden.", { exact: true }),
       ).toBeVisible();

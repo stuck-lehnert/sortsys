@@ -4215,14 +4215,20 @@ test("new PDF text is extracted locally without OCR or document uploads", async 
   }
 });
 
-test("local document search runs in a cancellable worker and renders excerpts as literal text", async () => {
+test("document searches reuse the local worker without stale text and reset it after cancellation", async () => {
   const { context, page, external } = await open();
   try {
+    const workers = [];
+    page.on("worker", (worker) => workers.push(worker));
     const result = await page.evaluate(() =>
       window.cryptoFixture.documentSearchWorker(),
     );
     assert.equal(result.responsive, true);
     assert.equal(result.aborted, true);
+    assert.equal(workers.length, 2);
+    assert.equal(result.phraseMatches, 34);
+    assert.equal(result.revisedMatches, 0);
+    assert.deepEqual(result.afterAbort, ["1"]);
     assert.deepEqual(
       result.ids,
       Array.from({ length: 35 }, (_, index) => String(index)),

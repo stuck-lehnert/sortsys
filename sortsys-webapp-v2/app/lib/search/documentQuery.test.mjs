@@ -1,8 +1,8 @@
 import { expect, test } from "bun:test";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { createDocumentMatcher } from "./documentQuery";
-import { searchDocuments } from "./documentSearch";
+import { createDocumentMatcher, createDocumentTokenizer } from "./documentQuery";
+import { createDocumentSearch } from "./documentSearch";
 import { DocumentExcerpt } from "../../components/DocumentExcerpt";
 
 const find = (query, body, name = "Ausführung.pdf") =>
@@ -182,13 +182,28 @@ test("oversized input is rejected without echoing private query content", () => 
   );
 });
 
-test("native and browser-worker providers share the same matcher and honor cancellation", async () => {
+test("cached word positions and uncached overflow produce identical matches", () => {
+  const tokenizer = createDocumentTokenizer(16);
+  const cached = "Die rote Wand vor dem Fenster.";
+  const overflow = "Neue Türen. ".repeat(100) + cached;
+  createDocumentMatcher("Fenster", tokenizer).match("Anlage.txt", cached);
+
+  for (const body of [cached, overflow]) {
+    for (const query of ['"rote Wand"', "Fenster -Türen", "Wand OR Türen"]) {
+      const reused = createDocumentMatcher(query, tokenizer).match("Anlage.txt", body);
+      expect(reused).toEqual(find(query, body, "Anlage.txt"));
+    }
+  }
+});
+
+test("the native search provider uses the local matcher and honors cancellation", async () => {
+  const { search } = createDocumentSearch();
   const documents = Array.from({ length: 35 }, (_, index) => ({
     id: String(index),
     name: `Anlage ${index}.pdf`,
     text: "Die Wände wurden gestrichen.",
   }));
-  const found = await searchDocuments(
+  const found = await search(
     documents,
     "Wand",
     new AbortController().signal,
@@ -197,7 +212,5 @@ test("native and browser-worker providers share the same matcher and honor cance
   expect(found[0].excerpt.highlights).not.toHaveLength(0);
   const controller = new AbortController();
   controller.abort();
-  await expect(
-    searchDocuments(documents, "Wand", controller.signal),
-  ).rejects.toThrow();
+  await expect(search(documents, "Wand", controller.signal)).rejects.toThrow();
 });

@@ -68,7 +68,7 @@ window.cryptoFixture = {
     showModalAccess(root);
   },
   async documentSearchWorker() {
-    const { searchDocuments } =
+    const { createDocumentSearch } =
       await import("../../app/lib/search/documentSearch");
     const { DocumentExcerpt } =
       await import("../../app/components/DocumentExcerpt");
@@ -79,13 +79,11 @@ window.cryptoFixture = {
         (index === 0 ? "Vorbemerkung. ".repeat(100000) : "") +
         '<<Abschnitt>> <img src=x onerror="alert(1)"> Die Wände werden gestrichen.',
     }));
+    const search = createDocumentSearch();
+    const signal = new AbortController().signal;
     let completed = false;
     let responsive = false;
-    const pending = searchDocuments(
-      documents,
-      "Wand",
-      new AbortController().signal,
-    ).finally(() => {
+    const pending = search.search(documents, "Wand", signal).finally(() => {
       completed = true;
     });
     const tick = new Promise((resolve) =>
@@ -101,8 +99,14 @@ window.cryptoFixture = {
         <DocumentExcerpt value={matches[1].excerpt} />
       </p>,
     );
+    const phrase = await search.search(documents.slice(1), '"Wände werden"', signal);
+    const revised = await search.search(
+      [{ ...documents[1], text: "Die Fenster sind eingebaut." }],
+      "Wand",
+      signal,
+    );
     const controller = new AbortController();
-    const cancelled = searchDocuments(documents, "Wand", controller.signal);
+    const cancelled = search.search(documents, "Wand", controller.signal);
     controller.abort();
     let aborted = false;
     try {
@@ -110,25 +114,35 @@ window.cryptoFixture = {
     } catch (error) {
       aborted = error.name === "AbortError";
     }
+    const afterAbort = await search.search(documents.slice(1, 2), "Wand", signal);
+    search.clear();
     return {
       responsive,
       aborted,
       ids: matches.map((match) => match.id),
+      phraseMatches: phrase.length,
+      revisedMatches: revised.length,
+      afterAbort: afterAbort.map(({ id }) => id),
       excerpt: matches[0].excerpt,
     };
   },
   async searchExtractedDocument(data) {
     const { inspectProjectFile } = await import("../../app/lib/fileInspection");
-    const { searchDocuments } =
+    const { createDocumentSearch } =
       await import("../../app/lib/search/documentSearch");
     const inspection = await inspectProjectFile(
       new Blob([new Uint8Array(data)], { type: "application/pdf" }),
     );
-    return searchDocuments(
-      [{ id: "pdf", name: "Anlage.pdf", text: inspection.text ?? null }],
-      "Materialfreigabe",
-      new AbortController().signal,
-    );
+    const search = createDocumentSearch();
+    try {
+      return await search.search(
+        [{ id: "pdf", name: "Anlage.pdf", text: inspection.text ?? null }],
+        "Materialfreigabe",
+        new AbortController().signal,
+      );
+    } finally {
+      search.clear();
+    }
   },
   async showTenantSetup(options) {
     const { showTenantSetup } = await import("./tenant-setup.fixture.jsx");
