@@ -6,7 +6,7 @@ import {
 import { verifiedAccessContext } from "../crypto/accessContext";
 import { unlockedAccount } from "../crypto/session";
 import { canUseAssistant, privateLlmCollection } from "./assistantArea";
-import { protectedCollection } from "./protectedObjects";
+import { protectedCollection, type Collection } from "./protectedObjects";
 
 function assistantSession(client: Client, signal: AbortSignal) {
   const account = unlockedAccount();
@@ -72,5 +72,16 @@ export async function readAssistantAccess(
     !canUseAssistant(context.subject, access.allows)
   )
     throw new InvalidProtectedData();
-  return { ...session, allows: access.allows, domains: context.domains };
+  const domainById = new Map(context.domains.map((domain) => [domain.id, domain]));
+  function canRead(area: Collection) {
+    const domain = domainById.get(area.domain);
+    return (
+      domain !== undefined &&
+      !domain.rotationRequired &&
+      domain.scope === area.scope &&
+      domain.facet === area.facet &&
+      access.allows(area.scope, area.facet, "read")
+    );
+  }
+  return { ...session, allows: access.allows, domains: context.domains, canRead };
 }

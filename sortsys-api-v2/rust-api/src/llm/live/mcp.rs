@@ -212,20 +212,29 @@ fn allowed(ticket: &Ticket, path: &str) -> bool {
         .chain(&ticket.mutations)
         .any(|candidate| candidate == path)
 }
+
+fn search_resources(ticket: &Ticket) -> impl Iterator<Item = &'static str> + '_ {
+    super::super::CHAT_SEARCH_QUERIES
+        .into_iter()
+        .filter(|(_, query)| ticket.queries.iter().any(|path| path == query))
+        .map(|(resource, _)| resource)
+}
+
 fn definitions(ticket: &Ticket) -> Vec<Value> {
     let mut tools = super::super::mcp_tool_definitions(ticket.scope().expect("validated ticket"));
     if ticket.kind == LiveKind::Chat {
+        let resources = search_resources(ticket).collect::<Vec<_>>();
         tools.retain(|tool| match tool["name"].as_str().unwrap_or("") {
             "sortsys_find_procedures" | "sortsys_get_schema" => true,
             "sortsys_query" => !ticket.queries.is_empty(),
             "sortsys_propose_change" => !ticket.mutations.is_empty(),
-            "sortsys_search" => ticket.queries.iter().any(|path| path == "products.list"),
+            "sortsys_search" => !resources.is_empty(),
             "sortsys_search_documents" | "sortsys_read_document" => ticket.documents,
             _ => false,
         });
         for tool in &mut tools {
             if tool["name"] == "sortsys_search" {
-                tool["inputSchema"]["properties"]["resource"]["enum"] = json!(["products"]);
+                tool["inputSchema"]["properties"]["resource"]["enum"] = json!(resources);
             }
             if tool["name"] == "sortsys_query" {
                 tool["inputSchema"]["properties"]["path"]["enum"] = json!(ticket.queries);
@@ -290,10 +299,12 @@ async fn tool(session: &Session, name: &str, arguments: Value) -> RpcResult<Valu
             }
             session.call(name, arguments).await
         }
-        "sortsys_search"
-            if arguments.get("resource").and_then(Value::as_str) != Some("products") =>
-        {
-            Err(forbidden())
+        "sortsys_search" => {
+            let resource = arguments.get("resource").and_then(Value::as_str);
+            if !search_resources(ticket).any(|allowed| Some(allowed) == resource) {
+                return Err(forbidden());
+            }
+            session.call(name, arguments).await
         }
         _ => session.call(name, arguments).await,
     }

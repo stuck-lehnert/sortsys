@@ -172,6 +172,15 @@ Freigaben haben. Die Werkzeugantworten zu Bautagesberichten enthalten keine
 Fotos oder Dateinamen. Für Projektanhänge gilt die gesonderte Dateifreigabe im
 Chat.
 
+Der Chat kann Nettokosten, Angebots- und Rechnungswerte aktiver Projekte
+zusammenfassen. Er verwendet dafür dieselbe Berechnung wie die Kostenübersicht.
+Möglich sind auch Einzelabfragen pro Projekt und Zeitraum sowie eine Abfrage der
+Gemeinkostensätze mit der dafür nötigen Freigabe. Sind etwa die Rechnungswerte
+eines Projekts gesperrt, erscheint es weder in der Kostentrefferliste noch in
+deren Summen. Die Summen umfassen alle freigegebenen Treffer, auch wenn das
+Werkzeug nur einen Ausschnitt der Liste zurückgibt. Der Browser prüft die
+Kostenfreigaben vor der Abfrage und erneut vor der Werkzeugantwort.
+
 Der Chat kann den geschützten Produktkatalog durchsuchen und Vorschläge zum
 Anlegen, Bearbeiten und Verschlagworten von Produkten vorbereiten. Die Webapp
 prüft einen Vorschlag vor seiner Anzeige gegen das lokale Datenschema.

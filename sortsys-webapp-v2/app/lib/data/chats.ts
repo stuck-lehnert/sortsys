@@ -1,9 +1,9 @@
-import type { Client, MutateInput } from "@sortsys/v2-client";
+import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import { readAssistantAccess } from "./assistantStore";
 import { llmActivity } from "../llmActivity";
-import { runLiveLlm } from "../liveLlm";
+import { chatSearchQuery, runLiveLlm } from "../liveLlm";
 import { uiText } from "../i18n";
 import { required } from "./protectedObjects";
 import { newAssistantId, assistantId } from "./privateLlm";
@@ -24,6 +24,14 @@ import {
 import type { DuckDriver } from "./database";
 import { PRODUCT_COLLECTION, PRICE_COLLECTION } from "./products";
 import { openChatDocuments, type ScopedDocumentSearch } from "./chatDocuments";
+import {
+  chatCostPaths,
+  COST_OVERVIEW,
+  isChatCostPath,
+  requireChatCostAccess,
+  summarizeChatCosts,
+  visibleChatCosts,
+} from "./chatCosts";
 import {
   projectChatPaths,
   projectChatSection,
@@ -115,7 +123,7 @@ export function createProtectedChats(
     const queries = read ? [...PRODUCT_QUERIES] : [];
     if (permitted(PRICE_COLLECTION.scope, "procurement", "read"))
       queries.push("products.priceRecords.list");
-    queries.push(...projectChatPaths(access));
+    queries.push(...projectChatPaths(access), ...chatCostPaths(access));
     const mutations = read
       ? PRODUCT_MUTATIONS.filter((path) =>
           permitted(
@@ -173,6 +181,30 @@ export function createProtectedChats(
     }
     if (size > 1_400_000 || !turns.length || turns[0].role !== "user")
       throw new InvalidProtectedData();
+
+    async function currentAccess(cancellation: AbortSignal) {
+      const current = await readAssistantAccess(
+        transport,
+        cancellation,
+        "inventory",
+      );
+      live(cancellation);
+      return current;
+    }
+
+    async function readCosts<T>(
+      path: string,
+      input: unknown,
+      cancellation: AbortSignal,
+      read: () => Promise<T>,
+    ) {
+      requireChatCostAccess(path, input, await currentAccess(cancellation));
+      const value = await read();
+      const current = await currentAccess(cancellation);
+      requireChatCostAccess(path, input, current);
+      return { value, current };
+    }
+
     const response = await runLiveLlm(
       transport,
       endpoint,
@@ -194,43 +226,55 @@ export function createProtectedChats(
               !access.queries.includes(request.path)
             )
               throw new InvalidProtectedData();
-            const result = await required(
-              data.queryDynamic(request.path, request.input),
-            );
-            const section = projectChatSection(request.path);
+            const { path, input: queryInput } = request;
+            const query = () => required(data.queryDynamic(path, queryInput));
+            if (isChatCostPath(path)) {
+              const { value, current } = await readCosts(path, queryInput, cancellation, query);
+              const result = path === COST_OVERVIEW
+                ? visibleChatCosts(value as QueryResult<typeof COST_OVERVIEW>, current)
+                : value;
+              return { path, data: result };
+            }
+            const result = await query();
+            const section = projectChatSection(path);
             if (section) {
-              const current = await readAssistantAccess(
-                transport,
-                cancellation,
-                "inventory",
-              );
-              live(cancellation);
               return {
-                path: request.path,
-                data: visibleProjectChatResult(section, result, current),
+                path,
+                data: visibleProjectChatResult(
+                  section,
+                  result,
+                  await currentAccess(cancellation),
+                ),
               };
             }
-            return { path: request.path, data: result };
+            return { path, data: result };
           }
           if (name === "sortsys_search") {
             if (!input || typeof input !== "object" || Array.isArray(input))
               throw new InvalidProtectedData();
             const args = input as Record<string, unknown>;
-            if (
-              args.resource !== "products" ||
-              (typeof args.query !== "undefined" &&
-                typeof args.query !== "string") ||
-              !access.queries.includes("products.list")
-            )
+            if (args.query !== undefined && typeof args.query !== "string")
               throw new InvalidProtectedData();
+            const path = chatSearchQuery(args.resource);
+            if (!access.queries.includes(path)) throw new InvalidProtectedData();
             const limit =
               typeof args.limit === "number" && Number.isInteger(args.limit)
                 ? Math.max(1, Math.min(25, args.limit))
                 : 10;
+            if (path === COST_OVERVIEW) {
+              const filter = { status: "active" } as const;
+              const { value, current } = await readCosts(
+                path,
+                filter,
+                cancellation,
+                () => required(data.query(path, filter)),
+              );
+              return summarizeChatCosts(visibleChatCosts(value, current), args.query, limit);
+            }
             return {
               records: (
                 await required(
-                  data.query("products.list", {
+                  data.query(path, {
                     search: args.query as string | undefined,
                   }),
                 )

@@ -41,6 +41,17 @@ export type LiveLlmResult = {
   usage: { inputTokens: number; outputTokens: number; totalTokens: number };
 };
 
+export const CHAT_SEARCH_QUERIES = {
+  products: "products.list",
+  project_costs: "projects.costs.overview",
+} as const;
+
+export function chatSearchQuery(resource: unknown) {
+  if (typeof resource !== "string" || !Object.hasOwn(CHAT_SEARCH_QUERIES, resource))
+    throw new InvalidProtectedData();
+  return CHAT_SEARCH_QUERIES[resource as keyof typeof CHAT_SEARCH_QUERIES];
+}
+
 const MAX_UPLOAD_BLOCK_BYTES = 1024 * 1024;
 
 /** The socket owns only one live request. It never uploads to S3, creates a
@@ -225,10 +236,7 @@ export async function runLiveLlm(
             )
               throw new InvalidProtectedData();
           } else if (name === "sortsys_search") {
-            if (
-              args.resource !== "products" ||
-              !tools.queries.includes("products.list")
-            )
+            if (!tools.queries.includes(chatSearchQuery(args.resource)))
               throw new InvalidProtectedData();
           } else if (name === "sortsys_search_documents" || name === "sortsys_read_document") {
             if (!tools.documents) throw new InvalidProtectedData();

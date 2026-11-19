@@ -6,6 +6,7 @@ import { createBusinessClient } from "../app/lib/data/businessClient";
 import type { DuckDriver } from "../app/lib/data/database";
 import { readSelectedDocuments } from "../app/lib/data/imports";
 import { required } from "../app/lib/data/protectedObjects";
+import { testMemberChatCosts } from "./test-chat-costs";
 
 type Account = NonNullable<ReturnType<typeof unlockedAccount>>;
 type Admission = MutateInput<"zerotrust.llm.open">;
@@ -220,6 +221,7 @@ export async function exerciseMemberAssistantWorkflows(
       false,
       "Private content must not enter persistence RPC inputs",
     );
+  await testMemberChatCosts(owner, administrator, participant, id, withBusiness, chat.id, driver, signal);
   console.log(
     "Member assistant facade verified: private chats, authenticated catalogue MCP, read-only tool scope, import without unrelated roles and preserved history after catalogue revocation.",
   );

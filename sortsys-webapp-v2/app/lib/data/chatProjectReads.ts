@@ -33,7 +33,7 @@ function allowedAreas(access: Access) {
     if (domain.scope !== area.scope || domain.facet !== area.facet) {
       throw new InvalidProtectedData();
     }
-    if (access.allows(area.scope, area.facet, "read")) {
+    if (access.canRead(area)) {
       allowed.set(domain.id, resource.key);
     }
   }

@@ -487,8 +487,11 @@ größere Diagramme brauchen eigene Vergleiche. Siehe
 **LLM-Chat, Einlesen und MCP-Katalogsuche.** Chat und Einlesen verwenden
 Live-MCP und verschlüsselte Benutzerverläufe. Im Chat sind auch Projektdaten,
 Bautagesberichte, Regieberichte und Lieferscheine mit eigener Lesefreigabe
-abrufbar. Die Webapp prüft Produktvorschläge und speichert angenommene
-Vorschläge zusammen mit ihrem Ausführungsnachweis.
+abrufbar. Projektkostensuche und Einzelabfragen verwenden dieselbe Berechnung
+wie die Kostenübersicht. Fehlt eine Kostenfreigabe, zählt das betreffende Projekt
+auch bei einer Suche über mehrere Projekte nicht zur Summe. Die Webapp prüft
+Produktvorschläge und speichert angenommene Vorschläge zusammen mit ihrem
+Ausführungsnachweis.
 Die Chatübernahme aus einer alten Sicherung erhält die Benutzerzuordnung.
 Historische Annahmen ohne Ergebnisprotokoll bleiben erkennbar und werden nicht
 erneut ausgeführt. Frühere Einleseverläufe lassen sich bei der Ersteinrichtung
