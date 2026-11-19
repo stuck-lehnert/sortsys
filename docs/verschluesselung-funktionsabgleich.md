@@ -433,12 +433,13 @@ unveränderten Benutzerquelle gespeichert.
 ## Dateien und lokale Suche
 
 **Dokumentvolltext mit Sprachen, Ranking und Ausschnitten.** Dateinamen und
-vorhandener extrahierter Text sind lokal durchsuchbar. Neue PDFs werden im
-Browser ausgelesen. Sprachverarbeitung, Ranking und vergleichbare Ausschnitte
+vorhandener extrahierter Text sind lokal durchsuchbar. Der Browser liest PDFs,
+Office-Dateien und UTF-8-Text beim Hochladen und bei neuen Dateiversionen aus.
+Sprachverarbeitung, Ranking und vergleichbare Ausschnitte
 sind inzwischen für deutsche und englische Wortformen, Phrasen, Ausschlüsse und
 Wortanfänge angeschlossen. Ein Worker bewertet Treffer und erzeugt sichere
-Ausschnitte. Native Mehrinstanztests prüfen den Rechteentzug trotz gefülltem
-Cache; Browsertests prüfen den Worker und eine tatsächlich ausgelesene PDF.
+Ausschnitte. Native Mehrinstanztests prüfen Rechteentzug und Versionswechsel.
+Der Browsertest sucht nach Text aus hochgeladenen PDF- und Office-Dateien.
 Ein Vergleich mit der früheren PostgreSQL-Abfrage zeigt Unterschiede bei
 Phrasen, Wortanfängen und der Auswertung von URLs. Ein Gerät ohne geladenen
 Index und fehlender OCR-Text schränken die Suche ein. Siehe

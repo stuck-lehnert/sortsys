@@ -1,7 +1,7 @@
 # Projektdateien im verschlüsselten Arbeitsbereich
 
 Pläne, E-Mails und weitere Projektanhänge werden im Browser verschlüsselt. Auch
-Dateinamen, Ordner, Vorschaubilder und durchsuchbarer PDF-Text gehören zum
+Dateinamen, Ordner, Vorschaubilder und durchsuchbarer Dokumenttext gehören zum
 geschützten Inhalt. Die API und der DuckDB-Dienst erhalten verschlüsselte Pakete
 mit technischen Kennungen und Versionsangaben.
 
@@ -46,11 +46,10 @@ möglich, entfernte Bilder sind gesperrt. Bilder, Videos und DWG-Pläne verwende
 ebenfalls lokale Datei-URLs. Diese URLs verlassen den Browser nicht und gelten
 nur während der geöffneten Vorschau.
 
-Beim Hochladen erzeugt der Browser Bildvorschauen und liest eingebetteten
-PDF-Text aus. Der daraus gewonnene Text wird zusammen mit den Dateimetadaten
-verschlüsselt. Es startet dabei kein serverseitiger OCR- oder LLM-Auftrag.
-Bildscans ohne eingebetteten Text bleiben deshalb ohne Volltext, solange kein
-ausdrücklich aufgerufener Erkennungsvorgang angeschlossen ist.
+Der Browser erzeugt Bildvorschauen und liest Dokumenttext beim Hochladen oder
+beim Speichern einer neuen Dateiversion aus. Zusammen mit den Dateimetadaten
+werden Vorschau und Text verschlüsselt gespeichert. Bildscans ohne eingebetteten
+Text sind über ihren Dateinamen auffindbar.
 
 Die Dateisuche berücksichtigt Dateinamen und vorhandenen extrahierten Text.
 Sie verarbeitet deutsche und englische Wortformen, Wortanfänge, Phrasen und

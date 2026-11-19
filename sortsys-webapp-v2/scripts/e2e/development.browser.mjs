@@ -1317,11 +1317,64 @@ try {
         thumbnail.evaluate((image) => image.complete && image.naturalWidth > 0),
       )
       .toBe(true);
+
+    const { default: Zip } = await import("jszip");
+    const word = new Zip();
+    word.file("word/document.xml", `
+      <w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
+        <w:body><w:p>
+          <w:r><w:t>Wand</w:t></w:r>
+          <w:r><w:rPr><w:b/></w:rPr><w:t xml:space="preserve">verkleidung freigegeben</w:t></w:r>
+        </w:p></w:body>
+      </w:document>
+    `);
+    const slides = new Zip();
+    slides.file("ppt/slides/slide1.xml", `
+      <p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"
+        xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">
+        <p:cSld><p:spTree><p:sp><p:txBody>
+          <a:p><a:r><a:t>Gerüstanker kontrollieren</a:t></a:r></a:p>
+        </p:txBody></p:sp></p:spTree></p:cSld>
+      </p:sld>
+    `);
+    const { default: ExcelJS } = await import("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    workbook.addWorksheet("Baustelle").getCell("A1").value = "Schachtabdeckung vermessen";
+    const officeFiles = [
+      {
+        name: "Begehung.docx",
+        mimeType: "application/octet-stream",
+        buffer: await word.generateAsync({ type: "nodebuffer" }),
+        phrase: "Wandverkleidung freigegeben",
+      },
+      {
+        name: "Baubesprechung.pptx",
+        mimeType: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        buffer: await slides.generateAsync({ type: "nodebuffer" }),
+        phrase: "Gerüstanker kontrollieren",
+      },
+      {
+        name: "Aufstellung.xlsx",
+        mimeType: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        buffer: Buffer.from(await workbook.xlsx.writeBuffer()),
+        phrase: "Schachtabdeckung vermessen",
+      },
+    ];
+    for (const { name, mimeType, buffer } of officeFiles) {
+      await page.locator('input[type="file"]').setInputFiles({ name, mimeType, buffer });
+      await expect(page.getByRole("button", { name, exact: true })).toBeVisible();
+    }
     await page.goto(`${server.origin}/documents`);
     const query = page.getByRole("searchbox", {
       name: "Dokumente durchsuchen",
       exact: true,
     });
+    for (const { name, phrase } of officeFiles) {
+      await query.fill(`"${phrase}"`);
+      await page.getByRole("button", { name: "Suchen", exact: true }).click();
+      await expect(page.getByRole("link", { name, exact: true })).toBeVisible();
+      await expect(page.locator(".documents-search__excerpt mark")).toHaveText(phrase);
+    }
     await query.fill('"lose Bestandteile"');
     await page.getByRole("button", { name: "Suchen", exact: true }).click();
     const result = page.getByRole("link", { name: fileName, exact: true });

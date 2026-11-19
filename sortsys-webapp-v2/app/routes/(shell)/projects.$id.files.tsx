@@ -4,7 +4,6 @@ import {
   fetchFileResource,
   useFileResource,
 } from "~/lib/fileResources";
-import { inspectProjectFile } from "~/lib/fileInspection";
 import { projectFiles as privateProjectFiles } from "~/lib/client";
 import { Loading, Select, SelectItem } from "@sortsys/react-components";
 import { Button as UIAction } from "@sortsys/react-components";
@@ -570,7 +569,6 @@ export default function ProjectFilesPage() {
       name: file.name,
       mime: file.type || "application/octet-stream",
       blob: file,
-      inspect: () => inspectProjectFile(file),
     });
   }
 

@@ -349,7 +349,8 @@ export default function DailyProjectReportDetailPage() {
           name: file.name,
           mime: file.type || "application/octet-stream",
           blob: file,
-          inspect: () => inspectProjectFile(file, contentContext),
+          inspect: (signal) =>
+            inspectProjectFile(file, AbortSignal.any([signal, contentContext])),
         });
         contentContext.throwIfAborted();
 

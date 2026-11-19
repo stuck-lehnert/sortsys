@@ -25,14 +25,18 @@ Dokument bleiben gewöhnlicher Text.
 
 ## Durchsuchbare Inhalte
 
-Beim Hochladen liest der Browser die eingebettete Textschicht eines PDFs aus und
-verschlüsselt den Text zusammen mit den Dateimetadaten. Übernommene Bestände
-können ebenfalls bereits ausgelesenen Text enthalten. Die Suche verwendet
-Text nur nach erfolgreicher Extraktion aus der aktuellen Dateiversion. Liegt
-nach einer Änderung nur Text aus einer älteren Fassung vor, bleibt der
-Dateiname durchsuchbar. Dasselbe gilt für Scans ohne Textschicht. Die Suche
-startet weder OCR noch eine LLM-Anfrage. Dateien werden bislang beim Hochladen
-ausgelesen.
+Beim Hochladen und beim Speichern einer neuen Version liest der Browser den
+eingebetteten Text von PDFs aus. Bei Word-Dateien (`DOCX`) erfasst er den
+Dokumenttext, bei PowerPoint-Dateien (`PPTX`) den Folientext. In Excel-Dateien
+(`XLSX`) liest er gespeicherte Zellwerte. `TXT` und `CSV` sind bei UTF-8-Kodierung
+ebenfalls durchsuchbar.
+
+Der Browser verschlüsselt den Text mit den Metadaten der zugehörigen Version.
+Nach dem Speichern einer neuen Fassung zeigt die Suche nur deren Text. Scans
+ohne Textschicht, ältere Dateien ohne ausgelesenen Text und Dateien, deren
+Inhalt sich nicht auslesen lässt, bleiben über den Dateinamen auffindbar. Eine
+Texterkennung über ein LLM gehört zum ausdrücklich gestarteten Ablauf
+**Einlesen**.
 
 Eine Dateifreigabe öffnet keine Projektstammdaten. Fehlt deren Leserecht, erscheint
 der Treffer ohne Projektbezeichnung. Ein Klick auf den Treffer öffnet die Datei
@@ -74,6 +78,6 @@ der Ausschnitte steht der Vergleich noch aus.
 Die [Vergleichsfälle](../sortsys-webapp-v2/app/lib/search/documentQuery.test.mjs)
 prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der
 [native Mehrinstanztest](../sortsys-webapp-v2/scripts/test-native-document-search.ts)
-prüft getrennte Dateifreigaben, eine Löschung während der Suche und den
-Entzug einer Projekt- oder Dateifreigabe bei geöffnetem Client-Cache.
-Browsertests verwenden den tatsächlichen Worker und eine lokal ausgelesene PDF.
+prüft getrennte Dateifreigaben, Versionswechsel, eine Löschung während der Suche
+und den Entzug von Freigaben bei geöffnetem Client-Cache. Der Browsertest sucht
+nach Text aus hochgeladenen PDF-, Word-, Excel- und PowerPoint-Dateien.

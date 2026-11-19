@@ -1,54 +1,42 @@
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import type JSZip from "jszip";
+import { openDocumentArchive, visitArchiveEntry } from "./boundedZip";
 
 /** Read only stored cell values. No formulas, external references or macros are
  * executed. Bound inflated ZIP data before ExcelJS builds its object model. */
 export async function importSpreadsheetText(
   buffer: ArrayBuffer,
+  signal?: AbortSignal,
 ): Promise<string> {
-  if (buffer.byteLength > 20 * 1024 * 1024) throw new InvalidProtectedData();
-  const { default: Zip } = await import("jszip");
-  const archive = await Zip.loadAsync(buffer);
+  signal?.throwIfAborted();
+  const archive = await openDocumentArchive(buffer);
   const entries = Object.values(archive.files).filter((file) => !file.dir);
-  if (entries.length > 10000) throw new InvalidProtectedData();
   let inflated = 0;
   for (const entry of entries) {
-    await new Promise<void>((resolve, reject) => {
-      // JSZip exposes this streaming reader at runtime; its bundled typings
-      // declare the helper but omit the ZipObject method. Check before use.
-      const reader = entry as JSZip.JSZipObject & {
-        internalStream(type: "uint8array"): JSZip.JSZipStreamHelper<Uint8Array>;
-      };
-      if (typeof reader.internalStream !== "function")
-        return reject(new InvalidProtectedData());
-      const stream = reader.internalStream("uint8array");
-      let stopped = false;
-      stream
-        .on("data", (chunk) => {
-          inflated += chunk.length;
-          if (inflated > 64 * 1024 * 1024 && !stopped) {
-            stopped = true;
-            stream.pause();
-            reject(new InvalidProtectedData());
-          }
-        })
-        .on("end", () => resolve())
-        .on("error", () => reject(new InvalidProtectedData()))
-        .resume();
-    });
+    await visitArchiveEntry(
+      entry,
+      (chunk) => {
+        inflated += chunk.length;
+        if (inflated > 64 * 1024 * 1024) throw new InvalidProtectedData();
+      },
+      signal,
+    );
   }
+
   const ExcelJS = await import("exceljs");
+  signal?.throwIfAborted();
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(buffer);
   const parts: string[] = [];
-  let size = 0,
-    cells = 0;
+  let size = 0;
+  let cells = 0;
+  const encoder = new TextEncoder();
   const add = (value: string) => {
-    size += new TextEncoder().encode(value).length;
+    size += encoder.encode(value).length;
     if (size > 1_400_000) throw new InvalidProtectedData();
     parts.push(value);
   };
   for (const sheet of workbook.worksheets) {
+    signal?.throwIfAborted();
     add(`--- worksheet: ${sheet.name} ---\n`);
     sheet.eachRow((row) => {
       const values: string[] = [];
@@ -61,5 +49,6 @@ export async function importSpreadsheetText(
       if (values.some((value) => value.trim())) add(values.join(" | ") + "\n");
     });
   }
+  signal?.throwIfAborted();
   return parts.join("");
 }

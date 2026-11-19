@@ -11,6 +11,7 @@ import {
   TOMBSTONE_FORMAT,
 } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
+import type { FileInspection } from "../fileInspection";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import {
   createBusinessDatabase,
@@ -45,7 +46,6 @@ import { projectCollection, projectPayload } from "./projectData";
 import { readableProjectAreas } from "./projectAreas";
 import {
   loadFileContent,
-  storeFileContent,
   storeFileContents,
 } from "./fileContent";
 import {
@@ -86,21 +86,13 @@ type DocumentSearchScope = {
   projects: ReadonlySet<string>;
   offset: number;
 };
-type Inspection = {
-  thumbnail?: Blob;
-  width?: number;
-  height?: number;
-  text?: string;
-  pages?: number;
-  textFailed?: boolean;
-};
 export type FileUpload = {
   projectId: string;
   folderId?: string | null;
   name: string;
   mime: string;
   blob: Blob;
-  inspect?: () => Promise<Inspection>;
+  inspect?: (signal: AbortSignal) => Promise<FileInspection>;
 };
 export type OfficeDraftRecovery = {
   epoch: string;
@@ -606,11 +598,81 @@ export function createProtectedProjectFiles(
           : null,
     };
   }
+
+  async function prepareFileBytes(
+    projectId: string,
+    fileId: string,
+    document: Blob,
+    details: { name: string; mime: string; version: string },
+    inspect?: FileUpload["inspect"],
+  ) {
+    let inspection: FileInspection;
+    if (inspect) {
+      inspection = await inspect(signal) ?? {};
+    } else {
+      const { inspectProjectFile } = await import("../fileInspection");
+      inspection = await inspectProjectFile(document, signal, details);
+    }
+    live();
+    const sources = [{ file: fileId, blob: document, version: uuid() }];
+    if (inspection.thumbnail) {
+      sources.push({ file: fileId, blob: inspection.thumbnail, version: uuid() });
+    }
+    const [original, thumbnail = null] = await storeFileContents(
+      client,
+      projectId,
+      sources,
+      signal,
+    );
+    live();
+    if (!original) throw new InvalidProtectedData();
+
+    const savedAt = new Date();
+    const now = savedAt.toISOString();
+    const hasText = inspection.text !== undefined;
+    let textStatus = inspection.textFailed ? "failed" : "not_applicable";
+    if (hasText) textStatus = "ready";
+    return {
+      original,
+      thumbnail,
+      savedAt,
+      values: {
+        size_bytes: String(document.size),
+        office_version: details.version,
+        thumbnail_status: thumbnail ? "ready" : "none",
+        thumbnail_object_key: null,
+        thumbnail_mime_type: thumbnail && inspection.thumbnail
+          ? inspection.thumbnail.type || "image/webp"
+          : null,
+        thumbnail_width: thumbnail && inspection.width !== undefined
+          ? String(inspection.width)
+          : null,
+        thumbnail_height: thumbnail && inspection.height !== undefined
+          ? String(inspection.height)
+          : null,
+        thumbnail_size_bytes: thumbnail ? String(thumbnail.size) : null,
+        thumbnail_etag: null,
+        thumbnail_generated_at: thumbnail ? now : null,
+        extracted_text: inspection.text ?? null,
+        text_extraction_status: textStatus,
+        text_extraction_method: hasText ? inspection.textMethod ?? "browser" : null,
+        text_extraction_confidence: null,
+        text_extraction_page_count: inspection.pages === undefined
+          ? null
+          : String(inspection.pages),
+        text_extraction_error: null,
+        text_extraction_version: hasText ? details.version : null,
+        text_extracted_at: hasText ? now : null,
+      },
+    };
+  }
+
   async function updatedFile(
     projectId: string,
     fileId: string,
     payload: FilePayload,
     document: Blob,
+    recoveredName?: string,
   ) {
     if (
       !payload.file ||
@@ -619,18 +681,19 @@ export function createProtectedProjectFiles(
     ) {
       throw new InvalidProtectedData();
     }
-    const nextVersion =
-      BigInt(payload.file.values.office_version as string) + 1n;
-    const original = await storeFileContent(
-      client,
-      projectId,
-      fileId,
-      document,
-      uuid(),
-      signal,
-    );
-    const savedAt = new Date();
-    live();
+    const previous = payload.file.values;
+    const nextVersion = BigInt(previous.office_version as string) + 1n;
+    let name = previous.file_name as string;
+    let mime = previous.mime_type as string;
+    if (recoveredName) {
+      name = itemName(recoveredName);
+      mime = document.type || mime;
+    }
+    const content = await prepareFileBytes(projectId, fileId, document, {
+      name,
+      mime,
+      version: String(nextVersion),
+    });
     const session = await required(
       client.query("auth.sessionInfo", undefined, {
         strategy: "network-only",
@@ -638,38 +701,23 @@ export function createProtectedProjectFiles(
     );
     live();
     const values = {
-      ...payload.file.values,
-      size_bytes: String(document.size),
-      office_version: String(nextVersion),
-      modified_at: savedAt.toISOString(),
-      office_modified_at: savedAt.toISOString(),
+      ...previous,
+      ...content.values,
+      file_name: name,
+      mime_type: mime,
+      modified_at: content.savedAt.toISOString(),
+      office_modified_at: content.savedAt.toISOString(),
       office_modified_by_user_id: addressId(session.user.id),
-      thumbnail_status: "none",
-      thumbnail_object_key: null,
-      thumbnail_mime_type: null,
-      thumbnail_width: null,
-      thumbnail_height: null,
-      thumbnail_size_bytes: null,
-      thumbnail_etag: null,
-      thumbnail_generated_at: null,
-      extracted_text: null,
-      text_extraction_status: "not_applicable",
-      text_extraction_method: null,
-      text_extraction_confidence: null,
-      text_extraction_page_count: null,
-      text_extraction_error: null,
-      text_extraction_version: null,
-      text_extracted_at: null,
     };
     return {
       payload: {
         ...payload,
         file: row("project_files", values),
-        original,
-        thumbnail: null,
+        original: content.original,
+        thumbnail: content.thumbnail,
       },
       version: nextVersion,
-      savedAt,
+      savedAt: content.savedAt,
     };
   }
   function save(
@@ -1034,23 +1082,14 @@ export function createProtectedProjectFiles(
         const reference = await projectReference(input.projectId);
         live();
         const id = publicId(newProductRowId());
-        const now = new Date().toISOString();
-        const inspection = (await input.inspect?.()) ?? {};
-        const sources = [{ file: id, blob: input.blob, version: uuid() }];
-        if (inspection.thumbnail) {
-          sources.push({
-            file: id,
-            blob: inspection.thumbnail,
-            version: uuid(),
-          });
-        }
-        const [original, thumbnail = null] = await storeFileContents(
-          client,
+        const content = await prepareFileBytes(
           input.projectId,
-          sources,
-          signal,
+          id,
+          input.blob,
+          { name, mime, version: "1" },
+          input.inspect,
         );
-        live();
+        const now = content.savedAt.toISOString();
         const isImage =
           mime.toLowerCase().startsWith("image/") &&
           !name.toLowerCase().endsWith(".dwg");
@@ -1061,6 +1100,7 @@ export function createProtectedProjectFiles(
         );
         live();
         const values = {
+          ...content.values,
           id: addressId(id),
           project_id: addressId(input.projectId),
           storage_bucket: "encrypted",
@@ -1068,48 +1108,19 @@ export function createProtectedProjectFiles(
           file_name: name,
           mime_type: mime,
           kind: isImage ? "image" : "file",
-          size_bytes: String(input.blob.size),
           status: "uploaded",
           created_by_user_id: addressId(session.user.id),
           created_at: now,
           modified_at: now,
           uploaded_at: now,
-          office_version: "1",
           folder_id:
             !isImage && input.folderId ? addressId(input.folderId) : null,
-          thumbnail_status: thumbnail ? "ready" : "none",
-          thumbnail_mime_type: thumbnail
-            ? inspection.thumbnail!.type || "image/webp"
-            : null,
-          thumbnail_width:
-            thumbnail && inspection.width !== undefined
-              ? String(inspection.width)
-              : null,
-          thumbnail_height:
-            thumbnail && inspection.height !== undefined
-              ? String(inspection.height)
-              : null,
-          thumbnail_size_bytes: thumbnail ? String(thumbnail.size) : null,
-          thumbnail_generated_at: thumbnail ? now : null,
-          text_extraction_status:
-            inspection.text !== undefined
-              ? "ready"
-              : inspection.textFailed
-                ? "failed"
-                : "not_applicable",
-          extracted_text: inspection.text ?? null,
-          text_extraction_method:
-            inspection.text !== undefined ? "pdfjs-browser" : null,
-          text_extraction_page_count:
-            inspection.pages === undefined ? null : String(inspection.pages),
-          text_extraction_version: inspection.text !== undefined ? "1" : null,
-          text_extracted_at: inspection.text !== undefined ? now : null,
         };
         const payload: FilePayload = {
           format: "sortsys-project-file-v1",
           file: row("project_files", values),
-          original: original!,
-          thumbnail,
+          original: content.original,
+          thumbnail: content.thumbnail,
           office: null,
         };
         await persist(
@@ -1199,19 +1210,9 @@ export function createProtectedProjectFiles(
               fileId,
               current.payload,
               recovered.document,
+              recovered.fileName,
             );
             payload = update.payload;
-            if (recovered.fileName) {
-              payload = {
-                ...payload,
-                file: row("project_files", {
-                  ...payload.file!.values,
-                  file_name: itemName(recovered.fileName),
-                  mime_type:
-                    recovered.document.type || payload.file!.values.mime_type,
-                }),
-              };
-            }
           } else if (recovered) {
             throw new ProtectedWriteConflict();
           }

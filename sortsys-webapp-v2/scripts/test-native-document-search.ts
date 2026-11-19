@@ -69,6 +69,11 @@ const readerPassword = "Document-search-member-password-519842!";
 const visibleTitle = "Freigegebene Suchbaustelle 519842";
 let ownerBusiness: ReturnType<typeof createBusinessClient> | undefined;
 let memberBusiness: ReturnType<typeof createBusinessClient> | undefined;
+
+function findDocuments(client: ReturnType<typeof createBusinessClient>, query: string) {
+  return required(client.query("projects.files.search", { query, limit: 50n }));
+}
+
 try {
   await signIn(owner, login);
   await initializeTenant(owner, signal, duckDriver);
@@ -222,6 +227,24 @@ try {
   );
   assert.ok(byName.every((result) => result.excerpt === null));
 
+  const oldVersionText = "Altfassung Innenputzfreigabe";
+  const newVersionText = "Neufassung Innenputzfreigabe";
+  const versioned = await ownerBusiness.files.upload({
+    projectId: visible.id,
+    name: "Prüfprotokoll.txt",
+    mime: "text/plain",
+    blob: new Blob([oldVersionText], { type: "text/plain" }),
+  });
+  const originalMatches = await findDocuments(ownerBusiness, `"${oldVersionText}"`);
+  assert.deepEqual(originalMatches.map(({ id }) => id), [versioned]);
+  const saved = await ownerBusiness.files.save(
+    visible.id,
+    versioned,
+    1n,
+    new Blob([newVersionText], { type: "text/plain" }),
+  );
+  assert.equal(saved.version, 2n);
+
   const changing = await upload(visible.id, "Zwischenstand.txt", "Eichentür");
   let projectLookups = 0;
   let deletedDuringSearch = false;
@@ -305,6 +328,10 @@ try {
   );
   assert.match(results[0]!.excerpt!.text, /Fenster neben den Wänden/);
   assert.ok(results[0]!.excerpt!.text.startsWith("… "));
+  const revisedMatches = await findDocuments(memberBusiness, `"${newVersionText}"`);
+  assert.deepEqual(revisedMatches.map(({ id }) => id), [versioned]);
+  assert.equal(revisedMatches[0]?.excerpt?.text, newVersionText);
+  assert.deepEqual(await findDocuments(memberBusiness, `"${oldVersionText}"`), []);
   const excluded = await required(
     memberBusiness.query("projects.files.search", {
       query: 'Wand -"Fenster neben"',
@@ -356,6 +383,20 @@ try {
     administrator.username,
     false,
   );
+  const invalidUtf8 = new Uint8Array([0xff]);
+  const failedSave = await ownerBusiness.files.save(
+    visible.id,
+    versioned,
+    2n,
+    new Blob([invalidUtf8], { type: "text/plain" }),
+  );
+  assert.equal(failedSave.version, 3n);
+  const file = await ownerBusiness.files.blob(visible.id, versioned);
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), invalidUtf8);
+  assert.deepEqual(await findDocuments(ownerBusiness, `"${newVersionText}"`), []);
+  const filenameMatches = await findDocuments(ownerBusiness, "Prüfprotokoll");
+  assert.deepEqual(filenameMatches.map(({ id }) => id), [versioned]);
+  assert.equal(filenameMatches[0]?.excerpt, null);
   await changeProjectAccess(
     owner,
     `user:${person.id}`,
@@ -462,6 +503,8 @@ try {
   for (const privateText of [
     query,
     secret,
+    oldVersionText,
+    newVersionText,
     "Vertrauliche Preise.txt",
     visibleTitle,
   ]) {
