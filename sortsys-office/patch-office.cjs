@@ -116,3 +116,29 @@ replaceOnce(
                         integrationChannel.on('Q_INTEGRATION_NEEDSAVE', function (data, cb) {`,
 );
 fs.writeFileSync(framework, source);
+
+// Native Drawio files can compress individual pages. Expand them before
+// collecting images so they all use the browser's encrypted image uploader.
+const diagramUtil = path.join(process.argv[2], "www/diagram/util.js");
+source = fs.readFileSync(diagramUtil, "utf8");
+replaceOnce("        var TEXT_NODE = 3;\n\n        var parser", "        var parser");
+replaceOnce("        doc.firstChild.removeAttribute('modified');", `        expandDrawioPages(doc);
+        return new XMLSerializer().serializeToString(doc);
+    };
+
+    const expandDrawioPages = function (doc) {
+        const parser = new DOMParser();
+        const TEXT_NODE = 3;
+        doc.documentElement.removeAttribute('modified');`);
+replaceOnce("        doc.firstChild.removeAttribute('agent');", "        doc.documentElement.removeAttribute('agent');");
+replaceOnce("        doc.firstChild.removeAttribute('etag');", "        doc.documentElement.removeAttribute('etag');");
+replaceOnce("diagram.replaceChild(diagramDoc.firstChild, diagram.firstChild);", "diagram.replaceChild(diagramDoc.documentElement, diagram.firstChild);");
+replaceOnce("\n\n        var result = new XMLSerializer().serializeToString(doc);\n        return result;", "");
+replaceOnce("        decompressDrawioXml,\n", "        decompressDrawioXml,\n        expandDrawioPages,\n");
+fs.writeFileSync(diagramUtil, source);
+
+const diagramImport = path.join(process.argv[2], "www/diagram/import.js");
+source = fs.readFileSync(diagramImport, "utf8");
+replaceOnce("            doc = DiagramUtil.parseXML(content);", `            doc = DiagramUtil.parseXML(content);
+            DiagramUtil.expandDrawioPages(doc);`);
+fs.writeFileSync(diagramImport, source);

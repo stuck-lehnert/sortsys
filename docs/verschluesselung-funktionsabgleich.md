@@ -452,12 +452,13 @@ Upload. Weitere Office-Dateifunktionen brauchen noch einen Vergleich. Siehe
 
 **diagrams.net.** Diagramme verwenden denselben geschützten Editorablauf und
 dieselbe verschlüsselte Projektablage wie Office-Dateien. Der echte Diensttest
-prüft gleichzeitige Änderungen an zwei Formen, erneutes Öffnen mit Leserechten,
-nativen XML-Export und die Wiederherstellung eines noch nicht als Projektdatei
-bestätigten Entwurfs. Gemeinsame Nachrichten werden verschlüsselt übertragen.
-Komponententests prüfen den Rechteentzug und verspätete Antworten beim
-Dateiewechsel für DOCX und Drawio. Komplexe Diagramme und eingebettete Bilder
-brauchen weitere Prüfungen. Siehe
+prüft gleichzeitige Änderungen an zwei Formen und eingebettete PNG-Bilder auf
+zwei Seiten. Der Browser lädt auch Bilder aus komprimierten Seiten separat
+verschlüsselt hoch. Beim erneuten Öffnen mit Leserechten und beim Abruf eines
+noch nicht als Projektdatei bestätigten Entwurfs enthält der native XML-Export
+beide Bilder bytegenau. Komponententests prüfen den Rechteentzug und verspätete
+Antworten beim Dateiewechsel für DOCX und Drawio. Weitere Bildformate und
+größere Diagramme brauchen eigene Vergleiche. Siehe
 [Editorprüfungen](editoren-ohne-klartextserver.md).
 
 ## Assistent, Verläufe und eigene Werkzeuge

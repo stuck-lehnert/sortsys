@@ -1,9 +1,16 @@
 /** Opt-in integration against an owned, disposable CryptPad installation. */
 import assert from "node:assert/strict";
+import { deflateRawSync } from "node:zlib";
 import { spawnSync } from "bun";
 import JSZip from "jszip";
 import ExcelJS from "exceljs";
-import { chromium, type BrowserContext, type Request } from "playwright";
+import {
+  chromium,
+  type BrowserContext,
+  type Frame,
+  type Page,
+  type Request,
+} from "playwright";
 import { observeWorkerTraffic } from "./lib/workerTraffic";
 import { officeTestDocument, serveOfficeTestPage } from "./lib/officeTestPage";
 
@@ -23,6 +30,11 @@ const diagramInitialB = "SORTSYS_PRIVATE_DIAGRAM_B";
 const diagramEditA = "SORTSYS_PRIVATE_DIAGRAM_EDIT_A";
 const diagramEditB = "SORTSYS_PRIVATE_DIAGRAM_EDIT_B";
 const diagramFileName = "Privater-Bauablauf.drawio";
+const planImage =
+  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGNIMLgARww4OQA8thCB8fEjXwAAAABJRU5ErkJggg==";
+const detailImage =
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAIAAAB7QOjdAAAAD0lEQVR4nGN4MEHxwQRFAAx8AyPyTiS5AAAAAElFTkSuQmCC";
+const diagramDetailPage = "SORTSYS_PRIVATE_DIAGRAM_DETAIL";
 const privateMarkers = [
   initial,
   edit,
@@ -37,7 +49,72 @@ const privateMarkers = [
   diagramEditA,
   diagramEditB,
   diagramFileName,
+  diagramDetailPage,
+  planImage,
+  detailImage,
 ];
+
+function diagramImageCell(id: string, png: string) {
+  return `<mxCell id="${id}" style="shape=image;image=data:image/png,${png}" vertex="1" parent="1">
+    <mxGeometry x="100" y="200" width="160" height="100" as="geometry"/>
+  </mxCell>`;
+}
+
+function diagramExport(page: Page) {
+  return page.evaluate(async () =>
+    (await window.officeTest.bridge!.export("drawio")).text(),
+  );
+}
+
+async function checkSharedDiagram(page: Page, xml: string) {
+  const result = await page.evaluate((xml) => {
+    const document = new DOMParser().parseFromString(xml, "application/xml");
+    return {
+      pages: [...document.querySelectorAll("diagram")].map((page) => ({
+        id: page.getAttribute("id"),
+        name: page.getAttribute("name"),
+        images: [...page.querySelectorAll("mxCell[style]")]
+          .map(
+            (cell) =>
+              cell.getAttribute("style")?.match(/(?:^|;)image=([^;]+)/)?.[1],
+          )
+          .filter(Boolean),
+      })),
+      labels: [...document.querySelectorAll("mxCell[value]")].map(
+        (cell) => cell.getAttribute("value"),
+      ),
+    };
+  }, xml);
+  assert.deepEqual(result.pages, [
+    {
+      id: "construction",
+      name: "Bauablauf",
+      images: [`data:image/png,${planImage}`],
+    },
+    {
+      id: "detail",
+      name: diagramDetailPage,
+      images: [`data:image/png,${detailImage}`],
+    },
+  ]);
+  assert.ok(
+    result.labels.includes(diagramEditA) && result.labels.includes(diagramEditB),
+  );
+}
+
+async function waitForDiagramImage(frame: Frame, png: string) {
+  await frame.waitForFunction(
+    (expected) => {
+      const images = document.querySelectorAll(".geDiagramContainer svg image");
+      return [...images].some((image) => {
+        const source = image.getAttribute("xlink:href") ?? image.getAttribute("href");
+        return source === expected;
+      });
+    },
+    `data:image/png;base64,${png}`,
+  );
+}
+
 const original = await officeTestDocument(initial);
 const server = await serveOfficeTestPage(
   Number(process.env.SORTSYS_OFFICE_APP_PORT ?? 0),
@@ -51,13 +128,16 @@ try {
   const context = await browser.newContext();
   const page = await context.newPage();
   const diagnostics: string[] = [];
-  const observePage = (page: import("playwright").Page, label: string) => {
+  const observePage = (page: Page, label: string) => {
     page.on("pageerror", (error) =>
       diagnostics.push(`${label}: ${error.message}`),
     );
     page.on("console", (message) => {
-      if (message.type() === "error")
-        diagnostics.push(`${label}: ${message.text().slice(0, 500)}`);
+      if (message.type() !== "error") return;
+      const text = message
+        .text()
+        .replace(/cryptpad:\/\/[^\s'"]+/g, "[image reference]");
+      diagnostics.push(`${label}: ${text.slice(0, 500)}`);
     });
     page.on("requestfailed", (request) =>
       diagnostics.push(
@@ -696,13 +776,33 @@ try {
       ),
     );
     assert.equal(Buffer.from(pdf).subarray(0, 5).toString(), "%PDF-");
-    const diagram = new TextEncoder().encode(
-      `<mxfile><diagram id="construction" name="Bauablauf"><mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/><mxCell id="a" value="${diagramInitialA}" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="80" y="80" width="220" height="80" as="geometry"/></mxCell><mxCell id="b" value="${diagramInitialB}" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1"><mxGeometry x="360" y="80" width="220" height="80" as="geometry"/></mxCell></root></mxGraphModel></diagram></mxfile>`,
+    const detail = `<mxGraphModel><root><mxCell id="0"/><mxCell id="1" parent="0"/>
+      ${diagramImageCell("detail-image", detailImage)}</root></mxGraphModel>`;
+    const compressedDetail = deflateRawSync(encodeURIComponent(detail)).toString(
+      "base64",
     );
+    const diagram = new TextEncoder().encode(`<mxfile>
+      <diagram id="construction" name="Bauablauf"><mxGraphModel><root>
+        <mxCell id="0"/><mxCell id="1" parent="0"/>
+        <mxCell id="a" value="${diagramInitialA}" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="80" y="80" width="220" height="80" as="geometry"/>
+        </mxCell>
+        <mxCell id="b" value="${diagramInitialB}" style="rounded=0;whiteSpace=wrap;html=1;" vertex="1" parent="1">
+          <mxGeometry x="360" y="80" width="220" height="80" as="geometry"/>
+        </mxCell>
+        ${diagramImageCell("plan-image", planImage)}
+      </root></mxGraphModel></diagram>
+      <diagram id="detail" name="${diagramDetailPage}">${compressedDetail}</diagram>
+    </mxfile>`);
     async function openSharedDiagram(canEdit: boolean, key?: string) {
       const diagramContext = await browser!.newContext();
       auxiliaries.push(diagramContext);
       observeEditorContext(diagramContext);
+      const imageUploads = new Set<string>();
+      diagramContext.on("request", (request) => {
+        const { pathname } = new URL(request.url());
+        if (pathname.startsWith("/upload-blob/")) imageUploads.add(pathname);
+      });
       const diagramPage = await diagramContext.newPage();
       observePage(diagramPage, "Diagram");
       await diagramPage.goto(server.url.href);
@@ -737,7 +837,7 @@ try {
         await diagramPage.evaluate(() => window.officeTest.errors),
         0,
       );
-      const isDrawingFrame = (frame: import("playwright").Frame) =>
+      const isDrawingFrame = (frame: Frame) =>
         new URL(frame.url()).pathname ===
         "/components/drawio/src/main/webapp/index.html";
       const drawing =
@@ -747,10 +847,15 @@ try {
           timeout: 120000,
         }));
       await drawing.locator(".geDiagramContainer").waitFor({ timeout: 120000 });
-      return { context: diagramContext, page: diagramPage, drawing };
+      return {
+        context: diagramContext,
+        page: diagramPage,
+        drawing,
+        imageUploads,
+      };
     }
     async function editDiagramLabel(
-      frame: import("playwright").Frame,
+      frame: Frame,
       previous: string,
       next: string,
     ) {
@@ -764,6 +869,15 @@ try {
       await input.waitFor({ state: "hidden" });
     }
     const firstDiagram = await openSharedDiagram(true);
+    await firstDiagram.drawing
+      .locator(".geDiagramContainer")
+      .getByText(diagramInitialA, { exact: true })
+      .waitFor();
+    assert.equal(
+      firstDiagram.imageUploads.size,
+      2,
+      "The fresh room should encrypt and upload the image from each page",
+    );
     const diagramSession = await firstDiagram.page.evaluate(
       () => window.officeTest.session,
     );
@@ -782,12 +896,13 @@ try {
         .locator(".geDiagramContainer")
         .getByText(diagramEditB, { exact: true })
         .waitFor();
-      const exported = await editor.page.evaluate(async () =>
-        (await window.officeTest.bridge!.export("drawio")).text(),
-      );
-      assert.ok(
-        exported.includes(diagramEditA) && exported.includes(diagramEditB),
-      );
+      await checkSharedDiagram(editor.page, await diagramExport(editor.page));
+      await waitForDiagramImage(editor.drawing, planImage);
+      await editor.drawing
+        .locator(".gePageTab")
+        .getByText(diagramDetailPage, { exact: true })
+        .click();
+      await waitForDiagramImage(editor.drawing, detailImage);
       assert.equal(
         await editor.page.evaluate(() => window.officeTest.saved.length),
         0,
@@ -806,13 +921,11 @@ try {
       false,
       diagramSession.viewKey,
     );
-    const viewedDiagram = await readOnlyDiagram.page.evaluate(async () =>
-      (await window.officeTest.bridge!.export("drawio")).text(),
+    await checkSharedDiagram(
+      readOnlyDiagram.page,
+      await diagramExport(readOnlyDiagram.page),
     );
-    assert.ok(
-      viewedDiagram.includes(diagramEditA) &&
-        viewedDiagram.includes(diagramEditB),
-    );
+    assert.equal(readOnlyDiagram.imageUploads.size, 0);
     assert.equal(
       await readOnlyDiagram.page.evaluate(() => window.officeTest.session),
       null,
@@ -849,17 +962,13 @@ try {
     const recoveredDiagramXml = new TextDecoder().decode(
       new Uint8Array(recoveredDiagram),
     );
-    assert.ok(
-      recoveredDiagramXml.includes(diagramEditA) &&
-        recoveredDiagramXml.includes(diagramEditB),
-      "Draft recovery must retain shared edits even when no project-file save was confirmed",
-    );
+    await checkSharedDiagram(diagramRecoveryPage, recoveredDiagramXml);
     await assertPrivateBrowserState(diagramRecoveryContext, [
       diagramSession.viewKey,
     ]);
     await diagramRecoveryContext.close();
     console.log(
-      "Diagram proof: independent edits merged, native XML exported, view-only reopening and unconfirmed draft recovery verified",
+      "Diagram proof: independent edits and both embedded images survive native export, view-only reopening and draft recovery",
     );
     assert.ok(
       uploads > 0,
@@ -898,6 +1007,14 @@ try {
     }
     assert.deepEqual(forbidden, []);
     assert.deepEqual(leaks, []);
+    for (const marker of [planImage, detailImage]) {
+      const plaintext = Buffer.from(marker, "base64");
+      assert.ok(
+        sentBodies.every((body) => !body.includes(plaintext)) &&
+          sentFrames.every((frame) => !frame.includes(plaintext)),
+        "An unencrypted diagram image appeared in network traffic",
+      );
+    }
     assert.ok(
       workerFrameCount > 0,
       "The privacy check must observe real outbound worker collaboration traffic",

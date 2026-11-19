@@ -89,14 +89,19 @@ Bearbeitungszugang einzeln für berechtigte Bearbeiter. Ein zusätzlicher
 Quellpatch macht CryptPads nativen XML-Export über die Einbettung verfügbar.
 Damit können auch Leser den gemeinsamen Stand auslesen. Ebenso lassen sich
 unbestätigte Änderungen nach einem Schlüsselwechsel vor der Übernahme prüfen.
-Der native Export verwendet CryptPads vorhandene Bildauflösung im Browser.
-Der Test deckt eingebettete Diagrammbilder bisher nicht ab.
+Beim Öffnen eines Diagramms mit eingebetteten Bildern entpackt der Browser
+zuerst die komprimierten Seiten. Anschließend verschlüsselt er die Bilder und
+lädt sie getrennt vom Diagramm hoch. Für den nativen Export entschlüsselt er
+die Bilder und bettet sie wieder in die `.drawio`-Datei ein.
 
-Ein Test mit dem tatsächlichen Dienst ändert zwei Formen gleichzeitig in
-getrennten Browserkontexten. Beide sehen anschließend beide Änderungen. Nach
-dem Schließen öffnet ein dritter Kontext denselben Stand mit dem Leseschlüssel
-und gibt natives XML zurück. Eine Entwurfsübernahme enthält die Änderungen auch
-dann, wenn noch kein Dateispeicherpunkt in sortsys bestätigt wurde.
+Der [Diensttest](../sortsys-webapp-v2/scripts/test-live-office.ts) verwendet
+einen Bauablauf mit zwei Seiten. Auf beiden Seiten liegt ein PNG, eine der
+Seiten ist komprimiert. Zwei getrennte Browserkontexte bearbeiten gleichzeitig
+verschiedene Formen und zeigen anschließend beide Änderungen auf derselben
+Seite. Der Test wechselt zur zweiten Seite und prüft auch dort die Bildanzeige.
+Nach dem Schließen öffnet ein weiterer Kontext den Stand mit dem Leseschlüssel.
+Sein XML-Export enthält beide Bilder bytegenau. Das gilt auch für den
+exportierten Entwurf vor einem bestätigten Dateispeicherpunkt in sortsys.
 
 Die [Komponententests](../sortsys-webapp-v2/scripts/ui/private-editors.browser.mjs)
 prüfen für DOCX und Drawio den Rechteentzug, verspätete Ladeantworten und den
