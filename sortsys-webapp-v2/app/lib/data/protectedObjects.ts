@@ -812,7 +812,7 @@ function openCollection(
           live,
           context.source?.view,
         );
-        await checkDeliveryObjects(client, result, live);
+        await checkDeliveryObjects(client, result, live, context.source?.view);
         live();
         head = snapshot;
         return { objects: result, unchanged: false };

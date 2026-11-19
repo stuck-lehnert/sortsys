@@ -24,7 +24,7 @@ import {
 import { showCreateDailyProjectReportModal } from "../../app/modals/dailyProjectReport";
 import { showCreateRegieReportModal } from "../../app/modals/regieReports";
 import { showCreateProductModal } from "../../app/modals/products";
-import { showCreateDeliveryNoteModal } from "../../app/modals/deliveryNotes";
+import { showCreateDeliveryNoteModal, showModifyDeliveryNoteModal } from "../../app/modals/deliveryNotes";
 import { showCommandPaletteModal } from "../../app/modals/commandPalette";
 import { showPriceImportModal } from "../../app/modals/priceImports";
 import { showCreateAbsenceModal } from "../../app/modals/absences";
@@ -141,6 +141,17 @@ function FormEntrypoints() {
       </Button>
       <Button onClick={() => showCreateDeliveryNoteModal(modals)}>
         Create delivery note
+      </Button>
+      <Button onClick={() => showModifyDeliveryNoteModal(modals, {
+        id: "e",
+        autoId: 12,
+        projectId: "c",
+        revision: "3",
+        comment: "Lieferung vor Ort",
+        records: [],
+        specialRecords: [],
+      })}>
+        Edit delivery note
       </Button>
       <Button onClick={() => showCommandPaletteModal(modals)}>
         Global search

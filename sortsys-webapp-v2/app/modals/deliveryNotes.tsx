@@ -11,6 +11,7 @@ import { useForceUpdate } from "~/hooks/useForceUpdate";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client, contentAccess } from "~/lib/client";
 import { deliveryCollection } from "~/lib/data/deliveryNoteData";
+import { projectCollection } from "~/lib/data/projectData";
 import {
   scannedDeliveryRequestId,
   type DeliveryNotePrefill,
@@ -481,11 +482,14 @@ export function showCreateDeliveryNoteModal(
 
 export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: DeliveryNote) {
   const pricing = deliveryCollection(note.projectId, true);
+  const source = projectCollection(note.projectId);
   modals.showForm({
     content: ({ context }) => {
       const session = useSessionInfo();
       const canSeePrices = session.canAccess(pricing.scope, pricing.facet, "read");
       const canWritePrices = session.canAccess(pricing.scope, pricing.facet, "update");
+      const canMove = !!note.revision && canSeePrices &&
+        session.canAccess(source.scope, source.facet, "read");
       const [recordIds, setRecordIds] = useState<string[]>([]);
       const [specialRecordIds, setSpecialRecordIds] = useState<string[]>([]);
       const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
@@ -507,7 +511,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
 
       return (
         <>
-          <MyForm.MultiSelect
+          {canMove && <MyForm.MultiSelect
             name="project"
             labelText={uiText("Projekt")}
             minSelectedItems={1}
@@ -517,17 +521,18 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                 search: query,
               });
               if (err) throw err;
-              return data ?? [];
+              return (data ?? []).filter(({ id }) => {
+                if (id === note.projectId) return true;
+                return [deliveryCollection(id), deliveryCollection(id, true)].every(
+                  ({ scope, facet }) => session.canAccess(scope, facet, "read") &&
+                    session.canAccess(scope, facet, "create"),
+                );
+              });
             }}
             renderItem={({ item }) => item.title}
             renderTile={(item) => <SmallProjectTile data={item} noLink />}
             createAction={createEntityAction.project}
-          />
-          <p className="light">
-            {uiText(
-              "Wähle das Projekt, zu dem der Lieferschein erfasst werden soll.",
-            )}
-          </p>
+          />}
 
           <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
           <p className="light">
@@ -759,7 +764,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
             onLoad={async () => {
               context.setValues({ comment: note.comment ?? "" });
 
-              if (note.projectId) {
+              if (canMove) {
                 const [project] = await client.query(
                   "projects.get",
                   { id: note.projectId },
@@ -810,8 +815,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
 
-      const projectId = values.project[0].id;
-      if (!projectId) return;
+      const projectId = values.project?.[0]?.id ?? note.projectId;
 
       const records: {
         id?: string;

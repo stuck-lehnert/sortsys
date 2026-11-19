@@ -757,7 +757,7 @@ pub(in crate::zerotrust) async fn commit_batch(
     request: &RequestContext,
     input: BatchInput,
 ) -> RpcResult<BatchResult> {
-    commit_batch_inner(service, request, input, false).await
+    commit_batch_inner(service, request, input, false, None).await
 }
 
 pub(in crate::zerotrust) async fn commit_staged_batch(
@@ -765,7 +765,16 @@ pub(in crate::zerotrust) async fn commit_staged_batch(
     request: &RequestContext,
     input: BatchInput,
 ) -> RpcResult<BatchResult> {
-    commit_batch_inner(service, request, input, true).await
+    commit_batch_inner(service, request, input, true, None).await
+}
+
+pub(in crate::zerotrust) async fn commit_delivery_move(
+    service: &AuthService,
+    request: &RequestContext,
+    input: BatchInput,
+    movement: super::super::delivery::MovePlan,
+) -> RpcResult<BatchResult> {
+    commit_batch_inner(service, request, input, false, Some(movement)).await
 }
 
 async fn commit_batch_inner(
@@ -773,6 +782,7 @@ async fn commit_batch_inner(
     request: &RequestContext,
     input: BatchInput,
     preuploaded: bool,
+    delivery_move: Option<super::super::delivery::MovePlan>,
 ) -> RpcResult<BatchResult> {
     let shape = validate_batch(&input, preuploaded)?;
     let mut guarded_domains = shape.domains.clone();
@@ -926,6 +936,9 @@ async fn commit_batch_inner(
         }
     }
     if stale {
+        if delivery_move.is_some() {
+            return Err(conflict());
+        }
         for packet in &input.objects {
             let current = object(&mut context.transaction, &packet.envelope.object)
                 .await?
@@ -960,6 +973,11 @@ async fn commit_batch_inner(
     .await?;
     let mut changed_domains = BTreeSet::new();
     let mut visible_domains = BTreeSet::new();
+    if let Some(movement) = &delivery_move {
+        let sources = movement.apply(&mut context, &input).await?;
+        changed_domains.extend(sources.iter().cloned());
+        visible_domains.extend(sources);
+    }
     let mut changed_metadata = BTreeSet::new();
     let mut written_packets = Vec::new();
     let mut wrote = checkpoints.commit(&mut context.transaction).await?;
@@ -972,7 +990,15 @@ async fn commit_batch_inner(
         {
             return Err(conflict());
         }
-        let written = save(&mut context, area, packet, &publication, preuploaded).await?;
+        let written = save(
+            &mut context,
+            area,
+            packet,
+            &publication,
+            preuploaded,
+            delivery_move.is_some(),
+        )
+        .await?;
         super::super::planning_titles::save(&mut context, packet, written).await?;
         changed_access |=
             super::super::resource_access::save(&mut context, packet, written).await?;
@@ -1106,6 +1132,7 @@ async fn save(
     input: &SaveInput,
     publication: &str,
     preuploaded: bool,
+    delivery_move: bool,
 ) -> RpcResult<bool> {
     let envelope = &input.envelope;
     envelope.verify(&context.security.signing_key)?;
@@ -1130,7 +1157,7 @@ async fn save(
         return Err(conflict());
     }
     require_read(&context.security, area)?;
-    super::super::delivery::metadata_validate_packet(context, input).await?;
+    super::super::delivery::metadata_validate_packet(context, input, delivery_move).await?;
     let previous = object(&mut context.transaction, &envelope.object).await?;
     if previous.as_ref().is_some_and(|record| record.deleted) {
         return Err(conflict());

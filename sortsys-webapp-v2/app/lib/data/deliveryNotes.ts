@@ -20,6 +20,13 @@ import {
   required,
 } from "./protectedObjects";
 import { deliveryAllocation } from "./deliveryRegistry";
+import {
+  deliveryFormRevision,
+  deliveryObject,
+  deliveryPlacement,
+  isDeliveryFormRevision,
+} from "./deliveryIdentity";
+import { ProtectedWriteConflict } from "./atomicWrites";
 import { acquireDataRuntime } from "./runtime/session";
 import { effectivePrice } from "./stockObjects";
 
@@ -38,6 +45,7 @@ export function createProtectedDeliveryNotes(
     quantityProjects: Set<string>;
     revisions: Map<string, string>;
     priceRevisions: Map<string, string>;
+    placements: Map<string, string | undefined>;
   };
   async function load(projectId?: string): Promise<Loaded> {
     const domains =
@@ -74,13 +82,18 @@ export function createProtectedDeliveryNotes(
       const payloads: DeliveryPayload[] = [],
         prices = new Map<string, DeliveryPrices>(),
         revisions = new Map<string, string>(),
-        priceRevisions = new Map<string, string>();
+        priceRevisions = new Map<string, string>(),
+        placements = new Map<string, string | undefined>();
       for (const request of quantityRequests)
         for (const document of view.documents(request)) {
           payloads.push(document.value);
+          const { id, project_id } = document.value.note.values;
+          const identity = { id: publicId(id), projectId: publicId(project_id) };
+          const placement = deliveryPlacement(document.id, identity);
+          placements.set(identity.id, placement);
           revisions.set(
-            publicId(document.value.note.values.id),
-            document.revision,
+            identity.id,
+            deliveryFormRevision(document.revision, placement),
           );
         }
       for (const request of priceRequests)
@@ -88,7 +101,10 @@ export function createProtectedDeliveryNotes(
           if (prices.has(document.value.noteId))
             throw new InvalidProtectedData();
           prices.set(document.value.noteId, document.value);
-          priceRevisions.set(document.value.noteId, document.revision);
+          const { noteId, projectId } = document.value;
+          const placement = deliveryPlacement(document.id, { id: noteId, projectId }, true);
+          if (placement !== placements.get(noteId)) throw new InvalidProtectedData();
+          priceRevisions.set(noteId, deliveryFormRevision(document.revision, placement));
         }
       return {
         payloads,
@@ -99,6 +115,7 @@ export function createProtectedDeliveryNotes(
         ),
         revisions,
         priceRevisions,
+        placements,
       };
     });
   }
@@ -109,7 +126,7 @@ export function createProtectedDeliveryNotes(
       ...wireDelivery(payload, state.prices.get(id)),
       revision: state.revisions.get(id),
       ...(state.pricedProjects.has(project)
-        ? { priceRevision: state.priceRevisions.get(id) ?? "0" }
+        ? { priceRevision: state.priceRevisions.get(id) ?? deliveryFormRevision("0", state.placements.get(id)) }
         : {}),
     };
   }
@@ -124,8 +141,7 @@ export function createProtectedDeliveryNotes(
         addressId(data.id);
         if (
           data.expectedRevision !== undefined &&
-          (typeof data.expectedRevision !== "string" ||
-            !/^[1-9]\d{0,18}$/.test(data.expectedRevision))
+          !isDeliveryFormRevision(data.expectedRevision)
         ) {
           throw new InvalidProtectedData();
         }
@@ -141,11 +157,19 @@ export function createProtectedDeliveryNotes(
         live();
         current.throwIfAborted();
         const area = deliveryCollection(allocation.projectId);
+        let expected = data.expectedRevision as string | undefined;
+        if (expected !== undefined) {
+          const revision = expected.split(":").at(-1)!;
+          if (expected !== deliveryFormRevision(revision, allocation.placement)) {
+            throw new ProtectedWriteConflict();
+          }
+          expected = revision;
+        }
         await runtime.remove(
           { model: DELIVERY_MODEL, area },
-          area.prefix + allocation.id,
+          deliveryObject(allocation),
           {
-            expectedRevision: data.expectedRevision as string | undefined,
+            expectedRevision: expected,
             signal: current,
           },
         );
@@ -231,7 +255,8 @@ export function createProtectedDeliveryNotes(
       const payload = state.payloads.find(
         (item) => publicId(item.note.values.id) === allocation.id,
       );
-      if (!payload) throw new InvalidProtectedData();
+      if (!payload || state.placements.get(allocation.id) !== allocation.placement)
+        throw new InvalidProtectedData();
       const special = state.prices.get(publicId(payload.note.values.id));
       if (path === "deliveryNotes.get") return wire(payload, state);
       const projectId = publicId(payload.note.values.project_id);

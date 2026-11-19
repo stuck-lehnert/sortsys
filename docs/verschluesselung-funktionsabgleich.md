@@ -359,7 +359,9 @@ einschließlich Mikrosekunden und numerischer Kennungen ausgewählt. Anlagen sin
 nicht lesbare Preise. Löschen erfordert ein eigenes Recht im Mengenbereich und
 entfernt auch die Preise aus aktuellen Abfragen, ohne deren Schlüssel zu öffnen.
 Verschlüsselte historische Fassungen und die vergebenen Nummern bleiben erhalten.
-Projektwechsel und eine physische Bereinigung der Historie fehlen noch.
+Beim Projektwechsel verschlüsselt der Browser Mengen und Preise für das
+Zielprojekt. Die Zuordnung und beide Pakete werden gemeinsam bestätigt.
+Eine physische Bereinigung der Historie steht aus.
 Siehe [Lieferscheine](verschluesselte-lieferscheine.md).
 
 **Kunden und Ansprechpartner.** Getrennte Schlüsselbereiche mit lokaler Suche,

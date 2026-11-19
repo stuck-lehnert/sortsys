@@ -64,7 +64,9 @@ export type CredentialDescriptor = { id: string, type: "public-key", transports?
 
 export type CredentialParameter = { type: "public-key", alg: number, };
 
-export type DeliveryAllocation = { id: Id, projectId: Id, number: string, };
+export type DeliveryAllocation = { id: Id, projectId: Id, number: string, placement?: string, };
+
+export type DeliveryMove = { id: Id, fromProject: Id, toProject: Id, placement: string, proof: string, };
 
 export type DeliveryNoteScanResult = { supplier: string | null, deliveryNumber: string | null, deliveryDate: string | null, comment: string | null, records: Array<ScannedProductRecord>, specialRecords: Array<ScannedSpecialRecord>, warnings: Array<string>, };
 
@@ -381,7 +383,7 @@ export type QueryInputs = {
   "zerotrust.creations.list": void;
   "zerotrust.creations.origin": { domain: string, };
   "zerotrust.deliveryNotes.locate": { id?: Id, number?: string, includeDeleted?: boolean, };
-  "zerotrust.deliveryNotes.references": { objects: Array<string>, };
+  "zerotrust.deliveryNotes.references": { objects: Array<string>, prepared?: PreparedView, };
   "zerotrust.documents.get": { id: string, scope?: string, version?: string, };
   "zerotrust.documents.history": { scope: string, id: string, before: string, };
   "zerotrust.documents.messages.pages": { selections: Array<Read>, };
@@ -537,7 +539,7 @@ export type QueryOutputs = {
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
   "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, returned?: ResourceCommand, }>;
   "zerotrust.creations.origin": { tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, returned?: ResourceCommand, } | null;
-  "zerotrust.deliveryNotes.locate": { id: Id, projectId: Id, number: string, };
+  "zerotrust.deliveryNotes.locate": { id: Id, projectId: Id, number: string, placement?: string, };
   "zerotrust.deliveryNotes.references": Array<{ object: string, allocation: DeliveryAllocation, }>;
   "zerotrust.documents.get": { format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, } | null;
   "zerotrust.documents.history": Array<{ format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, }>;
@@ -761,6 +763,7 @@ export type MutationInputs = {
   "zerotrust.deliveryNotes.adopt": { context: string, generation: string, policyVersion: string, allocations: Array<DeliveryAllocation>, proof: string, };
   "zerotrust.deliveryNotes.allocate": { projectId: Id, requestId: string, generation: string, policyVersion: string, proof: string, };
   "zerotrust.deliveryNotes.initialize": { generation: string, policyVersion: string, proof: string, };
+  "zerotrust.deliveryNotes.move": { movement: DeliveryMove, objects: Array<SaveInput>, heads: Array<DomainHead>, };
   "zerotrust.documents.messages.post": { room: Room, kind: Kind, key: string, authorityGeneration: string, content?: string, envelope: EncryptedObject<Facet>, };
   "zerotrust.domains.put": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.putMany": { domains: Array<DomainDefinition>, };
@@ -974,8 +977,9 @@ export type MutationOutputs = {
   "zerotrust.creations.grant": { success: true, };
   "zerotrust.creations.renew": { success: true, };
   "zerotrust.deliveryNotes.adopt": { success: true, };
-  "zerotrust.deliveryNotes.allocate": { id: Id, projectId: Id, number: string, };
+  "zerotrust.deliveryNotes.allocate": { id: Id, projectId: Id, number: string, placement?: string, };
   "zerotrust.deliveryNotes.initialize": { success: true, };
+  "zerotrust.deliveryNotes.move": { success: boolean, heads: Array<DomainHead>, };
   "zerotrust.documents.messages.post": { success: true, };
   "zerotrust.domains.put": { success: true, };
   "zerotrust.domains.putMany": { success: true, };
@@ -1348,6 +1352,7 @@ const mutationProcedures = new Set<string>([
   "zerotrust.deliveryNotes.adopt",
   "zerotrust.deliveryNotes.allocate",
   "zerotrust.deliveryNotes.initialize",
+  "zerotrust.deliveryNotes.move",
   "zerotrust.documents.messages.post",
   "zerotrust.domains.put",
   "zerotrust.domains.putMany",

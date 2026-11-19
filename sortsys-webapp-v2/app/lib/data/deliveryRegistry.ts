@@ -1,4 +1,4 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryInput } from "@sortsys/v2-client";
 import {
   accountRequestFingerprint,
   frame,
@@ -9,10 +9,11 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import { readVerifiedPolicy } from "../crypto/policy";
-import { addressId } from "./addressBook";
+import { addressId, partialAddressRecord } from "./addressBook";
 import { decodeBusinessRow } from "./rowCodec";
 import type { OpenedObject } from "./protectedObjects";
 import { mapConcurrent } from "./runtime/concurrentReads";
+import { deliveryObject, isDeliveryPlacement } from "./deliveryIdentity";
 
 const ALLOCATIONS_PER_REQUEST = 64;
 const required = async <T>(
@@ -87,14 +88,20 @@ export async function initializeDeliveryRegistry(
   );
   c.live();
 }
-export function deliveryAllocation(input: unknown) {
-  const value = record(input, ["id", "projectId", "number"]);
+export function deliveryAllocation(input: unknown): {
+  id: string;
+  projectId: string;
+  number: string;
+  placement?: string;
+} {
+  const value = partialAddressRecord(input, ["id", "projectId", "number", "placement"]);
   addressId(value.id);
   addressId(value.projectId);
   if (
     typeof value.number !== "string" ||
     !/^[1-9]\d{0,18}$/.test(value.number) ||
-    BigInt(value.number) > 9223372036854775807n
+    BigInt(value.number) > 9223372036854775807n ||
+    (value.placement !== undefined && !isDeliveryPlacement(value.placement))
   ) {
     throw new InvalidProtectedData();
   }
@@ -102,6 +109,7 @@ export function deliveryAllocation(input: unknown) {
     id: value.id as string,
     projectId: value.projectId as string,
     number: value.number,
+    ...(isDeliveryPlacement(value.placement) ? { placement: value.placement } : {}),
   };
 }
 export async function allocateDeliveryNote(
@@ -153,6 +161,7 @@ export async function checkDeliveryObjects(
   client: Client,
   objects: OpenedObject[],
   live: () => void,
+  prepared?: QueryInput<"zerotrust.deliveryNotes.references">["prepared"],
 ) {
   const selected = objects.filter(
     (object) =>
@@ -172,7 +181,7 @@ export async function checkDeliveryObjects(
     const result = await required(
       client.query(
         "zerotrust.deliveryNotes.references",
-        { objects: chunk.map((object) => object.envelope.object) },
+        { objects: chunk.map((object) => object.envelope.object), prepared },
         { strategy: "network-only" },
       ),
     );
@@ -200,8 +209,7 @@ export async function checkDeliveryObjects(
         row.values.id !== addressId(allocation.id) ||
         row.values.project_id !== addressId(allocation.projectId) ||
         row.values.auto_id !== allocation.number ||
-        object.envelope.object !==
-          `delivery-note:${allocation.projectId}:${allocation.id}` ||
+        object.envelope.object !== deliveryObject(allocation) ||
         object.envelope.scope !==
           `project:${allocation.projectId}:delivery-notes` ||
         object.envelope.facet !== "master-data"

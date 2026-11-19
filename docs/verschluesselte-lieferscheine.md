@@ -1,9 +1,9 @@
 # Lieferscheine mit getrennten Mengen- und Preisfreigaben
 
 Lieferscheine lassen sich verschlüsselt anlegen, bearbeiten und löschen. Listen,
-Detailansichten und die Kostenberechnung laufen im Browser. Das Verschieben
-zwischen Projekten ist noch nicht angeschlossen: Dafür müssten Inhalte und
-Freigaben gemeinsam auf den neuen Empfängerkreis übertragen werden.
+Detailansichten und die Kostenberechnung laufen im Browser. Eine falsch
+zugeordnete Lieferung lässt sich im Bearbeitungsdialog einem anderen Projekt
+zuweisen. Nummer, Link und Positionskennungen bleiben dabei erhalten.
 
 Eine Baustellenmitarbeiterin kann die gelieferten Materialien und Sonderposten
 eines freigegebenen Projekts sehen, ohne dessen Einkaufspreise zu erhalten.
@@ -25,6 +25,19 @@ zusätzlich die getrennte Freigabe der Produktpreisaufzeichnungen erforderlich.
 Ein bearbeiteter Sonderposten behält seine Kennung; eine Preisänderung wird im
 getrennten Preisbereich gespeichert. Die ursprünglichen Formularversionen
 verhindern, dass eine ältere Ansicht zwischenzeitliche Änderungen überschreibt.
+
+Beim Projektwechsel braucht das Konto im Ausgangsprojekt Änderungsrecht für
+Mengen und Leserecht für Preise. Im Zielprojekt braucht es Lese- und
+Anlagerechte für beide Bereiche. Das Formular bietet ein Ziel an, wenn diese
+Freigaben vorliegen. Mit einer reinen Mengenfreigabe bleibt die Bearbeitung im
+bisherigen Projekt möglich. Der Browser übernimmt auch die unveränderten Preise
+und verschlüsselt beide Bereiche für die neuen Empfänger. Die API prüft die
+signierten Pakete und die gelesenen Versionsstände beider Projekte in derselben
+Transaktion, in der sie die Zuordnung wechselt. Alte verschlüsselte Fassungen
+bleiben unter ihren bisherigen Schlüsseln gespeichert. Bei einer Rückkehr in
+das frühere Projekt erhält der Lieferschein einen neuen Versionsstand.
+Bei der Wiederherstellung gilt die Projektzuordnung aus der ausgewählten
+Sicherung. Die Nummer bleibt auch nach der Wiederherstellung reserviert.
 
 ## Nummerierung und Löschung
 
@@ -86,7 +99,9 @@ umgesetzt.
 
 Der [native Lieferscheintest](../sortsys-webapp-v2/scripts/test-duckdb-delivery.ts)
 prüft Anlage und Bearbeitung mit echten verschlüsselten Datensätzen über zwei
-getrennte API-Prozesse. Der
+getrennte API-Prozesse. Der Projektwechseltest sichert einen verschobenen
+Lieferschein, verschiebt ihn erneut und löscht ihn. Anschließend prüft er die
+Vorschau und die Wiederherstellung der gespeicherten Zuordnung. Der
 [Löschtest](../sortsys-webapp-v2/scripts/test-native-delivery-deletion.ts) ergänzt
 veraltete Bestätigungen, falsche und verlorene Antworten, wiederholte Löschungen,
 unverändert vergebene Nummern und abgewiesene Wiederbelebungsversuche. Er prüft

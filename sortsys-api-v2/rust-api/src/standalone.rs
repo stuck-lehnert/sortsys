@@ -179,6 +179,7 @@ async fn body_limit(mut request: Request, next: Next) -> Response {
                         | "zerotrust.fileChunks.put"
                         | "zerotrust.objects.stage"
                         | "zerotrust.objects.batch"
+                        | "zerotrust.deliveryNotes.move"
                         | "zerotrust.domains.put"
                         | "zerotrust.domains.putMany"
                         | "zerotrust.access.publish"

@@ -2,11 +2,17 @@ import assert from "node:assert/strict";
 import type { Client } from "@sortsys/v2-client";
 import { base64 } from "@sortsys/zerotrust/sortsys";
 import {
+  activatePreparedContent,
+  approvePreparedContent,
+  inspectPreparedContent,
+} from "../app/lib/backups/contentRestore";
+import {
   allocateDeliveryNote,
   initializeDeliveryRegistry,
   deliveryRequestContext,
 } from "../app/lib/data/deliveryRegistry";
 import { deliveryCollection } from "../app/lib/data/deliveryNoteData";
+import { deliveryObject } from "../app/lib/data/deliveryIdentity";
 import { newProductRowId, publicId } from "../app/lib/data/products";
 import {
   protectedCollection,
@@ -14,6 +20,129 @@ import {
 } from "../app/lib/data/protectedObjects";
 import { mapConcurrent } from "../app/lib/data/runtime/concurrentReads";
 import type { DeliveryRequestHook } from "./test-native-delivery-deletion";
+
+export async function exerciseDeliveryMove(
+  owner: Client,
+  peer: Client,
+  from: string,
+  to: string,
+  setRequestHook: (hook: DeliveryRequestHook | null) => void,
+  backup: { operator: Client; tenant: string },
+) {
+  const comment = "Korrigierte Baustellenzuordnung für Lieferung 58673";
+  const item = { name: "Zwischentransport", unit: "Stk", amount: 2, pricePerUnit: 22.75 };
+  const creation = {
+    requestId: crypto.randomUUID(),
+    projectId: from,
+    specialRecords: [item],
+  };
+  const created = await required(owner.mutate("deliveryNotes.create", creation));
+  const read = (client: Client) => required(client.query(
+    "deliveryNotes.get", { id: created.id }, { strategy: "network-only" },
+  ));
+  const source = await read(owner);
+  const sourceObject = deliveryObject({ id: created.id, projectId: from });
+  const move = (client: Client, target: string, expected: Awaited<ReturnType<typeof read>>) =>
+    client.mutate("deliveryNotes.update", {
+      id: created.id,
+      expectedRevision: expected.revision,
+      expectedPriceRevision: expected.priceRevision,
+      data: { projectId: target, comment },
+    });
+
+  let raced = false;
+  setRequestHook(async (url, next) => {
+    if (!url.pathname.endsWith("/zerotrust.deliveryNotes.move") || raced) return next();
+    raced = true;
+    await required(peer.mutate("deliveryNotes.update", {
+      id: created.id,
+      expectedRevision: source.revision,
+      expectedPriceRevision: source.priceRevision,
+      data: { specialRecords: [{ ...item, id: source.specialRecords[0]!.id, pricePerUnit: 27.5 }] },
+    }));
+    return next();
+  });
+  try {
+    assert.ok((await move(owner, to, source))[1]);
+    assert.equal(raced, true);
+  } finally {
+    setRequestHook(null);
+  }
+  await owner.invalidate("deliveryNotes.get");
+  const current = await read(owner);
+  assert.equal(current.projectId, from);
+  assert.equal(current.specialRecords[0]?.pricePerUnit, 27.5);
+  assert.deepEqual(await required(peer.query("deliveryNotes.list", { projectId: to })), []);
+
+  let lost = false;
+  setRequestHook(async (url, next) => {
+    const response = await next();
+    if (url.pathname.endsWith("/zerotrust.deliveryNotes.move") && response.ok) {
+      lost = true;
+      return new Response("Lost successful delivery transfer response", { status: 503 });
+    }
+    return response;
+  });
+  try {
+    await required(move(owner, to, current));
+    assert.equal(lost, true);
+  } finally {
+    setRequestHook(null);
+  }
+  await peer.invalidate("deliveryNotes.list");
+  const destination = await read(peer);
+  assert.equal(destination.projectId, to);
+  assert.equal(destination.autoId, source.autoId);
+  assert.equal(destination.comment, comment);
+  assert.equal(destination.specialRecords[0]?.id, source.specialRecords[0]?.id);
+  assert.equal(destination.specialRecords[0]?.pricePerUnit, 27.5);
+  assert.equal((await required(owner.query("deliveryNotes.list", { projectId: from })))
+    .some(({ id }) => id === created.id), false);
+  assert.ok((await owner.query("zerotrust.objects.get", { id: sourceObject }))[1]);
+  const lookup = await required(peer.query("zerotrust.deliveryNotes.locate", { number: String(source.autoId) }));
+  assert.equal(lookup.projectId, to);
+  assert.match(lookup.placement!, /^[a-f0-9]{32}$/);
+  assert.deepEqual(await required(owner.mutate("deliveryNotes.create", creation)), created);
+  const snapshot = await required(backup.operator.mutate("admin.storage.snapshots.create", {
+    tenant: backup.tenant,
+    operation: crypto.randomUUID(),
+  }));
+
+  await required(move(peer, from, destination));
+  await owner.invalidate("deliveryNotes.list");
+  const returned = await read(owner);
+  assert.equal(returned.projectId, from);
+  assert.equal(returned.autoId, source.autoId);
+  assert.equal(returned.specialRecords[0]?.pricePerUnit, 27.5);
+  assert.notEqual(returned.revision, source.revision);
+  assert.ok((await move(owner, to, source))[1], "a form from the former placement stays stale");
+  await required(owner.mutate("deliveryNotes.delete", { id: created.id, expectedRevision: returned.revision }));
+  assert.ok((await peer.query("zerotrust.deliveryNotes.locate", { id: created.id }))[1]);
+  console.log("Delivery move verified: shared number, concurrent price guard, lost reply, round trip and stale form denial.");
+
+  const signal = new AbortController().signal;
+  const prepared = await required(peer.mutate("zerotrust.content.prepare", {
+    snapshotOperation: snapshot.id,
+    operation: crypto.randomUUID(),
+  }));
+  const approval = await approvePreparedContent(peer, prepared, signal);
+  const preview = await inspectPreparedContent(peer, approval, signal);
+  assert.deepEqual(preview.restoredMaterial, {
+    deliveryNotes: 1,
+    regieReports: 0,
+    missingProjects: 0,
+    missingProducts: 0,
+    uncheckedReferences: 0,
+  });
+  await activatePreparedContent(peer, { ...approval, review: preview.review }, signal);
+  const restored = await read(peer);
+  assert.equal(restored.projectId, destination.projectId);
+  assert.equal(restored.autoId, destination.autoId);
+  assert.equal(restored.revision, destination.revision);
+  assert.deepEqual(restored.specialRecords, destination.specialRecords);
+  console.log("Delivery restore verified: preview and activation use the saved placement, numbering and prices.");
+  return comment;
+}
 
 export async function exerciseDeliveryReferenceBatch(
   writer: Client,
@@ -264,6 +393,7 @@ export async function exerciseNativeDelivery(
     created.id,
     note.id,
     setRequestHook,
+    second.id,
   );
   console.log(
     "Native delivery notes verified: real project/note creation, concurrent shared numbering, replay, cross-project rejection, private prices and stable updates.",

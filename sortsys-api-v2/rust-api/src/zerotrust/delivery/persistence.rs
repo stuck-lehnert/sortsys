@@ -1,8 +1,9 @@
 //! Shared numbering and immutable allocation receipts in the tenant file.
 use super::{
     Binding, DeliveryAdoptionInput, DeliveryAllocateInput, DeliveryAllocation,
-    DeliveryInitializeInput, DeliveryLocateInput, DeliveryReference, DeliveryReferencesInput, Kind,
-    area, authorize, binding, current, request_id,
+    DeliveryInitializeInput, DeliveryLocateInput, DeliveryMove, DeliveryMoveInput,
+    DeliveryReference, DeliveryReferencesInput, Kind, MovePlan, area, authorize, binding, current,
+    delivery_object, request_id, valid_placement,
 };
 use crate::{
     api::Success,
@@ -15,7 +16,7 @@ use crate::{
     zerotrust::{
         access::{MetadataContext, metadata_context},
         crypto::{frame, invalid, verify},
-        objects::{SaveInput, conflict, persistence as objects, registry},
+        objects::{BatchInput, SaveInput, conflict, persistence as objects, registry},
     },
 };
 use serde::{Deserialize, Serialize};
@@ -36,6 +37,13 @@ struct Allocation {
     request: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     source: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    placement: Option<String>,
+}
+#[derive(Deserialize, Serialize)]
+struct ActivePlacement {
+    project: i64,
+    placement: String,
 }
 impl Allocation {
     fn result(&self) -> RpcResult<DeliveryAllocation> {
@@ -43,21 +51,62 @@ impl Allocation {
             return Err(invalid());
         }
         request_id(&self.request)?;
+        if self
+            .placement
+            .as_deref()
+            .is_some_and(|value| !valid_placement(value))
+        {
+            return Err(invalid());
+        }
         Ok(DeliveryAllocation {
             id: Id(self.id),
             project_id: Id(self.project),
             number: self.number.to_string(),
+            placement: self.placement.clone(),
         })
+    }
+
+    fn object(&self, price: bool) -> String {
+        delivery_object(
+            Id(self.project),
+            Id(self.id),
+            price,
+            self.placement.as_deref(),
+        )
     }
 }
 fn allocation_key(id: Id) -> sortsys_zerotrust::metadata::RecordKey {
     key("delivery-allocations", &id.encode())
 }
+fn placement_key(id: Id) -> sortsys_zerotrust::metadata::RecordKey {
+    key("delivery-placements", &id.encode())
+}
 fn request_key(subject: &str, request: &str) -> sortsys_zerotrust::metadata::RecordKey {
     key("delivery-requests", &format!("{subject}:{request}"))
 }
 async fn read(transaction: &mut Transaction, id: Id) -> RpcResult<Allocation> {
-    validated_allocation(transaction.read(allocation_key(id)).await?, id)
+    let mut allocation = validated_allocation(transaction.read(allocation_key(id)).await?, id)?;
+    if let Some(current) = transaction
+        .read::<ActivePlacement>(placement_key(id))
+        .await?
+    {
+        allocation.project = current.project;
+        allocation.placement = Some(current.placement);
+        allocation.result()?;
+    }
+    Ok(allocation)
+}
+
+async fn prefetch_allocations(
+    transaction: &mut Transaction,
+    ids: impl Iterator<Item = Id>,
+) -> RpcResult<()> {
+    transaction
+        .prefetch(
+            ids.flat_map(|id| [allocation_key(id), placement_key(id)])
+                .collect(),
+        )
+        .await
 }
 
 fn validated_allocation(record: Option<Allocation>, id: Id) -> RpcResult<Allocation> {
@@ -93,7 +142,32 @@ pub(super) fn register(
     let allocate = Arc::clone(&service);
     let lookup = Arc::clone(&service);
     let adoption = Arc::clone(&service);
+    let movement = Arc::clone(&service);
     builder
+        .mutation(
+            "zerotrust.deliveryNotes.move",
+            move |ctx, input: DeliveryMoveInput| {
+                let service = Arc::clone(&movement);
+                async move {
+                    objects::commit_delivery_move(
+                        &service,
+                        &ctx,
+                        BatchInput {
+                            objects: input.objects,
+                            heads: Some(input.heads),
+                            documents: None,
+                            live_checkpoints: None,
+                            member: None,
+                            policy: None,
+                        },
+                        MovePlan {
+                            movement: input.movement,
+                        },
+                    )
+                    .await
+                }
+            },
+        )
         .mutation(
             "zerotrust.deliveryNotes.initialize",
             move |ctx, input: DeliveryInitializeInput| {
@@ -191,7 +265,11 @@ async fn adopt(
     let mut ids = BTreeSet::new();
     let mut numbers = BTreeSet::new();
     for allocation in &input.allocations {
-        if allocation.id.0 <= 0 || allocation.project_id.0 <= 0 || !ids.insert(allocation.id.0) {
+        if allocation.id.0 <= 0
+            || allocation.project_id.0 <= 0
+            || allocation.placement.is_some()
+            || !ids.insert(allocation.id.0)
+        {
             return Err(invalid());
         }
         let number = allocation.number.parse::<u64>().map_err(|_| invalid())?;
@@ -248,6 +326,7 @@ async fn adopt(
             author: context.security.subject.clone(),
             request: format!("backup_restore_{}", value.id.encode()),
             source: Some(input.context.clone()),
+            placement: None,
         };
         allocation.result()?;
         context
@@ -328,7 +407,8 @@ async fn allocation_attempt(
     }
     let receipt = request_key(&context.security.subject, &input.request_id);
     if let Some(id) = context.transaction.read::<Id>(receipt.clone()).await? {
-        let existing = read(&mut context.transaction, id).await?;
+        let existing =
+            validated_allocation(context.transaction.read(allocation_key(id)).await?, id)?;
         if existing.project != input.project_id.0
             || existing.author != context.security.subject
             || existing.request != input.request_id
@@ -357,6 +437,7 @@ async fn allocation_attempt(
         author: context.security.subject.clone(),
         request: input.request_id.clone(),
         source: None,
+        placement: None,
     };
     let number_key = key("delivery-numbers", &allocation.number.to_string());
     if context
@@ -422,11 +503,7 @@ async fn locate(
             super::Action::Delete,
         )?;
     }
-    let note = format!(
-        "delivery-note:{}:{}",
-        Id(allocation.project).encode(),
-        id.encode()
-    );
+    let note = allocation.object(false);
     let record = objects::object(&mut context.transaction, &note)
         .await?
         .ok_or_else(not_found)?;
@@ -450,7 +527,9 @@ async fn references(
     {
         return Err(invalid());
     }
-    let mut context = metadata_context(service, request).await?;
+    let context = metadata_context(service, request).await?;
+    let mut context =
+        super::super::content::select_read_view(context, input.prepared.as_ref()).await?;
     let mut notes = Vec::with_capacity(input.objects.len());
     for object in input.objects {
         let selected = binding(&object)?.ok_or_else(invalid)?;
@@ -459,27 +538,24 @@ async fn references(
         }
         authorize(&context.security, selected.project, super::Action::Read)?;
         let note = selected.note.ok_or_else(invalid)?;
-        notes.push((object, selected.project, note));
+        notes.push((object, note));
     }
-    let keys = notes
-        .iter()
-        .map(|(_, _, note)| allocation_key(*note))
-        .collect();
-    let allocations = context.transaction.many::<Allocation>(keys).await?;
-    let result = notes
-        .into_iter()
-        .zip(allocations)
-        .map(|((object, project, note), allocation)| {
-            let allocation = validated_allocation(allocation, note)?;
-            if allocation.project != project.0 {
-                return Err(conflict());
-            }
-            Ok(DeliveryReference {
-                object,
-                allocation: allocation.result()?,
-            })
-        })
-        .collect::<RpcResult<_>>()?;
+    prefetch_allocations(
+        &mut context.transaction,
+        notes.iter().map(|(_, note)| *note),
+    )
+    .await?;
+    let mut result = Vec::with_capacity(notes.len());
+    for (object, note) in notes {
+        let allocation = read(&mut context.transaction, note).await?;
+        if allocation.object(false) != object {
+            return Err(conflict());
+        }
+        result.push(DeliveryReference {
+            object,
+            allocation: allocation.result()?,
+        });
+    }
     context.transaction.validate().await?;
     Ok(result)
 }
@@ -487,11 +563,13 @@ async fn references(
 pub(super) async fn validate_packet(
     context: &mut MetadataContext,
     input: &SaveInput,
+    moving: bool,
 ) -> RpcResult<()> {
     let Some(Binding {
         project,
         note,
         kind,
+        placement,
     }) = binding(&input.envelope.object)?
     else {
         return Ok(());
@@ -510,11 +588,11 @@ pub(super) async fn validate_packet(
     }
     if let Some(note) = note {
         let allocation = read(&mut context.transaction, note).await?;
-        if allocation.project != project.0 {
+        if allocation.project != project.0 || allocation.placement != placement {
             return Err(conflict());
         }
         if matches!(kind, Kind::Price) {
-            let object = format!("delivery-note:{}:{}", project.encode(), note.encode());
+            let object = allocation.object(false);
             let parent = objects::raw_object(&mut context.transaction, &object).await?;
             if !parent.is_some_and(|record| {
                 !record.deleted && !record.tombstone && record.domain == area(project, false).0
@@ -522,7 +600,9 @@ pub(super) async fn validate_packet(
                 return Err(conflict());
             }
         }
-        if input.envelope.revision == "1"
+        if !moving
+            && input.envelope.revision == "1"
+            && allocation.placement.is_none()
             && let Some(source) = &allocation.source
         {
             if input.migration_origin.is_none() {
@@ -530,8 +610,11 @@ pub(super) async fn validate_packet(
             }
             super::super::bootstrap::require_pending_context(context, source).await?;
         }
-        if input.envelope.revision == "1" && allocation.author != context.security.subject {
-            let object = format!("delivery-note:{}:{}", project.encode(), note.encode());
+        if !moving
+            && input.envelope.revision == "1"
+            && allocation.author != context.security.subject
+        {
+            let object = allocation.object(false);
             let existing = objects::object(&mut context.transaction, &object).await?;
             let published = existing
                 .is_some_and(|record| !record.deleted && record.domain == area(project, false).0);
@@ -557,6 +640,7 @@ pub(super) async fn validate_packet(
             .ok_or_else(conflict)?;
         let allocation = read(&mut context.transaction, id).await?;
         if allocation.project != project.0
+            || allocation.placement.is_some()
             || allocation.author != context.security.subject
             || allocation.request != request
         {
@@ -566,14 +650,114 @@ pub(super) async fn validate_packet(
     Ok(())
 }
 
-/// The signed note head controls the visibility of its private prices. Deletion
-/// therefore needs neither a price key nor permission to rewrite cost contents.
+pub(super) async fn apply_move(
+    context: &mut MetadataContext,
+    movement: &DeliveryMove,
+    batch: &BatchInput,
+) -> RpcResult<[String; 2]> {
+    let DeliveryMove {
+        id,
+        from_project,
+        to_project,
+        placement,
+        proof,
+    } = movement;
+    if id.0 <= 0
+        || from_project.0 <= 0
+        || to_project.0 <= 0
+        || from_project == to_project
+        || !valid_placement(placement)
+    {
+        return Err(invalid());
+    }
+    let source_domains = [area(*from_project, false).0, area(*from_project, true).0];
+    let heads = batch.heads.as_deref().ok_or_else(invalid)?;
+    if source_domains
+        .iter()
+        .any(|domain| !heads.iter().any(|head| &head.domain == domain))
+    {
+        return Err(invalid());
+    }
+    let [note, price] = batch.objects.as_slice() else {
+        return Err(invalid());
+    };
+    for (packet, pricing) in [(note, false), (price, true)] {
+        if packet.domain != area(*to_project, pricing).0
+            || packet.envelope.object != delivery_object(*to_project, *id, pricing, Some(placement))
+            || packet.envelope.revision != "1"
+            || packet.envelope.is_tombstone()
+            || packet.migration_origin.is_some()
+            || packet.references.is_some()
+            || packet.resource_access.is_some()
+            || packet.recipient_key.is_some()
+            || packet.planning_title.is_some()
+        {
+            return Err(invalid());
+        }
+    }
+    authorize(&context.security, *from_project, super::Action::Update)?;
+    let id_wire = id.encode();
+    let from_wire = from_project.encode();
+    let to_wire = to_project.encode();
+    let mut parameters = vec![
+        context.auth.tenant.as_str(),
+        context.security.subject.as_str(),
+        &id_wire,
+        &from_wire,
+        &to_wire,
+        placement,
+        &note.envelope.signature,
+        &price.envelope.signature,
+    ];
+    for head in heads {
+        parameters.extend([head.domain.as_str(), head.sequence.as_str()]);
+    }
+    verify(
+        &context.security.signing_key,
+        proof,
+        &frame("sortsys/delivery-move/v1", &parameters),
+    )?;
+
+    let allocation = read(&mut context.transaction, *id).await?;
+    if allocation.project != from_project.0 {
+        return Err(conflict());
+    }
+    let parent = objects::raw_object(&mut context.transaction, &allocation.object(false)).await?;
+    if !parent.is_some_and(|record| {
+        !record.deleted && !record.tombstone && record.domain == source_domains[0]
+    }) {
+        return Err(conflict());
+    }
+    for packet in [note, price] {
+        if objects::raw_object(&mut context.transaction, &packet.envelope.object)
+            .await?
+            .is_some()
+        {
+            return Err(conflict());
+        }
+    }
+    // The active location and both destination records use the same write
+    // transaction. No former placement can become current again.
+    context
+        .transaction
+        .put(
+            placement_key(*id),
+            &ActivePlacement {
+                project: to_project.0,
+                placement: placement.clone(),
+            },
+        )
+        .await?;
+    Ok(source_domains)
+}
+
+/// Only the active placement appears in current reads. Its note head also
+/// controls the visibility of prices after deletion.
 pub(super) async fn apply_visibility(
     transaction: &mut Transaction,
     records: &mut [objects::ObjectRecord],
 ) -> RpcResult<()> {
     let mut selected = Vec::new();
-    let mut parents = Vec::new();
     for (index, record) in records.iter().enumerate() {
         if record.deleted {
             continue;
@@ -581,21 +765,30 @@ pub(super) async fn apply_visibility(
         let Some(selected_binding) = binding(&record.object)? else {
             continue;
         };
-        if !matches!(selected_binding.kind, Kind::Price) {
+        let Some(note) = selected_binding.note else {
             continue;
+        };
+        selected.push((index, note, matches!(selected_binding.kind, Kind::Price)));
+    }
+    if selected.is_empty() {
+        return Ok(());
+    }
+    prefetch_allocations(transaction, selected.iter().map(|(_, note, _)| *note)).await?;
+    let mut prices = Vec::new();
+    let mut parents = Vec::new();
+    for (index, id, price) in selected {
+        let allocation = read(transaction, id).await?;
+        if records[index].object != allocation.object(price) {
+            records[index].deleted = true;
+        } else if price {
+            let domain = area(Id(allocation.project), false).0;
+            let note = allocation.object(false);
+            parents.push(objects::record_key(&domain, &note));
+            prices.push((index, domain, note));
         }
-        let note = selected_binding.note.ok_or_else(invalid)?;
-        let domain = area(selected_binding.project, false).0;
-        let object = format!(
-            "delivery-note:{}:{}",
-            selected_binding.project.encode(),
-            note.encode()
-        );
-        parents.push(objects::record_key(&domain, &object));
-        selected.push((index, domain, object));
     }
     let states = transaction.many::<objects::ObjectRecord>(parents).await?;
-    for ((index, domain, object), parent) in selected.into_iter().zip(states) {
+    for ((index, domain, object), parent) in prices.into_iter().zip(states) {
         if let Some(parent) = parent {
             if parent.domain != domain || parent.object != object {
                 return Err(invalid());

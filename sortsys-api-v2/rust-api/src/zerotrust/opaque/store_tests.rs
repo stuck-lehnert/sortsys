@@ -98,6 +98,7 @@ async fn browser_with_tenant(
             | "owner-planning-recipients"
             | "owner-project-access"
             | "owner-delivery-batching"
+            | "owner-delivery-move"
             | "owner-tool-batches"
             | "owner-access-pages"
             | "owner-access-publications"
@@ -133,6 +134,9 @@ async fn browser_with_tenant(
         .kill_on_drop(true);
     if mode == "owner-bootstrap" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "initialization-tenant");
+    }
+    if mode == "owner-delivery-move" {
+        command.env("SORTSYS_NATIVE_AUTH_TENANT", "delivery-move-tenant");
     }
     if mode == "owner-staging" {
         command.env("SORTSYS_NATIVE_AUTH_TENANT", "staging-tenant");
@@ -217,7 +221,11 @@ async fn browser_with_tenant(
         Duration::from_secs(300)
     } else if matches!(
         mode,
-        "invitations" | "member-renames" | "member-deletion" | "owner-bootstrap"
+        "invitations"
+            | "member-renames"
+            | "member-deletion"
+            | "owner-bootstrap"
+            | "owner-delivery-move"
     ) {
         Duration::from_secs(180)
     } else {
@@ -1445,6 +1453,24 @@ async fn first_administrator_finishes_setup_before_business_access() {
         .unwrap()
         .into();
     processes::run_browser(&settings, &root, "owner-bootstrap").await;
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn delivery_moves_preserve_the_number_across_api_processes() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let config = QuackConfig::from_env().unwrap().unwrap();
+    assert!(config.control_url.starts_with("http://127.0.0.1:"));
+    let mut settings = configuration(config);
+    settings.jwt_secret = Arc::from(b"disposable-delivery-move-signing-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    processes::run_browser(&settings, &root, "owner-delivery-move").await;
 }
 
 #[tokio::test]

@@ -1,7 +1,9 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
 import {
+  frame,
   InvalidProtectedData,
   record,
+  sign,
   sized,
 } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
@@ -9,10 +11,16 @@ import { addressId, partialAddressRecord } from "./addressBook";
 import {
   commitProtectedWrites,
   type PreparedWrites,
+  type PublicationOptions,
   ProtectedWriteConflict,
 } from "./atomicWrites";
 import { createBusinessDatabase, type DuckDriver } from "./database";
 import { deliveryChanges } from "./deliveryChanges";
+import {
+  deliveryFormRevision,
+  deliveryObject,
+  isDeliveryFormRevision,
+} from "./deliveryIdentity";
 import {
   deliveryCollection,
   type DeliveryPayload,
@@ -77,6 +85,38 @@ const row = (table: string, values: Record<string, unknown>): BusinessRow => ({
   table,
   values,
 });
+
+function deliveryMoveBatch(
+  client: Client,
+  context: Awaited<ReturnType<typeof deliveryRequestContext>>,
+  fromProject: string,
+  target: { id: string; projectId: string; placement: string },
+): NonNullable<PublicationOptions["customBatch"]> {
+  const { id, projectId: toProject, placement } = target;
+  return {
+    changedDomains: [
+      deliveryCollection(fromProject).domain,
+      deliveryCollection(fromProject, true).domain,
+    ],
+    async send(objects, heads, signal) {
+      const { account, subject } = context;
+      const proof = await sign(account.identity.signingKey.privateKey, frame(
+        "sortsys/delivery-move/v1",
+        [
+          account.tenant, subject, id, fromProject, toProject, placement,
+          ...objects.map(({ envelope }) => envelope.signature),
+          ...heads.flatMap(({ domain, sequence }) => [domain, sequence]),
+        ],
+      ));
+      context.live();
+      signal.throwIfAborted();
+      return client.mutate("zerotrust.deliveryNotes.move", {
+        movement: { id, fromProject, toProject, placement, proof }, objects, heads,
+      }, { signal });
+    },
+  };
+}
+
 export async function writeDeliveryNote(
   client: Client,
   path: string,
@@ -129,9 +169,7 @@ export async function writeDeliveryNote(
   for (const field of ["expectedRevision", "expectedPriceRevision"] as const) {
     if (
       outer[field] !== undefined &&
-      (typeof outer[field] !== "string" ||
-        !/^(0|[1-9]\d{0,18})$/.test(outer[field] as string) ||
-        (field === "expectedRevision" && outer[field] === "0"))
+      !isDeliveryFormRevision(outer[field], field === "expectedPriceRevision")
     ) {
       throw new InvalidProtectedData();
     }
@@ -150,20 +188,16 @@ export async function writeDeliveryNote(
         ),
       );
   live();
-  const projectId = creating ? changes.projectId! : located!.projectId;
-  // Moving encrypted contents between reader sets needs its own atomic
-  // lifecycle operation. Never rewrite the private project field in place.
-  if (
-    !creating &&
-    changes.projectId !== undefined &&
-    changes.projectId !== projectId
-  ) {
-    throw new InvalidProtectedData();
+  const sourceProjectId = located?.projectId ?? changes.projectId!;
+  const projectId = changes.projectId ?? sourceProjectId;
+  const moving = projectId !== sourceProjectId;
+  if (moving && outer.expectedRevision === undefined) {
+    throw new ProtectedWriteConflict();
   }
   const context = await deliveryRequestContext(client, signal),
     open = await protectedCollections(client, signal);
   live();
-  const area = deliveryCollection(projectId),
+  const area = deliveryCollection(sourceProjectId),
     quantities = open(area),
     stores = [quantities],
     groups: PreparedWrites[] = [],
@@ -222,8 +256,8 @@ export async function writeDeliveryNote(
     );
     live();
     if (
-      allocation.projectId !== projectId ||
-      allocation.number !== value.number
+      allocation.number !== value.number ||
+      (allocation.projectId !== projectId && allocation.placement === undefined)
     ) {
       throw new InvalidProtectedData();
     }
@@ -249,7 +283,7 @@ export async function writeDeliveryNote(
       : located!;
     live();
     const id = allocation.id,
-      object = area.prefix + id,
+      object = deliveryObject(allocation),
       current = (await quantities.read(object)).find(
         (item) => item.envelope.object === object,
       );
@@ -259,14 +293,17 @@ export async function writeDeliveryNote(
     }
     if (
       outer.expectedRevision !== undefined &&
-      outer.expectedRevision !== current?.envelope.revision
+      outer.expectedRevision !== deliveryFormRevision(
+        current?.envelope.revision ?? "0",
+        allocation.placement,
+      )
     ) {
       throw new ProtectedWriteConflict();
     }
     const previous = current
-      ? deliveryPayload(current.value, object, projectId)
+      ? deliveryPayload(current.value, object, sourceProjectId)
       : null;
-    if (creating) {
+    if (creating || moving) {
       const projectArea = projectCollection(projectId),
         project = open(projectArea);
       stores.push(project);
@@ -380,6 +417,18 @@ export async function writeDeliveryNote(
         priceChanges.set(publicId(specialId), change.pricePerUnit);
       }
     }
+    const newPlacement = moving
+      ? { id, projectId, placement: crypto.randomUUID().replaceAll("-", "") }
+      : null;
+    const target = newPlacement ?? allocation;
+    const targetObject = deliveryObject(target);
+    const targetArea = deliveryCollection(projectId);
+    const destination = moving ? open(targetArea) : quantities;
+    if (moving) {
+      stores.push(destination);
+      guards.push({ domain: area.domain, sequence: quantities.snapshot() });
+      await destination.inspect();
+    }
     const value = deliveryPayload(
       {
         format: "sortsys-delivery-note-v1",
@@ -388,6 +437,7 @@ export async function writeDeliveryNote(
           previous
             ? {
                 ...previous.note.values,
+                project_id: addressId(projectId),
                 ...(changes.comment !== undefined
                   ? { comment: changes.comment }
                   : {}),
@@ -408,7 +458,7 @@ export async function writeDeliveryNote(
         records,
         specialRecords,
       } satisfies DeliveryPayload,
-      object,
+      targetObject,
       projectId,
     );
     const check = await createBusinessDatabase(await driver?.());
@@ -433,7 +483,9 @@ export async function writeDeliveryNote(
     const quantityPackets: MutateInput<"zerotrust.objects.save">[] = [];
     if (quantityChanged) {
       quantityPackets.push(
-        await quantities.packet(object, value, current?.envelope),
+        await destination.packet(
+          targetObject, value, moving ? undefined : current?.envelope,
+        ),
       );
     }
     if (creating) {
@@ -454,14 +506,14 @@ export async function writeDeliveryNote(
     if (quantityPackets.length) {
       groups.push({
         packets: quantityPackets,
-        head: { domain: area.domain, sequence: quantities.snapshot() },
+        head: { domain: targetArea.domain, sequence: destination.snapshot() },
         close() {},
         async verify() {
-          const saved = await quantities.read(object);
+          const saved = await destination.read(targetObject);
           live();
           if (
             quantityChanged &&
-            saved.find((item) => item.envelope.object === object)?.envelope
+            saved.find((item) => item.envelope.object === targetObject)?.envelope
               .signature !== quantityPackets[0]!.envelope.signature
           ) {
             return false;
@@ -470,26 +522,29 @@ export async function writeDeliveryNote(
         },
       });
     }
-    if (priceChanges.size) {
-      const pricesArea = deliveryCollection(projectId, true),
+    if (priceChanges.size || moving) {
+      const pricesArea = deliveryCollection(sourceProjectId, true),
         prices = open(pricesArea);
       stores.push(prices);
-      const priceObject = pricesArea.prefix + id,
+      const priceObject = deliveryObject(allocation, true),
         old = (await prices.read(priceObject)).find(
           (item) => item.envelope.object === priceObject,
         );
       live();
       if (
         outer.expectedPriceRevision !== undefined &&
-        outer.expectedPriceRevision !== (old?.envelope.revision ?? "0")
+        outer.expectedPriceRevision !== deliveryFormRevision(
+          old?.envelope.revision ?? "0",
+          allocation.placement,
+        )
       ) {
         throw new ProtectedWriteConflict();
       }
       const previousPrices = old
-        ? deliveryPrices(old.value, priceObject, projectId)
+        ? deliveryPrices(old.value, priceObject, sourceProjectId)
         : {
             format: "sortsys-delivery-prices-v1" as const,
-            projectId,
+            projectId: sourceProjectId,
             noteId: id,
             prices: [],
           };
@@ -499,25 +554,42 @@ export async function writeDeliveryNote(
       for (const [key, price] of priceChanges) {
         map.set(key, price);
       }
+      if (moving) {
+        const active = new Set(specialRecords.map((item) => publicId(item.values.id)));
+        for (const key of map.keys()) {
+          if (!active.has(key)) map.delete(key);
+        }
+      }
+      const targetPriceObject = deliveryObject(target, true);
       const next = deliveryPrices(
         {
           ...previousPrices,
+          projectId,
           prices: [...map].map(([id, pricePerUnit]) => ({ id, pricePerUnit })),
         } satisfies DeliveryPrices,
-        priceObject,
+        targetPriceObject,
         projectId,
       );
-      if (JSON.stringify(next) !== JSON.stringify(previousPrices)) {
-        const packet = await prices.packet(priceObject, next, old?.envelope);
+      if (moving || JSON.stringify(next) !== JSON.stringify(previousPrices)) {
+        const targetPriceArea = deliveryCollection(projectId, true);
+        const priceDestination = moving ? open(targetPriceArea) : prices;
+        if (moving) {
+          stores.push(priceDestination);
+          guards.push({ domain: pricesArea.domain, sequence: prices.snapshot() });
+          await priceDestination.inspect();
+        }
+        const packet = await priceDestination.packet(
+          targetPriceObject, next, moving ? undefined : old?.envelope,
+        );
         live();
         groups.push({
           packets: [packet],
-          head: { domain: pricesArea.domain, sequence: prices.snapshot() },
+          head: { domain: targetPriceArea.domain, sequence: priceDestination.snapshot() },
           close() {},
           async verify() {
             return (
-              (await prices.read(priceObject)).find(
-                (item) => item.envelope.object === priceObject,
+              (await priceDestination.read(targetPriceObject)).find(
+                (item) => item.envelope.object === targetPriceObject,
               )?.envelope.signature === packet.envelope.signature
             );
           },
@@ -531,7 +603,10 @@ export async function writeDeliveryNote(
       guards.push({ domain: area.domain, sequence: quantities.snapshot() });
     }
     try {
-      await commitProtectedWrites(client, groups, signal, guards);
+      const customBatch = newPlacement
+        ? deliveryMoveBatch(client, context, sourceProjectId, newPlacement)
+        : undefined;
+      await commitProtectedWrites(client, groups, signal, guards, { customBatch });
       live();
     } catch (error) {
       if (creating) {

@@ -9,6 +9,7 @@ import { historicalPrices, wireHistoricalPrice } from "./historicalPrices";
 import { timestampMicros } from "./timestamps";
 import { projectModuleArea, projectModuleDomain } from "./projectScope";
 import { aggregateRows } from "./aggregateRows";
+import { deliveryPlacement } from "./deliveryIdentity";
 
 export const DELIVERY_QUERIES = new Set([
   "deliveryNotes.list",
@@ -108,13 +109,12 @@ export function deliveryPayload(
 ): DeliveryPayload {
   const data = record(input, ["format", "note", "records", "specialRecords"]),
     note = decodeBusinessRow(data.note);
-  const area = deliveryCollection(projectId),
-    id = publicId(note.values.id);
+  const id = publicId(note.values.id);
   addressId(id);
+  deliveryPlacement(object, { projectId, id });
   if (
     data.format !== "sortsys-delivery-note-v1" ||
     note.table !== "product_delivery_notes" ||
-    object !== area.prefix + id ||
     publicId(note.values.project_id) !== projectId ||
     !/^[1-9]\d*$/.test(note.values.auto_id as string)
   )
@@ -137,13 +137,12 @@ export function deliveryPrices(
   object: string,
   projectId: string,
 ): DeliveryPrices {
-  const data = record(input, ["format", "projectId", "noteId", "prices"]),
-    area = deliveryCollection(projectId, true);
+  const data = record(input, ["format", "projectId", "noteId", "prices"]);
   addressId(data.noteId);
+  deliveryPlacement(object, { projectId, id: data.noteId as string }, true);
   if (
     data.format !== "sortsys-delivery-prices-v1" ||
     data.projectId !== projectId ||
-    object !== area.prefix + data.noteId ||
     !Array.isArray(data.prices) ||
     data.prices.length > 10000
   )

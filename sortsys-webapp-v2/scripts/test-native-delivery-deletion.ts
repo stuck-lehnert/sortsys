@@ -27,6 +27,7 @@ import {
 } from "../app/lib/data/protectedObjects";
 import { acquireDataRuntime } from "../app/lib/data/runtime/session";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
+import { projectCollection } from "../app/lib/data/projectData";
 
 export type DeliveryRequestHook = (
   url: URL,
@@ -141,6 +142,7 @@ export async function exerciseNativeDeliveryDeletion(
   projectId: string,
   id: string,
   setRequestHook: (hook: DeliveryRequestHook | null) => void,
+  targetProjectId: string,
 ) {
   const signal = new AbortController().signal;
   const master = deliveryCollection(projectId);
@@ -445,7 +447,7 @@ export async function exerciseNativeDeliveryDeletion(
       (await required(rawMember.query("auth.sessionInfo", undefined))).roles,
       [],
     );
-    const visible = await required(
+    let visible = await required(
       colleague.query(
         "deliveryNotes.get",
         { id: second.id },
@@ -480,6 +482,29 @@ export async function exerciseNativeDeliveryDeletion(
       ).specialRecords[0]!.pricePerUnit,
       19.75,
     );
+    await changeAreaActionAccesses(owner, `user:${member.id}`, [
+      { area: master, patch: { update: true } },
+      { area: projectCollection(targetProjectId), patch: { read: true } },
+      { area: deliveryCollection(targetProjectId), patch: { read: true, create: true } },
+      { area: deliveryCollection(targetProjectId, true), patch: { read: true, create: true } },
+    ], signal);
+    await acceptVaultWithKey(memberAccount.dataKey, memberAccount.vault, memberAccount.username, false);
+    const deniedMove = await colleague.mutate("deliveryNotes.update", {
+      id: second.id,
+      expectedRevision: visible.revision,
+      data: { projectId: targetProjectId, comment: "Darf nicht übertragen werden" },
+    });
+    assert.ok(deniedMove[1], "source quantity rights and destination write rights do not open source prices");
+    assert.deepEqual(await required(colleague.query("deliveryNotes.list", { projectId: targetProjectId })), []);
+    await required(colleague.mutate("deliveryNotes.update", {
+      id: second.id,
+      expectedRevision: visible.revision,
+      data: { comment: "Mengenbearbeitung im bisherigen Projekt" },
+    }));
+    visible = await required(colleague.query("deliveryNotes.get", { id: second.id }));
+    assert.equal(visible.projectId, projectId);
+    assert.equal(visible.specialRecords[0]!.pricePerUnit, null);
+    await unlockOwner();
     await changeAreaActionAccesses(
       owner,
       `user:${member.id}`,

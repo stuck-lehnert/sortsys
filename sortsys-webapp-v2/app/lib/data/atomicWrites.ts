@@ -36,6 +36,14 @@ export type PublicationOptions = {
   documents?: DocumentPublication[];
   member?: MemberPublication;
   policy?: PolicyPublication;
+  customBatch?: {
+    changedDomains: readonly string[];
+    send(
+      packets: PreparedWrites["packets"],
+      heads: PreparedWrites["head"][],
+      signal: AbortSignal,
+    ): Promise<[unknown, Error | null]>;
+  };
 };
 export class ProtectedWriteConflict extends Error {
   constructor() {
@@ -115,7 +123,10 @@ export async function commitProtectedWrites(
       client,
       publications.policy
         ? undefined
-        : new Set(groups.map((group) => group.head.domain)),
+        : new Set([
+            ...groups.map((group) => group.head.domain),
+            ...(publications.customBatch?.changedDomains ?? []),
+          ]),
       publications.policy ? { revalidate: true, control: true } : undefined,
     );
   }
@@ -131,6 +142,7 @@ async function publishProtectedWrites(
   const documents = publications.documents ?? [];
   const member = publications.member;
   const policy = publications.policy;
+  const customBatch = publications.customBatch;
   const packets = groups.flatMap((group) => group.packets);
   const live = [
     ...(publications.live ?? []),
@@ -145,6 +157,8 @@ async function publishProtectedWrites(
       (!renaming && packets.length !== (deletingMember ? 3 : 1)));
   const invalidPolicy =
     policy && (documents.length > 0 || (member && !renaming));
+  const invalidCustomBatch = customBatch &&
+    (documents.length > 0 || member || policy || live.length > 0 || !packets.length);
   if (
     (!packets.length && !documents.length && !policy && !live.length) ||
     documents.length > 16 ||
@@ -157,7 +171,8 @@ async function publishProtectedWrites(
     ) ||
     new Set(groups.map((group) => group.head.domain)).size !== groups.length ||
     invalidMember ||
-    invalidPolicy
+    invalidPolicy ||
+    invalidCustomBatch
   )
     throw new InvalidProtectedData();
   // Independently prepared commands often read one another's write areas.
@@ -186,6 +201,7 @@ async function publishProtectedWrites(
       ) >
         24 * 1024 * 1024)
   ) {
+    if (customBatch) throw new InvalidProtectedData();
     const chunks: (typeof packets)[] = [];
     let chunk: typeof packets = [];
     let size = 0;
@@ -238,18 +254,20 @@ async function publishProtectedWrites(
     }
   } else {
     try {
-      [, error] = await client.mutate(
-        "zerotrust.objects.batch",
-        {
-          objects: packets,
-          heads,
-          documents: documents.map((p) => p.head),
-          liveCheckpoints: live.map((value) => value.checkpoint),
-          ...(member ? { member: member.change } : {}),
-          ...(permissions ? { policy: permissions } : {}),
-        },
-        { signal },
-      );
+      [, error] = customBatch
+        ? await customBatch.send(packets, heads, signal)
+        : await client.mutate(
+            "zerotrust.objects.batch",
+            {
+              objects: packets,
+              heads,
+              documents: documents.map((p) => p.head),
+              liveCheckpoints: live.map((value) => value.checkpoint),
+              ...(member ? { member: member.change } : {}),
+              ...(permissions ? { policy: permissions } : {}),
+            },
+            { signal },
+          );
     } catch (failure) {
       error = failure instanceof Error ? failure : new Error(String(failure));
     }

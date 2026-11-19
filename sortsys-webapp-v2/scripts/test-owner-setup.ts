@@ -97,6 +97,9 @@ globalThis.fetch = new Proxy(originalFetch, {
         }
         rpcOrigins.add(destination.origin);
       }
+      if (mode === "owner-delivery-move" && destination.pathname === "/zerotrust.deliveryNotes.move") {
+        rpcOrigins.add(destination.origin);
+      }
       let request = input;
       if (destination.href !== url.href) {
         request =
@@ -345,6 +348,19 @@ try {
     const { exerciseDeliveryReferenceBatch } =
       await import("./test-duckdb-delivery");
     await exerciseDeliveryReferenceBatch(owner, peer);
+  } else if (mode === "owner-delivery-move") {
+    const { initializeTenant } = await import("../app/lib/crypto/initializeTenant");
+    await initializeTenant(owner, new AbortController().signal, duckDriver);
+    const { exerciseDeliveryMove } = await import("./test-duckdb-delivery");
+    const from = await required(owner.mutate("projects.create", { title: "Ausgangsbaustelle" }));
+    const to = await required(peer.mutate("projects.create", { title: "Zielbaustelle" }));
+    const comment = await exerciseDeliveryMove(
+      owner, peer, from.id, to.id, (hook) => {
+        requestHook = hook;
+      }, { operator, tenant },
+    );
+    assert.equal(requests.some((body) => body.includes(comment)), false);
+    assert.deepEqual([...rpcOrigins].sort(), [...apiOrigins].sort());
   } else if (mode === "owner-bootstrap") {
     const { exerciseTenantInitialization } =
       await import("./test-tenant-initialization");

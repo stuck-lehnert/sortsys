@@ -4709,6 +4709,29 @@ for (const [locale, theme, width] of [
   });
 }
 
+test("the delivery note form offers authorized project changes and keeps quantity-only edits available", async () => {
+  const source = { id: "c", title: "Baustelle Nord", finishedAt: null };
+  const target = { id: "f", title: "Werkstatt Süd", finishedAt: null };
+  api.respond("projects.get", source);
+  api.respond("projects.list", (input) => input.search === "werkstatt" ? [target] : [source, target]);
+  await openApplication("/fixtures/forms", "de");
+  await page.getByRole("button", { name: "Edit delivery note", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Lieferschein bearbeiten" });
+  await dialog.getByText(source.title, { exact: true }).waitFor();
+  await dialog.getByRole("button", { name: "Auswahl entfernen" }).click();
+  await dialog.getByRole("combobox", { name: "Projekt" }).fill("Werkstatt");
+  await page.getByRole("option", { name: target.title }).click();
+  await dialog.getByText(target.title, { exact: true }).waitFor();
+
+  api.setRoles(["manage:deliveryNotes"]);
+  await openApplication("/fixtures/forms", "de");
+  await page.getByRole("button", { name: "Edit delivery note", exact: true }).click();
+  const comment = dialog.getByRole("textbox", { name: "Kommentar" });
+  await comment.fill("Korrigierter Kommentar");
+  assert.equal(await comment.inputValue(), "Korrigierter Kommentar");
+  assert.equal(await dialog.getByText("Projekt", { exact: true }).count(), 0);
+});
+
 test("contractor offer listing has localized empty, failed and permission-restricted states", async () => {
   seedContractorWorkflows(false);
   api.setRoles(["view:projects"]);

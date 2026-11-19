@@ -35,6 +35,7 @@ pub(crate) fn collection(name: &str) -> bool {
             | "live-rooms"
             | "stock-references"
             | "stock-deletions"
+            | "delivery-placements"
             | "project-planning-titles"
     )
 }
@@ -527,6 +528,7 @@ mod tests {
             "object-history",
             "live-messages-room",
             "stock-references",
+            "delivery-placements",
         ] {
             assert!(collection(name), "{name}");
         }

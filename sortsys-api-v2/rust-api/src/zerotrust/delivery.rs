@@ -7,7 +7,7 @@ use ts_rs::TS;
 use super::{
     access::Security,
     crypto::{invalid, revision},
-    objects::{SaveInput, conflict},
+    objects::{BatchInput, BatchResult, DomainHead, SaveInput, conflict},
     wire::{Action, Facet},
 };
 use crate::{
@@ -34,6 +34,8 @@ struct DeliveryAllocateInput {
 #[serde(deny_unknown_fields)]
 struct DeliveryReferencesInput {
     objects: Vec<String>,
+    #[ts(optional)]
+    prepared: Option<super::content::PreparedView>,
 }
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -51,6 +53,27 @@ struct DeliveryAllocation {
     id: Id,
     project_id: Id,
     number: String,
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    placement: Option<String>,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DeliveryMove {
+    id: Id,
+    from_project: Id,
+    to_project: Id,
+    placement: String,
+    proof: String,
+}
+
+#[derive(Deserialize, TS)]
+#[serde(deny_unknown_fields)]
+struct DeliveryMoveInput {
+    movement: DeliveryMove,
+    objects: Vec<SaveInput>,
+    heads: Vec<DomainHead>,
 }
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -77,6 +100,23 @@ pub(super) struct Binding {
     pub project: Id,
     pub note: Option<Id>,
     pub kind: Kind,
+    pub placement: Option<String>,
+}
+fn valid_placement(value: &str) -> bool {
+    value.len() == 32
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+fn delivery_object(project: Id, note: Id, price: bool, placement: Option<&str>) -> String {
+    let kind = if price { "price" } else { "note" };
+    let mut object = format!("delivery-{kind}:{}:{}", project.encode(), note.encode());
+    if let Some(placement) = placement {
+        object.push(':');
+        object.push_str(placement);
+    }
+    object
 }
 fn canonical(value: &str) -> RpcResult<Id> {
     let id = Id::decode(value).map_err(|_| invalid())?;
@@ -103,13 +143,17 @@ pub(super) fn binding(object: &str) -> RpcResult<Option<Binding>> {
             } else {
                 Some(canonical(next)?)
             };
-            if parts.next().is_some() {
+            let placement = parts.next();
+            if placement.is_some_and(|value| note.is_none() || !valid_placement(value))
+                || parts.next().is_some()
+            {
                 return Err(invalid());
             }
             return Ok(Some(Binding {
                 project,
                 note,
                 kind,
+                placement: placement.map(str::to_owned),
             }));
         }
     }
@@ -162,8 +206,23 @@ pub(super) fn register_metadata(
 pub(super) async fn metadata_validate_packet(
     context: &mut super::access::MetadataContext,
     input: &SaveInput,
+    moving: bool,
 ) -> RpcResult<()> {
-    persistence::validate_packet(context, input).await
+    persistence::validate_packet(context, input, moving).await
+}
+
+pub(super) struct MovePlan {
+    movement: DeliveryMove,
+}
+
+impl MovePlan {
+    pub(super) async fn apply(
+        &self,
+        context: &mut super::access::MetadataContext,
+        batch: &BatchInput,
+    ) -> RpcResult<[String; 2]> {
+        persistence::apply_move(context, &self.movement, batch).await
+    }
 }
 
 pub(super) fn deletion_price_domain(input: &SaveInput) -> RpcResult<Option<String>> {
@@ -188,6 +247,7 @@ pub(super) async fn metadata_apply_visibility(
 
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     builder
+        .mutation_stub::<DeliveryMoveInput, BatchResult>("zerotrust.deliveryNotes.move")
         .query_stub::<DeliveryLocateInput, DeliveryAllocation>("zerotrust.deliveryNotes.locate")
         .mutation_stub::<DeliveryInitializeInput, Success>("zerotrust.deliveryNotes.initialize")
         .mutation_stub::<DeliveryAdoptionInput, Success>("zerotrust.deliveryNotes.adopt")
@@ -206,6 +266,7 @@ mod tests {
         for value in [
             "delivery-note:1:2",
             "delivery-price:1:2",
+            "delivery-note:1:2:04e3c549e05b426fb90411839c949eaa",
             "delivery-create:1:2:request_0123456789",
         ] {
             assert!(binding(value).unwrap().is_some());
@@ -215,6 +276,8 @@ mod tests {
             "delivery-note:1:02",
             "delivery-note:1:2:x",
             "delivery-create:1:2:x",
+            "delivery-create:1:2:request_0123456789:04e3c549e05b426fb90411839c949eaa",
+            "delivery-price:1:2:04e3c549e05b426fb90411839c949eaZ",
             "delivery-price:0:1",
             "delivery-note:1:8000000000000",
         ] {

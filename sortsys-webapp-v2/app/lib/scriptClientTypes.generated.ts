@@ -280,6 +280,15 @@ export type DeliveryAllocation = {
     id: Id;
     projectId: Id;
     number: string;
+    placement?: string;
+};
+
+export type DeliveryMove = {
+    id: Id;
+    fromProject: Id;
+    toProject: Id;
+    placement: string;
+    proof: string;
 };
 
 export type DeliveryNoteScanResult = {
@@ -1421,6 +1430,7 @@ export type QueryInputs = {
     };
     "zerotrust.deliveryNotes.references": {
         objects: Array<string>;
+        prepared?: PreparedView;
     };
     "zerotrust.documents.get": {
         id: string;
@@ -2956,6 +2966,7 @@ export type QueryOutputs = {
         id: Id;
         projectId: Id;
         number: string;
+        placement?: string;
     };
     "zerotrust.deliveryNotes.references": Array<{
         object: string;
@@ -4500,6 +4511,11 @@ export type MutationInputs = {
         policyVersion: string;
         proof: string;
     };
+    "zerotrust.deliveryNotes.move": {
+        movement: DeliveryMove;
+        objects: Array<SaveInput>;
+        heads: Array<DomainHead>;
+    };
     "zerotrust.documents.messages.post": {
         room: Room;
         kind: Kind;
@@ -5399,9 +5415,14 @@ export type MutationOutputs = {
         id: Id;
         projectId: Id;
         number: string;
+        placement?: string;
     };
     "zerotrust.deliveryNotes.initialize": {
         success: true;
+    };
+    "zerotrust.deliveryNotes.move": {
+        success: boolean;
+        heads: Array<DomainHead>;
     };
     "zerotrust.documents.messages.post": {
         success: true;
