@@ -17,6 +17,7 @@ import {
   trustedHistory,
   unlockedAccount,
   updateAccountPins,
+  type UnlockedAccount,
 } from "./session";
 import { uiText } from "../i18n";
 
@@ -88,12 +89,28 @@ export async function openAuthority(
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
   const trust = await trustedHistory(client);
+  return openVerifiedAuthority(input, account, trust);
+}
+
+/** Open the profile against the exact authority already verified for this session. */
+export async function openVerifiedAuthority(
+  input: unknown,
+  account: UnlockedAccount,
+  trust: Awaited<ReturnType<typeof trustedHistory>>,
+): Promise<CryptoKey> {
+  if (unlockedAccount() !== account) throw new InvalidProtectedData();
   const current = trust.current;
   const setup = await verifyTenantSetup(input, {
     tenant: account.tenant,
     generation: current.generation,
     recoverySigningKey: current.recoverySigningKey,
   });
+  if (
+    setup.authority.signature !== current.signature ||
+    setup.owner.user !== account.vault.subject ||
+    unlockedAccount() !== account
+  )
+    throw new InvalidProtectedData();
   const pub = await importSigningKey(current.authoritySigningKey);
   const box = setup.authorityEnvelope;
   const raw = await openBox(
@@ -118,6 +135,7 @@ export async function openAuthority(
       current.generation,
     ]);
     await verify(pub, await sign(key, challenge), challenge);
+    if (unlockedAccount() !== account) throw new InvalidProtectedData();
     return key;
   } finally {
     raw.fill(0);

@@ -2,15 +2,10 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
 import { trustedHistory, unlockedAccount } from "./session";
-import { openAuthority } from "./setup";
+import { openVerifiedAuthority } from "./setup";
 import { verifiedAccessContext } from "./accessContext";
 
-/** Administration needs both a live technical role and possession of the
- * pinned tenant authority. Neither an API-supplied user ID nor a role suffices. */
-export async function administratorContext(
-  client: Client,
-  signal: AbortSignal,
-) {
+async function administratorSession(client: Client, signal: AbortSignal) {
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
   const live = () => {
@@ -28,7 +23,22 @@ export async function administratorContext(
     account.vault.subject !== `user:${session.user.id}`
   )
     throw new InvalidProtectedData();
-  const history = await trustedHistory(client);
+  return { account, session, live };
+}
+
+function readTenantStatus(client: Client) {
+  return required(
+    client.query("zerotrust.status", undefined, { strategy: "network-only" }),
+  );
+}
+
+/** Check possession of the pinned tenant authority after the role check. */
+async function confirmAdministrator(
+  context: Awaited<ReturnType<typeof administratorSession>>,
+  history: Awaited<ReturnType<typeof trustedHistory>>,
+  profile: unknown,
+) {
+  const { account, session, live } = context;
   live();
   const identity = history.identityCertificate(`user:${session.user.id}`);
   if (
@@ -36,13 +46,21 @@ export async function administratorContext(
     identity.encryptionKey !== account.vault.encryptionKey
   )
     throw new InvalidProtectedData();
-  const status = await required(
-    client.query("zerotrust.status", undefined, { strategy: "network-only" }),
-  );
+  const authority = await openVerifiedAuthority(profile, account, history);
   live();
-  const authority = await openAuthority(client, status.profile);
-  live();
-  return { account, session, history, authority, live };
+  return { ...context, history, authority };
+}
+
+export async function administratorContext(
+  client: Client,
+  signal: AbortSignal,
+) {
+  const context = await administratorSession(client, signal);
+  const [history, status] = await Promise.all([
+    trustedHistory(client),
+    readTenantStatus(client),
+  ]);
+  return confirmAdministrator(context, history, status.profile);
 }
 
 /** Administrative operations use the same freshly checked public inventory as
@@ -52,22 +70,29 @@ export async function administratorPolicyContext(
   signal: AbortSignal,
   domains?: readonly string[],
 ) {
-  const context = await administratorContext(client, signal);
+  const context = await administratorSession(client, signal);
   const selected = domains ? [...new Set(domains)] : [];
-  const verified = await verifiedAccessContext(
-    client,
-    signal,
-    selected.length > 0 && selected.length <= 16 ? { domains: selected } : {},
-  );
+  const [verified, status] = await Promise.all([
+    verifiedAccessContext(
+      client,
+      signal,
+      selected.length > 0 && selected.length <= 16 ? { domains: selected } : {},
+    ),
+    readTenantStatus(client),
+  ]);
   context.live();
   if (
     verified.account !== context.account ||
     verified.subject !== `user:${context.session.user.id}`
   )
     throw new InvalidProtectedData();
+  const administrator = await confirmAdministrator(
+    context,
+    verified.history,
+    status.profile,
+  );
   return {
-    ...context,
-    history: verified.history,
+    ...administrator,
     permissions: verified.rootPolicy,
     policySignature: verified.rootPolicySignature,
     inventorySnapshot: verified.snapshot,

@@ -1,11 +1,16 @@
 import { afterEach, expect, test } from "bun:test";
+import { createClient } from "@sortsys/v2-client";
+import superjson from "superjson";
 import {
   base64,
   createAccountVault,
   createIdentity,
   createTenantSetup,
 } from "@sortsys/zerotrust/sortsys";
-import { administratorContext } from "./administration";
+import {
+  administratorContext,
+  administratorPolicyContext,
+} from "./administration";
 import {
   createMemberAccount,
   decodeMemberStatus,
@@ -89,6 +94,8 @@ async function fixture() {
   return {
     client,
     calls,
+    identity,
+    setup,
     get: () => saved,
     set: (value) => {
       saved = value;
@@ -159,6 +166,82 @@ test("administration rejects a substituted actor even with a technical administr
     administratorContext(client, new AbortController().signal),
   ).rejects.toThrow();
   expect(calls).not.toContain("zerotrust.status");
+});
+
+for (const [read, proofQuery] of [
+  [administratorContext, "zerotrust.trust.history"],
+  [administratorPolicyContext, "zerotrust.access.snapshot"],
+]) {
+  test(`administration requests ${proofQuery} and the profile in one authenticated batch`, async () => {
+    const { client: fixtureClient, setup } = await fixture();
+    const requests = [];
+    const client = createClient("https://api.example.test", "admin-batching", {
+      cacheable: () => false,
+      async fetch(input, options) {
+        const paths = new URL(input).pathname.slice(1).split(",");
+        requests.push([...paths].sort());
+        expect(new Headers(options.headers).get("authorization")).toBe(
+          "Bearer admin-session",
+        );
+        const results = await Promise.all(
+          paths.map(async (path) => {
+            if (path !== "zerotrust.access.snapshot") {
+              const [result] = await fixtureClient.query(path);
+              return { result: { data: superjson.serialize(result) } };
+            }
+            const [history] = await fixtureClient.query("zerotrust.trust.history");
+            return {
+              result: {
+                data: superjson.serialize({
+                  subject: setup.owner.user,
+                  username: "owner",
+                  history,
+                  policy: setup.policy,
+                  domains: [],
+                  origins: [],
+                  snapshot: "access-snapshot",
+                  after: null,
+                  unchanged: false,
+                }),
+              },
+            };
+          }),
+        );
+        return Response.json(results);
+      },
+    });
+    client.setToken("admin-session");
+    const context = await read(client, new AbortController().signal);
+    expect(context.history.current.signature).toBe(setup.authority.signature);
+    expect(context.authority.usages).toEqual(["sign"]);
+    expect(requests).toEqual([
+      ["auth.sessionInfo"],
+      [proofQuery, "zerotrust.status"].sort(),
+    ]);
+  });
+}
+
+test("administration rejects a different signed profile with the same recovery key", async () => {
+  const { client, identity, setup } = await fixture();
+  const { setup: anotherProfile } = await createTenantSetup(
+    "test",
+    "user:1",
+    identity,
+    PHRASE,
+    { scopes: [] },
+  );
+  expect(anotherProfile.authority.recoverySigningKey).toBe(
+    setup.authority.recoverySigningKey,
+  );
+  expect(anotherProfile.authority.signature).not.toBe(setup.authority.signature);
+  const query = client.query;
+  client.query = async (path) =>
+    path === "zerotrust.status"
+      ? [{ profile: anotherProfile }, null]
+      : query(path);
+  await expect(
+    administratorContext(client, new AbortController().signal),
+  ).rejects.toThrow();
 });
 test("account reservation frames reject ambiguous usernames and noncanonical identifiers", () => {
   const value = {
