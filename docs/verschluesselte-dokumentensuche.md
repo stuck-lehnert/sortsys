@@ -17,9 +17,11 @@ müssen vorkommen, sofern sie nicht mit `OR` getrennt werden.
 Dateinamentreffer erhalten ein höheres Gewicht. Im Dokumenttext werden nahe
 beieinanderliegende Suchwörter bevorzugt; häufige Wiederholungen erhöhen die
 Bewertung nur begrenzt. Bei gleicher Bewertung entscheiden Änderungsdatum und
-Kennung. Der Ausschnitt zeigt die Umgebung eines Treffers und hebt passende
-Wörter hervor. HTML und andere Zeichen aus dem Dokument bleiben gewöhnlicher
-Text.
+Kennung. Bei einer `OR`-Suche bestimmen die vollständig passenden Alternativen
+den Rang. Der Ausschnitt zeigt die am besten passende Stelle im Dokumenttext
+und hebt die Wörter der gewählten Alternative hervor. Ein Treffer allein im
+Dateinamen erscheint ohne Textausschnitt. HTML und andere Zeichen aus dem
+Dokument bleiben gewöhnlicher Text.
 
 ## Durchsuchbare Inhalte
 

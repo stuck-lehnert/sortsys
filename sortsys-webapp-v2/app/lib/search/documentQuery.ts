@@ -6,8 +6,18 @@ export type DocumentExcerpt = { text: string; highlights: TextRange[] };
 export type DocumentMatch = { rank: number; excerpt: DocumentExcerpt | null };
 type Word = { plain: string; german: string; english: string };
 type Token = Word & TextRange & { position: number };
-type Atom = { words: Word[]; phrase: boolean; excluded: boolean };
+type Atom = {
+  words: Word[];
+  phrase: boolean;
+  excluded: boolean;
+  clause: number;
+};
 type Hit = TextRange & { atom: number; position: number };
+type ClauseHits = {
+  recent: Hit[];
+  counts: Map<number, number>;
+  best: { quality: number; range: TextRange } | null;
+};
 
 const wordPattern = () => /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu;
 
@@ -53,10 +63,10 @@ export function createDocumentMatcher(query: string) {
     for (const group of groups) {
       if (!group.length) continue;
       clauses.at(-1)!.push(atoms.length);
-      atoms.push({ words: group, phrase, excluded });
+      atoms.push({ words: group, phrase, excluded, clause: clauses.length - 1 });
     }
   }
-  const activeClauses = clauses.filter((clause) => clause.length);
+  if (!clauses.at(-1)!.length) clauses.pop();
   const phraseLength = Math.max(1, ...atoms.map((atom) => atom.words.length));
 
   function matches(token: Word, term: Word, phrase: boolean): boolean {
@@ -99,8 +109,11 @@ export function createDocumentMatcher(query: string) {
     return position;
   }
 
-  function excerpt(text: string, anchor: TextRange): DocumentExcerpt | null {
-    if (!text) return null;
+  function excerpt(
+    text: string,
+    anchor: TextRange,
+    clause: number,
+  ): DocumentExcerpt {
     let start = Math.max(0, anchor.start - 100);
     let end = Math.min(text.length, start + 400);
     // Prefer whole words and never split a UTF-16 surrogate pair.
@@ -118,7 +131,8 @@ export function createDocumentMatcher(query: string) {
     const content = text.slice(start, end);
     const ranges: TextRange[] = [];
     scan(content, (hit) => {
-      if (!atoms[hit.atom]!.excluded)
+      const atom = atoms[hit.atom]!;
+      if (atom.clause === clause && !atom.excluded)
         ranges.push({ start: hit.start, end: hit.end });
     });
     ranges.sort((a, b) => a.start - b.start || a.end - b.end);
@@ -141,31 +155,48 @@ export function createDocumentMatcher(query: string) {
   }
 
   return {
-    hasTerms: activeClauses.length > 0,
+    hasTerms: clauses.length > 0,
     match(name: string, text: string | null): DocumentMatch | null {
-      if (!activeClauses.length) return null;
+      if (!clauses.length) return null;
       const names = atoms.map(() => 0);
       const body = atoms.map(() => 0);
+      const windows = clauses.map<ClauseHits>(() => ({
+        recent: [],
+        counts: new Map(),
+        best: null,
+      }));
       scan(name, (hit) => names[hit.atom]!++);
-      const recent: Hit[] = [];
-      let best: TextRange = { start: 0, end: 0 };
-      let quality = -1;
       const length = scan(text ?? "", (hit) => {
         body[hit.atom]!++;
-        if (atoms[hit.atom]!.excluded) return;
-        recent.push(hit);
-        while (recent.length > 256 || hit.position - recent[0]!.position > 60)
-          recent.shift();
-        const distinct = new Set(recent.map((value) => value.atom)).size;
-        const currentQuality =
-          distinct * 1000 - (hit.position - recent[0]!.position);
-        if (currentQuality > quality) {
-          quality = currentQuality;
-          best = { start: recent[0]!.start, end: hit.end };
+        const atom = atoms[hit.atom]!;
+        if (atom.excluded) return;
+        const clauseHits = windows[atom.clause]!;
+        clauseHits.recent.push(hit);
+        const previousCount = clauseHits.counts.get(hit.atom) ?? 0;
+        clauseHits.counts.set(hit.atom, previousCount + 1);
+        while (
+          clauseHits.recent.length > 256 ||
+          hit.position - clauseHits.recent[0]!.position > 60
+        ) {
+          const expired = clauseHits.recent.shift()!;
+          const count = clauseHits.counts.get(expired.atom)! - 1;
+          if (count === 0) clauseHits.counts.delete(expired.atom);
+          else clauseHits.counts.set(expired.atom, count);
+        }
+        const first = clauseHits.recent[0]!;
+        const quality =
+          clauseHits.counts.size * 1000 - (hit.position - first.position);
+        if (!clauseHits.best || quality > clauseHits.best.quality) {
+          clauseHits.best = {
+            quality,
+            range: { start: first.start, end: hit.end },
+          };
         }
       });
+      const lengthPenalty = 1 + Math.log1p(length) / 12;
       let rank = -1;
-      for (const clause of activeClauses) {
+      let winningClause = 0;
+      for (const [clauseIndex, clause] of clauses.entries()) {
         const satisfied = clause.every((index) => {
           const found = names[index]! + body[index]! > 0;
           return atoms[index]!.excluded ? !found : found;
@@ -180,12 +211,20 @@ export function createDocumentMatcher(query: string) {
           score += frequency * (atoms[index]!.phrase ? 2 : 1);
         }
         // Bound the effect of repetitions; prefer compact, informative matches.
-        score /= 1 + Math.log1p(length) / 12;
-        if (quality >= 0) score += quality / 1000;
-        rank = Math.max(rank, score);
+        score /= lengthPenalty;
+        const best = windows[clauseIndex]!.best;
+        if (best) score += best.quality / 1000;
+        if (score > rank) {
+          rank = score;
+          winningClause = clauseIndex;
+        }
       }
       if (rank < 0) return null;
-      return { rank, excerpt: excerpt(text ?? "", best) };
+      const best = windows[winningClause]!.best;
+      return {
+        rank,
+        excerpt: text && best ? excerpt(text, best.range, winningClause) : null,
+      };
     },
   };
 }

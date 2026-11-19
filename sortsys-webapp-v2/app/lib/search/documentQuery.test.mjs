@@ -78,6 +78,33 @@ test("references and file-name prefixes remain searchable without a body", () =>
   expect(find("Anschl", null, "Anschlussdetails.pdf")?.excerpt).toBeNull();
 });
 
+test("an unsatisfied alternative contributes neither ranking nor excerpt highlights", () => {
+  const body =
+    "Asbest und Abbruch im Altbau. " +
+    "Allgemeine Hinweise zur Baustelle. ".repeat(22) +
+    "Die Fenster werden eingesetzt.";
+  const result = find("Fenster OR Asbest Abbruch Genehmigung", body);
+  expect(result.rank).toBe(find("Fenster", body).rank);
+  expect(result.excerpt.text).toContain("Die Fenster werden eingesetzt.");
+  expect(result.excerpt.text).not.toContain("Abbruch");
+
+  const nearby = find(
+    "Fenster OR Asbest Rückbau",
+    "Fenster mit Asbest im Plan.",
+  );
+  const highlighted = nearby.excerpt.highlights.map(({ start, end }) =>
+    nearby.excerpt.text.slice(start, end),
+  );
+  expect(highlighted).toEqual(["Fenster"]);
+});
+
+test("matches without a positive body hit have no excerpt", () => {
+  expect(
+    find("AB-12", "Montagehinweise.", "AB-12 Leistungsverzeichnis.pdf").excerpt,
+  ).toBeNull();
+  expect(find("-Asbest", "Neue Fenster im Bauabschnitt.").excerpt).toBeNull();
+});
+
 test("relevance favors nearby terms and names rather than arbitrary modification order or repetition", () => {
   const dense = find("Fenster Wand", "Fenster neben der Wand montieren.");
   const spread = find(

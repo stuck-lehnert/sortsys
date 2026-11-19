@@ -30,11 +30,16 @@ try {
   await page.getByRole("button", { name: "Anmelden", exact: true }).click();
   await expect(page.getByRole("link", { name: "Einstellungen", exact: true }))
     .toBeVisible();
-  await page.goto(`${server.origin}/documents?q=Suchfenster`);
+  const textQuery = encodeURIComponent("Suchfenster OR Rückbau Asbest Genehmigung");
+  await page.goto(`${server.origin}/documents?q=${textQuery}`);
   const hit = page.getByRole("link", { name: fixture.fileName, exact: true });
   await expect(hit).toBeVisible();
   await expect(page.locator(".documents-search__excerpt mark"))
     .toHaveText("Suchfenster");
+  const fileNameQuery = encodeURIComponent("Freigegebener Plan");
+  await page.goto(`${server.origin}/documents?q=${fileNameQuery}`);
+  await expect(hit).toBeVisible();
+  await expect(page.locator(".documents-search__excerpt")).toHaveCount(0);
   await expect(page.getByRole("link", { name: fixture.projectTitle, exact: true }))
     .toHaveCount(0);
   await hit.click();

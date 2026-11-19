@@ -396,7 +396,12 @@ try {
       name: fileName,
       mime: "application/pdf",
       blob: new Blob([pdf], { type: "application/pdf" }),
-      inspect: async () => ({ text: "Suchfenster" }),
+      inspect: async () => ({
+        text:
+          "Rückbau und Asbest im Bestand. " +
+          "Allgemeine Hinweise zur Baustelle. ".repeat(22) +
+          "Suchfenster",
+      }),
     });
     const fixture = process.argv[4]!;
     await writeFile(fixture, JSON.stringify({
