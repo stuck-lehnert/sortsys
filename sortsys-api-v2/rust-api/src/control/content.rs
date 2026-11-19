@@ -35,6 +35,7 @@ pub(crate) fn collection(name: &str) -> bool {
             | "live-rooms"
             | "stock-references"
             | "stock-deletions"
+            | "project-planning-titles"
     )
 }
 

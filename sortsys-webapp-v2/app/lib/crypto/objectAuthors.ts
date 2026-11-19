@@ -286,6 +286,21 @@ export function createObjectAuthorVerifier(
     }
     return access;
   }
+  async function verifyPublicDefinition(
+    value: unknown,
+    scope: string,
+    facet: Facet,
+    generation: string,
+  ) {
+    const id = `${scope}:${facet}`;
+    const proof = await verifyDomainProof(
+      value,
+      { tenant: context.account.tenant, id, scope, facet, generation },
+      context.history.authority,
+    );
+    await verifyKeyManagement(proof, scope, facet);
+    return rememberProof(id, generation, proof);
+  }
   async function publicDefinition(
     scope: string,
     facet: Facet,
@@ -308,14 +323,7 @@ export function createObjectAuthorVerifier(
         if (error) {
           throw error;
         }
-        const proof = await verifyDomainProof(
-          value,
-          { tenant: context.account.tenant, id, scope, facet, generation },
-          context.history.authority,
-        );
-        await verifyKeyManagement(proof, scope, facet);
-        context.live();
-        return rememberProof(id, generation, proof);
+        return verifyPublicDefinition(value, scope, facet, generation);
       })();
       publicDefinitions.set(cacheKey, pending);
     }
@@ -398,6 +406,7 @@ export function createObjectAuthorVerifier(
     authorizeObject(envelope, definition, await initial(definition), staged);
   return Object.assign(object, {
     definition,
+    verifyPublicDefinition,
     /** A per-object reader receives signed public proofs, never the containing
      * area's key packages. Apply exactly the ordinary writer authorization. */
     async fromProofs(envelope: EncryptedObject, inputs: readonly unknown[]) {

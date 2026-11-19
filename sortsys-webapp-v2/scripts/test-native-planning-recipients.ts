@@ -62,6 +62,7 @@ async function until(predicate: () => boolean, message: string) {
 export async function exerciseNativePlanningRecipients(
   owner: Client,
   member: Client,
+  transmissions: readonly string[][],
 ) {
   const controller = new AbortController();
   const signal = controller.signal;
@@ -296,6 +297,12 @@ export async function exerciseNativePlanningRecipients(
       ],
       ["zerotrust.keys.get", { domain: area.domain, generation: "1" }],
       ["zerotrust.objects.recipientAccess", { objects: [object] }],
+      ["zerotrust.objects.get", { id: `project:${project.id}` }],
+      [
+        "zerotrust.domains.proof",
+        { domain: `project:${project.id}:master-data`, generation: "1" },
+      ],
+      ["zerotrust.planningTitles.audience", { project: project.id }],
     ] as const) {
       const [value, error] = await member.queryDynamic(path, input, {
         strategy: "network-only",
@@ -404,7 +411,106 @@ export async function exerciseNativePlanningRecipients(
       await watching;
     }
 
+    const beforeRename = await readOwnAssignments(member, signal);
     await restoreOwner();
+    const second = await required(
+      business.mutate("projects.deployments.create", {
+        projectId: project.id,
+        userId: person.id,
+        from: new Date("2026-11-12T06:00:00Z"),
+        to: new Date("2026-11-12T15:00:00Z"),
+        note: null,
+      }),
+    );
+    const renamed = "Umbenannte Baustelle 649377";
+    const untrustedAudience: Client = {
+      ...owner,
+      query: (async (path, input, options) => {
+        if (path !== "zerotrust.planningTitles.audience")
+          return owner.query(path, input, options);
+        const [value, error] = await owner.query(path, input, options);
+        if (!value || error) return [value, error];
+        const audience =
+          value as QueryResult<"zerotrust.planningTitles.audience">;
+        const recipients = audience.recipients.map((recipient) => ({
+          ...recipient,
+          proofs: [],
+        }));
+        return [{ ...audience, recipients }, null];
+      }) as Client["query"],
+    };
+    const untrustedBusiness = createBusinessClient(untrustedAudience, {
+      productDriver: duckDriver,
+    });
+    try {
+      const [, error] = await untrustedBusiness.mutate("projects.update", {
+        id: project.id,
+        data: { title: renamed },
+      });
+      assert.ok(
+        error,
+        "The browser must reject an audience without signed planning writer evidence",
+      );
+    } finally {
+      untrustedBusiness.dispose();
+    }
+    await required(
+      business.mutate("projects.update", {
+        id: project.id,
+        data: { title: renamed },
+      }),
+    );
+    await restoreMember();
+    const page = await required(
+      member.query(
+        "zerotrust.objects.shared",
+        {
+          prefix: `schedule:${project.id}:deployment:`,
+          after: null,
+          snapshot: null,
+        },
+        { strategy: "network-only" },
+      ),
+    );
+    assert.equal(page.objects.length, 2);
+    assert.equal(page.projectTitles?.length, 1);
+    assert.equal(JSON.stringify(page).includes(renamed), false);
+    queries.length = 0;
+    const transmissionsBefore = transmissions.length;
+    const renamedAssignments = await readOwnAssignments(
+      observed,
+      signal,
+      project.id,
+    );
+    assert.deepEqual(
+      renamedAssignments.map((assignment) => assignment.value.projectTitle),
+      [renamed, renamed],
+    );
+    assert.equal(
+      renamedAssignments.find((assignment) => assignment.id === object)
+        ?.revision,
+      beforeRename[0]!.revision,
+    );
+    assert.equal(
+      queries.filter((path) => path === "zerotrust.objects.shared").length,
+      1,
+    );
+    assert.equal(queries.includes("zerotrust.domains.proof"), false);
+    const reads = transmissions
+      .slice(transmissionsBefore)
+      .filter(
+        (paths) =>
+          paths.includes("zerotrust.access.snapshot") ||
+          paths.includes("zerotrust.objects.shared"),
+      );
+    assert.equal(reads.length, 1);
+    assert.ok(reads[0]!.includes("zerotrust.access.snapshot"));
+    assert.ok(reads[0]!.includes("zerotrust.objects.shared"));
+    await restoreOwner();
+    await required(
+      business.mutate("projects.deployments.delete", { id: second.id }),
+    );
+
     const policyContext = await administratorContext(owner, signal);
     const baseline = await readVerifiedPolicy(owner, policyContext);
     await publishVerifiedPolicy(owner, policyContext, {

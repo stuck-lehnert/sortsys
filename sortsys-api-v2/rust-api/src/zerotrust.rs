@@ -24,6 +24,7 @@ mod objects;
 mod opaque;
 mod ots;
 pub mod passkeys;
+mod planning_titles;
 mod recovery;
 mod resource_access;
 mod setup;
@@ -50,6 +51,7 @@ pub(crate) fn register_native(
     let builder = content::register(builder, Arc::clone(&service));
     let builder = objects::register_metadata(builder, Arc::clone(&service));
     let builder = object_shares::register(builder, Arc::clone(&service));
+    let builder = planning_titles::register(builder, Arc::clone(&service));
     let builder = staged::register_metadata(builder, Arc::clone(&service));
     let builder = recovery::register_metadata(builder, Arc::clone(&service));
     let builder = members::register_metadata(builder, Arc::clone(&service));
@@ -191,6 +193,7 @@ pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistry
     let builder = bootstrap::register_contract(builder);
     let builder = content::register_contract(builder);
     let builder = object_shares::register_contract(builder);
+    let builder = planning_titles::register_contract(builder);
     let builder =
         builder.query_stub::<(), crate::editors::EditorConfig>("zerotrust.editors.config");
     let builder = documents::register_contract(builder);

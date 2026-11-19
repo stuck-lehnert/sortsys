@@ -251,6 +251,11 @@ export async function protectedTenant(
           ];
         case "zerotrust.identities.get":
           return [input.subject === subject ? setup.owner : null, null];
+        case "zerotrust.planningTitles.audience":
+          return [
+            { snapshot: base64(new Uint8Array(32)), recipients: [] },
+            null,
+          ];
         case "zerotrust.objects.recipientAccess":
           return [
             input.objects.map((object) =>

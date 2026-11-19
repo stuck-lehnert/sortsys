@@ -63,6 +63,12 @@ export type Asset = {
 
 export type AssistantLocale = "de" | "en";
 
+export type AudienceRecipient = {
+    assignment: EncryptedObject<Facet>;
+    access: RecipientAccess;
+    proofs: Array<DomainProof>;
+};
+
 export type AuthenticationCredential = {
     id: string;
     rawId: string;
@@ -736,6 +742,11 @@ export type ProposalExecutionResult = {
 
 export type ProviderName = "openai" | "anthropic" | "meta" | "openrouter" | "deepseek" | "custom";
 
+export type Publication = {
+    snapshot: string;
+    boxes: Array<SealedBox>;
+};
+
 export type Read = {
     room: Room;
     after: string;
@@ -868,6 +879,7 @@ export type SaveInput = {
     migrationOrigin?: MigrationOrigin;
     resourceAccess?: ResourceAccessState;
     recipientKey?: RecipientKey;
+    planningTitle?: Publication;
 };
 
 export type ScanDocumentType = "deliveryNote" | "priceList" | "invoice";
@@ -937,6 +949,12 @@ export type SetupInput = {
 export type SharedObject = {
     envelope: EncryptedObject<Facet>;
     access: RecipientAccess;
+    proofs: Array<DomainProof>;
+};
+
+export type SharedTitle = {
+    project: string;
+    envelope: SealedBox;
     proofs: Array<DomainProof>;
 };
 
@@ -1533,6 +1551,9 @@ export type QueryInputs = {
         prefix: string;
         snapshot: string | null;
         after: string | null;
+    };
+    "zerotrust.planningTitles.audience": {
+        project: string;
     };
     "zerotrust.policy.get": void;
     "zerotrust.policy.getVersion": {
@@ -3260,6 +3281,11 @@ export type QueryOutputs = {
         snapshot: string;
         objects: Array<SharedObject>;
         after: string | null;
+        projectTitles?: Array<SharedTitle>;
+    };
+    "zerotrust.planningTitles.audience": {
+        snapshot: string;
+        recipients: Array<AudienceRecipient>;
     };
     "zerotrust.policy.get": {
         tenant: string;
@@ -4588,6 +4614,7 @@ export type MutationInputs = {
         migrationOrigin?: MigrationOrigin;
         resourceAccess?: ResourceAccessState;
         recipientKey?: RecipientKey;
+        planningTitle?: Publication;
     };
     "zerotrust.objects.stage": {
         objects: Array<SaveInput>;

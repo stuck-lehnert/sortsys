@@ -38,12 +38,21 @@ darf. Dafür bleibt der Klartext im Browser. Eine Neuzuweisung oder Löschung
 entfernt die bisherige Freigabe in derselben Transaktion wie die Planungsänderung.
 Bereits gelesene Inhalte lassen sich dadurch nicht nachträglich entziehen.
 
-Die Eigenansicht ist über das gewöhnliche Planungsmenü erreichbar. Fehlt die
-Freigabe der Projektstammdaten, zeigt sie die bei Anlage oder Baustellenwechsel
-mitverschlüsselte Projektbezeichnung. Eine spätere reine Projektumbenennung
-aktualisiert diese Kopie noch nicht automatisch. Die API kennt die technischen
-Zuordnungen zwischen Projekt, Einsatz und Empfänger; Zeiten, Kommentare und
-Projektbezeichnungen bleiben verschlüsselt.
+Die Eigenansicht ist über das gewöhnliche Planungsmenü erreichbar. Bei Anlage
+oder Baustellenwechsel verschlüsselt der Browser die Projektbezeichnung mit
+dem Einsatz. Bei einer Umbenennung veröffentlicht er die neue Bezeichnung
+auch für Mitarbeitende mit einem freigegebenen Einsatz in diesem Projekt.
+Dafür prüft der Browser die signierten Freigaben und die zertifizierten
+öffentlichen Schlüssel der Empfänger. Die API vergleicht diese Auswahl beim
+Speichern mit den aktuellen Zuweisungen und speichert beide Fassungen
+gemeinsam. Sie kennt die Zuordnung zwischen Projekt, Einsatz und Empfänger.
+Zeiten, Kommentare und Projektbezeichnungen bleiben verschlüsselt.
+
+Beim Öffnen laufen die Zugriffsprüfung und der Abruf der ersten verschlüsselten
+Seite parallel. Die API liest die Inhalte einer Seite gesammelt aus DuckDB und
+liefert Bezeichnung und Signaturnachweis einmal pro Projekt mit. Vor der Anzeige
+prüft der Browser die Berechtigung der Person, die das Projekt umbenannt hat.
+Ein Schlüssel für die Projektstammdaten wird dafür nicht verteilt.
 
 ## Verschieben und gemeinsam planen
 

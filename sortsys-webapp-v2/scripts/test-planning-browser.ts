@@ -57,6 +57,7 @@ export async function exercisePlanningBrowser(
         note,
         changedNote,
         hiddenNote,
+        renamedTitle: "Live umbenannte Baustelle 794612",
         closure,
       }),
       { mode: 0o600 },

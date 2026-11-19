@@ -307,9 +307,9 @@ ist die Eigenansicht wieder lesbar. Der Browsertest prüft danach die Sichtbarke
 eigener Einsätze, fehlende Planungsaktionen für das Mitglied sowie automatische
 Aktualisierung, Löschung und Neuladen. Das berechtigte Konto sieht die
 wiederhergestellte Sperre einschließlich Anfangs- und Endtag. Dafür prüft der
-Test getrennte Sitzungen in den Zeitzonen Berlin und Los Angeles. Ohne
-Projektstammdaten verwendet die Eigenansicht eine verschlüsselte Kopie der
-Projektbezeichnung, die reine Umbenennungen noch nicht nachführt. Persönliche
+Test getrennte Sitzungen in den Zeitzonen Berlin und Los Angeles. Die Eigenansicht
+zeigt auch nach einer Umbenennung die aktuelle Projektbezeichnung. Sie erhält
+die Bezeichnung verschlüsselt zusammen mit den eigenen Einsätzen. Persönliche
 Abwesenheiten kommen aus dem eigenen verschlüsselten Adapter. Atomare
 Baustellenwechsel, Wiederholungen, veraltete Formulare und verlorene oder
 falsche Speicherantworten sind über zwei echte API-Instanzen geprüft. Siehe

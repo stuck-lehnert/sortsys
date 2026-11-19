@@ -136,6 +136,7 @@ impl SealedBox {
                 "search-result",
                 "live-llm-context",
                 "resource-command-key",
+                "project-planning-title",
             ]
             .contains(&self.purpose.as_str())
         {

@@ -2,7 +2,8 @@
 use super::{
     access::{MetadataContext, MetadataRequest, Security},
     crypto::{encode, frame, identifier, invalid, sized},
-    objects::{SaveInput, conflict, metadata_check_read, metadata_object, metadata_read, registry},
+    objects::{SaveInput, conflict, metadata_check_read, persistence, registry},
+    planning_titles,
     wire::{Action, Effect, EncryptedObject, Facet, IdentityCertificate, Rule, SealedBox},
 };
 use crate::{
@@ -44,6 +45,28 @@ struct SharedObject {
     proofs: Vec<super::domain_proofs::DomainProof>,
 }
 
+pub(super) async fn writer_proofs(
+    context: &mut MetadataContext,
+    area: &registry::DomainRecord,
+    key_generation: &str,
+) -> RpcResult<Vec<super::domain_proofs::DomainProof>> {
+    let mut proofs = Vec::new();
+    for generation in ["1", key_generation] {
+        let definition = registry::definition_at(
+            &mut context.transaction,
+            &context.security,
+            area,
+            generation,
+        )
+        .await?;
+        proofs.push(super::domain_proofs::public_proof(definition)?);
+        if key_generation == "1" {
+            break;
+        }
+    }
+    Ok(proofs)
+}
+
 #[derive(Clone, Deserialize, TS)]
 #[serde(deny_unknown_fields)]
 struct SharedPageInput {
@@ -53,10 +76,14 @@ struct SharedPageInput {
 }
 
 #[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
 struct SharedPage {
     snapshot: String,
     objects: Vec<SharedObject>,
     after: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    project_titles: Option<Vec<planning_titles::SharedTitle>>,
 }
 
 #[derive(Deserialize, TS)]
@@ -98,7 +125,12 @@ fn reader_collection(generation: &str, recipient: &str) -> String {
     )
 }
 
-fn allows_recipient(guard: &Security, recipient: &str, scope: &str, facet: Facet) -> bool {
+pub(super) fn allows_recipient(
+    guard: &Security,
+    recipient: &str,
+    scope: &str,
+    facet: Facet,
+) -> bool {
     let mut derived = guard.inherited.clone();
     derived.push(Rule {
         subject: recipient.into(),
@@ -324,6 +356,7 @@ async fn shared_page(
         .transaction
         .scan_prefix::<RecipientAccess>(&collection, &input.prefix, input.after, PAGE_SIZE)
         .await?;
+    let title_version = planning_titles::version(&mut context.transaction).await?;
     let snapshot = encode(&Sha256::digest(frame(
         "sortsys/object-recipient-page/v1",
         &[
@@ -334,6 +367,7 @@ async fn shared_page(
             &encode(&context.security.signing_key),
             &input.prefix,
             &page.version,
+            &title_version,
         ],
     )));
     if input
@@ -343,29 +377,50 @@ async fn shared_page(
     {
         return Err(conflict());
     }
-    let mut objects = Vec::new();
+    let mut shares = Vec::with_capacity(page.records.len());
     for row in page.records {
         let value = row.value.ok_or_else(invalid)?;
         let recipient = value.recipient_key.as_ref().ok_or_else(invalid)?;
-        if !value.access.active || recipient.recipient.user != context.security.subject {
+        if !value.access.active
+            || recipient.recipient.user != context.security.subject
+            || value.access.object != row.record.key
+        {
             return Err(invalid());
         }
-        let record = metadata_object(&mut context.transaction, &value.access.object)
-            .await?
-            .ok_or_else(conflict)?;
+        shares.push(value);
+    }
+    let ids: Vec<_> = shares
+        .iter()
+        .map(|share| share.access.object.as_str())
+        .collect();
+    let records = persistence::objects(&mut context.transaction, &ids).await?;
+    let current = context
+        .transaction
+        .many::<RecipientAccess>(
+            ids.iter()
+                .map(|id| key("object-recipient-access", id))
+                .collect(),
+        )
+        .await?;
+    let domains: BTreeSet<_> = shares.iter().map(|share| share.domain.as_str()).collect();
+    context
+        .transaction
+        .prefetch(
+            domains
+                .into_iter()
+                .flat_map(registry::domain_keys)
+                .collect(),
+        )
+        .await?;
+    let mut visible = Vec::new();
+    for ((value, record), access) in shares.into_iter().zip(records).zip(current) {
+        let record = record.ok_or_else(conflict)?;
         if record.deleted
             || record.tombstone
             || record.domain != value.domain
             || record.revision != value.access.revision
+            || access.is_none_or(|access| access.access.signature != value.access.signature)
         {
-            return Err(conflict());
-        }
-        let current: RecipientAccess = context
-            .transaction
-            .read(key("object-recipient-access", &record.object))
-            .await?
-            .ok_or_else(conflict)?;
-        if current.access.signature != value.access.signature {
             return Err(conflict());
         }
         let area = registry::domain(&mut context.transaction, &record.domain).await?;
@@ -377,43 +432,55 @@ async fn shared_page(
         ) {
             continue;
         }
+        let recipient = value.recipient_key.as_ref().ok_or_else(invalid)?;
         registry::check_encryption_recipient(
             &mut context.transaction,
             &context.security,
             &recipient.recipient,
         )
         .await?;
-        let envelope = metadata_read(&context.repository, &record.reference).await?;
-        metadata_check_read(
-            &envelope,
-            &record,
-            &context.auth.tenant,
-            &area.scope,
-            area.facet,
-        )?;
-        verify_access(&value, &envelope, &generation, &context.security.authority)?;
-        let mut proofs = Vec::new();
-        for key_generation in BTreeSet::from(["1", envelope.generation.as_str()]) {
-            let definition = registry::definition_at(
-                &mut context.transaction,
-                &context.security,
-                &area,
-                key_generation,
-            )
-            .await?;
-            proofs.push(super::domain_proofs::public_proof(definition)?);
-        }
-        objects.push(SharedObject {
-            envelope,
-            access: value,
-            proofs,
-        });
+        visible.push((value, record, area));
     }
+    let mut objects = Vec::with_capacity(visible.len());
+    if !visible.is_empty() {
+        let references = visible
+            .iter()
+            .map(|(_, record, _)| record.reference.clone())
+            .collect();
+        let ciphertexts = context.repository.ciphertexts(references).await?;
+        if ciphertexts.len() != visible.len() {
+            return Err(invalid());
+        }
+        for ((value, record, area), ciphertext) in visible.into_iter().zip(ciphertexts) {
+            let envelope = persistence::decode_envelope(&ciphertext)?;
+            metadata_check_read(
+                &envelope,
+                &record,
+                &context.auth.tenant,
+                &area.scope,
+                area.facet,
+            )?;
+            verify_access(&value, &envelope, &generation, &context.security.authority)?;
+            let proofs = writer_proofs(&mut context, &area, &envelope.generation).await?;
+            objects.push(SharedObject {
+                envelope,
+                access: value,
+                proofs,
+            });
+        }
+    }
+    let titles = planning_titles::for_recipient(
+        &mut context,
+        objects.iter().map(|entry| &entry.envelope),
+        &generation,
+    )
+    .await?;
     context.transaction.validate().await?;
     Ok(SharedPage {
         snapshot,
         objects,
         after: page.after,
+        project_titles: (!titles.is_empty()).then_some(titles),
     })
 }
 
@@ -427,16 +494,17 @@ async fn inspect_access(
     }
     let mut pending = MetadataRequest::open(service, request).await?;
     let mut unique = BTreeSet::new();
-    let mut records = Vec::new();
-    let mut domains = BTreeSet::new();
     for object in &input.objects {
         identifier(object)?;
         if !unique.insert(object) {
             return Err(invalid());
         }
-        let record = metadata_object(&mut pending.transaction, object)
-            .await?
-            .ok_or_else(forbidden)?;
+    }
+    let ids: Vec<_> = input.objects.iter().map(String::as_str).collect();
+    let mut records = Vec::with_capacity(ids.len());
+    let mut domains = BTreeSet::new();
+    for record in persistence::objects(&mut pending.transaction, &ids).await? {
+        let record = record.ok_or_else(forbidden)?;
         if record.deleted {
             return Err(forbidden());
         }

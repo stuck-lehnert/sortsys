@@ -42,7 +42,8 @@ import {
   projectCommercialCollection,
 } from "./projectCommercial";
 import { acquireDataRuntime } from "./runtime/session";
-import type { DataRequest, DataView } from "./runtime/runtime";
+import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
+import { preparePlanningTitle } from "./planningTitlePublication";
 
 type Directory = ReturnType<typeof createProtectedAddressBook>;
 const request = (id: string) => ({
@@ -304,12 +305,14 @@ export function createProtectedProjects(
       if (path === "projects.create") {
         const prepared = await prepareCreate(input);
         try {
-          await commitProtectedWrites(
-            client,
-            prepared.groups,
-            signal,
-            prepared.guards,
-          );
+          if (prepared.groups.length) {
+            await commitProtectedWrites(
+              client,
+              prepared.groups,
+              signal,
+              prepared.guards,
+            );
+          }
           live();
           return { id: prepared.id };
         } finally {
@@ -415,41 +418,66 @@ export function createProtectedProjects(
         await certifiedUser(
           publicId(changes.responsible_project_leader_user_id),
         );
-      await runtime.transaction(
-        [selected, ...(needsCustomer ? [customerRequest] : [])],
-        (tx) => {
-          const original = document(tx, selected).value;
-          if (baseline)
-            tx.expect(selected, selected.area.prefix, {
-              signature: baseline.signature,
-            });
-          if (deleting) {
-            tx.delete(selected, selected.area.prefix);
-            return;
+      const requests = [selected, ...(needsCustomer ? [customerRequest] : [])];
+      const change = (tx: DataTransaction) => {
+        const original = document(tx, selected).value;
+        if (baseline)
+          tx.expect(selected, selected.area.prefix, {
+            signature: baseline.signature,
+          });
+        if (deleting) {
+          tx.delete(selected, selected.area.prefix);
+          return false;
+        }
+        if (finishing) {
+          tx.require(selected, "update");
+          const finish = path === "projects.finish";
+          if (!!original.project!.values.finished_at === finish) return false;
+          changes.finished_at = finish ? now : null;
+        }
+        if (
+          needsCustomer &&
+          !tx
+            .documents(customerRequest)
+            .some(
+              (document) =>
+                document.value.row?.values.id === changes.customer_id,
+            )
+        )
+          throw new InvalidProtectedData();
+        tx.patch(
+          "projects",
+          { id: addressId(id) },
+          { ...changes, modified_at: now },
+        );
+        return (
+          changes.title !== original.project?.values.title &&
+          typeof changes.title === "string"
+        );
+      };
+      const title = changes.title;
+      if (typeof title === "string") {
+        const prepared = await runtime.prepare(requests, change);
+        try {
+          if (prepared.value) {
+            const packet = prepared.groups
+              .flatMap((group) => group.packets)
+              .find((entry) => entry.envelope.object === selected.area.prefix);
+            if (!packet) throw new InvalidProtectedData();
+            await preparePlanningTitle(client, id, title, packet, signal);
           }
-          if (finishing) {
-            tx.require(selected, "update");
-            const finish = path === "projects.finish";
-            if (!!original.project!.values.finished_at === finish) return;
-            changes.finished_at = finish ? now : null;
-          }
-          if (
-            needsCustomer &&
-            !tx
-              .documents(customerRequest)
-              .some(
-                (document) =>
-                  document.value.row?.values.id === changes.customer_id,
-              )
-          )
-            throw new InvalidProtectedData();
-          tx.patch(
-            "projects",
-            { id: addressId(id) },
-            { ...changes, modified_at: now },
+          await commitProtectedWrites(
+            client,
+            prepared.groups,
+            signal,
+            prepared.guards,
           );
-        },
-      );
+        } finally {
+          prepared.close();
+        }
+      } else {
+        await runtime.transaction(requests, change);
+      }
       live();
       return { success: true };
     },

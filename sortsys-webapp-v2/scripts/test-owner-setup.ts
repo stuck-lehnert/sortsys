@@ -124,6 +124,7 @@ globalThis.fetch = new Proxy(originalFetch, {
         "owner-staging",
         "owner-backup-archive",
         "owner-content-preparation",
+        "owner-planning-recipients",
       ].includes(mode) &&
       url.searchParams.get("batch") === "1"
     ) {
@@ -369,7 +370,11 @@ try {
     await initializeTenant(owner, new AbortController().signal, duckDriver);
     const { exerciseNativePlanningRecipients } =
       await import("./test-native-planning-recipients");
-    const scenario = await exerciseNativePlanningRecipients(owner, peer);
+    const scenario = await exerciseNativePlanningRecipients(
+      owner,
+      peer,
+      rpcTransmissions,
+    );
     const { exercisePlanningRecovery } =
       await import("./test-native-planning-recovery");
     const recovered = await exercisePlanningRecovery(

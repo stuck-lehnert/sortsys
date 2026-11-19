@@ -149,7 +149,7 @@ export function createProtectedProjectSchedule(
             existing.signature !== document.signature)
         )
           throw new ProtectedWriteConflict();
-        if (!existing) documents.set(document.id, document);
+        documents.set(document.id, document);
       }
       const rowIds = new Set<string>();
       for (const document of documents.values()) {

@@ -37,7 +37,7 @@ import {
 import { verifiedAccessContext } from "../crypto/accessContext";
 import { createObjectAuthorVerifier } from "../crypto/objectAuthors";
 import type { trustedHistory, unlockedAccount } from "../crypto/session";
-import { addressId } from "./addressBook";
+import { addressId, addressText } from "./addressBook";
 import {
   protectedCollections,
   required,
@@ -52,6 +52,8 @@ import {
   type SchedulePayload,
 } from "./projectScheduleData";
 import { mapConcurrent } from "./runtime/concurrentReads";
+import { planningTitleReader } from "./planningTitles";
+import { projectCollection, projectPayload } from "./projectData";
 
 type History = Awaited<ReturnType<typeof trustedHistory>>;
 type RecipientAccess = QueryResult<"zerotrust.objects.recipientAccess">[number];
@@ -181,8 +183,7 @@ export function planningRecipientWriter(client: Client, context: WriteContext) {
     const project = assignmentProject(envelope);
     if (!project) return undefined;
     let recipientKey:
-      | { recipient: IdentityCertificate; envelope: SealedBox }
-      | undefined;
+      { recipient: IdentityCertificate; envelope: SealedBox } | undefined;
     if (envelope.format !== TOMBSTONE_FORMAT) {
       const payload = schedulePayload(value, envelope.object, project);
       const subject = `user:${publicId(payload.row.values.user_id)}`;
@@ -369,15 +370,27 @@ export async function readOwnAssignments(
   signal: AbortSignal,
   project?: string,
 ) {
-  const context = await verifiedAccessContext(client, signal, {
-    includeDomains: false,
-  });
+  signal.throwIfAborted();
+  const prefix = project ? `schedule:${project}:deployment:` : "schedule:";
+  const fetchPage = (input: {
+    after: string | null;
+    snapshot: string | null;
+  }) =>
+    client.query(
+      "zerotrust.objects.shared",
+      { prefix, ...input },
+      { strategy: "network-only" },
+    );
+  const [context, firstPage] = await Promise.all([
+    verifiedAccessContext(client, signal, { includeDomains: false }),
+    fetchPage({ after: null, snapshot: null }),
+  ]);
   const author = createObjectAuthorVerifier(
     client,
     context,
     context.rootPolicy,
   );
-  const prefix = project ? `schedule:${project}:deployment:` : "schedule:";
+  const readTitle = planningTitleReader(client, context);
   for (let attempt = 0; ; attempt++) {
     const result: {
       id: string;
@@ -387,6 +400,13 @@ export async function readOwnAssignments(
     }[] = [];
     const seen = new Set<string>();
     const rowIds = new Set<string>();
+    const titles = new Map<string, { signature?: string; name?: string }>();
+    let sharedTitles = new Map<
+      string,
+      NonNullable<
+        QueryResult<"zerotrust.objects.shared">["projectTitles"]
+      >[number]
+    >();
     try {
       for await (const entries of readSnapshotPages<
         QueryResult<"zerotrust.objects.shared">["objects"][number]
@@ -395,13 +415,32 @@ export async function readOwnAssignments(
         maxItems: 32,
         read: async (input) => {
           const page = await required(
-            client.query(
-              "zerotrust.objects.shared",
-              { prefix, ...input },
-              { strategy: "network-only" },
-            ),
+            attempt === 0 && input.after === null
+              ? Promise.resolve(firstPage)
+              : fetchPage(input),
           );
           context.live();
+          sharedTitles = new Map();
+          if (page.projectTitles !== undefined) {
+            const projects = new Set(
+              page.objects.map((entry) =>
+                assignmentProject(encryptedObject(entry.envelope)),
+              ),
+            );
+            if (
+              !Array.isArray(page.projectTitles) ||
+              page.projectTitles.length > projects.size
+            )
+              throw new InvalidProtectedData();
+            for (const title of page.projectTitles) {
+              if (
+                !projects.has(title.project) ||
+                sharedTitles.has(title.project)
+              )
+                throw new InvalidProtectedData();
+              sharedTitles.set(title.project, title);
+            }
+          }
           return {
             snapshot: page.snapshot,
             after: page.after,
@@ -469,6 +508,20 @@ export async function readOwnAssignments(
               throw new InvalidProtectedData();
             const rowId = publicId(payload.row.values.id);
             if (rowIds.has(rowId)) throw new InvalidProtectedData();
+            const sealedTitle = sharedTitles.get(assignedProject);
+            let title = titles.get(assignedProject);
+            if (!title) {
+              title = sealedTitle
+                ? {
+                    signature: sealedTitle.envelope.signature,
+                    name: await readTitle(assignedProject, sealedTitle),
+                  }
+                : {};
+              titles.set(assignedProject, title);
+            } else if (title.signature !== sealedTitle?.envelope.signature) {
+              throw new InvalidProtectedData();
+            }
+            if (title.name) payload.projectTitle = title.name;
             context.live();
             seen.add(envelope.object);
             rowIds.add(rowId);
@@ -531,6 +584,11 @@ export async function refreshPlanningRecipientKeys(
   for (const area of areas) {
     signal.throwIfAborted();
     const collection = collections(area);
+    const project = scheduleDomain(area.domain)!;
+    const masterArea = projectCollection(project);
+    const master = collections.readable(masterArea)
+      ? collections(masterArea)
+      : null;
     try {
       if (!collection.can("update")) continue;
       const documents = (await collection.read()).filter((document) => {
@@ -548,13 +606,32 @@ export async function refreshPlanningRecipientKeys(
         );
       });
       if (!documents.length) continue;
-      const packets = await mapConcurrent(documents, 4, async (document) =>
-        collection.packet(
-          document.envelope.object,
+      let title: string | undefined;
+      if (master) {
+        const [data] = await master.read();
+        if (data) {
+          const value = projectPayload(
+            data.value,
+            data.envelope.object,
+            project,
+          );
+          if (value.project)
+            title = addressText(value.project.values.title, true, 127)!;
+        }
+      }
+      const packets = await mapConcurrent(documents, 4, async (document) => {
+        const data = schedulePayload(
           document.value,
+          document.envelope.object,
+          project,
+        );
+        if (title !== undefined) data.projectTitle = title;
+        return collection.packet(
+          document.envelope.object,
+          data,
           document.envelope,
-        ),
-      );
+        );
+      });
       await commitProtectedWrites(
         client,
         [
@@ -580,8 +657,12 @@ export async function refreshPlanningRecipientKeys(
           },
         ],
         signal,
+        master
+          ? [{ domain: masterArea.domain, sequence: master.snapshot() }]
+          : [],
       );
     } finally {
+      master?.close();
       collection.close();
     }
   }

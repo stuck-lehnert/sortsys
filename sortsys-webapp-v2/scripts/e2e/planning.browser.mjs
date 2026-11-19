@@ -63,6 +63,7 @@ async function pageFor(name, timezoneId = "Europe/Berlin") {
       fixture.changedNote,
       fixture.hiddenNote,
       fixture.project.title,
+      fixture.renamedTitle,
       fixture.closure.reason,
       fixture.closure.note,
     ])
@@ -133,6 +134,32 @@ try {
   console.log(
     "Own planning UI: own assignment and encrypted project caption visible; foreign assignment and planning actions absent",
   );
+
+  await owner.goto(
+    `${servers[0].origin}/projects/${fixture.project.id}/contract`,
+  );
+  await expect(
+    owner.getByRole("heading", { name: fixture.project.title, exact: true }),
+  ).toBeVisible();
+  await owner.keyboard.press("Control+e");
+  const projectDialog = owner.getByRole("dialog", {
+    name: "Projekt bearbeiten",
+  });
+  await projectDialog
+    .getByRole("textbox", { name: /^Titel\b/ })
+    .fill(fixture.renamedTitle);
+  await projectDialog
+    .getByRole("button", { name: "Speichern", exact: true })
+    .click();
+  await expect(projectDialog).toBeHidden();
+  const planning = member.getByRole("region", { name: "Einsatzplanung" });
+  await expect(
+    planning.getByText(fixture.renamedTitle, { exact: true }),
+  ).toBeVisible();
+  await expect(
+    planning.getByText(fixture.project.title, { exact: true }),
+  ).toHaveCount(0);
+  await expect(ownEntry).toBeVisible();
 
   await owner.goto(servers[0].origin + route);
   await owner

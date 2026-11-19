@@ -82,6 +82,14 @@ export async function exercisePlanningRecovery(
       note,
     }),
   );
+  const renamedTitle = "Baustelle mit geändertem Namen vor Recovery 381694";
+  await required(
+    business.mutate("projects.update", {
+      id: scenario.project.id,
+      data: { title: renamedTitle },
+    }),
+  );
+  scenario.project.title = renamedTitle;
   const initialClosure = {
     projectId: scenario.project.id,
     from: "2026-11-21",
@@ -156,6 +164,7 @@ export async function exercisePlanningRecovery(
     const previous = await readOwnAssignments(member, signal);
     assert.equal(previous.length, 1);
     assert.equal(previous[0]!.value.row.values.note, note);
+    assert.equal(previous[0]!.value.projectTitle, renamedTitle);
     await assertClosureHidden();
     const oldPage = await required(
       member.query(

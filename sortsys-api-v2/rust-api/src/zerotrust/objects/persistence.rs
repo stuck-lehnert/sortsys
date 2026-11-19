@@ -199,12 +199,24 @@ pub(in crate::zerotrust) async fn object(
     transaction: &mut Transaction,
     id: &str,
 ) -> RpcResult<Option<ObjectRecord>> {
-    let Some(record) = raw_object(transaction, id).await? else {
-        return Ok(None);
-    };
-    let mut records = vec![record];
-    apply_visibility(transaction, &mut records).await?;
-    Ok(records.pop())
+    Ok(objects(transaction, &[id]).await?.pop().flatten())
+}
+
+pub(in crate::zerotrust) async fn objects(
+    transaction: &mut Transaction,
+    ids: &[&str],
+) -> RpcResult<Vec<Option<ObjectRecord>>> {
+    let mut records = raw_objects(transaction, ids, None).await?;
+    let (positions, mut found): (Vec<_>, Vec<_>) = records
+        .iter_mut()
+        .enumerate()
+        .filter_map(|(index, record)| record.take().map(|record| (index, record)))
+        .unzip();
+    apply_visibility(transaction, &mut found).await?;
+    for (index, record) in positions.into_iter().zip(found) {
+        records[index] = Some(record);
+    }
+    Ok(records)
 }
 pub(in crate::zerotrust) async fn read(
     repository: &Repository,
@@ -214,7 +226,7 @@ pub(in crate::zerotrust) async fn read(
     decode_envelope(&data)
 }
 
-fn decode_envelope(data: &str) -> RpcResult<EncryptedObject> {
+pub(in crate::zerotrust) fn decode_envelope(data: &str) -> RpcResult<EncryptedObject> {
     let envelope: EncryptedObject = serde_json::from_str(data).map_err(|_| invalid())?;
     envelope.frame()?;
     Ok(envelope)
@@ -764,9 +776,25 @@ async fn commit_batch_inner(
 ) -> RpcResult<BatchResult> {
     let shape = validate_batch(&input, preuploaded)?;
     let mut guarded_domains = shape.domains.clone();
+    let mut renamed_planning = BTreeSet::new();
+    for packet in input
+        .objects
+        .iter()
+        .filter(|packet| packet.planning_title.is_some())
+    {
+        let planning = format!("{}:planning:master-data", packet.envelope.scope);
+        guarded_domains.insert(planning.clone());
+        renamed_planning.insert(planning);
+    }
     for packet in &input.objects {
         if let Some(domain) = super::super::delivery::deletion_price_domain(packet)? {
             guarded_domains.insert(domain);
+        }
+        if renamed_planning.contains(&packet.domain)
+            && super::super::object_shares::is_assignment(&packet.envelope)?
+        {
+            // A title audience attests to the saved set of assignments.
+            return Err(invalid());
         }
     }
     if let Some(heads) = &input.heads {
@@ -933,6 +961,7 @@ async fn commit_batch_inner(
             return Err(conflict());
         }
         let written = save(&mut context, area, packet, &publication, preuploaded).await?;
+        super::super::planning_titles::save(&mut context, packet, written).await?;
         changed_access |=
             super::super::resource_access::save(&mut context, packet, written).await?;
         super::super::stock::metadata_save_references(
