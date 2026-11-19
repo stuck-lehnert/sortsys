@@ -1,4 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
+import { RpcClientError } from "@sortsys/v2-client";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedCollections } from "./protectedObjects";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
@@ -6,7 +7,7 @@ import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { defineDataModel } from "./runtime/model";
 import { DataRuntime } from "./runtime/runtime";
 import { encryptedDataStorage } from "./runtime/storage";
-import { signPolicy } from "@sortsys/zerotrust/sortsys";
+import { InvalidProtectedData, signPolicy } from "@sortsys/zerotrust/sortsys";
 
 afterEach(() => lockCryptoSession());
 
@@ -23,6 +24,39 @@ const metadataModel = defineDataModel({
   decode: (value) => value,
   sources: () => [],
   tables: [],
+});
+
+test("a denied bundled read fails closed without probing a separate path", async () => {
+  const fixture = await protectedTenant([area]);
+  for (const [code, status] of [["FORBIDDEN", 403], ["NOT_FOUND", 404]]) {
+    const calls = [];
+    const client = {
+      ...fixture.client,
+      async query(path, input) {
+        calls.push(path);
+        expect(input.pages.selections).toHaveLength(1);
+        return [
+          null,
+          new RpcClientError({
+            message: "Denied protected selection",
+            code: -32000,
+            data: { code, httpCode: status },
+          }),
+        ];
+      },
+    };
+    const runtime = new DataRuntime(encryptedDataStorage(client), () => {});
+    try {
+      await expect(
+        runtime.read([{ model: metadataModel, area }], () => {
+          throw new Error("A denied view must not reach the business callback");
+        }),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+      expect(calls).toEqual(["zerotrust.access.snapshot"]);
+    } finally {
+      await runtime.close();
+    }
+  }
 });
 
 function metadataRequests(count) {

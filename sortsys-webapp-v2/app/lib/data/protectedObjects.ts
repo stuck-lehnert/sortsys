@@ -158,6 +158,13 @@ export async function protectedCollections(
         initial,
       );
     } catch (error) {
+      // A missing or unreadable selection has the same protected-data failure
+      // as the separate access check, without fetching another inventory.
+      if (
+        error instanceof RpcClientError &&
+        (error.code === "FORBIDDEN" || error.code === "NOT_FOUND")
+      )
+        throw new InvalidProtectedData();
       if (!exceedsResponseBudget(error)) throw error;
     }
   }

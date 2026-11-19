@@ -251,7 +251,11 @@ try {
   });
   try {
     const [result, error] = await restricted.query("products.list", {});
-    if (error) assert.ok(error.cause instanceof InvalidProtectedData);
+    if (error)
+      assert.ok(
+        error.cause instanceof InvalidProtectedData,
+        `Unexpected catalogue denial: ${error.code ?? error.name}`,
+      );
     else assert.deepEqual(result, []);
     const [, denied] = await restricted.mutate("products.create", {
       customId: 999990,
