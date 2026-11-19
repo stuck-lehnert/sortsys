@@ -106,6 +106,11 @@ Die Rechteverwaltung zeigt die wirksamen Rechte und ihre Herkunft an, etwa
 bleiben Rollenvorlagen und Projektteams erhalten. Kryptografische Schlüssel
 müssen nicht von Hand verwaltet werden.
 
+Ändert sich der geprüfte Zugriff beim Speichern, lädt der Dialog die Freigaben
+aus dem neuen Stand. Er stellt die vorige Auswahl wieder her, wenn das Dokument
+oder Werkzeug weiterhin lesbar ist. Bei einer fehlgeschlagenen Änderung bleibt
+die Fehlermeldung während und nach dem Neuladen sichtbar.
+
 ## Schlüssel folgen den tatsächlichen Leserechten
 
 Jeder Benutzer erhält clientseitig erzeugte Schlüssel für Entschlüsselung und

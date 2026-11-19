@@ -3409,6 +3409,7 @@ window.cryptoFixture = {
       },
     };
     let heldPolicyRead = null;
+    let accessReads = null;
     const creationCertificates = new Map();
     let discardCreationCertificate = false;
     window.cryptoFixture.failNextCreationCertificate = () => {
@@ -3457,6 +3458,10 @@ window.cryptoFixture = {
     window.cryptoFixture.accessReadHeld = () =>
       heldPolicyRead?.captured === true;
     window.cryptoFixture.releaseAccessRead = () => heldPolicyRead?.release();
+    window.cryptoFixture.recordAccessReads = () => {
+      accessReads = [];
+    };
+    window.cryptoFixture.accessReads = () => accessReads;
     client.query = async (path, input) => {
       if (path === "zerotrust.creations.capability") {
         return [creationCertificates.get(input.namespace) ?? null, null];
@@ -3474,8 +3479,12 @@ window.cryptoFixture = {
       if (
         path === "zerotrust.access.snapshot" ||
         path === "zerotrust.access.page"
-      )
+      ) {
+        if (path === "zerotrust.access.snapshot" && input?.domains) {
+          accessReads?.push([...input.domains]);
+        }
         return accessSnapshotFixture(client, input);
+      }
       if (path === "zerotrust.domains.get") {
         return [definitions.find((def) => def.id === input.domain), null];
       }

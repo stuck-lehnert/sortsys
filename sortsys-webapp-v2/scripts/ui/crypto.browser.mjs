@@ -3304,9 +3304,10 @@ for (const scenario of [
       if (discard)
         await page.evaluate(() => window.cryptoFixture.failNextAccessSave());
       if (refresh) {
-        await page.evaluate(() =>
-          window.cryptoFixture.refreshContextAfterNextAccessSave(),
-        );
+        await page.evaluate(() => {
+          window.cryptoFixture.recordAccessReads();
+          window.cryptoFixture.refreshContextAfterNextAccessSave();
+        });
       }
       await save.click();
       if (discard) {
@@ -3327,6 +3328,17 @@ for (const scenario of [
       }
       await waitForAccessSave(page, save);
       await text.and(page.locator(":enabled")).waitFor();
+      if (refresh) {
+        const snapshots = await page.evaluate(() =>
+          window.cryptoFixture.accessReads(),
+        );
+        const documentRightsReads = snapshots.filter(
+          (domains) =>
+            domains.length > 1 &&
+            domains.every((domain) => domain.startsWith("commercial:6:")),
+        );
+        assert.equal(documentRightsReads.length, 1);
+      }
       const { initial, saves } = await page.evaluate(() => ({
         initial: window.cryptoFixture.initialAccessRules(),
         saves: window.cryptoFixture.accessSaves(),
@@ -3362,6 +3374,41 @@ for (const scenario of [
     }
   });
 }
+
+test("a refused save reloads document rights and reports the failure after the content context changes", async () => {
+  const { context, page, external } = await open();
+  try {
+    await page.evaluate(() => window.cryptoFixture.showUserAccess(false, true));
+    await chooseAccessDocument(page, "Vertrauliche Fassadenarbeiten");
+    const text = page.getByRole("button", { name: /Leistungsbeschreibungen/ });
+    await text.and(page.locator(":enabled")).waitFor();
+    assert.match(await text.innerText(), /Individuell/);
+    await text.click();
+    await page.getByRole("option", { name: "Lesen", exact: true }).click();
+    await waitForClosedListboxes(page);
+    await page.evaluate(() => {
+      window.cryptoFixture.failNextAccessSave();
+      window.cryptoFixture.refreshContextAfterNextAccessSave();
+    });
+    const save = page.getByRole("button", {
+      name: "Dokumentzugriff speichern",
+      exact: true,
+    });
+    await save.click();
+    const error = page.getByText(
+      "Die Dokumentfreigaben konnten nicht aktualisiert werden.",
+      { exact: true },
+    );
+    await error.waitFor();
+    await text.and(page.locator(":enabled")).waitFor();
+    assert.equal(await error.isVisible(), true);
+    assert.match(await text.innerText(), /Individuell/);
+    assert.equal(await save.isDisabled(), true);
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
 
 test("switching access documents discards a late policy result for the previous choice", async () => {
   const { context, page, external } = await open();

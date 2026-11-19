@@ -106,7 +106,7 @@ function ResourceAccessForm<Resource extends { id: string }>({
     const signal = AbortSignal.any([context, controller.signal]);
     setResources(null);
     setSelection(null);
-    setError(null);
+    setError((previous) => (previous === "save" ? previous : null));
     if (!requested || !unlockedAccount() || operation.current) {
       return () => controller.abort();
     }
@@ -134,7 +134,7 @@ function ResourceAccessForm<Resource extends { id: string }>({
     const signal = AbortSignal.any([context, controller.signal]);
     setAccess(null);
     if (!selection) return () => controller.abort();
-    setError(null);
+    setError((previous) => (previous === "save" ? previous : null));
     void memberAreaAccesses(
       client,
       user,
@@ -192,10 +192,13 @@ function ResourceAccessForm<Resource extends { id: string }>({
     // Finish the verified policy and key change under the account lifetime;
     // labels and controls are reloaded separately in the new content context.
     const signal = controller.signal;
+    const needsReload = () =>
+      context.aborted || protectedContent.context() !== context;
     operation.current = controller;
     setBusy(true);
     setError(null);
     onBusyChange?.(true);
+    let published = false;
     try {
       const changes = fields
         .filter((field) => accessChanged(drafts[field.key]!))
@@ -204,23 +207,31 @@ function ResourceAccessForm<Resource extends { id: string }>({
           patch: drafts[field.key]!.patch,
         }));
       await changeAreaActionAccesses(client, user, changes, signal);
+      published = true;
+      signal.throwIfAborted();
+      if (needsReload()) return;
+
+      const readSignal = AbortSignal.any([context, signal]);
       const values = await memberAreaAccesses(
         client,
         user,
         fields.map((field) => field.area(selected)),
-        signal,
+        readSignal,
       );
-      signal.throwIfAborted();
-      if (protectedContent.context() === context) {
+      readSignal.throwIfAborted();
+      if (!needsReload()) {
         setAccess({ selection, context, drafts: loadDrafts(values) });
-      } else {
-        setVersion((previous) => previous + 1);
       }
     } catch {
-      if (!signal.aborted) setError("save");
+      if (!signal.aborted) {
+        if (!published) setError("save");
+        else if (!needsReload()) setError("read");
+      }
     } finally {
       if (operation.current === controller) {
         operation.current = null;
+        // A context change during publication deferred the reload effect.
+        if (needsReload()) setVersion((previous) => previous + 1);
         setBusy(false);
         onBusyChange?.(false);
       }
@@ -247,6 +258,7 @@ function ResourceAccessForm<Resource extends { id: string }>({
           itemToString={definition.describe}
           onChange={({ selectedItem }: { selectedItem: Resource | null }) => {
             if (!operation.current && !disabled) {
+              setError(null);
               rememberedResource.current = selectedItem?.id ?? null;
               setSelection(selectedItem ? { resource: selectedItem } : null);
               if (selectedItem) setSearch(definition.describe(selectedItem));
@@ -305,6 +317,7 @@ function ResourceAccessForm<Resource extends { id: string }>({
           kind="tertiary"
           disabled={busy || disabled}
           onClick={() => {
+            setError(null);
             setSearch("");
             setRequested(true);
             setVersion((value) => value + 1);
