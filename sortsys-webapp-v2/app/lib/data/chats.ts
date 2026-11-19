@@ -25,6 +25,12 @@ import type { DuckDriver } from "./database";
 import { PRODUCT_COLLECTION, PRICE_COLLECTION } from "./products";
 import { openChatDocuments, type ScopedDocumentSearch } from "./chatDocuments";
 import {
+  chatToolPaths,
+  isChatToolPath,
+  isChatToolSearch,
+  openChatTools,
+} from "./chatTools";
+import {
   chatCostPaths,
   COST_OVERVIEW,
   isChatCostPath,
@@ -123,7 +129,11 @@ export function createProtectedChats(
     const queries = read ? [...PRODUCT_QUERIES] : [];
     if (permitted(PRICE_COLLECTION.scope, "procurement", "read"))
       queries.push("products.priceRecords.list");
-    queries.push(...projectChatPaths(access), ...chatCostPaths(access));
+    queries.push(
+      ...projectChatPaths(access),
+      ...chatCostPaths(access),
+      ...chatToolPaths(access),
+    );
     const mutations = read
       ? PRODUCT_MUTATIONS.filter((path) =>
           permitted(
@@ -192,6 +202,8 @@ export function createProtectedChats(
       return current;
     }
 
+    const toolReads = openChatTools(data, currentAccess);
+
     async function readCosts<T>(
       path: string,
       input: unknown,
@@ -227,6 +239,10 @@ export function createProtectedChats(
             )
               throw new InvalidProtectedData();
             const { path, input: queryInput } = request;
+            if (isChatToolPath(path)) {
+              const result = await toolReads.query(path, queryInput, cancellation);
+              return { path, data: result };
+            }
             const query = () => required(data.queryDynamic(path, queryInput));
             if (isChatCostPath(path)) {
               const { value, current } = await readCosts(path, queryInput, cancellation, query);
@@ -261,6 +277,7 @@ export function createProtectedChats(
               typeof args.limit === "number" && Number.isInteger(args.limit)
                 ? Math.max(1, Math.min(25, args.limit))
                 : 10;
+            if (isChatToolSearch(path)) return toolReads.search(path, args, limit, cancellation);
             if (path === COST_OVERVIEW) {
               const filter = { status: "active" } as const;
               const { value, current } = await readCosts(

@@ -83,5 +83,11 @@ export async function readAssistantAccess(
       access.allows(area.scope, area.facet, "read")
     );
   }
-  return { ...session, allows: access.allows, domains: context.domains, canRead };
+  return {
+    ...session,
+    allows: access.allows,
+    domains: context.domains,
+    snapshot: context.snapshot,
+    canRead,
+  };
 }

@@ -82,6 +82,13 @@ pub struct RawContractSpec {
     pub output_ts: &'static str,
 }
 
+pub(crate) struct ProcedureContract<'a> {
+    pub path: &'a str,
+    pub kind: ProcedureKind,
+    pub input_ts: &'a str,
+    pub output_ts: &'a str,
+}
+
 #[derive(Clone)]
 struct Procedure {
     kind: ProcedureKind,
@@ -91,6 +98,15 @@ struct Procedure {
 }
 
 impl Procedure {
+    fn contract<'a>(&'a self, path: &'a str) -> ProcedureContract<'a> {
+        ProcedureContract {
+            path,
+            kind: self.kind,
+            input_ts: &self.input_ts,
+            output_ts: &self.output_ts,
+        }
+    }
+
     async fn invoke(&self, context: RequestContext, input: Value) -> RpcResult<Value> {
         if self.kind == ProcedureKind::Mutation {
             return (self.handler)(context, input).await;
@@ -113,6 +129,22 @@ pub struct ProcedureRegistry {
 impl ProcedureRegistry {
     pub fn builder() -> ProcedureRegistryBuilder {
         ProcedureRegistryBuilder::default()
+    }
+
+    pub(crate) fn contract_entries(&self) -> impl Iterator<Item = ProcedureContract<'_>> {
+        self.procedures
+            .iter()
+            .map(|(path, procedure)| procedure.contract(path))
+    }
+
+    pub(crate) fn contract_entry(&self, path: &str) -> Option<ProcedureContract<'_>> {
+        let (path, procedure) = self.procedures.get_key_value(path)?;
+        Some(procedure.contract(path))
+    }
+
+    pub(crate) fn contract_alias(&self, name: &str) -> Option<&str> {
+        let (_, source) = self.declarations.get(name)?.split_once(" = ")?;
+        source.strip_suffix(';')
     }
 
     pub fn typescript_contract(&self) -> String {

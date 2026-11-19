@@ -492,6 +492,9 @@ wie die Kostenübersicht. Fehlt eine Kostenfreigabe, zählt das betreffende Proj
 auch bei einer Suche über mehrere Projekte nicht zur Summe. Die Webapp prüft
 Produktvorschläge und speichert angenommene Vorschläge zusammen mit ihrem
 Ausführungsnachweis.
+Die Werkzeugsuche unterscheidet Stammdaten, laufende Buchungen und Inventuren.
+Eine Auskunft zum Inventurstand eines Geräts setzt lesbare Stammdaten und
+Inventuren dieses Geräts voraus.
 Die Chatübernahme aus einer alten Sicherung erhält die Benutzerzuordnung.
 Historische Annahmen ohne Ergebnisprotokoll bleiben erkennbar und werden nicht
 erneut ausgeführt. Frühere Einleseverläufe lassen sich bei der Ersteinrichtung

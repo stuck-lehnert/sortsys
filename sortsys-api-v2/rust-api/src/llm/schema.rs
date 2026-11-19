@@ -29,18 +29,31 @@ struct Field {
     value_type: ContractType,
 }
 
-pub fn json_schema(source: &str) -> Result<Value, String> {
-    Ok(Parser::parse(source)?.to_json_schema())
+type Aliases<'a> = dyn Fn(&str) -> Option<&'a str> + 'a;
+
+pub fn json_schema<'a>(source: &'a str, aliases: &'a Aliases<'a>) -> Result<Value, String> {
+    Ok(Parser::parse(source, aliases, 0)?.to_json_schema())
 }
 
 struct Parser<'a> {
     source: &'a str,
     offset: usize,
+    aliases: &'a Aliases<'a>,
+    alias_depth: usize,
 }
 
 impl<'a> Parser<'a> {
-    fn parse(source: &'a str) -> Result<ContractType, String> {
-        let mut parser = Self { source, offset: 0 };
+    fn parse(
+        source: &'a str,
+        aliases: &'a Aliases<'a>,
+        alias_depth: usize,
+    ) -> Result<ContractType, String> {
+        let mut parser = Self {
+            source,
+            offset: 0,
+            aliases,
+            alias_depth,
+        };
         let value_type = parser.parse_union()?;
 
         parser.skip_whitespace();
@@ -90,6 +103,9 @@ impl<'a> Parser<'a> {
         self.skip_whitespace();
 
         if self.consume('{') {
+            if self.consume_after_whitespace('[') {
+                return self.parse_mapped_record();
+            }
             return self.parse_object();
         }
 
@@ -99,7 +115,7 @@ impl<'a> Parser<'a> {
             return Ok(value_type);
         }
 
-        if self.peek() == Some('"') {
+        if matches!(self.peek(), Some('"' | '\'')) {
             return Ok(ContractType::Literal(Value::String(
                 self.parse_quoted_string()?,
             )));
@@ -107,17 +123,33 @@ impl<'a> Parser<'a> {
 
         let identifier = self.parse_identifier()?;
         match identifier.as_str() {
-            "any" | "unknown" => Ok(ContractType::Any),
+            // The generated JSON value alias is recursive and permits any JSON value.
+            "any" | "unknown" | "JsonValue" => Ok(ContractType::Any),
             "undefined" | "void" => Ok(ContractType::Undefined),
             "null" => Ok(ContractType::Null),
             "boolean" => Ok(ContractType::Boolean),
             "number" => Ok(ContractType::Number),
-            "string" => Ok(ContractType::String),
+            "string" | "bigint" => Ok(ContractType::String),
             "Date" => Ok(ContractType::Date),
             "true" => Ok(ContractType::Literal(Value::Bool(true))),
             "false" => Ok(ContractType::Literal(Value::Bool(false))),
             "Record" => self.parse_record(),
-            _ => Err(self.error(format!("unsupported type {identifier}"))),
+            "Array" => {
+                self.expect('<')?;
+                let items = self.parse_union()?;
+                self.expect('>')?;
+                Ok(ContractType::Array(Box::new(items)))
+            }
+            _ => {
+                let source = (self.aliases)(&identifier)
+                    .ok_or_else(|| self.error(format!("unsupported type {identifier}")))?;
+                if self.alias_depth >= 24 {
+                    return Err(
+                        self.error(format!("type alias expansion is too deep at {identifier}"))
+                    );
+                }
+                Self::parse(source, self.aliases, self.alias_depth + 1)
+            }
         }
     }
 
@@ -130,7 +162,7 @@ impl<'a> Parser<'a> {
                 break;
             }
 
-            let name = if self.peek() == Some('"') {
+            let name = if matches!(self.peek(), Some('"' | '\'')) {
                 self.parse_quoted_string()?
             } else {
                 self.parse_identifier()?
@@ -147,7 +179,7 @@ impl<'a> Parser<'a> {
                 value_type = ContractType::Date;
             }
 
-            self.expect(';')?;
+            self.field_separator()?;
             fields.push(Field {
                 name,
                 optional,
@@ -156,6 +188,29 @@ impl<'a> Parser<'a> {
         }
 
         Ok(ContractType::Object(fields))
+    }
+
+    fn field_separator(&mut self) -> Result<(), String> {
+        self.skip_whitespace();
+        if self.consume(';') || self.consume(',') || self.peek() == Some('}') {
+            Ok(())
+        } else {
+            Err(self.error("expected a field separator or closing brace"))
+        }
+    }
+
+    fn parse_mapped_record(&mut self) -> Result<ContractType, String> {
+        self.parse_identifier()?;
+        if self.parse_identifier()? != "in" || self.parse_identifier()? != "string" {
+            return Err(self.error("only string-keyed mapped records are supported"));
+        }
+        self.expect(']')?;
+        self.consume_after_whitespace('?');
+        self.expect(':')?;
+        let value_type = self.parse_union()?;
+        self.field_separator()?;
+        self.expect('}')?;
+        Ok(ContractType::Record(Box::new(value_type)))
     }
 
     fn parse_record(&mut self) -> Result<ContractType, String> {
@@ -190,7 +245,9 @@ impl<'a> Parser<'a> {
     }
 
     fn parse_quoted_string(&mut self) -> Result<String, String> {
-        self.expect('"')?;
+        let quote = self
+            .advance()
+            .ok_or_else(|| self.error("missing opening quote"))?;
         let mut result = String::new();
 
         loop {
@@ -199,7 +256,7 @@ impl<'a> Parser<'a> {
             };
 
             match character {
-                '"' => return Ok(result),
+                closing if closing == quote => return Ok(result),
                 '\\' => {
                     let escaped = self
                         .advance()
@@ -329,7 +386,16 @@ fn union_json_schema(members: &[ContractType]) -> Value {
 fn is_date_field(name: &str) -> bool {
     matches!(
         name,
-        "day" | "from" | "to" | "timestamp" | "effectiveTimestamp" | "orderReceivedAt"
+        "day"
+            | "from"
+            | "to"
+            | "timestamp"
+            | "effectiveTimestamp"
+            | "orderReceivedAt"
+            | "startedBefore"
+            | "startedAfter"
+            | "endedBefore"
+            | "endedAfter"
     )
 }
 
@@ -343,6 +409,7 @@ mod tests {
     fn nested_objects_remain_objects_in_json_schema() {
         let schema = json_schema(
             "{ title: string; address?: undefined | null | { city: string; streetAddress: string; }; }",
+            &|_| None,
         )
         .unwrap();
 
@@ -359,7 +426,7 @@ mod tests {
 
     #[test]
     fn offset_bearing_dates_are_described_as_iso_strings() {
-        let schema = json_schema("{ from: unknown; to: unknown; }").unwrap();
+        let schema = json_schema("{ from: unknown; to: unknown; }", &|_| None).unwrap();
 
         assert_eq!(schema["properties"]["from"]["format"], "date-time");
         assert!(

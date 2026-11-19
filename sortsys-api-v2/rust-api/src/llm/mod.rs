@@ -13,11 +13,12 @@ use chrono::{DateTime, Datelike, Duration, Utc};
 use chrono_tz::Europe::Berlin;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use std::sync::OnceLock;
 
 use crate::{
     auth::McpScope,
     error::{ErrorCode, RpcError, RpcResult},
-    rpc::ProcedureKind,
+    rpc::{ProcedureContract, ProcedureKind, ProcedureRegistry},
 };
 
 pub use provider::{
@@ -35,11 +36,10 @@ und Weitervergaben (subcontract) verweisen auf einen angenommenen Auftrag oder N
 Native GAEB-Dateien werden im Browser geprüft und bearbeitet; erfinde keine XML-Dateien.
 Antworte kurz, präzise und professionell auf Deutsch.
 Nutze die bereitgestellten Werkzeuge, wenn du aktuelle Daten benötigst.
-Du kannst alle fachlichen Daten lesen, die der angemeldete Benutzer auch über die
-sortsys-API lesen darf. Verwende sortsys_find_procedures, um den passenden RPC-Pfad zu
-finden, sortsys_get_schema für dessen exaktes Schema und sortsys_query für den
-berechtigungsgeprüften Lesezugriff. Rate niemals Feldnamen oder Daten auf Basis früherer
-Antworten. Gemeinkosten liegen beispielsweise unter settings.costs.get.
+Verwende sortsys_find_procedures, um verfügbare RPC-Pfade zu finden,
+sortsys_get_schema für deren exaktes Schema und sortsys_query für den
+berechtigungsgeprüften Lesezugriff. Rate niemals Feldnamen oder Daten auf Basis
+früherer Antworten. Gemeinkosten liegen beispielsweise unter settings.costs.get.
 Sind Dokumentwerkzeuge für diese Anfrage freigegeben, suche mit sortsys_search_documents.
 Lies Treffer mit sortsys_read_document und gib projectId und fileId an. Folge nextOffset,
 wenn weiterer Text nötig ist, und übernimm dabei revision. Meldet das Werkzeug
@@ -71,6 +71,9 @@ Bei Fragen zu Projektkosten, Angeboten, Rechnungen oder Projektergebnissen verwe
 sortsys_search mit der Ressource project_costs, wenn sie freigegeben ist. Die Summen
 beziehen sich ausschließlich auf aktive Projekte mit lesbaren Kostenquellen.
 Für einzelne Zeiträume verwende projects.costs.get mit dem Projekt und den Datumsgrenzen.
+Für aktuell ausgegebene Werkzeuge verwende, sofern verfügbar, die Ressource tool_trackings.
+Für Inventuren verwende tool_inventories. Mit hadInventory und days lässt sich der
+Bestand nach kürzlich erfassten oder noch nicht erfassten Werkzeugen durchsuchen.
 Suche Produkte tolerant. Bei abweichenden Leerzeichen, Bindestrichen, Groß-/Kleinschreibung
 oder einem zunächst leeren Ergebnis suche erneut mit dem charakteristischen Namensbestandteil.
 Beispiel: „Mip 02f“ kann zum Katalogprodukt „MIP-02F“ gehören. Erkläre ein Produkt erst nach
@@ -108,8 +111,7 @@ subcontract packages (subcontract) link to an accepted contract or variation.
 Native GAEB files are validated and edited in the browser; do not invent XML files.
 Answer briefly, precisely, and professionally in English.
 Use the available tools whenever current data is needed.
-You may read all business data available to the signed-in user through the sortsys API.
-Use sortsys_find_procedures to find the exact RPC path, sortsys_get_schema to inspect its
+Use sortsys_find_procedures to find an available RPC path, sortsys_get_schema to inspect its
 schema, and sortsys_query for permission-checked reads. Never guess fields or current data.
 Common overhead costs are available through settings.costs.get.
 When document tools are enabled for this request, use sortsys_search_documents to search.
@@ -123,6 +125,9 @@ If available, use sortsys_search with project_costs for costs, offers, invoices,
 project results. Totals cover only active projects with readable cost sources. For a
 date range on one project use projects.costs.get. Do not claim to have read or changed
 data unless a tool confirmed it.
+If available, use tool_trackings for currently checked-out tools and tool_inventories
+for inventory history. Use hadInventory and days for tools with or without an inventory
+in a given period when those inputs are available.
 Treat words such as “all” or “overall” and broad questions about current-day construction-site
 activity as requests to check every relevant source. This includes at least daily reports,
 regie reports, and delivery notes. Return one combined answer instead of waiting for the
@@ -239,19 +244,25 @@ fn runtime_system_prompt_at(locale: &str, now: DateTime<Utc>) -> String {
     format!("{}\n\n{}", system_prompt(locale), time_context)
 }
 
-const CHAT_SEARCH_QUERIES: [(&str, &str); 2] = [
+const CHAT_SEARCH_QUERIES: &[(&str, &str)] = &[
     ("products", "products.list"),
     ("project_costs", "projects.costs.overview"),
+    ("tools", "tools.list"),
+    ("tool_trackings", "tools.trackings.list"),
+    ("tool_inventories", "tools.inventories.list"),
 ];
 
 pub fn tool_definitions() -> Vec<Value> {
     let mutations = proposable_mutations();
-    let search_resources = CHAT_SEARCH_QUERIES.map(|(resource, _)| resource);
+    let search_resources = CHAT_SEARCH_QUERIES
+        .iter()
+        .map(|(resource, _)| resource)
+        .collect::<Vec<_>>();
 
     let mut tools = vec![
         json!({
             "name": "sortsys_search",
-            "description": "Search readable products or the net costs of active projects. Leave query empty for all matching records. Project totals include every readable match even when the returned list is truncated.",
+            "description": "Search readable records. Use tool_trackings for active tool bookings, tool_inventories for inventory history, and project_costs for net costs of active projects. Project totals cover every readable match even when the records list is truncated.",
             "inputSchema": {
                 "type": "object",
                 "properties": {
@@ -260,7 +271,15 @@ pub fn tool_definitions() -> Vec<Value> {
                         "enum": search_resources
                     },
                     "query": { "type": "string" },
-                    "limit": { "type": "integer", "minimum": 1, "maximum": 25 }
+                    "limit": { "type": "integer", "minimum": 1, "maximum": 25 },
+                    "days": {
+                        "type": "integer", "minimum": 1, "maximum": 3650,
+                        "description": "Inventory period in days. Use only with tool_inventories and hadInventory. Defaults to 30."
+                    },
+                    "hadInventory": {
+                        "type": "boolean",
+                        "description": "With tool_inventories, select tools inventoried or not inventoried in the period. Omit for individual inventory records."
+                    }
                 },
                 "required": ["resource"],
                 "additionalProperties": false
@@ -373,8 +392,8 @@ fn find_procedures(arguments: Value) -> RpcResult<Value> {
     };
     let search_terms = procedure_search_terms(&query);
 
-    let procedures = crate::contract_generated::FULL_CONTRACT
-        .iter()
+    let procedures = contract_registry()
+        .contract_entries()
         .filter(|specification| is_user_facing_procedure(specification.path))
         .filter(|specification| requested_kind.is_none_or(|kind| specification.kind == kind))
         .filter(|specification| {
@@ -446,8 +465,9 @@ fn get_procedure_schema(arguments: Value) -> RpcResult<Value> {
         crate::rpc::ProcedureKind::Query => "query",
         crate::rpc::ProcedureKind::Mutation => "mutation",
     };
-    let input_schema = schema::json_schema(specification.input_ts).map_err(internal)?;
-    let output_schema = schema::json_schema(specification.output_ts).map_err(internal)?;
+    let alias = |name: &str| contract_registry().contract_alias(name);
+    let input_schema = schema::json_schema(specification.input_ts, &alias).map_err(internal)?;
+    let output_schema = schema::json_schema(specification.output_ts, &alias).map_err(internal)?;
 
     Ok(json!({
         "path": specification.path,
@@ -460,10 +480,14 @@ fn get_procedure_schema(arguments: Value) -> RpcResult<Value> {
     }))
 }
 
-fn contract_specification(path: &str) -> RpcResult<&'static crate::rpc::RawContractSpec> {
-    crate::contract_generated::FULL_CONTRACT
-        .iter()
-        .find(|specification| specification.path == path)
+fn contract_registry() -> &'static ProcedureRegistry {
+    static REGISTRY: OnceLock<ProcedureRegistry> = OnceLock::new();
+    REGISTRY.get_or_init(crate::api::contract_registry)
+}
+
+fn contract_specification(path: &str) -> RpcResult<ProcedureContract<'static>> {
+    contract_registry()
+        .contract_entry(path)
         .ok_or_else(|| bad_request(format!("unknown RPC procedure {path}")))
 }
 
@@ -489,8 +513,8 @@ fn is_user_facing_procedure(path: &str) -> bool {
 }
 
 fn proposable_mutations() -> Vec<&'static str> {
-    crate::contract_generated::FULL_CONTRACT
-        .iter()
+    contract_registry()
+        .contract_entries()
         .filter(|specification| specification.kind == ProcedureKind::Mutation)
         .filter(|specification| is_user_facing_procedure(specification.path))
         .map(|specification| specification.path)
@@ -744,6 +768,8 @@ mod tests {
         let common_costs =
             find_procedures(json!({ "query": "aktuelle Gemeinkosten", "kind": "query" })).unwrap();
         let all_mutations = find_procedures(json!({ "kind": "mutation" })).unwrap();
+        let bookings =
+            find_procedures(json!({ "query": "tool trackings", "kind": "query" })).unwrap();
 
         assert!(
             common_costs["procedures"]
@@ -765,6 +791,13 @@ mod tests {
                 .unwrap()
                 .iter()
                 .all(|procedure| !procedure["path"].as_str().unwrap().starts_with("admin."))
+        );
+        assert!(
+            bookings["procedures"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|procedure| procedure["path"] == "tools.trackings.list")
         );
     }
 
@@ -796,14 +829,19 @@ mod tests {
 
     #[test]
     fn every_generated_contract_has_a_machine_readable_schema() {
-        for specification in crate::contract_generated::FULL_CONTRACT {
-            super::schema::json_schema(specification.input_ts).unwrap_or_else(|error| {
+        let registry = super::contract_registry();
+        let alias = |name: &str| registry.contract_alias(name);
+        for specification in registry
+            .contract_entries()
+            .filter(|entry| super::is_user_facing_procedure(entry.path))
+        {
+            super::schema::json_schema(specification.input_ts, &alias).unwrap_or_else(|error| {
                 panic!(
                     "failed to parse input schema for {}: {error}",
                     specification.path
                 )
             });
-            super::schema::json_schema(specification.output_ts).unwrap_or_else(|error| {
+            super::schema::json_schema(specification.output_ts, &alias).unwrap_or_else(|error| {
                 panic!(
                     "failed to parse output schema for {}: {error}",
                     specification.path
@@ -868,7 +906,8 @@ mod tests {
         let resources = search_tool["inputSchema"]["properties"]["resource"]["enum"]
             .as_array()
             .unwrap();
-        assert_eq!(resources, &[json!("products"), json!("project_costs")]);
+        assert!(resources.contains(&json!("project_costs")));
+        assert!(resources.contains(&json!("tool_trackings")));
 
         assert!(paths.iter().any(|path| path == "projects.create"));
         assert!(!paths.iter().any(|path| path == "/projects"));

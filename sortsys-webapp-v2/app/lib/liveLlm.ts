@@ -44,6 +44,9 @@ export type LiveLlmResult = {
 export const CHAT_SEARCH_QUERIES = {
   products: "products.list",
   project_costs: "projects.costs.overview",
+  tools: "tools.list",
+  tool_trackings: "tools.trackings.list",
+  tool_inventories: "tools.inventories.list",
 } as const;
 
 export function chatSearchQuery(resource: unknown) {

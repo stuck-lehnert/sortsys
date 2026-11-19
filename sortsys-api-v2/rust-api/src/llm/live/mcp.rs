@@ -215,9 +215,16 @@ fn allowed(ticket: &Ticket, path: &str) -> bool {
 
 fn search_resources(ticket: &Ticket) -> impl Iterator<Item = &'static str> + '_ {
     super::super::CHAT_SEARCH_QUERIES
-        .into_iter()
+        .iter()
+        .copied()
         .filter(|(_, query)| ticket.queries.iter().any(|path| path == query))
         .map(|(resource, _)| resource)
+}
+
+fn allows_inventory_period(ticket: &Ticket) -> bool {
+    ["tools.inventories.list", "tools.inventories.overview"]
+        .iter()
+        .all(|query| ticket.queries.iter().any(|path| path == query))
 }
 
 fn definitions(ticket: &Ticket) -> Vec<Value> {
@@ -234,7 +241,14 @@ fn definitions(ticket: &Ticket) -> Vec<Value> {
         });
         for tool in &mut tools {
             if tool["name"] == "sortsys_search" {
-                tool["inputSchema"]["properties"]["resource"]["enum"] = json!(resources);
+                let properties = tool["inputSchema"]["properties"]
+                    .as_object_mut()
+                    .expect("search properties");
+                properties["resource"]["enum"] = json!(resources);
+                if !allows_inventory_period(ticket) {
+                    properties.remove("days");
+                    properties.remove("hadInventory");
+                }
             }
             if tool["name"] == "sortsys_query" {
                 tool["inputSchema"]["properties"]["path"]["enum"] = json!(ticket.queries);
@@ -303,6 +317,22 @@ async fn tool(session: &Session, name: &str, arguments: Value) -> RpcResult<Valu
             let resource = arguments.get("resource").and_then(Value::as_str);
             if !search_resources(ticket).any(|allowed| Some(allowed) == resource) {
                 return Err(forbidden());
+            }
+            let period = arguments.get("hadInventory");
+            let days = arguments.get("days");
+            if period.is_some() || days.is_some() {
+                if resource != Some("tool_inventories") || !allows_inventory_period(ticket) {
+                    return Err(forbidden());
+                }
+                if period.and_then(Value::as_bool).is_none()
+                    || days.is_some_and(|value| {
+                        !value
+                            .as_u64()
+                            .is_some_and(|days| (1..=3650).contains(&days))
+                    })
+                {
+                    return Err(invalid());
+                }
             }
             session.call(name, arguments).await
         }

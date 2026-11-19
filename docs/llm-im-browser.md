@@ -181,6 +181,13 @@ deren Summen. Die Summen umfassen alle freigegebenen Treffer, auch wenn das
 Werkzeug nur einen Ausschnitt der Liste zurückgibt. Der Browser prüft die
 Kostenfreigaben vor der Abfrage und erneut vor der Werkzeugantwort.
 
+Bei Werkzeugen kann der Chat den freigegebenen Bestand, laufende Buchungen und
+Inventuren durchsuchen. Auf die Frage, welche Geräte in den vergangenen 30 Tagen
+nicht inventarisiert wurden, berücksichtigt er nur Geräte mit Leserechten für
+Stammdaten und Inventuren. Eine eigene laufende Buchung lässt sich anhand der
+darin gespeicherten Werkzeugbezeichnung finden. Für Personennamen und Projekttitel
+aus einer Buchung gelten die jeweiligen zusätzlichen Leserechte.
+
 Der Chat kann den geschützten Produktkatalog durchsuchen und Vorschläge zum
 Anlegen, Bearbeiten und Verschlagworten von Produkten vorbereiten. Die Webapp
 prüft einen Vorschlag vor seiner Anzeige gegen das lokale Datenschema.
