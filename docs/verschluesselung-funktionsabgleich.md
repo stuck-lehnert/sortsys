@@ -415,8 +415,9 @@ sind inzwischen für deutsche und englische Wortformen, Phrasen, Ausschlüsse un
 Wortanfänge angeschlossen. Ein Worker bewertet Treffer und erzeugt sichere
 Ausschnitte. Native Mehrinstanztests prüfen den Rechteentzug trotz gefülltem
 Cache; Browsertests prüfen den Worker und eine tatsächlich ausgelesene PDF.
-Die genaue Übereinstimmung mit PostgreSQL ist weiterhin nicht nachgewiesen.
-Ein kaltes Gerät und fehlender OCR-Text schränken Ergebnisse ein. Siehe
+Ein Vergleich mit der früheren PostgreSQL-Abfrage zeigt Unterschiede bei
+Phrasen, Wortanfängen und der Auswertung von URLs. Ein Gerät ohne geladenen
+Index und fehlender OCR-Text schränken die Suche ein. Siehe
 [Dokumentensuche](verschluesselte-dokumentensuche.md).
 
 **Positionsdatenbank aus bisherigen GAEB-Dateien.** Die Suche liest freigegebene

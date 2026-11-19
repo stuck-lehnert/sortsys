@@ -57,10 +57,15 @@ Die Wortstammverarbeitung verwendet die deutschen und englischen Algorithmen aus
 [@orama/stemmers](https://github.com/oramasearch/orama/tree/main/packages/stemmers).
 Die Suchsyntax orientiert sich an
 [PostgreSQLs Websuche](https://www.postgresql.org/docs/current/textsearch-controls.html#TEXTSEARCH-PARSING-QUERIES).
-Die bisherige Trefferreihenfolge wird jedoch nicht exakt reproduziert.
-Insbesondere Stoppwörter, URLs, zusammengesetzte Wörter und besondere Satzzeichen
-benötigen weitere Vergleichsfälle. Es besteht deshalb noch kein Nachweis einer
-vollständigen Übereinstimmung mit `websearch_to_tsquery` und `ts_rank_cd`.
+Ein Vergleich mit acht Beispieldateien und 28 Suchanfragen hat die frühere
+Abfrage unter PostgreSQL 18.6 in PGlite nachgestellt. Bei 16 Abfragen stimmten
+die Treffer überein, bei 14 auch ihre Reihenfolge. Beide Suchen fanden deutsche
+und englische Wortformen. Die Browsersuche fand bei `Fenst` zusätzlich einen
+Treffer in einer URL. Bei `"rote Fenster"` verlangte sie benachbarte Wörter.
+Die frühere Abfrage lieferte auch „rote alte Fenster“. Bei `Fenster -Asbest`
+schloss die Browsersuche ein Dokument mit „Asbestplatten“ aus, das in den
+früheren Ergebnissen enthalten war. Für reale Mandantenbestände und die Qualität
+der Ausschnitte steht der Vergleich noch aus.
 
 Die [Vergleichsfälle](../sortsys-webapp-v2/app/lib/search/documentQuery.test.mjs)
 prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der
