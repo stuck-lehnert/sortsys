@@ -13,6 +13,7 @@ import { businessSchema, quoted, tableDefinition } from "./schema";
 import type { Collection } from "./protectedObjects";
 import { acquireDataRuntime } from "./runtime/session";
 import { defineDataModel } from "./runtime/model";
+import type { DataCommand, DataTransaction } from "./runtime/runtime";
 
 export const PRODUCT_COLLECTION: Collection = {
   domain: "catalog:products:master-data",
@@ -370,6 +371,112 @@ export const PRODUCT_MODEL = defineDataModel({
 const productRequest = { model: PRODUCT_MODEL, area: PRODUCT_COLLECTION };
 const productSearch = Symbol("product search");
 
+export const PRODUCT_WRITE_ACTIONS = {
+  "products.create": "create",
+  "products.update": "update",
+  "products.categories.set": "update",
+  "products.categories.tag": "update",
+  "products.categories.untag": "update",
+} as const;
+
+type ProductWritePath = keyof typeof PRODUCT_WRITE_ACTIONS;
+type ProductWriteResult = { id: string } | { success: true };
+
+export function isProductWrite(path: string): path is ProductWritePath {
+  return Object.hasOwn(PRODUCT_WRITE_ACTIONS, path);
+}
+
+function createProduct(input: unknown) {
+  const id = newProductRowId();
+  const now = new Date().toISOString();
+  const changes = productChanges(input, true);
+  return (tx: DataTransaction) => {
+    tx.create(productRequest, PRODUCT_COLLECTION.prefix + publicId(id), {
+      format: "sortsys-product-v1",
+      categories: [],
+      product: {
+        format: "sortsys-row-v2",
+        schema: businessSchema.fingerprint,
+        table: "products",
+        values: { id, ...changes, created_at: now, modified_at: now },
+      },
+    });
+    return { id: publicId(id) };
+  };
+}
+
+function updateProduct(input: unknown) {
+  const { id, data } = record(input, ["id", "data"]);
+  if (typeof id !== "string") throw new InvalidProtectedData();
+  const changes = productChanges(data, false);
+  const now = new Date().toISOString();
+  return (tx: DataTransaction) => {
+    tx.require(productRequest, "update");
+    const current = tx.documents(productRequest).find(
+      (document) => document.id === PRODUCT_COLLECTION.prefix + id,
+    );
+    if (!current) throw new InvalidProtectedData();
+    tx.patch(
+      "products",
+      { id: current.value.product.values.id },
+      { ...changes, modified_at: now },
+    );
+    return { success: true as const };
+  };
+}
+
+function editProductCategories(id: string, change: (labels: string[]) => unknown) {
+  return (tx: DataTransaction) => {
+    tx.require(productRequest, "update");
+    tx.edit(productRequest, PRODUCT_COLLECTION.prefix + id, (value) => {
+      const labels = change(
+        value.categories.map((row) => row.values.category as string),
+      );
+      if (!Array.isArray(labels) || labels.length > 10_000) throw new InvalidProtectedData();
+      const unique = new Map<string, string>();
+      for (const label of labels) {
+        if (typeof label !== "string" || !label.trim()) throw new InvalidProtectedData();
+        const category = label.trim();
+        const key = category.toLowerCase();
+        if (!unique.has(key)) unique.set(key, category);
+      }
+      value.categories = [...unique.values()].map((category) => ({
+        format: "sortsys-row-v2",
+        schema: businessSchema.fingerprint,
+        table: "product_categories",
+        values: { product_id: value.product.values.id, category },
+      }));
+    });
+    return { success: true as const };
+  };
+}
+
+function editProductCategory(id: string, label: unknown, add: boolean) {
+  if (typeof label !== "string" || !label.trim()) throw new InvalidProtectedData();
+  const category = label.trim().toLowerCase();
+  return editProductCategories(id, (labels) => {
+    if (add) return [...labels, label];
+    return labels.filter((current) => current.toLowerCase() !== category);
+  });
+}
+
+export function productCommand(
+  path: ProductWritePath,
+  input: unknown,
+): DataCommand<ProductWriteResult> {
+  const requests = [productRequest];
+  if (path === "products.create") return { requests, apply: createProduct(input) };
+  if (path === "products.update") return { requests, apply: updateProduct(input) };
+
+  const key = path === "products.categories.set" ? "categories" : "category";
+  const data = record(input, ["id", key]);
+  if (typeof data.id !== "string") throw new InvalidProtectedData();
+  const apply = path === "products.categories.set"
+    ? editProductCategories(data.id, () => data.categories)
+    : editProductCategory(data.id, data.category, path === "products.categories.tag");
+  return { requests, apply };
+}
+
 export function openProtectedProducts(
   client: Client,
   signal: AbortSignal,
@@ -394,36 +501,11 @@ export function openProtectedProducts(
     if (!value) throw new InvalidProtectedData();
     return value;
   }
-  async function editCategories(
-    id: string,
-    change: (labels: string[]) => string[],
-  ) {
+  async function write<T>(apply: (tx: DataTransaction) => T): Promise<T> {
     lease.live();
-    await runtime.transaction([productRequest], (tx) =>
-      tx.edit(productRequest, PRODUCT_COLLECTION.prefix + id, (value) => {
-        const labels = change(
-          value.categories.map((row) => row.values.category as string),
-        );
-        if (!Array.isArray(labels) || labels.length > 10_000)
-          throw new InvalidProtectedData();
-        const unique = new Map<string, string>();
-        for (const label of labels) {
-          if (typeof label !== "string" || !label.trim())
-            throw new InvalidProtectedData();
-          const category = label.trim();
-          if (!unique.has(category.toLowerCase()))
-            unique.set(category.toLowerCase(), category);
-        }
-        value.categories = [...unique.values()].map((category) => ({
-          format: "sortsys-row-v2",
-          schema: businessSchema.fingerprint,
-          table: "product_categories",
-          values: { product_id: value.product.values.id, category },
-        }));
-      }),
-    );
+    const result = await runtime.transaction([productRequest], apply);
     lease.live();
-    return { success: true as const };
+    return result;
   }
   return {
     async refresh(minimumSequence?: string) {
@@ -541,46 +623,10 @@ export function openProtectedProducts(
       });
       lease.live();
     },
-    async create(input: MutateInput<"products.create">) {
-      lease.live();
-      const id = newProductRowId(),
-        now = new Date().toISOString(),
-        changes = productChanges(input, true);
-      await runtime.transaction([productRequest], (tx) =>
-        tx.create(productRequest, PRODUCT_COLLECTION.prefix + publicId(id), {
-          format: "sortsys-product-v1",
-          categories: [],
-          product: {
-            format: "sortsys-row-v2",
-            schema: businessSchema.fingerprint,
-            table: "products",
-            values: { id, ...changes, created_at: now, modified_at: now },
-          },
-        }),
-      );
-      lease.live();
-      return { id: publicId(id) };
-    },
-    async update(input: MutateInput<"products.update">) {
-      lease.live();
-      const request = record(input, ["id", "data"]);
-      if (typeof request.id !== "string") throw new InvalidProtectedData();
-      const changes = productChanges(request.data, false),
-        now = new Date().toISOString();
-      await runtime.transaction([productRequest], (tx) => {
-        const current = payload(
-          tx.documents(productRequest).map((document) => document.value),
-          request.id as string,
-        );
-        tx.patch(
-          "products",
-          { id: current.product.values.id },
-          { ...changes, modified_at: now },
-        );
-      });
-      lease.live();
-      return { success: true as const };
-    },
+    create: async (input: MutateInput<"products.create">) =>
+      write(createProduct(input)),
+    update: async (input: MutateInput<"products.update">) =>
+      write(updateProduct(input)),
     async remove(id: string) {
       lease.live();
       if (!/^(?:[1-9a-v][0-9a-v]{0,11}|[1-7][0-9a-v]{12})$/.test(id))
@@ -589,18 +635,12 @@ export function openProtectedProducts(
       lease.live();
       return { success: true as const };
     },
-    setCategories: (id: string, labels: string[]) =>
-      editCategories(id, () => labels),
-    tag: (id: string, label: string) =>
-      editCategories(id, (labels) => [...labels, label]),
-    untag: (id: string, label: string) =>
-      editCategories(id, (labels) => {
-        if (typeof label !== "string" || !label.trim())
-          throw new InvalidProtectedData();
-        return labels.filter(
-          (category) => category.toLowerCase() !== label.trim().toLowerCase(),
-        );
-      }),
+    setCategories: async (id: string, labels: string[]) =>
+      write(editProductCategories(id, () => labels)),
+    tag: async (id: string, label: string) =>
+      write(editProductCategory(id, label, true)),
+    untag: async (id: string, label: string) =>
+      write(editProductCategory(id, label, false)),
     close: async () => lease.close(),
   };
 }

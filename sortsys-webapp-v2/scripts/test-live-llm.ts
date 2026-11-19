@@ -31,6 +31,7 @@ import { testScannedPriceHandoff } from "./test-scanned-price-handoff";
 import { chatCostsReply } from "./test-chat-costs";
 import { chatToolsReply } from "./test-chat-tools";
 import { chatDirectoryReply } from "./test-chat-directory";
+import { chatAddressWritesReply, testChatAddressWrites } from "./test-chat-address-writes";
 import type { DuckDriver } from "../app/lib/data/database";
 
 export async function testLiveLlm(
@@ -112,7 +113,7 @@ export async function testLiveLlm(
       }
       const documentReply = documentsFixture.reply(body);
       if (documentReply) return documentReply;
-      const chat = chatDirectoryReply(body) ?? chatToolsReply(body) ??
+      const chat = chatAddressWritesReply(body) ?? chatDirectoryReply(body) ?? chatToolsReply(body) ??
         chatCostsReply(body) ?? await chatFixture.reply(body);
       if (chat) return chat;
       const member = memberFixture.reply(body);
@@ -621,6 +622,10 @@ export async function testLiveLlm(
       token: options.ownerToken,
     });
     await testLiveChats(client, business, ownerEndpoint, driver, chatFixture);
+    await testChatAddressWrites(client, driver, {
+      endpoint: ownerEndpoint,
+      token: options.ownerToken,
+    });
     await testChatDocuments(client, ownerEndpoint, driver, documentsFixture);
 
     const controller = new AbortController();

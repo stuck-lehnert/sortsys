@@ -9,18 +9,14 @@ import { required } from "./protectedObjects";
 import { newAssistantId, assistantId } from "./privateLlm";
 import { openChatStore, partId } from "./chatStore";
 import type { ChatState, ChatPart } from "./chatStore";
-import { chatText, nextChatDate } from "./chatData";
+import { chatOperation, chatText, nextChatDate } from "./chatData";
 import type { ChatHead, ChatMessage, ChatProposal } from "./chatData";
 import {
   commitProtectedWrites,
   isWriteConflict,
   ProtectedWriteConflict,
 } from "./atomicWrites";
-import {
-  PRODUCT_MUTATIONS,
-  prepareProductOperations,
-  productOperation,
-} from "./productOperations";
+import { chatMutationPaths, prepareChatOperations } from "./chatOperations";
 import type { DuckDriver } from "./database";
 import { PRODUCT_COLLECTION, PRICE_COLLECTION } from "./products";
 import { openChatDocuments, type ScopedDocumentSearch } from "./chatDocuments";
@@ -132,7 +128,6 @@ export function createProtectedChats(
     live(signal);
     const access = await readAssistantAccess(transport, signal, "inventory");
     live(signal);
-    const permitted = access.allows;
     const read = access.canRead(PRODUCT_COLLECTION);
     const queries = read ? [...PRODUCT_QUERIES] : [];
     if (access.canRead(PRICE_COLLECTION))
@@ -143,16 +138,7 @@ export function createProtectedChats(
       ...chatToolPaths(access),
       ...chatDirectoryPaths(access),
     );
-    const mutations = read
-      ? PRODUCT_MUTATIONS.filter((path) =>
-          permitted(
-            PRODUCT_COLLECTION.scope,
-            "master-data",
-            path === "products.create" ? "create" : "update",
-          ),
-        )
-      : [];
-    return { queries, mutations };
+    return { queries, mutations: chatMutationPaths(access) };
   }
   async function answer(
     id: string,
@@ -341,23 +327,22 @@ export function createProtectedChats(
               request.operations.length > 10
             )
               throw new InvalidProtectedData();
-            const operations = request.operations.map(productOperation);
-            if (
-              operations.some(
-                (operation) =>
-                  !access.mutations.includes(
-                    operation.path as (typeof PRODUCT_MUTATIONS)[number],
-                  ),
-              )
-            )
+            const operations = request.operations.map(chatOperation);
+            if (operations.some(({ path }) => !access.mutations.includes(path)))
               throw new InvalidProtectedData();
-            const validation = await prepareProductOperations(
-              transport,
-              operations,
-              cancellation,
-              driver,
-            );
-            validation.close();
+            await readForAssistant(currentAccess, cancellation, async (current) => {
+              const permitted = chatMutationPaths(current);
+              if (operations.some(({ path }) => !permitted.includes(path))) {
+                throw new InvalidProtectedData();
+              }
+              const validation = await prepareChatOperations(
+                transport,
+                operations,
+                cancellation,
+                driver,
+              );
+              validation.close();
+            });
             const proposal: ChatProposal = {
               format: "sortsys-chat-proposal-v1",
               chatId: id,
@@ -609,16 +594,9 @@ export function createProtectedChats(
         const now = nextChatDate(state.head.updatedAt);
         if (target === "accepted") {
           const access = await capabilities(signal);
-          if (
-            proposal.operations.some(
-              (operation) =>
-                !access.mutations.includes(
-                  operation.path as (typeof PRODUCT_MUTATIONS)[number],
-                ),
-            )
-          )
+          if (proposal.operations.some(({ path }) => !access.mutations.includes(path)))
             throw new InvalidProtectedData();
-          const products = await prepareProductOperations(
+          const changes = await prepareChatOperations(
             transport,
             proposal.operations,
             signal,
@@ -628,7 +606,7 @@ export function createProtectedChats(
             accepted = {
               ...proposal,
               status: "accepted",
-              executionResults: products.outputs,
+              executionResults: changes.value,
               reviewedAt: now,
               reviewComment: comment,
             };
@@ -636,11 +614,15 @@ export function createProtectedChats(
               touched(state.head, now),
               accepted,
             ]);
-            await commitProtectedWrites(transport, [products, receipt], signal);
+            await commitProtectedWrites(
+              transport,
+              [...changes.groups, receipt],
+              signal,
+              changes.guards,
+            );
           } finally {
-            products.close();
+            changes.close();
           }
-          await data.invalidate("products.list");
         } else {
           const next: ChatProposal = {
             ...proposal,

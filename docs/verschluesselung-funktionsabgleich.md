@@ -489,9 +489,10 @@ Live-MCP und verschlüsselte Benutzerverläufe. Im Chat sind auch Projektdaten,
 Bautagesberichte, Regieberichte und Lieferscheine mit eigener Lesefreigabe
 abrufbar. Projektkostensuche und Einzelabfragen verwenden dieselbe Berechnung
 wie die Kostenübersicht. Fehlt eine Kostenfreigabe, zählt das betreffende Projekt
-auch bei einer Suche über mehrere Projekte nicht zur Summe. Die Webapp prüft
-Produktvorschläge und speichert angenommene Vorschläge zusammen mit ihrem
-Ausführungsnachweis.
+auch bei einer Suche über mehrere Projekte nicht zur Summe. Vorschläge für
+Produkte, Kunden und Ansprechpartner nutzen dieselben Schreibfunktionen wie die
+Formulare. Eine Bestätigung veröffentlicht die Änderungen aller betroffenen
+Bereiche gemeinsam mit dem Ausführungsnachweis.
 Die Werkzeugsuche unterscheidet Stammdaten, laufende Buchungen und Inventuren.
 Eine Auskunft zum Inventurstand eines Geräts setzt lesbare Stammdaten und
 Inventuren dieses Geräts voraus.

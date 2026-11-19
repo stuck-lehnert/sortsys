@@ -22,6 +22,7 @@ import { normalizeScanResult } from "../../app/lib/data/scanResult";
 import { deliveryCollection } from "../../app/lib/data/deliveryNoteData";
 import { projectCollection } from "../../app/lib/data/projectData";
 import { projectFacetArea } from "../../app/lib/data/projectScope";
+import { partId } from "../../app/lib/data/chatStore";
 
 export async function showAssistantHistory(
   root,
@@ -35,6 +36,7 @@ export async function showAssistantHistory(
     importPage = false,
     reviewDelivery = null,
     reviewPrice = false,
+    addressReview = false,
   } = {},
 ) {
   document.documentElement.classList.toggle("dark", theme === "dark");
@@ -68,6 +70,57 @@ export async function showAssistantHistory(
     }
   } else {
     await copyChats(tenant.client, legacyChatSources(), lifetime.signal);
+  }
+
+  if (addressReview) {
+    const chatId = "v";
+    const date = "2026-11-18T10:00:00.000Z";
+    const operations = [
+      {
+        path: "customers.contacts.add",
+        input: { customerId: "7", contactId: "8" },
+        description: "Bauleitung zuordnen",
+      },
+      {
+        path: "contacts.delete",
+        input: { id: "9" },
+        description: "Veralteten Eintrag löschen",
+      },
+    ];
+    const parts = [
+      {
+        format: "sortsys-chat-v1",
+        id: chatId,
+        title: "Adressbuch",
+        automaticTitle: false,
+        createdAt: date,
+        updatedAt: date,
+        deleted: false,
+      },
+      {
+        format: "sortsys-chat-message-v1",
+        chatId,
+        id: "1",
+        role: "assistant",
+        content: "",
+        createdAt: date,
+      },
+      {
+        format: "sortsys-chat-proposal-v1",
+        chatId,
+        id: "2",
+        assistantMessageId: "1",
+        title: "Adressänderungen bestätigt",
+        summary: "Zuordnung und Löschung erfasst",
+        operations,
+        status: "accepted",
+        executionResults: operations.map(({ path }) => ({ path, output: { success: true } })),
+        createdAt: date,
+        reviewedAt: date,
+        reviewComment: null,
+      },
+    ];
+    for (const part of parts) await tenant.seed(own, partId(part), part);
   }
   const scannedProduct = {
     id: "9",
@@ -263,9 +316,10 @@ export async function showAssistantHistory(
     const { default: LlmPage } = await import("../../app/routes/(shell)/llm");
     view = <LlmPage />;
   }
+  const initialUrl = importPage ? "/import" : `/llm/${addressReview ? "v" : "a"}`;
   root.render(
     <I18nProvider>
-      <MemoryRouter initialEntries={[importPage ? "/import" : "/llm/a"]}>
+      <MemoryRouter initialEntries={[initialUrl]}>
         <SessionInfoProvider sessionClient={sessionClient} access={access}>
           <NotificationProvider>
             <MyModalsProvider>

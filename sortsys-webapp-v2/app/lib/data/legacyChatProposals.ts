@@ -2,12 +2,12 @@ import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import {
   chatDate,
   chatDecision,
+  chatOperation,
   chatProposal,
   chatText,
   proposalPrefix,
   type ChatProposal,
 } from "./chatData";
-import { chatOperation } from "./productOperations";
 import { publicId } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import {

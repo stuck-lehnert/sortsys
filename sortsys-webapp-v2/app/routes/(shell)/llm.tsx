@@ -255,6 +255,17 @@ function executionLink(
     typeof operation.input.id === "string" ? operation.input.id : null;
   const id = outputId ?? inputId;
 
+  if (operation.path === "customers.delete" || operation.path === "contacts.delete") {
+    return null;
+  }
+
+  if (operation.path.startsWith("customers.contacts.")) {
+    const { customerId } = operation.input;
+    return typeof customerId === "string"
+      ? { href: `/customers/${customerId}`, label: t("proposal.openCustomer") }
+      : null;
+  }
+
   if (operation.path.startsWith("projects.costs.entries.")) {
     const projectId = operation.input.projectId;
     return typeof projectId === "string"

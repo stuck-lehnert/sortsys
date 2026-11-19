@@ -1,10 +1,7 @@
 import type { QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { assistantId } from "./privateLlm";
-import { chatOperation } from "./productOperations";
-import type { ChatOperation } from "./productOperations";
-import { jsonValue } from "./jsonValue";
-import type { JsonValue } from "./jsonValue";
+import { jsonValue, type JsonValue } from "./jsonValue";
 
 export type ChatHead = {
   format: "sortsys-chat-v1";
@@ -22,6 +19,11 @@ export type ChatMessage = {
   role: "user" | "assistant";
   content: string;
   createdAt: string;
+};
+export type ChatOperation = {
+  path: string;
+  input: Record<string, JsonValue>;
+  description: string;
 };
 export type ChatProposal = {
   format: "sortsys-chat-proposal-v1";
@@ -44,6 +46,31 @@ export const messagePrefix = (id: string) =>
   `${CHAT_PREFIX}msg:${assistantId(id)}:`;
 export const proposalPrefix = (id: string) =>
   `${CHAT_PREFIX}proposal:${assistantId(id)}:`;
+
+export function chatOperation(input: unknown): ChatOperation {
+  const data = record(input, ["path", "input", "description"]);
+  if (
+    typeof data.path !== "string" ||
+    !/^[a-zA-Z][a-zA-Z0-9]*(?:\.[a-zA-Z][a-zA-Z0-9]*)+$/.test(data.path) ||
+    data.path.length > 160 ||
+    typeof data.description !== "string" ||
+    data.description.includes("\0") ||
+    !data.description.trim() ||
+    new TextEncoder().encode(data.description).length > 500 ||
+    !data.input ||
+    typeof data.input !== "object" ||
+    Array.isArray(data.input)
+  ) {
+    throw new InvalidProtectedData();
+  }
+
+  return {
+    path: data.path,
+    input: jsonValue(data.input) as Record<string, JsonValue>,
+    description: data.description.trim(),
+  };
+}
+
 export function chatText(
   input: unknown,
   maximum: number,

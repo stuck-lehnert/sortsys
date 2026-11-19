@@ -4,7 +4,7 @@ import { buildPrefixSearch, createPrefixMatcher } from "../search/prefixQuery";
 import type { DuckDriver } from "./database";
 import { acquireDataRuntime } from "./runtime/session";
 import { defineDataModel } from "./runtime/model";
-import type { DataRequest, DataView } from "./runtime/runtime";
+import type { DataCommand, DataRequest, DataView } from "./runtime/runtime";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { businessSchema } from "./schema";
 import { newProductRowId, publicId } from "./products";
@@ -30,17 +30,20 @@ export const ADDRESS_QUERIES = new Set([
   "customers.contacts.list",
   "contacts.customers.list",
 ]);
-export const ADDRESS_MUTATIONS = new Set([
-  "customers.create",
-  "customers.update",
-  "customers.delete",
-  "contacts.create",
-  "contacts.update",
-  "contacts.delete",
-  "customers.contacts.add",
-  "customers.contacts.set",
-  "customers.contacts.remove",
-]);
+export const ADDRESS_WRITE_ACTIONS = {
+  "customers.create": "create",
+  "customers.update": "update",
+  "customers.delete": "delete",
+  "contacts.create": "create",
+  "contacts.update": "update",
+  "contacts.delete": "delete",
+  "customers.contacts.add": "update",
+  "customers.contacts.set": "update",
+  "customers.contacts.remove": "update",
+} as const;
+export const ADDRESS_MUTATIONS = new Set(Object.keys(ADDRESS_WRITE_ACTIONS));
+type AddressWritePath = keyof typeof ADDRESS_WRITE_ACTIONS;
+type AddressWriteResult = { id: string } | { success: true };
 type Kind = "customers" | "contacts";
 type Customer = QueryResult<"customers.get">;
 type Contact = QueryResult<"contacts.get">;
@@ -321,6 +324,125 @@ function find(values: AddressPayload[], id: unknown): AddressPayload {
   return value;
 }
 
+export function isAddressWrite(path: string): path is AddressWritePath {
+  return Object.hasOwn(ADDRESS_WRITE_ACTIONS, path);
+}
+
+export function addressWriteRequests(
+  path: AddressWritePath,
+): readonly [DataRequest<AddressPayload>, ...DataRequest<AddressPayload>[]] {
+  if (path.startsWith("customers.contacts.")) {
+    return [customerRequest, contactRequest];
+  }
+  return [path.startsWith("customers.") ? customerRequest : contactRequest];
+}
+
+export async function addressBookActor(client: Client): Promise<string> {
+  const session = await required(
+    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
+  );
+  return addressId(session.user.id);
+}
+
+export async function addressBookCommand(
+  path: AddressWritePath,
+  input: unknown,
+  actor: () => Promise<string>,
+): Promise<DataCommand<AddressWriteResult>> {
+  const action = ADDRESS_WRITE_ACTIONS[path];
+  const requests = addressWriteRequests(path);
+  const [selected] = requests;
+
+  if (requests.length > 1) {
+    const setting = path === "customers.contacts.set";
+    const removing = path === "customers.contacts.remove";
+    const data = record(input, ["customerId", setting ? "contactIds" : "contactId"]);
+    const customerId = addressId(data.customerId);
+    const ids = setting ? data.contactIds : [data.contactId];
+    if (!Array.isArray(ids) || ids.length > 10000) {
+      throw new InvalidProtectedData();
+    }
+    const values = [...new Set(ids.map(addressId))];
+    return {
+      requests,
+      apply(tx) {
+        tx.require(customerRequest, action);
+        const original = find(payloads(tx, "customers"), publicId(customerId));
+        if (!removing) {
+          const contacts = payloads(tx, "contacts");
+          for (const id of values) find(contacts, publicId(id));
+        }
+        const previous = original.links.map((link) => link.values.contact_id as string);
+        let next = values;
+        if (removing) {
+          if (!previous.includes(values[0]!)) throw new InvalidProtectedData();
+          next = previous.filter((id) => !values.includes(id));
+        } else if (!setting) {
+          next = [...new Set([...previous, ...values])];
+        }
+        tx.edit(
+          customerRequest,
+          CUSTOMER_COLLECTION.prefix + publicId(customerId),
+          (customer) => {
+            customer.links = next.map((contact_id) =>
+              decodeBusinessRow({
+                format: "sortsys-row-v2",
+                schema: businessSchema.fingerprint,
+                table: "customer_contacts",
+                values: { customer_id: customerId, contact_id },
+              }),
+            );
+          },
+        );
+        return { success: true };
+      },
+    };
+  }
+
+  const kind = selected === customerRequest ? "customers" : "contacts";
+  if (action === "create") {
+    const values = addressChanges(input, kind, true);
+    if (kind === "customers") values.created_by_user_id = await actor();
+    const id = newProductRowId();
+    const now = new Date().toISOString();
+    return {
+      requests,
+      apply(tx) {
+        tx.create(selected, selected.area.prefix + publicId(id), {
+          format: "sortsys-address-v1",
+          kind,
+          row: decodeBusinessRow({
+            format: "sortsys-row-v2",
+            schema: businessSchema.fingerprint,
+            table: kind,
+            values: { id, ...values, created_at: now, modified_at: now },
+          }),
+          links: [],
+        });
+        return { id: publicId(id) };
+      },
+    };
+  }
+
+  const data = record(input, action === "delete" ? ["id"] : ["id", "data"]);
+  const id = addressId(data.id);
+  const changes = action === "update" ? addressChanges(data.data, kind, false) : {};
+  const now = new Date().toISOString();
+  return {
+    requests,
+    apply(tx) {
+      tx.require(selected, action);
+      find(payloads(tx, kind), publicId(id));
+      if (action === "delete") {
+        tx.delete(selected, selected.area.prefix + publicId(id));
+      } else {
+        tx.patch(kind, { id }, { ...changes, modified_at: now });
+      }
+      return { success: true };
+    },
+  };
+}
+
 export function createProtectedAddressBook(
   client: Client,
   signal: AbortSignal,
@@ -435,113 +557,14 @@ export function createProtectedAddressBook(
     },
     async mutate(path: string, input: unknown): Promise<unknown> {
       lease.live();
-      if (!ADDRESS_MUTATIONS.has(path)) throw new InvalidProtectedData();
-      const kind: Kind = path.startsWith("customers.")
-        ? "customers"
-        : "contacts";
-      if (path.startsWith("customers.contacts.")) {
-        const setting = path.endsWith(".set"),
-          removing = path.endsWith(".remove"),
-          data = record(input, [
-            "customerId",
-            setting ? "contactIds" : "contactId",
-          ]);
-        addressId(data.customerId);
-        const ids = setting ? data.contactIds : [data.contactId];
-        if (!Array.isArray(ids) || ids.length > 10000)
-          throw new InvalidProtectedData();
-        const values = [...new Set(ids.map((id) => addressId(id)))];
-        await runtime.transaction([customerRequest, contactRequest], (tx) => {
-          const original = find(payloads(tx, "customers"), data.customerId),
-            contacts = payloads(tx, "contacts");
-          if (!removing) for (const id of ids) find(contacts, id);
-          const previous = original.links.map(
-            (link) => link.values.contact_id as string,
-          );
-          if (removing && !previous.includes(values[0]!))
-            throw new InvalidProtectedData();
-          const next = setting
-            ? values
-            : removing
-              ? previous.filter((id) => !values.includes(id))
-              : [...new Set([...previous, ...values])];
-          tx.edit(
-            customerRequest,
-            CUSTOMER_COLLECTION.prefix + data.customerId,
-            (customer) => {
-              customer.links = next.map((contact_id) =>
-                decodeBusinessRow({
-                  format: "sortsys-row-v2",
-                  schema: businessSchema.fingerprint,
-                  table: "customer_contacts",
-                  values: { customer_id: original.row!.values.id, contact_id },
-                }),
-              );
-            },
-          );
-        });
-        lease.live();
-        return { success: true };
-      }
-      const creating = path.endsWith(".create"),
-        deleting = path.endsWith(".delete"),
-        data = creating
-          ? input
-          : record(input, deleting ? ["id"] : ["id", "data"]);
-      const selected = request(kind),
-        id = creating
-          ? publicId(newProductRowId())
-          : ((data as Record<string, unknown>).id as string);
-      addressId(id);
-      const values = deleting
-          ? null
-          : addressChanges(
-              creating ? data : (data as Record<string, unknown>).data,
-              kind,
-              creating,
-            ),
-        now = new Date().toISOString();
-      if (creating && kind === "customers") {
-        const session = await required(
-          client.query("auth.sessionInfo", undefined, {
-            strategy: "network-only",
-          }),
-        );
-        lease.live();
-        values!.created_by_user_id = addressId(session.user.id);
-      }
-      await runtime.transaction([selected], (tx) => {
-        if (deleting) {
-          find(payloads(tx, kind), id);
-          tx.delete(selected, selected.area.prefix + id);
-        } else if (creating) {
-          tx.create(selected, selected.area.prefix + id, {
-            format: "sortsys-address-v1",
-            kind,
-            row: decodeBusinessRow({
-              format: "sortsys-row-v2",
-              schema: businessSchema.fingerprint,
-              table: kind,
-              values: {
-                id: addressId(id),
-                ...values,
-                created_at: now,
-                modified_at: now,
-              },
-            }),
-            links: [],
-          });
-        } else {
-          find(payloads(tx, kind), id);
-          tx.patch(
-            kind,
-            { id: addressId(id) },
-            { ...values, modified_at: now },
-          );
-        }
-      });
+      if (!isAddressWrite(path)) throw new InvalidProtectedData();
+      const command = await addressBookCommand(path, input, () =>
+        addressBookActor(client),
+      );
       lease.live();
-      return creating ? { id } : { success: true };
+      const result = await runtime.transaction(command.requests, command.apply);
+      lease.live();
+      return result;
     },
   };
 }

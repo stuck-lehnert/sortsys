@@ -14,6 +14,7 @@ import {
   chatToolProperties,
   type ChatToolRequest,
 } from "./chat-tool-fixture";
+import { revokedCustomerName } from "./test-chat-address-writes";
 
 const customerName = "Auftraggeber Farnbrunnen";
 const contactEmail = "bauleitung.farnbrunnen@example.test";
@@ -32,6 +33,7 @@ export function chatDirectoryReply(body: ChatToolRequest): Response | null {
     const paths = chatToolProperties(body, "sortsys_query")?.path?.enum;
     assert.ok(resources);
     assert.ok(paths);
+    assert.equal(chatToolProperties(body, "sortsys_propose_change"), undefined);
     assert.ok(resources.includes("customers"));
     assert.ok(resources.includes("projects"));
     assert.equal(resources.includes("contacts"), both);
@@ -158,6 +160,27 @@ export async function testMemberChatDirectory(
     ], signal));
     await check(read ? "both" : "customer");
   }
+
+  const setCreate = (create: boolean) => asAdministrator(() => changeAreaActionAccesses(
+    owner, `user:${memberId}`, [{ area: CUSTOMER_COLLECTION, patch: { create } }], signal,
+  ));
+  await setCreate(true);
+  const proposalId = await withBusiness(async (client) => {
+    const result = await required(client.mutate("llm.messages.send", {
+      chatId,
+      content: "ADDRESS_WRITE member",
+    }));
+    assert.equal(result.proposals.at(-1)?.status, "pending");
+    return result.proposals.at(-1)!.id;
+  });
+  await setCreate(false);
+  await withBusiness(async (client) => {
+    const [, error] = await client.mutate("llm.proposals.review", { proposalId, decision: "accept" });
+    assert.ok(error, "The approval must use current write permissions");
+    const history = await required(client.query("llm.chats.get", { chatId }));
+    assert.equal(history.proposals.find(({ id }) => id === proposalId)?.status, "pending");
+    assert.deepEqual(await required(client.query("customers.list", { search: revokedCustomerName })), []);
+  });
   console.log(
     "Chat directory verified: local address and email matches, supplier search, authorised links and revocation.",
   );

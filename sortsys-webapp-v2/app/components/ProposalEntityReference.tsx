@@ -25,6 +25,8 @@ export function proposalEntityKind(
   rootInput: Record<string, unknown>,
 ): ProposalEntityKind | null {
   const directReferences: Record<string, ProposalEntityKind> = {
+    contactId: 'contact',
+    contactIds: 'contact',
     customerId: 'customer',
     productId: 'product',
     projectId: 'project',

@@ -51,6 +51,25 @@ async function open(options) {
   }
 }
 
+test("accepted address proposals link to the remaining customer and identify deleted contacts", async () => {
+  const { context, page, external } = await open({ addressReview: true });
+  try {
+    const card = page.getByRole("article").filter({
+      hasText: "Adressänderungen bestätigt",
+    });
+    await card.getByText("Kontakt löschen", { exact: true }).waitFor();
+    await card.getByText("Ansprechpartner zuordnen", { exact: true }).waitFor();
+    const results = card.locator(".assistant-proposal-complete").getByRole("link");
+    assert.deepEqual(
+      await results.evaluateAll((links) => links.map((link) => link.getAttribute("href"))),
+      ["/customers/7"],
+    );
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 for (const [locale, theme] of [
   ["de", "light"],
   ["en", "dark"],

@@ -196,18 +196,22 @@ Stammdaten und Inventuren. Eine eigene laufende Buchung lässt sich anhand der
 darin gespeicherten Werkzeugbezeichnung finden. Für Personennamen und Projekttitel
 aus einer Buchung gelten die jeweiligen zusätzlichen Leserechte.
 
-Der Chat kann den geschützten Produktkatalog durchsuchen und Vorschläge zum
-Anlegen, Bearbeiten und Verschlagworten von Produkten vorbereiten. Die Webapp
-prüft einen Vorschlag vor seiner Anzeige gegen das lokale Datenschema.
-Die Werkzeugauswahl folgt den signierten Inhaltsrechten: Katalogsuche,
-Preiszugriff sowie Anlegen und Bearbeiten werden getrennt freigegeben.
-Bei der Annahme eines Vorschlags prüft der Client die aktuellen Rechte erneut.
-Erst dann führt er die Änderungen aus. Fachänderungen und
-Ausführungsnachweis werden gemeinsam gespeichert, damit eine verlorene Antwort
-keine doppelte Ausführung verursacht. Ändert ein anderer Client zwischen Prüfung
-und Speicherung den Katalog, wird das gesamte Schreibpaket abgewiesen. Ein
-gelöschter Chat lässt sich durch eine verspätete Modellantwort nicht
-wiederherstellen. Das Löschen setzt bisher eine signierte Löschmarkierung. Die
+Der Chat kann Änderungen am Produktkatalog und am Adressbuch vorschlagen. Ein
+Vorschlag kann etwa einen Auftraggeber anlegen, einem bestehenden Kunden einen
+Ansprechpartner zuordnen und Material erfassen. Welche Vorschläge möglich sind,
+hängt von den signierten Freigaben ab. Für eine Kontaktzuordnung ist zusätzlich
+Leserecht für den Kontaktbestand nötig.
+
+Die Webapp prüft den Vorschlag mit denselben Schreibfunktionen wie die Formulare.
+Erst bei der Bestätigung speichert sie die Änderungen und den Ausführungsnachweis
+gemeinsam. Bei der Bestätigung prüft sie die aktuellen Rechte erneut. Ändert
+sich zwischen Vorbereitung und Speicherung ein gelesener Datenstand, weist die
+API das gesamte Schreibpaket ab. Wenn die Speicherantwort verloren geht, erkennt
+die Webapp beim Wiederholen anhand des Nachweises, ob die Änderungen bereits
+gespeichert sind.
+
+Beim Löschen eines Chats setzt die Webapp eine signierte Löschmarkierung.
+Eine verspätete Modellantwort kann den Verlauf danach nicht wieder öffnen. Die
 verschlüsselten Verlaufsobjekte bleiben bis zur noch ausstehenden
 Speicherbereinigung erhalten.
 

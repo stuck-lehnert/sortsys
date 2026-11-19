@@ -67,6 +67,12 @@ export type PreparedData<T> = {
   versions: readonly DataVersion[];
   close(): void;
 };
+
+export type DataCommand<T> = {
+  requests: readonly DataRequest[];
+  apply(tx: DataTransaction): T;
+};
+
 type Resource = {
   request: DataRequest;
   head: string;
