@@ -191,6 +191,28 @@ for (const reviewDelivery of ["module", "project"]) {
   });
 }
 
+test("a scanned invoice flags the changed package and recalculates when the current product is selected", async () => {
+  const { context, page, external } = await open({ importPage: true, reviewPrice: true });
+  try {
+    await page.getByRole("button").filter({ hasText: "Rechnung Farbe.pdf" }).click();
+    const dialog = page.getByRole("dialog");
+    await dialog.getByRole("heading", { name: "Preise aus Rechnung übernehmen" }).waitFor();
+    await dialog.getByRole("button", { name: "Details für Farbe öffnen" }).click();
+    const warning = dialog.getByText(/^Gebindeumrechnung prüfen/);
+    await warning.waitFor();
+
+    const price = dialog.getByRole("spinbutton", { name: "Nettopreis je kg" });
+    assert.equal(await price.inputValue(), "1");
+    await dialog.getByRole("combobox", { name: "Produktzuordnung" }).fill("Farbe");
+    await page.getByRole("option", { name: /9 · Farbe/ }).click();
+    assert.equal(await price.inputValue(), "1.2");
+    assert.equal(await warning.count(), 0);
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("a delayed import result cannot open a document dialog after permission revocation", async () => {
   const { context, page, external } = await open({
     importPage: true,

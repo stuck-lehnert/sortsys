@@ -1,12 +1,7 @@
 import type { QueryResult } from "@sortsys/v2-client";
-import {
-  accountRequestFingerprint,
-  InvalidProtectedData,
-} from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
 import { uiText } from "../i18n";
 import { deliveryChanges } from "./deliveryChanges";
-import { assistantId } from "./privateLlm";
+import { scannedRequestId } from "./scannedRequest";
 import {
   normalizedScanUnit,
   scanProductUnit,
@@ -101,21 +96,13 @@ export function deliveryScanPrefill(
   return { scanId: scan.id, deliveryDate, comment, records, specialRecords, warnings };
 }
 
-/** A reopened form can reproduce the same encrypted write receipt without
- * sending its personal scan identifier or a public hash of business data. */
-export async function scannedDeliveryRequestId(
+export function scannedDeliveryRequestId(
   scanId: string,
   input: unknown,
 ): Promise<string> {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const requestId = await accountRequestFingerprint(
-    account.dataKey,
+  return scannedRequestId(
     "sortsys/delivery-scan-request/v1",
-    account.tenant,
-    account.vault.subject,
-    [assistantId(scanId), deliveryChanges(input, true)],
+    scanId,
+    deliveryChanges(input, true),
   );
-  if (account !== unlockedAccount()) throw new InvalidProtectedData();
-  return requestId;
 }

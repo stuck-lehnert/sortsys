@@ -19,17 +19,24 @@ import {
 import { MyButton } from "~/components/MyButton";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
+import { scannedPriceRequestId } from "~/lib/data/priceImports";
+import { scanProductUnit } from "~/lib/data/scanResult";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 
 type DocumentScanResult = MutateResult<"deliveryNotes.scan.complete">;
 type PriceListResult = NonNullable<DocumentScanResult["priceList"]>;
 type Product = QueryResult<"products.list">[number];
 type Vendor = QueryResult<"products.vendors.list">[number];
+type PriceScan = { id: string; createdAt: Date; catalogue: readonly Product[] };
+type ScanRow = PriceListResult["rows"][number];
+type SourceConversion = NonNullable<ReturnType<typeof scanProductUnit>>;
 
-type EditablePriceRow = PriceListResult["rows"][number] & {
+type EditablePriceRow = ScanRow & {
   included: boolean;
   conversionsText: string;
-  conversionWarning: string | null;
+  review: "product" | "conversion" | "baseUnit" | null;
+  sourcePrice: number | null;
+  sourceConversion?: SourceConversion;
 };
 
 type PriceImportState = {
@@ -210,20 +217,11 @@ function AutocompleteSelect<T>({
   );
 }
 
-function defaultEffectiveDate(value: string | null) {
+function defaultEffectiveDate(value: string | null, fallback = new Date()) {
   if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
 
-  const now = new Date();
-  const local = new Date(now.getTime() - now.getTimezoneOffset() * 60_000);
+  const local = new Date(fallback.getTime() - fallback.getTimezoneOffset() * 60_000);
   return local.toISOString().slice(0, 10);
-}
-
-function unitFactor(unit: string, baseUnit: string, otherUnits?: Record<string, number>) {
-  const normalized = unit.trim().toLocaleLowerCase();
-  if (normalized === baseUnit.trim().toLocaleLowerCase()) return 1;
-
-  return Object.entries(otherUnits ?? {}).find(([otherUnit]) =>
-    otherUnit.trim().toLocaleLowerCase() === normalized)?.[1] ?? null;
 }
 
 function formatConversions(units?: Record<string, number>) {
@@ -255,33 +253,84 @@ function parseConversions(text: string, baseUnit: string) {
   return units;
 }
 
+function editableRow(row: ScanRow, current?: Product | null): EditablePriceRow {
+  const conversion = scanProductUnit(row, row.sourceUnit);
+  const sourcePrice = conversion ? row.pricePerBaseUnit * conversion.factor : null;
+  let review: EditablePriceRow["review"] = null;
+  if (row.productId) {
+    if (current !== undefined && current?.baseUnit !== row.baseUnit) {
+      review = "product";
+    } else if (!conversion || (
+      current && scanProductUnit(current, row.sourceUnit)?.factor !== conversion.factor
+    )) {
+      review = "conversion";
+    }
+  }
+
+  return {
+    ...row,
+    pricePerBaseUnit: roundPrice(row.pricePerBaseUnit),
+    included: true,
+    conversionsText: formatConversions(row.otherUnits),
+    sourcePrice,
+    sourceConversion: row.productId ? conversion ?? undefined : undefined,
+    review,
+  };
+}
+
+function reviewMessage(review: EditablePriceRow["review"]) {
+  switch (review) {
+    case "product":
+      return uiText(
+        "Das Produkt oder seine Basiseinheit hat sich geändert. Bitte erneut zuordnen.",
+        "The matched product or its base unit changed. Match it again.",
+      );
+    case "conversion":
+      return uiText(
+        "Gebindeumrechnung prüfen. Produkt erneut zuordnen oder Nettopreis je Basiseinheit eingeben.",
+        "Check the package conversion. Match the product again or enter the net price per base unit.",
+      );
+    case "baseUnit":
+      return uiText(
+        "Nettopreis für die geänderte Basiseinheit eingeben.",
+        "Enter the net price for the changed base unit.",
+      );
+    default:
+      return null;
+  }
+}
+
 function PriceImportEditor({
   result,
   documentType,
   controller,
+  scan,
 }: {
   result: PriceListResult;
   documentType: DocumentScanResult["documentType"];
   controller: PriceImportController;
+  scan?: PriceScan;
 }) {
   const formId = useId();
   const [visibleCount, setVisibleCount] = useState(10);
   const [expandedRow, setExpandedRow] = useState<number | null>(null);
   const expandedRowTrigger = useRef<HTMLButtonElement | null>(null);
   const [warningsOpen, setWarningsOpen] = useState(false);
-  const [state, setState] = useState<PriceImportState>(() => ({
-    vendorId: "",
-    vendorName: "",
-    effectiveDate: defaultEffectiveDate(result.effectiveDate),
-    isRealPurchase: documentType === "invoice",
-    rows: result.rows.map(row => ({
-      ...row,
-      pricePerBaseUnit: roundPrice(row.pricePerBaseUnit),
-      included: true,
-      conversionsText: formatConversions(row.otherUnits),
-      conversionWarning: null,
-    })),
-  }));
+  const [state, setState] = useState<PriceImportState>(() => {
+    const products = scan && new Map(scan.catalogue.map((product) => [product.id, product]));
+    return {
+      vendorId: "",
+      vendorName: "",
+      effectiveDate: defaultEffectiveDate(result.effectiveDate, scan?.createdAt),
+      isRealPurchase: documentType === "invoice",
+      rows: result.rows.map((row) => {
+        const current = products && row.productId
+          ? products.get(row.productId) ?? null
+          : undefined;
+        return editableRow(row, current);
+      }),
+    };
+  });
 
   controller.current = state;
 
@@ -321,19 +370,18 @@ function PriceImportEditor({
       const original = result.rows[index];
       if (original) {
         updateRow(index, {
-          ...original,
-          conversionsText: formatConversions(original.otherUnits),
-          conversionWarning: null,
+          ...editableRow({ ...original, productId: null, customId: null }),
+          included: row.included,
         });
       }
       return;
     }
 
-    const oldFactor = unitFactor(row.sourceUnit, row.baseUnit, row.otherUnits);
-    const newFactor = unitFactor(row.sourceUnit, product.baseUnit, product.otherUnits);
-    const convertedPrice = oldFactor && newFactor
-      ? row.pricePerBaseUnit * oldFactor / newFactor
-      : row.pricePerBaseUnit;
+    const conversion = scanProductUnit(product, row.sourceUnit);
+    const convertedPrice = row.sourcePrice !== null && conversion
+      ? row.sourcePrice / conversion.factor
+      : NaN;
+    const automatic = Number.isFinite(convertedPrice);
 
     updateRow(index, {
       productId: product.id,
@@ -344,11 +392,9 @@ function PriceImportEditor({
       description: product.description,
       otherUnits: product.otherUnits,
       conversionsText: formatConversions(product.otherUnits),
-      pricePerBaseUnit: roundPrice(convertedPrice),
-      conversionWarning: oldFactor && newFactor ? null : uiText(
-        `Keine Umrechnung von ${row.sourceUnit} nach ${product.baseUnit} vorhanden. Nettopreis prüfen.`,
-        `No conversion from ${row.sourceUnit} to ${product.baseUnit}. Check the net price.`,
-      ),
+      pricePerBaseUnit: automatic ? roundPrice(convertedPrice) : row.pricePerBaseUnit,
+      sourceConversion: automatic ? conversion ?? undefined : undefined,
+      review: automatic ? null : "conversion",
     });
   }
 
@@ -467,12 +513,13 @@ function PriceImportEditor({
         {visibleRows.map(({ row, index, absoluteIndex }) => {
           const expanded = expandedRow === absoluteIndex;
           const rowWarnings = warningsByRow[absoluteIndex] ?? [];
+          const priceWarning = reviewMessage(row.review);
 
           return (
             <article
               className="price-import-row"
               data-included={row.included}
-              data-needs-review={rowWarnings.length > 0}
+              data-needs-review={rowWarnings.length > 0 || !!priceWarning}
               data-existing-product={!!row.productId}
               data-expanded={expanded}
               key={absoluteIndex}
@@ -513,7 +560,7 @@ function PriceImportEditor({
                         ? uiText("Vorhandenes Produkt", "Existing product")
                         : uiText("Neues Produkt", "New product")}
                       {row.brand ? ` · ${row.brand}` : ""}
-                      {rowWarnings.length > 0
+                      {rowWarnings.length > 0 || priceWarning
                         ? ` · ${uiText("Prüfen", "Review")}`
                         : ""}
                     </small>
@@ -619,6 +666,7 @@ function PriceImportEditor({
                           onChange={(event: ChangeEvent<HTMLInputElement>) =>
                             updateRow(index, {
                               baseUnit: event.currentTarget.value,
+                              review: "baseUnit",
                             })
                           }
                         />
@@ -652,12 +700,13 @@ function PriceImportEditor({
                       step="any"
                       value={row.pricePerBaseUnit}
                       disabled={!row.included}
-                      invalid={!!row.conversionWarning}
-                      invalidText={row.conversionWarning}
+                      invalid={!!priceWarning}
+                      invalidText={priceWarning}
                       onChange={(event: ChangeEvent<HTMLInputElement>) =>
                         updateRow(index, {
                           pricePerBaseUnit: event.currentTarget.valueAsNumber,
-                          conversionWarning: null,
+                          sourceConversion: undefined,
+                          review: row.review === "product" ? "product" : null,
                         })
                       }
                     />
@@ -722,6 +771,7 @@ export function showPriceImportModal(
   modals: MyModalsInterface,
   result: PriceListResult,
   documentType: DocumentScanResult["documentType"],
+  scan?: PriceScan,
 ) {
   const controller: PriceImportController = { current: null };
   let attempt: { input: string; requestId: string } | null = null;
@@ -732,6 +782,7 @@ export function showPriceImportModal(
         result={result}
         documentType={documentType}
         controller={controller}
+        scan={scan}
       />
     ),
     modalProps: () => ({
@@ -763,10 +814,10 @@ export function showPriceImportModal(
         ));
       }
 
-      if (rows.some(row => row.conversionWarning)) {
+      if (rows.some((row) => row.review)) {
         throw new Error(uiText(
-          "Prüfe die Nettopreise der Zeilen ohne passende Umrechnung.",
-          "Check the net prices of rows without a matching conversion.",
+          "Bitte Produktzuordnung und Nettopreis der markierten Zeilen prüfen.",
+          "Check the product mapping and net price of the marked rows.",
         ));
       }
 
@@ -787,6 +838,7 @@ export function showPriceImportModal(
           baseUnit: row.baseUnit.trim(),
           otherUnits,
           pricePerBaseUnit: roundPrice(row.pricePerBaseUnit),
+          sourceConversion: row.sourceConversion,
           comment: row.comment?.trim() || null,
         };
       });
@@ -798,7 +850,12 @@ export function showPriceImportModal(
         rows: preparedRows,
       };
       const serialized = JSON.stringify(input);
-      if (!attempt || attempt.input !== serialized) attempt = { input: serialized, requestId: crypto.randomUUID() };
+      if (!attempt || attempt.input !== serialized) {
+        const requestId = scan
+          ? await scannedPriceRequestId(scan.id, input)
+          : crypto.randomUUID();
+        attempt = { input: serialized, requestId };
+      }
       const [saved, saveError] = await client.mutate("products.priceImports.apply", { ...input, requestId: attempt.requestId });
       if (saveError) throw saveError;
       if (!saved) return;

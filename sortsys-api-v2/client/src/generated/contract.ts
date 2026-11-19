@@ -12,7 +12,7 @@ export type Address = { country?: string | null, zip?: string | null, city: stri
 
 export type AdministrativeProfile<F = string> = { tenant: string, rootSignature: string, version: string, subject: string, scope: string, facet: F, actions: Array<Action>, author: IdentityCertificate, signature: string, };
 
-export type ApplyPriceImportRow = { productId: Id | null, productName: string, brand: string | null, description: string | null, baseUnit: string, otherUnits: { [key in string]: number }, pricePerBaseUnit: number, comment: string | null, };
+export type ApplyPriceImportRow = { productId: Id | null, productName: string, brand: string | null, description: string | null, baseUnit: string, otherUnits: { [key in string]: number }, pricePerBaseUnit: number, sourceConversion?: PriceImportConversion, comment: string | null, };
 
 export type Asset = { id: Id, name: string, mimeType: string, sizeBytes: number, downloadUrl: string | null, };
 
@@ -179,6 +179,8 @@ export type Position = { id: string, shortText: string, description: string, uni
 export type PreparedPayloadManifest = { format: string, context: string, operation: string, bytes: number, hash: string, parts: Array<string>, };
 
 export type PreparedView = { operation: string, approval: ContentEpoch, };
+
+export type PriceImportConversion = { unit: string, factor: number, };
 
 export type PriceListScanResult = { supplier: string | null, documentNumber: string | null, effectiveDate: string | null, rows: Array<ScannedPriceRow>, warnings: Array<string>, };
 

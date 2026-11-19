@@ -157,19 +157,32 @@ const packages = new Set([
   "bigbag",
   "rolle",
 ]);
+
 export function scanProductUnit(
-  product: Product,
+  product: Pick<Product, "baseUnit" | "otherUnits">,
   unit: string,
 ): { unit: string; factor: number } | null {
-  if (normalizedScanUnit(product.baseUnit) === normalizedScanUnit(unit))
-    return { unit: product.baseUnit, factor: 1 };
-  const found = Object.entries(product.otherUnits).find(
-    ([key]) => normalizedScanUnit(key) === normalizedScanUnit(unit),
-  );
-  return found && Number.isFinite(found[1]) && found[1] > 0
-    ? { unit: found[0], factor: found[1] }
-    : null;
+  if (unit === product.baseUnit) return { unit, factor: 1 };
+
+  const units = [
+    [product.baseUnit, 1] as const,
+    ...Object.entries(product.otherUnits),
+  ];
+  const exact = units.find(([name]) => name === unit);
+  const normalized = normalizedScanUnit(unit);
+  const matching = exact
+    ? [exact]
+    : units.filter(([name]) => normalizedScanUnit(name) === normalized);
+  const [first] = matching;
+  if (!first) return null;
+
+  const [name, factor] = first;
+  if (!Number.isFinite(factor) || factor <= 0) return null;
+  if (matching.some(([, alternative]) => alternative !== factor)) return null;
+
+  return { unit: name, factor };
 }
+
 export function proposedScanUnits(
   line: Line,
 ): {

@@ -27,6 +27,7 @@ import { chatModelFixture, testLiveChats } from "./test-live-chats";
 import { memberModelFixture, testMemberLlm } from "./test-member-llm";
 import { documentModelFixture, testChatDocuments } from "./test-chat-documents";
 import { testScannedDeliveryHandoff } from "./test-scanned-delivery-handoff";
+import { testScannedPriceHandoff } from "./test-scanned-price-handoff";
 import type { DuckDriver } from "../app/lib/data/database";
 
 export async function testLiveLlm(
@@ -611,6 +612,10 @@ export async function testLiveLlm(
       privateHistory.close();
     }
 
+    await testScannedPriceHandoff(client, business, driver, {
+      endpoint: ownerEndpoint,
+      token: options.ownerToken,
+    });
     await testLiveChats(client, business, ownerEndpoint, driver, chatFixture);
     await testChatDocuments(client, ownerEndpoint, driver, documentsFixture);
 

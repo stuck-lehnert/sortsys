@@ -32,7 +32,15 @@ pub struct ApplyPriceImportRow {
     #[serde(default)]
     pub other_units: HashMap<String, f64>,
     pub price_per_base_unit: f64,
+    #[ts(optional)]
+    pub source_conversion: Option<PriceImportConversion>,
     pub comment: Option<String>,
+}
+#[derive(Debug, Deserialize, TS)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct PriceImportConversion {
+    pub unit: String,
+    pub factor: f64,
 }
 #[derive(Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

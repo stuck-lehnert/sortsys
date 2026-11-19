@@ -313,6 +313,17 @@ export async function productPayloads(
 }
 
 type Product = QueryResult<"products.get">;
+
+export function productUnits(
+  payload: ProductPayload,
+): Pick<Product, "baseUnit" | "otherUnits"> {
+  const { base_unit, other_units } = payload.product.values;
+  return {
+    baseUnit: base_unit as string,
+    otherUnits: JSON.parse(other_units as string),
+  };
+}
+
 function wireProduct(payload: ProductPayload): Product {
   const p = payload.product.values;
   return {
@@ -322,8 +333,7 @@ function wireProduct(payload: ProductPayload): Product {
     brand: p.brand as string | null,
     description: p.description as string | null,
     regieReportName: p.regie_report_name as string | null,
-    baseUnit: p.base_unit as string,
-    otherUnits: JSON.parse(p.other_units as string),
+    ...productUnits(payload),
     categories: payload.categories
       .map((row) => row.values.category as string)
       .sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase())),
@@ -476,12 +486,10 @@ export function openProtectedProducts(
     units: () =>
       read((products) => [
         ...new Set(
-          products.flatMap((product) => [
-            product.product.values.base_unit as string,
-            ...Object.keys(
-              JSON.parse(product.product.values.other_units as string),
-            ),
-          ]),
+          products.flatMap((product) => {
+            const { baseUnit, otherUnits } = productUnits(product);
+            return [baseUnit, ...Object.keys(otherUnits)];
+          }),
         ),
       ]),
     brands: () =>

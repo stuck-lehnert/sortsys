@@ -222,23 +222,30 @@ export default function ImportDeliveryNotePage() {
           ),
         );
 
-      if (result.documentType === "deliveryNote" && result.deliveryNote) {
-        let catalogue: Product[] = [];
-        if (result.deliveryNote.records.length) {
-          const access = await contentAccess.read();
-          if (context.aborted) return;
-          const { scope, facet } = PRODUCT_COLLECTION;
-          if (access?.can(scope, facet, "read")) {
-            catalogue = await required(client.query("products.list", {}));
-          }
-        }
+      let catalogue: Product[] = [];
+      if (
+        result.deliveryNote?.records.length ||
+        result.priceList?.rows.some((row) => row.productId !== null)
+      ) {
+        const access = await contentAccess.read();
         if (context.aborted) return;
+        const { scope, facet } = PRODUCT_COLLECTION;
+        if (access?.can(scope, facet, "read")) {
+          catalogue = await required(client.query("products.list", {}));
+        }
+      }
+      if (context.aborted) return;
+      if (result.documentType === "deliveryNote" && result.deliveryNote) {
         showCreateDeliveryNoteModal(
           modals,
           deliveryScanPrefill(scan, result.deliveryNote, catalogue),
         );
       } else if (result.priceList) {
-        showPriceImportModal(modals, result.priceList, result.documentType);
+        showPriceImportModal(modals, result.priceList, result.documentType, {
+          id: scan.id,
+          createdAt: scan.createdAt,
+          catalogue,
+        });
       } else {
         throw new Error(
           uiText(

@@ -50,6 +50,7 @@ export type ApplyPriceImportRow = {
         [key in string]: number;
     };
     pricePerBaseUnit: number;
+    sourceConversion?: PriceImportConversion;
     comment: string | null;
 };
 
@@ -713,6 +714,11 @@ export type PreparedPayloadManifest = {
 export type PreparedView = {
     operation: string;
     approval: ContentEpoch;
+};
+
+export type PriceImportConversion = {
+    unit: string;
+    factor: number;
 };
 
 export type PriceListScanResult = {

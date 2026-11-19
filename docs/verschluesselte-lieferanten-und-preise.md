@@ -95,9 +95,12 @@ Arbeiten.
 
 Der vorhandene Prüfdialog ordnet erkannte Preiszeilen bestehenden Produkten zu
 oder legt daraus neue Produkte an. Der Browser prüft Nettopreise, Basiseinheiten
-und Umrechnungen. Neue Produkte erhalten fortlaufende Artikelnummern. Eine
-zwischenzeitlich geänderte Basiseinheit muss vor dem Speichern erneut geprüft
-werden; ein bereits bekanntes Produkt wird durch den Preisimport nicht umbenannt.
+und Umrechnungen. Hat sich etwa das Gewicht eines Sacks von 30 auf 25 kg geändert,
+meldet der Prüfdialog die betroffene Zeile. Eine erneute Produktzuordnung rechnet
+den erkannten Sackpreis mit dem aktuellen Gewicht um. Der Nettopreis pro kg kann
+auch direkt eingetragen werden. Vor dem Speichern prüft der Browser die aktuellen
+Basiseinheiten und die für automatische Preise verwendeten Faktoren erneut. Neue
+Produkte erhalten fortlaufende Artikelnummern.
 
 Produkte, Preisaufzeichnungen und ein verschlüsselter Ausführungsbeleg werden
 zusammen veröffentlicht. Größere Listen lädt der Browser vorher in begrenzten
@@ -106,13 +109,13 @@ oder Preisbestand. Erst eine Transaktion prüft die aktuellen Berechtigungen und
 gelesenen Versionen und übernimmt den gesamten Import. Upload und Veröffentlichung
 dürfen über verschiedene API-Instanzen laufen.
 
-Eine Wiederholung im gleichen Dialog verwendet denselben Auftrag. Geht die
-Antwort verloren, kann der Browser den Beleg nachlesen, statt dieselben Preise
-erneut anzulegen. Geänderte Eingaben erhalten einen neuen Auftrag. Der Beleg
-enthält die Anzahl neuer Produkte und Preisaufzeichnungen sowie eine mit einem Kontogeheimnis
-berechnete Prüfsumme. Ein einfacher Hash der Produktbeschreibungen wäre hier
-ungeeignet, weil reine Preisleser damit mögliche Beschreibungstexte ausprobieren
-könnten. Produkttexte bleiben in ihrem eigenen Schlüsselbereich.
+Ein Konto kann denselben Scan mit identischen Angaben erneut bestätigen. Dank
+des gespeicherten Belegs entstehen dabei auch nach einer verlorenen Antwort
+keine doppelten Preise. Geänderte Eingaben erhalten einen neuen Auftrag. Fehlt
+das Belegdatum, schlägt der Dialog den Einlesetag vor. Der Ausführungsbeleg
+enthält die Anzahl neuer Produkte und Preisaufzeichnungen sowie eine mit einem
+Kontogeheimnis berechnete Prüfsumme. Produkttexte bleiben in ihrem eigenen
+Schlüsselbereich.
 
 Die vorbereiteten Upload-Pakete bleiben bisher auch nach der Veröffentlichung
 als verschlüsselte Daten im Speicher liegen. Ihre Bereinigung gehört zur noch

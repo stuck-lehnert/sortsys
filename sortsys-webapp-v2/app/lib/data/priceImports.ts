@@ -20,12 +20,15 @@ import {
   productChanges,
   type ProductPayload,
   productPayload,
+  productUnits,
   publicId,
 } from "./products";
 import { acquireDataRuntime } from "./runtime/session";
 import { defineDataModel } from "./runtime/model";
 import { type Collection, required } from "./protectedObjects";
 import { businessSchema } from "./schema";
+import { scannedRequestId } from "./scannedRequest";
+import { scanProductUnit } from "./scanResult";
 import { VENDOR_COLLECTION, VENDOR_MODEL } from "./vendorData";
 
 export const PRICE_IMPORT_MUTATION = "products.priceImports.apply";
@@ -101,6 +104,7 @@ export function priceImportInput(input: unknown) {
         "baseUnit",
         "otherUnits",
         "pricePerBaseUnit",
+        "sourceConversion",
         "comment",
       ]);
       const productId =
@@ -113,6 +117,17 @@ export function priceImportInput(input: unknown) {
         row.pricePerBaseUnit < 0
       )
         throw new InvalidProtectedData();
+      let sourceConversion: { unit: string; factor: number } | undefined;
+      if (row.sourceConversion !== undefined) {
+        const { unit, factor } = record(row.sourceConversion, ["unit", "factor"]);
+        if (
+          !productId || typeof factor !== "number" ||
+          !Number.isFinite(factor) || factor <= 0
+        ) {
+          throw new InvalidProtectedData();
+        }
+        sourceConversion = { unit: addressText(unit, true, 32)!, factor };
+      }
       return {
         productId,
         productName,
@@ -125,11 +140,21 @@ export function priceImportInput(input: unknown) {
         ),
         otherUnits: productId ? {} : conversions(row.otherUnits, baseUnit),
         pricePerBaseUnit: row.pricePerBaseUnit,
+        ...(sourceConversion ? { sourceConversion } : {}),
         comment: addressText(row.comment, false, 255),
       };
     }),
   };
 }
+
+export function scannedPriceRequestId(
+  scanId: string,
+  input: unknown,
+): Promise<string> {
+  const { requestId: _requestId, ...values } = priceImportInput(input);
+  return scannedRequestId("sortsys/price-scan-request/v1", scanId, values);
+}
+
 export function priceImportReceipt(input: unknown): Receipt {
   const data = record(input, [
     "format",
@@ -234,7 +259,15 @@ export async function applyProtectedPriceImport(
       area: RECEIPTS,
       ids: [object],
     };
-    const productRequest = { model: PRODUCT_MODEL, area: PRODUCT_COLLECTION };
+    const productIds = new Set(data.rows.map((row) => row.productId));
+    const createsProducts = productIds.has(null);
+    const productRequest = {
+      model: PRODUCT_MODEL,
+      area: PRODUCT_COLLECTION,
+      ids: createsProducts
+        ? undefined
+        : [...productIds].map((id) => PRODUCT_COLLECTION.prefix + id),
+    };
     const vendorRequest = {
       model: VENDOR_MODEL,
       area: VENDOR_COLLECTION,
@@ -281,7 +314,7 @@ export async function applyProtectedPriceImport(
             byId = new Map(
               catalogue.map((row) => [publicId(row.product.values.id), row]),
             );
-          if (data.rows.some((row) => row.productId === null)) {
+          if (createsProducts) {
             tx.require(productRequest, "create");
           }
           const created: { id: string; value: ProductPayload }[] = [],
@@ -306,6 +339,20 @@ export async function applyProtectedPriceImport(
                     "A product's base unit changed. Check its mapping again.",
                   ),
                 );
+              }
+              if (row.sourceConversion) {
+                const current = scanProductUnit(
+                  productUnits(target),
+                  row.sourceConversion.unit,
+                );
+                if (current?.factor !== row.sourceConversion.factor) {
+                  throw new Error(
+                    uiText(
+                      "Eine Gebindeumrechnung hat sich geändert. Bitte Produkt erneut zuordnen oder Nettopreis je Basiseinheit eingeben.",
+                      "A package conversion changed. Match the product again or enter the net price per base unit.",
+                    ),
+                  );
+                }
               }
             } else {
               if (next >= 2147483647) throw new InvalidProtectedData();

@@ -34,6 +34,7 @@ export async function showAssistantHistory(
     historyOnly = false,
     importPage = false,
     reviewDelivery = null,
+    reviewPrice = false,
   } = {},
 ) {
   document.documentElement.classList.toggle("dark", theme === "dark");
@@ -68,24 +69,32 @@ export async function showAssistantHistory(
   } else {
     await copyChats(tenant.client, legacyChatSources(), lifetime.signal);
   }
+  const scannedProduct = {
+    id: "9",
+    customId: 9,
+    name: "Farbe",
+    brand: null,
+    baseUnit: reviewPrice ? "kg" : "Eimer",
+    otherUnits: reviewPrice ? { Sack: 30 } : {},
+  };
   if (importPage) {
     const line = {
-      sourceText: "Zwei Eimer Farbe",
+      sourceText: reviewPrice ? "Farbe, 30 Euro je Sack" : "Zwei Eimer Farbe",
       name: "Farbe",
       brand: null,
       description: null,
       quantity: 2,
-      unit: "Eimer",
-      baseUnit: "Eimer",
+      unit: reviewPrice ? "Sack" : "Eimer",
+      baseUnit: scannedProduct.baseUnit,
       unitConversions: [],
-      productId: reviewDelivery ? "9" : null,
-      pricePerUnit: null,
+      productId: reviewDelivery || reviewPrice ? scannedProduct.id : null,
+      pricePerUnit: reviewPrice ? 30 : null,
       confidence: 1,
       comment: null,
     };
     const result = normalizeScanResult(
       {
-        documentType: "deliveryNote",
+        documentType: reviewPrice ? "invoice" : "deliveryNote",
         supplier: null,
         documentNumber: "782169",
         documentDate: "2026-11-17",
@@ -94,9 +103,7 @@ export async function showAssistantHistory(
           ? [line, { ...line, name: "Abdeckfolie", productId: null, pricePerUnit: 12.5 }]
           : [line],
       },
-      reviewDelivery
-        ? [{ id: "9", customId: 9, name: "Farbe", baseUnit: "Eimer", otherUnits: {} }]
-        : [],
+      reviewDelivery || reviewPrice ? [scannedProduct] : [],
     );
     await tenant.seed(own, "assistant:scan:1", {
       format: "sortsys-assistant-v1",
@@ -104,7 +111,7 @@ export async function showAssistantHistory(
       id: "1",
       value: {
         format: "sortsys-scan-v1",
-        fileNames: ["Vertraulicher Lieferschein 782169.pdf"],
+        fileNames: [reviewPrice ? "Rechnung Farbe.pdf" : "Vertraulicher Lieferschein 782169.pdf"],
         createdAt: "2026-11-17T10:00:00Z",
         updatedAt: "2026-11-17T10:00:00Z",
         result,
@@ -170,7 +177,7 @@ export async function showAssistantHistory(
     });
   const business = createBusinessClient(tenant.client);
   const access = business.access;
-  if (reviewDelivery) Object.assign(contentAccess, access);
+  if (reviewDelivery || reviewPrice) Object.assign(contentAccess, access);
   Object.assign(protectedContent, business.context);
   let release;
   let captured = false;
@@ -179,6 +186,9 @@ export async function showAssistantHistory(
     release = resolve;
   });
   client.query = async (path, input, options) => {
+    if (reviewPrice && path === "products.list") {
+      return [[{ ...scannedProduct, otherUnits: { Sack: 25 } }], null];
+    }
     if (reviewDelivery && path === "projects.list") {
       return [[{ id: "3", title: "Eigene Baustelle" }, { id: "4", title: "Fremde Baustelle" }], null];
     }
