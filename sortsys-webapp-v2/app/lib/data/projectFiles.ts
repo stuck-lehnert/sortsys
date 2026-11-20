@@ -133,6 +133,7 @@ export function createProtectedProjectFiles(
   let searchController: AbortController | null = null;
   const documentSearch = createDocumentSearch();
   let searchProjection: ReturnType<typeof projectSearchFiles> | undefined;
+  let searchProjects = new WeakMap<Store["files"], ReturnType<typeof searchableProject>>();
   let filePolicy: Collections["root"] | undefined;
   const urls = new Set<string>();
   const live = () => {
@@ -174,6 +175,7 @@ export function createProtectedProjectFiles(
 
   function clearSearch() {
     searchProjection = undefined;
+    searchProjects = new WeakMap();
     documentSearch.clear();
   }
   function decoded(
@@ -254,6 +256,7 @@ export function createProtectedProjectFiles(
     const candidate = new Map(stores);
     const opened: Collection[] = [];
     let changed = false;
+    let removed = false;
     try {
       const pages = ids.map(filePage);
       const selectedDomains = pages.length > 0 && pages.length <= 16
@@ -269,6 +272,7 @@ export function createProtectedProjectFiles(
           if (!visible.has(id)) {
             candidate.delete(id);
             changed = true;
+            removed = true;
           }
         }
       }
@@ -298,7 +302,8 @@ export function createProtectedProjectFiles(
         }
       }
       if (changed) {
-        clearSearch();
+        if (removed) clearSearch();
+        else searchProjection = undefined;
         await validateFileRows(candidate);
       }
       live();
@@ -872,14 +877,17 @@ export function createProtectedProjectFiles(
         return await searchSnapshot(query, projectId, limit, active, scope);
       } catch (error) {
         const changed = isWriteConflict(error);
-        if (changed) clearSearch();
         active.throwIfAborted();
-        if (attempt >= 2 || !changed) throw error;
+        if (!changed) throw error;
+        if (attempt >= 2) {
+          clearSearch();
+          throw error;
+        }
       }
     }
   }
 
-  function projectSearchFiles(ids: string[], snapshot: string, active: AbortSignal) {
+  function searchableProject(id: string, files: Store["files"]) {
     const documents: SearchDocument[] = [];
     const entries = new Map<
       string,
@@ -888,31 +896,45 @@ export function createProtectedProjectFiles(
         "rank" | "excerpt" | "projectTitle"
       >
     >();
-    for (const id of ids) {
-      active.throwIfAborted();
-      const store = stores.get(id)!;
-      for (const payload of store.files.values()) {
-        const values = payload.file?.values;
-        if (values?.status !== "uploaded") continue;
-        const fileId = publicId(values.id);
-        const key = `${id}:${fileId}`;
-        const name = values.file_name as string;
-        documents.push({
-          id: key,
-          name,
-          text: currentDocumentText(values),
-        });
-        entries.set(key, {
-          id: fileId,
-          projectId: id,
-          fileName: name,
-          mimeType: values.mime_type as string,
-          textExtractionStatus: values.text_extraction_status as string,
-          modifiedAt: new Date(values.modified_at as string),
-        });
-      }
+    for (const payload of files.values()) {
+      const values = payload.file?.values;
+      if (values?.status !== "uploaded") continue;
+      const fileId = publicId(values.id);
+      const key = `${id}:${fileId}`;
+      const name = values.file_name as string;
+      documents.push({
+        id: key,
+        name,
+        text: currentDocumentText(values),
+      });
+      entries.set(key, {
+        id: fileId,
+        projectId: id,
+        fileName: name,
+        mimeType: values.mime_type as string,
+        textExtractionStatus: values.text_extraction_status as string,
+        modifiedAt: new Date(values.modified_at as string),
+      });
     }
-    return { snapshot, documents, entries };
+    return { documents, entries };
+  }
+
+  function projectSearchFiles(ids: string[], snapshot: string, active: AbortSignal) {
+    const projects = ids.map((id) => {
+      active.throwIfAborted();
+      const { files } = stores.get(id)!;
+      let project = searchProjects.get(files);
+      if (!project) {
+        project = searchableProject(id, files);
+        searchProjects.set(files, project);
+      }
+      return project;
+    });
+    return {
+      snapshot,
+      groups: projects.map(({ documents }) => documents),
+      entries: new Map(projects.flatMap(({ entries }) => [...entries])),
+    };
   }
 
   async function searchSnapshot(
@@ -949,8 +971,8 @@ export function createProtectedProjectFiles(
     if (searchProjection?.snapshot !== snapshot) {
       searchProjection = projectSearchFiles(ids, snapshot, active);
     }
-    const { documents, entries } = searchProjection;
-    const matches = await documentSearch.search(documents, query, active);
+    const { groups, entries } = searchProjection;
+    const matches = await documentSearch.searchGroups(groups, query, active);
     const offset = scope?.offset ?? 0;
     const ranked = matches
       .map(({ id, rank, excerpt }) => {

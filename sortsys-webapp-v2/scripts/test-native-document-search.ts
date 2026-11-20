@@ -806,6 +806,25 @@ try {
           "Suchfenster",
       }),
     });
+    const revisionProject = await required(
+      ownerBusiness.mutate("projects.create", {
+        title: "Baustelle für den Versionsvergleich",
+      }),
+    );
+    const revisionFile = await ownerBusiness.files.upload({
+      projectId: revisionProject.id,
+      name: "Versionsvergleich.eml",
+      mime: "message/rfc822",
+      blob: approvalEmail("Wärmebrückennachweis Erstfassung"),
+    });
+    await changeProjectAccess(
+      owner,
+      `user:${person.id}`,
+      revisionProject.id,
+      "read",
+      signal,
+      "attachment",
+    );
     const fixture = process.argv[4]!;
     await writeFile(fixture, JSON.stringify({
       success: true,
@@ -823,8 +842,19 @@ try {
         stdio: ["ignore", "inherit", "inherit", "ipc"],
         env: { ...process.env, SORTSYS_E2E_READER_PASSWORD: readerPassword },
       });
-      child.once("message", (message) => {
-        const revoke = async () => {
+      child.on("message", (message) => {
+        const handle = async () => {
+          if (message === "replace-document-search-version") {
+            const updated = await ownerBusiness!.files.save(
+              revisionProject.id,
+              revisionFile,
+              1n,
+              approvalEmail("Wärmebrückennachweis Prüffassung"),
+            );
+            assert.equal(updated.version, 2n);
+            child.send("document-search-version-replaced");
+            return;
+          }
           assert.equal(message, "revoke-document-search");
           await changeProjectAccess(
             owner,
@@ -836,7 +866,7 @@ try {
           );
           child.send("document-search-revoked");
         };
-        void revoke().catch((error) => {
+        void handle().catch((error) => {
           child.kill();
           reject(error);
         });

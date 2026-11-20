@@ -4245,7 +4245,7 @@ test("new PDF text is extracted locally without OCR or document uploads", async 
   }
 });
 
-test("document searches reuse the local worker without stale text and reset it after cancellation", async () => {
+test("document searches reuse one responsive worker after replacement and cancellation", async () => {
   const { context, page, external } = await open();
   try {
     const workers = [];
@@ -4255,7 +4255,7 @@ test("document searches reuse the local worker without stale text and reset it a
     );
     assert.equal(result.responsive, true);
     assert.equal(result.aborted, true);
-    assert.equal(workers.length, 2);
+    assert.equal(workers.length, 1);
     assert.equal(result.phraseMatches, 34);
     assert.equal(result.revisedMatches, 0);
     assert.deepEqual(result.afterAbort, ["1"]);

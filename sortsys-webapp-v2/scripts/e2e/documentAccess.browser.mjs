@@ -28,8 +28,10 @@ try {
     const post = Worker.prototype.postMessage;
     Worker.prototype.postMessage = function (...args) {
       const [message] = args;
-      if (typeof message?.query === "string" && typeof message.batch === "number") {
-        messages.push({ hasSource: !!message.source });
+      if (typeof message?.query === "string" && Array.isArray(message.batches)) {
+        for (const { batch, source } of message.batches) {
+          messages.push({ batch, hasSource: !!source });
+        }
         searchWorkers.add(this);
       }
       return Reflect.apply(post, this, args);
@@ -85,6 +87,32 @@ try {
   const warm = (await workerMessages()).slice(cold.length);
   assert.equal(warm.length, cold.length);
   assert.ok(warm.every(({ hasSource }) => !hasSource));
+  await search.fill("Wärmebrückennachweis");
+  await search.press("Enter");
+  const excerpt = page.locator(".documents-search__excerpt");
+  await expect(excerpt).toContainText("Wärmebrückennachweis Erstfassung");
+  const beforeVersionChange = (await workerMessages()).length;
+  const stopsBeforeVersionChange = await page.evaluate(() => window.documentSearchStops);
+  assert.ok(process.send);
+  const replacement = once(process, "message", {
+    signal: AbortSignal.timeout(20_000),
+  });
+  process.send("replace-document-search-version");
+  const [replacementMessage] = await replacement;
+  assert.equal(replacementMessage, "document-search-version-replaced");
+  await expect(excerpt).toContainText("Wärmebrückennachweis Prüffassung");
+  await expect(excerpt).not.toContainText("Erstfassung");
+  const refreshedBatches = (await workerMessages()).slice(beforeVersionChange);
+  const receivedAgain = new Set(refreshedBatches
+    .filter(({ hasSource }) => hasSource)
+    .map(({ batch }) => batch));
+  assert.equal(receivedAgain.size, 1, "Only the revised project's batch is transferred");
+  assert.ok(refreshedBatches.some(({ hasSource }) => !hasSource));
+  assert.equal(
+    await page.evaluate(() => window.documentSearchStops),
+    stopsBeforeVersionChange,
+    "A file revision does not restart the worker",
+  );
   await expect(page).toHaveURL(documentsPage);
   await search.fill(fileNameQuery);
   await search.press("Enter");
@@ -134,7 +162,6 @@ try {
   await search.press("Enter");
   await expect(hit).toBeVisible();
   const initialStops = await page.evaluate(() => window.documentSearchStops);
-  assert.ok(process.send);
   const acknowledgement = once(process, "message", {
     signal: AbortSignal.timeout(20_000),
   });
@@ -145,7 +172,7 @@ try {
   await expect.poll(() => page.evaluate(() => window.documentSearchStops))
     .toBeGreaterThan(initialStops);
   assert.deepEqual(errors, []);
-  console.log(`Chromium reused ${warm.length} document batches and discarded the worker on live revocation.`);
+  console.log(`Chromium reused ${warm.length} document batches, replaced only one project's batch after a file change, and discarded the worker on live revocation.`);
 } finally {
   await browser?.close();
   await server.close();

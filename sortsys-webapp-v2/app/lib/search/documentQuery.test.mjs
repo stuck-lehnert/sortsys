@@ -291,23 +291,23 @@ test("a new query reuses acknowledged document batches and a cleared snapshot re
   try {
     const aborted = provider.search(documents, "Fenster", signal).catch((error) => error);
     const first = await nextMessage();
-    expect(first.input.source.documents).toHaveLength(16);
+    expect(first.input.batches[0].source.documents).toHaveLength(16);
 
     const refined = provider.search(documents, "Türanschlüsse", signal);
     first.worker.reply();
     expect((await aborted).name).toBe("AbortError");
     const reused = await nextMessage();
     expect(reused.worker).toBe(first.worker);
-    expect(reused.input).toEqual({ query: "Türanschlüsse", batch: 0 });
+    expect(reused.input).toEqual({ query: "Türanschlüsse", batches: [{ batch: 0 }] });
     reused.worker.reply();
     const rest = await nextMessage();
-    expect(rest.input.source.documents).toHaveLength(1);
+    expect(rest.input.batches[0].source.documents).toHaveLength(1);
     rest.worker.reply();
     expect(await refined).toEqual([]);
 
     const cleared = provider.search(documents, "Plan", signal).catch((error) => error);
     const previous = await nextMessage();
-    expect(previous.input.source).toBeUndefined();
+    expect(previous.input.batches[0].source).toBeUndefined();
     provider.clear();
     expect(previous.worker.terminated).toBe(true);
     expect((await cleared).name).toBe("AbortError");
@@ -315,17 +315,51 @@ test("a new query reuses acknowledged document batches and a cleared snapshot re
     const refreshed = provider.search(documents, "Fenster", signal);
     const fresh = await nextMessage();
     expect(fresh.worker).not.toBe(previous.worker);
-    expect(fresh.input.source.documents).toHaveLength(16);
+    expect(fresh.input.batches[0].source.documents).toHaveLength(16);
     fresh.worker.reply();
     const last = await nextMessage();
     last.worker.reply();
     expect(await refreshed).toEqual([]);
 
+    provider.clear();
+    const firstProject = documents.slice(0, 16);
+    const secondProject = documents.slice(16);
+    const grouped = provider.searchGroups(
+      [firstProject, secondProject],
+      "Fenster",
+      signal,
+    );
+    const firstGroup = await nextMessage();
+    firstGroup.worker.reply();
+    const secondGroup = await nextMessage();
+    secondGroup.worker.reply();
+    expect(await grouped).toEqual([]);
+
+    const revisedProject = [{ ...firstProject[0], text: "Fenster neu eingesetzt" }];
+    const changed = provider.searchGroups(
+      [revisedProject, secondProject],
+      "Fenster",
+      signal,
+    );
+    const eviction = await nextMessage();
+    expect(eviction.input).toEqual({ discard: [firstGroup.input.batches[0].batch] });
+    expect(eviction.worker).toBe(firstGroup.worker);
+    eviction.worker.reply();
+    const revised = await nextMessage();
+    expect(revised.input.batches).toHaveLength(2);
+    expect(revised.input.batches[0].source.documents).toEqual(revisedProject);
+    expect(revised.input.batches[1]).toEqual({
+      batch: secondGroup.input.batches[0].batch,
+    });
+    revised.worker.reply();
+    expect(await changed).toEqual([]);
+
+    provider.clear();
     const oversized = [{ id: "big", name: "Bericht", text: "x".repeat(4 * 1024 * 1024) }];
     for (const query of ["Bericht", "Fenster"]) {
       const result = provider.search(oversized, query, signal);
       const sent = await nextMessage();
-      expect(sent.input.source).toEqual({ documents: oversized, retain: false });
+      expect(sent.input.batches[0].source).toEqual({ documents: oversized, retain: false });
       sent.worker.reply();
       expect(await result).toEqual([]);
     }

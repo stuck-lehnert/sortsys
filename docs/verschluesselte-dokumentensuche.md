@@ -86,8 +86,11 @@ Für mögliche Treffer prüft er weiterhin Phrasen, Ausschlüsse und Wortabstän
 Bei größeren Beständen werden Blöcke außerhalb des Caches für jede Suche
 erneut übertragen und durchsucht. Eine neue Suchanfrage stoppt die alte nach
 dem laufenden Block.
-Ändert sich die Dateiauswahl, eine Freigabe oder eine Dateiversion, baut der
-Browser den Suchbestand im Worker neu auf. Am Ende der Sitzung verwirft er
+
+Nach einer Dateiänderung ersetzt der Browser die Texte des betroffenen
+Projekts beim nächsten Suchlauf. Gecachte Texte anderer Projekte bleiben im
+Worker. Bei einer eingeschränkten Suche gibt er Projekte außerhalb der
+Auswahl frei. Ein Wechsel der Freigaben oder das Ende der Sitzung beendet
 den Worker.
 
 Der Browser liest die Projektbezeichnungen gebündelt für die angezeigten
@@ -127,6 +130,8 @@ und den Entzug von Freigaben bei geöffnetem Client-Cache. Nach einem
 Versionswechsel einer E-Mail lädt er nur deren neues Chiffrat und findet den
 Text der aktuellen Fassung. Die API weist einen Abruf für den alten Stand ab.
 Chromium zählt die wiederverwendeten Textblöcke beim Ändern der Suchbegriffe.
+Bei einem Versionswechsel über den anderen API-Prozess tauscht der Worker
+die Texte eines Projekts aus und behält die Blöcke des anderen im Speicher.
 Bei einem Rechteentzug über einen anderen API-Prozess verschwinden der Treffer
 und sein Worker aus der laufenden Sitzung. Weitere Browsertests suchen in
 PDF-, Word-, Excel- und PowerPoint-Dateien sowie in EML- und MSG-Nachrichten.

@@ -138,7 +138,18 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
     );
   }
 
-  return { word, scan, mayContain };
+  function forget(texts: Iterable<string>) {
+    for (const text of texts) {
+      const cached = documents.get(text);
+      if (!cached) continue;
+      documents.delete(text);
+      remainingWords += cached.tokens.length;
+      remainingCharacters += text.length;
+    }
+    words.clear();
+  }
+
+  return { word, scan, mayContain, forget };
 }
 
 /** Search semantics belong to the local query provider. The UI must not filter
@@ -264,7 +275,7 @@ export function createDocumentMatcher(
 
   return {
     hasTerms: clauses.length > 0,
-    match(name: string, text: string | null): DocumentMatch | null {
+    match(name: string, text: string | null, cacheText = true): DocumentMatch | null {
       if (!clauses.length) return null;
       const names = atoms.map(() => 0);
       const body = atoms.map(() => 0);
@@ -310,7 +321,7 @@ export function createDocumentMatcher(
           };
         }
       }
-      const length = scan(text ?? "", recordBodyHit, true);
+      const length = scan(text ?? "", recordBodyHit, cacheText);
       const lengthPenalty = 1 + Math.log1p(length) / 12;
       let rank = -1;
       let winningClause = 0;
@@ -350,12 +361,12 @@ export function createDocumentMatcher(
 export function matchDocuments(
   matcher: ReturnType<typeof createDocumentMatcher>,
   documents: readonly SearchDocument[],
-  signal?: AbortSignal,
+  { signal, cacheText }: { signal?: AbortSignal; cacheText?: boolean } = {},
 ): SearchMatch[] {
   const matches: SearchMatch[] = [];
   for (const { id, name, text } of documents) {
     signal?.throwIfAborted();
-    const found = matcher.match(name, text);
+    const found = matcher.match(name, text, cacheText);
     if (found) matches.push({ id, ...found });
   }
   return matches;
