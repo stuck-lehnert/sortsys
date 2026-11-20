@@ -25,6 +25,7 @@ COLD_RESTORE_TEST = TEST_PREFIX + "cold_restore::reopened_store_preserves_recove
 PROCESS_TESTS = {
     DEVELOPMENT_TEST,
     TEST_PREFIX + "first_administrator_finishes_setup_before_business_access",
+    TEST_PREFIX + "local_backup_archive_resumes_without_any_plaintext_source_service",
     TEST_PREFIX + "own_planning_records_use_exact_recipient_keys_across_api_instances",
     TEST_PREFIX + "project_access_rotates_each_facet_across_independent_api_instances",
     TEST_PREFIX + "content_views::tenant_prepares_an_encrypted_snapshot_across_api_instances",

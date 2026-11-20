@@ -1767,19 +1767,16 @@ async fn local_backup_archive_resumes_without_any_plaintext_source_service() {
     );
     let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
     let config = QuackConfig::from_env().unwrap().unwrap();
-    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
-    let second = Repository::system(CipherStore::new(config.clone()).unwrap());
     let mut settings = configuration(config);
     settings.jwt_secret = Arc::from(b"disposable-encrypted-backup-archive-secret-2026".as_slice());
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
-    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
-    browser(
-        "owner-backup-archive",
+    processes::run_browser_sequence(
+        &settings,
         &root,
-        Some(&[first_url, second_url]),
+        &["owner-backup-archive"],
+        Some("backup-archive-tenant"),
     )
     .await;
 }

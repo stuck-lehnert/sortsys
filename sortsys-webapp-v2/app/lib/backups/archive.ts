@@ -1,10 +1,13 @@
 import type { Client } from "@sortsys/v2-client";
 import {
+  digest,
+  frame,
   InvalidProtectedData,
   record,
   signInitializationSource,
   sized,
 } from "@sortsys/zerotrust/sortsys";
+import { uiText } from "../i18n";
 import type { BusinessDatabase, DuckDriver } from "../data/database";
 import {
   loadFileContent,
@@ -15,6 +18,7 @@ import {
   chunkCollection,
   content,
   FILE_CHUNK_BYTES,
+  MAX_FILE_BYTES,
   type FileContent,
 } from "../data/projectFileData";
 import { provisionOwnedCollections } from "../data/prepareCollections";
@@ -42,29 +46,96 @@ const HISTORY_SOURCE_VERSION = "00000000000000000000000000000002";
 const PAGE_SIZE = 32;
 const ARCHIVE_FILE_BATCH = 4;
 type ArchivedObject = BackupObject & { id: string; content: FileContent };
+type SelectedOriginal = { object: BackupObject; blob: Blob };
 type PageReference = { id: string; signature: string };
 type BackupManifest = {
   format: "sortsys-backup-source-v1";
   schema: string;
   rows: string;
   ownerId: string;
+  selectionSignature: string;
   sql: FileContent;
   history: FileContent | null;
   files: PageReference[];
 };
 
-function archiveGroupEnd(originals: readonly BackupObject[], start: number) {
+export class BackupSelectionMismatch extends Error {
+  constructor() {
+    super(
+      uiText(
+        "Die Auswahl stimmt nicht mit dem begonnenen Import überein. Bitte dieselbe Sicherung, dasselbe Benutzerkonto, denselben Dateiordner und gegebenenfalls denselben Einleseverlauf auswählen.",
+        "The selection does not match the import in progress. Select the same backup, user account, directory, and document import history if applicable.",
+      ),
+    );
+  }
+}
+
+function archiveGroupEnd(originals: readonly SelectedOriginal[], start: number) {
   // Large originals report progress individually. Only group files whose
   // recorded sizes fit in one block, so one progress update covers bounded work.
   let end = start;
   while (
     end < originals.length &&
     end - start < ARCHIVE_FILE_BATCH &&
-    (originals[end]!.size ?? Infinity) <= FILE_CHUNK_BYTES
+    originals[end]!.blob.size <= FILE_CHUNK_BYTES
   ) {
     end++;
   }
   return Math.max(start + 1, end);
+}
+
+async function blobFingerprint(blob: Blob, signal: AbortSignal) {
+  if (blob.size > MAX_FILE_BYTES) throw new InvalidProtectedData();
+  const hashes: string[] = [];
+  for (let offset = 0; offset < blob.size; offset += FILE_CHUNK_BYTES) {
+    signal.throwIfAborted();
+    const bytes = new Uint8Array(
+      await blob.slice(offset, offset + FILE_CHUNK_BYTES).arrayBuffer(),
+    );
+    try {
+      hashes.push(await digest(bytes));
+    } finally {
+      bytes.fill(0);
+    }
+  }
+  signal.throwIfAborted();
+  return digest(frame("sortsys/backup-blob/v1", [String(blob.size), ...hashes]));
+}
+
+async function selectSources(
+  sql: Blob,
+  history: Blob | null,
+  objects: readonly BackupObject[],
+  files: BackupFiles,
+  signal: AbortSignal,
+) {
+  const sqlHash = await blobFingerprint(sql, signal);
+  const historyHash = history ? await blobFingerprint(history, signal) : "";
+  const originals: SelectedOriginal[] = [];
+  const fileHashes: string[] = [];
+  for (const object of objects) {
+    const blob = await files.read(object, signal);
+    originals.push({ object, blob });
+    const hash = await blobFingerprint(blob, signal);
+    fileHashes.push(JSON.stringify([object.bucket, object.key, hash]));
+  }
+  const fingerprint = await digest(
+    frame("sortsys/backup-selection/v1", [sqlHash, historyHash, ...fileHashes]),
+  );
+  return { originals, fingerprint };
+}
+
+function selectionValue(input: unknown) {
+  const value = record(input, ["format", "ownerId", "fingerprint"]);
+  if (
+    value.format !== "sortsys-backup-selection-v1" ||
+    typeof value.ownerId !== "string" ||
+    typeof value.fingerprint !== "string"
+  ) {
+    throw new InvalidProtectedData();
+  }
+  sized(value.fingerprint, 32);
+  return { ownerId: value.ownerId, fingerprint: value.fingerprint };
 }
 
 export function backupArea(context: string): Collection {
@@ -82,6 +153,7 @@ function manifestValue(input: unknown, context: string): BackupManifest {
     "schema",
     "rows",
     "ownerId",
+    "selectionSignature",
     "sql",
     "history",
     "files",
@@ -92,14 +164,17 @@ function manifestValue(input: unknown, context: string): BackupManifest {
     typeof value.rows !== "string" ||
     !/^[1-9]\d*$/.test(value.rows) ||
     typeof value.ownerId !== "string" ||
+    typeof value.selectionSignature !== "string" ||
     !Array.isArray(value.files)
   )
     throw new InvalidProtectedData();
+  sized(value.selectionSignature, 64);
   return {
     format: value.format,
     schema: value.schema,
     rows: value.rows,
     ownerId: value.ownerId,
+    selectionSignature: value.selectionSignature,
     sql: content(value.sql, context, "1"),
     history:
       value.history === null ? null : content(value.history, context, "1"),
@@ -141,7 +216,7 @@ export async function archiveBackup(
     admin.history.current.generation === "1" &&
     ownerId !== admin.session.user.id
   )
-    throw new InvalidProtectedData();
+    throw new BackupSelectionMismatch();
   let historySource: ImportHistorySource | null = null;
   if (input.history) {
     historySource = await selectImportHistory(
@@ -157,36 +232,56 @@ export async function archiveBackup(
     [area, chunkCollection(state.context)],
     signal,
   );
-  const originals = await backupObjects(input.database);
-  // Verify the complete directory before publishing a source receipt.
-  for (const object of originals) await input.files.read(object, signal);
-  const sourceSql = await storeFileContent(
-    client,
-    state.context,
-    "1",
+  // Only the selected rows participate in this commitment and the archive.
+  const historyBlob = historySource ? importHistoryBlob(historySource) : null;
+  const { originals, fingerprint } = await selectSources(
     input.sql,
-    SOURCE_VERSION,
+    historyBlob,
+    await backupObjects(input.database),
+    input.files,
     signal,
-    { resume: true, verifyStoredBytes: true },
   );
-  let history: FileContent | null = null;
-  if (historySource) {
-    // Only the selected rows are archived. The global source dump, including
-    // other tenants and credentials, never leaves the local file reader.
-    const blob = importHistoryBlob(historySource);
-    history = await storeFileContent(
-      client,
-      state.context,
-      "1",
-      blob,
-      HISTORY_SOURCE_VERSION,
-      signal,
-      { resume: true, verifyStoredBytes: true },
-    );
-  }
   const collection = await protectedCollection(client, area, signal);
   try {
     await collection.read();
+    const selectionId = `${state.context}:selection`;
+    const [savedSelection] = await collection.selected([selectionId]);
+    let selectionSignature: string;
+    if (savedSelection) {
+      const existing = selectionValue(savedSelection.value);
+      if (existing.ownerId !== ownerId || existing.fingerprint !== fingerprint)
+        throw new BackupSelectionMismatch();
+      selectionSignature = savedSelection.envelope.signature;
+    } else {
+      const selection = await collection.packet(selectionId, {
+        format: "sortsys-backup-selection-v1",
+        ownerId,
+        fingerprint,
+      });
+      await collection.write([selection]);
+      selectionSignature = selection.envelope.signature;
+    }
+    progress(0, originals.length);
+    const sourceSql = await storeFileContent(
+      client,
+      state.context,
+      "1",
+      input.sql,
+      SOURCE_VERSION,
+      signal,
+      { resume: true, verifyStoredBytes: true },
+    );
+    const history = historyBlob
+      ? await storeFileContent(
+          client,
+          state.context,
+          "1",
+          historyBlob,
+          HISTORY_SOURCE_VERSION,
+          signal,
+          { resume: true, verifyStoredBytes: true },
+        )
+      : null;
     const pages: PageReference[] = [];
     for (let offset = 0; offset < originals.length; offset += PAGE_SIZE) {
       const entries: ArchivedObject[] = [];
@@ -195,10 +290,10 @@ export async function archiveBackup(
         const end = archiveGroupEnd(originalsOnPage, start);
         const group = originalsOnPage.slice(start, end);
         const sources = [];
-        for (const [index, object] of group.entries()) {
+        for (const [index, { blob }] of group.entries()) {
           sources.push({
             file: (offset + start + index + 2).toString(32),
-            blob: await input.files.read(object, signal),
+            blob,
             version: SOURCE_VERSION,
           });
         }
@@ -209,7 +304,7 @@ export async function archiveBackup(
           signal,
           { resume: true, verifyStoredBytes: true },
         );
-        for (const [index, object] of group.entries()) {
+        for (const [index, { object }] of group.entries()) {
           entries.push({
             ...object,
             id: sources[index]!.file,
@@ -239,6 +334,7 @@ export async function archiveBackup(
       schema: businessSchema.fingerprint,
       rows: input.rows.toString(),
       ownerId,
+      selectionSignature,
       sql: sourceSql,
       history,
       files: pages,
@@ -247,11 +343,13 @@ export async function archiveBackup(
     let signature: string;
     if (previous[0]) {
       const existing = manifestValue(previous[0].value, state.context);
-      // Recovery may have replaced the administrator, never the source owner.
       if (
         existing.schema !== value.schema ||
         existing.rows !== value.rows ||
+        existing.ownerId !== value.ownerId ||
+        existing.selectionSignature !== value.selectionSignature ||
         JSON.stringify(existing.sql) !== JSON.stringify(value.sql) ||
+        JSON.stringify(existing.history) !== JSON.stringify(value.history) ||
         JSON.stringify(existing.files) !== JSON.stringify(value.files)
       ) {
         throw new InvalidProtectedData();
@@ -296,13 +394,21 @@ export async function openBackupArchive(
     signal,
   );
   try {
-    const saved = await collection.selected([state.source.manifest]);
+    const [saved, selection] = await collection.selected([
+      state.source.manifest,
+      `${state.context}:selection`,
+    ]);
     if (
-      saved.length !== 1 ||
-      saved[0]!.envelope.signature !== state.source.objectSignature
+      !saved || !selection ||
+      saved.envelope.signature !== state.source.objectSignature
     )
       throw new InvalidProtectedData();
-    const manifest = manifestValue(saved[0]!.value, state.context);
+    const manifest = manifestValue(saved.value, state.context);
+    if (
+      selection.envelope.signature !== manifest.selectionSignature ||
+      selectionValue(selection.value).ownerId !== manifest.ownerId
+    )
+      throw new InvalidProtectedData();
     const sql = await loadFileContent(
       client,
       state.context,

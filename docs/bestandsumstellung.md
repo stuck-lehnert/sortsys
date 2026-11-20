@@ -40,10 +40,11 @@ Der Browser muss während der Verarbeitung geöffnet bleiben. Nach einer
 Unterbrechung lässt sich die Einrichtung fortsetzen: Bereits bestätigte
 Zielobjekte werden geprüft und weiterverwendet. Sobald das verschlüsselte
 Quellarchiv vollständig vorliegt, ist keine erneute Dateiauswahl nötig. Vor
-diesem Zeitpunkt müssen dieselbe Sicherung und derselbe Dateiordner erneut
-gewählt werden. Abweichende Quellen überschreiben keinen bestätigten Stand.
-Wurde zusätzlich ein Einleseverlauf ausgewählt, wird vor Abschluss des
-Quellarchivs auch dessen Verwaltungsdatensicherung erneut benötigt.
+dem ersten Blockupload speichert der Browser einen verschlüsselten Nachweis
+für die SQL-Datei, die zugehörigen Dateien, das gewählte Benutzerkonto und
+den optionalen Einleseverlauf. Beim Fortsetzen vergleicht er auch Dateien,
+deren Upload noch nicht begonnen hatte. Weicht die Auswahl vom Nachweis ab,
+führt die Webapp zurück zur Dateiauswahl.
 
 ## Datenbank und Dateien gehören zusammen
 
@@ -100,6 +101,10 @@ entschlüsselnden Clients. Die Mehrinstanztests verwenden den echten
 [Produktionsrouter](../sortsys-api-v2/AGENTS.md) und den DuckDB-Datendienst. Sie
 prüfen unter anderem eine unterbrochene Übernahme, erhaltene Benutzer-IDs,
 Kalkulationskosten, Beschreibungstreffer in der Produktsuche und die bytegenaue
-Wiederherstellung einer statischen PDF-Datei. Der vollständige
+Wiederherstellung einer statischen PDF-Datei. Chromium setzt eine angefangene
+Übernahme aus dem verschlüsselten Archiv fort. Geht die Antwort auf den
+Abschluss der Übernahme verloren, beendet der Browser die Einrichtung nach
+erneuter Anmeldung über eine andere API-Instanz und öffnet das übernommene
+Projekt. Der vollständige
 [Funktionsabgleich](verschluesselung-funktionsabgleich.md) führt die weiterhin
 offenen Punkte der Anwendung auf.

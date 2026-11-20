@@ -5,7 +5,7 @@ import { uiText } from "~/lib/i18n";
 import { readInitializationSource } from "~/lib/crypto/initializationSource";
 import { openPostgresBackup } from "~/lib/backups/business";
 import { localBackupFiles } from "~/lib/backups/files";
-import { archiveBackup } from "~/lib/backups/archive";
+import { archiveBackup, BackupSelectionMismatch } from "~/lib/backups/archive";
 import { adoptBackup } from "~/lib/backups/adopt";
 import {
   pendingBackup,
@@ -122,6 +122,11 @@ export function BackupInitialization({
         } catch (error) {
           if (!signal.aborted) {
             setProgress(null);
+            if (error instanceof BackupSelectionMismatch) {
+              rememberPendingBackup(context, null);
+              setSelection(null);
+              setNeedsFiles(true);
+            }
             setError(
               error instanceof Error
                 ? error.message
@@ -166,9 +171,11 @@ export function BackupInitialization({
       {error && (
         <>
           <MyCallout color="red">{error}</MyCallout>
-          <MyButton onClick={() => setAttempt((value) => value + 1)}>
-            {uiText("Erneut versuchen", "Retry")}
-          </MyButton>
+          {!needsFiles && (
+            <MyButton onClick={() => setAttempt((value) => value + 1)}>
+              {uiText("Erneut versuchen", "Retry")}
+            </MyButton>
+          )}
         </>
       )}
     </div>

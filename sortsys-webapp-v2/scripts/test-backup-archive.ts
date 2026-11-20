@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readFile } from "node:fs/promises";
 import { createClient, type Client } from "@sortsys/v2-client";
 import { digest, sign } from "@sortsys/zerotrust/sortsys";
@@ -6,7 +7,11 @@ import { sourceSql } from "./test-backup-initialization";
 import { row } from "../app/lib/data/testing/businessRow.mjs";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
 import { openPostgresBackup } from "../app/lib/backups/business";
-import { archiveBackup, openBackupArchive } from "../app/lib/backups/archive";
+import {
+  archiveBackup,
+  BackupSelectionMismatch,
+  openBackupArchive,
+} from "../app/lib/backups/archive";
 import { adoptBackup } from "../app/lib/backups/adopt";
 import { localBackupFiles } from "../app/lib/backups/files";
 import { createBusinessClient } from "../app/lib/data/businessClient";
@@ -40,6 +45,24 @@ import { publicId } from "../app/lib/data/products";
 import { toolCollection } from "../app/lib/data/toolData";
 import { invoiceXml } from "./test-live-billing";
 import { enrollToolResponsibleMember } from "./test-native-tool-recovery";
+
+async function resumeInBrowser(draft: OwnerDraft) {
+  await new Promise<void>((resolve, reject) => {
+    const browser = spawn("node", ["scripts/e2e/backupInitialization.browser.mjs"], {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        SORTSYS_BACKUP_E2E_USER: draft.username,
+        SORTSYS_BACKUP_E2E_PASSWORD: draft.password,
+      },
+    });
+    browser.once("error", reject);
+    browser.once("exit", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Browser backup setup failed: ${signal ?? code}`));
+    });
+  });
+}
 
 export async function exerciseBackupArchive(
   owner: Client,
@@ -273,35 +296,54 @@ export async function exerciseBackupArchive(
       .length;
   }
   try {
+    const selection = {
+      sql,
+      database: source.database,
+      rows: source.rows,
+      files: originals,
+      history,
+    };
+    const beforeBinding = transmissions.length;
+    await assert.rejects(
+      archiveBackup(owner, selection, signal, () => {
+        throw new Error("Interrupted after binding the source selection");
+      }),
+      /Interrupted after binding the source selection/,
+    );
+    assert.equal((await readInitializationSource(peer, signal))?.source, null);
+
+    const changedBytes = new Uint8Array(await file.arrayBuffer());
+    changedBytes[0] = changedBytes[0]! ^ 1;
+    const changedFile = new File([changedBytes], file.name, { type: file.type });
+    const mismatches = [
+      { ...selection, history: undefined },
+      { ...selection, sql: new Blob([sql, "\n-- Different source bytes\n"]) },
+      { ...selection, files: localBackupFiles([changedFile, gaebFile, invoiceFile]) },
+    ];
+    for (const attempt of mismatches) {
+      await assert.rejects(
+        archiveBackup(peer, attempt, signal),
+        BackupSelectionMismatch,
+      );
+    }
+    for (const procedure of ["findMany", "putMany", "getMany"]) {
+      assert.equal(fileRequestsSince(beforeBinding, procedure), 0);
+    }
+
     const initial = transmissions.length;
-    await archiveBackup(
-      owner,
-      {
-        sql,
-        database: source.database,
-        rows: source.rows,
-        files: originals,
-        history,
-      },
-      signal,
+    await assert.rejects(
+      archiveBackup(peer, selection, signal, (done, total) => {
+        if (done === total) throw new Error("Interrupted after uploading the blocks");
+      }),
+      /Interrupted after uploading the blocks/,
     );
     // The originals travel together. SQL and the selected history each
-    // have their own version and use one round of lookup, upload and readback.
+    // use their own round of lookup, upload and readback.
     assert.equal(fileRequestsSince(initial, "findMany"), 3);
     assert.equal(fileRequestsSince(initial, "putMany"), 3);
     assert.equal(fileRequestsSince(initial, "getMany"), 3);
     const retry = transmissions.length;
-    await archiveBackup(
-      peer,
-      {
-        sql,
-        database: source.database,
-        rows: source.rows,
-        files: originals,
-        history,
-      },
-      signal,
-    );
+    await archiveBackup(owner, selection, signal);
     assert.equal(fileRequestsSince(retry, "findMany"), 3);
     assert.equal(fileRequestsSince(retry, "putMany"), 0);
     assert.equal(fileRequestsSince(retry, "getMany"), 0);
@@ -350,10 +392,14 @@ export async function exerciseBackupArchive(
     null,
   );
   await assert.rejects(() => initializeTenant(peer, signal, duckDriver));
-  await adoptBackup(peer, signal, {
-    driver: duckDriver,
-    processor: gaebTestProcessor,
-  });
+  if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+    await resumeInBrowser(draft);
+  } else {
+    await adoptBackup(peer, signal, {
+      driver: duckDriver,
+      processor: gaebTestProcessor,
+    });
+  }
   await initializeTenant(owner, signal, duckDriver);
   const business = createBusinessClient(peer, {
     productDriver: duckDriver,
