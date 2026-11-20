@@ -232,6 +232,7 @@ pub(in crate::zerotrust) fn decode_envelope(data: &str) -> RpcResult<EncryptedOb
     Ok(envelope)
 }
 fn encoded(envelope: &EncryptedObject) -> RpcResult<String> {
+    // The browser's attachment index hashes the same sorted-key JSON.
     Ok(serde_json::to_value(envelope)
         .map_err(internal)?
         .to_string())
@@ -338,6 +339,19 @@ fn require_read(guard: &Security, area: &registry::DomainRecord) -> RpcResult<()
     Ok(())
 }
 
+async fn checked_sequence(
+    transaction: &mut Transaction,
+    area: &DomainRecord,
+    expected: Option<&str>,
+) -> RpcResult<String> {
+    let content_number = super::super::content::content_number(transaction).await?;
+    let sequence = area.content_sequence(content_number)?;
+    if expected.is_some_and(|expected| expected != sequence) {
+        return Err(conflict());
+    }
+    Ok(sequence)
+}
+
 async fn apply_visibility(
     transaction: &mut Transaction,
     records: &mut [ObjectRecord],
@@ -363,6 +377,9 @@ async fn get_selected_objects(
             .await?;
     let area = registry::domain(&mut context.transaction, &input.domain).await?;
     require_read(&context.security, &area)?;
+    if input.snapshot.is_some() {
+        checked_sequence(&mut context.transaction, &area, input.snapshot.as_deref()).await?;
+    }
 
     let ids: Vec<_> = input.ids.iter().map(String::as_str).collect();
     let records = raw_objects(&mut context.transaction, &ids, Some(&area.id)).await?;
@@ -441,6 +458,11 @@ fn validate_list_input(input: &ListInput) -> RpcResult<()> {
     if input.head_only == Some(true) && input.after.is_some() {
         return Err(invalid());
     }
+    if input.index_only == Some(true)
+        && (input.head_only == Some(true) || input.include_openings == Some(true))
+    {
+        return Err(invalid());
+    }
     if let Some(known) = &input.known {
         if input.snapshot.is_some() || input.after.is_some() || input.head_only == Some(true) {
             return Err(invalid());
@@ -501,7 +523,7 @@ pub(in crate::zerotrust) async fn selected_pages(
     // don't consume a storage read or a slot in the ciphertext batch.
     let groups = reads
         .iter()
-        .filter(|read| !read.references.is_empty())
+        .filter(|read| read.needs_ciphertext())
         .map(ObjectPageRead::ciphertext_ids)
         .collect::<Vec<_>>();
     let ciphertexts = match groups.len() {
@@ -530,7 +552,7 @@ pub(in crate::zerotrust) async fn selected_pages(
     let mut pages = Vec::with_capacity(reads.len());
     let mut bytes = 0usize;
     for read in reads {
-        let data = if read.references.is_empty() {
+        let data = if !read.needs_ciphertext() {
             Vec::new()
         } else {
             ciphertexts.next().ok_or_else(invalid)?
@@ -556,7 +578,7 @@ async fn object_page(context: &mut MetadataContext, input: ListInput) -> RpcResu
     let mut reads = [plan_object_page(context, input).await?];
     scan_object_pages(context, &mut reads).await?;
     let [read] = reads;
-    let data = if read.references.is_empty() {
+    let data = if !read.needs_ciphertext() {
         Vec::new()
     } else {
         context
@@ -574,9 +596,14 @@ struct ObjectPageRead {
     references: Vec<ObjectRecord>,
     after: Option<String>,
     include_openings: bool,
+    index_only: bool,
 }
 
 impl ObjectPageRead {
+    fn needs_ciphertext(&self) -> bool {
+        !self.index_only && !self.references.is_empty()
+    }
+
     fn ciphertext_ids(&self) -> Vec<String> {
         self.references
             .iter()
@@ -591,15 +618,11 @@ async fn plan_object_page(
 ) -> RpcResult<ObjectPageRead> {
     let area = registry::domain(&mut context.transaction, &input.domain).await?;
     require_read(&context.security, &area)?;
-    let content_number = super::super::content::content_number(&mut context.transaction).await?;
-    let sequence = area.content_sequence(content_number)?;
-    if input
-        .snapshot
-        .as_ref()
-        .is_some_and(|snapshot| snapshot != &sequence)
-    {
-        return Err(conflict());
+    if input.index_only == Some(true) && area.facet != Facet::Attachment {
+        return Err(invalid());
     }
+    let sequence =
+        checked_sequence(&mut context.transaction, &area, input.snapshot.as_deref()).await?;
     // A known version is a cache hint. Only a snapshot used for pagination
     // or a final consistency check must match the current version exactly.
     if input.head_only == Some(true) || input.known.as_ref() == Some(&sequence) {
@@ -610,6 +633,7 @@ async fn plan_object_page(
             references: Vec::new(),
             after: None,
             include_openings: false,
+            index_only: false,
         });
     }
     Ok(ObjectPageRead {
@@ -624,6 +648,7 @@ async fn plan_object_page(
         references: Vec::new(),
         after: None,
         include_openings: input.include_openings == Some(true),
+        index_only: input.index_only == Some(true),
     })
 }
 
@@ -669,8 +694,28 @@ async fn finish_object_page(
         references,
         after,
         include_openings,
+        index_only,
         ..
     } = read;
+    if index_only {
+        return Ok(ObjectPage {
+            snapshot: sequence,
+            key_generation: area.generation,
+            objects: Vec::new(),
+            after,
+            recipient_access: Vec::new(),
+            openings: None,
+            index: Some(
+                references
+                    .into_iter()
+                    .map(|record| ObjectIndexEntry {
+                        object: record.object,
+                        reference: record.reference,
+                    })
+                    .collect(),
+            ),
+        });
+    }
     if data.is_empty() != references.is_empty() || data.len() > references.len() {
         return Err(invalid());
     }
@@ -749,6 +794,7 @@ async fn finish_object_page(
         after,
         recipient_access,
         openings,
+        index: None,
     })
 }
 

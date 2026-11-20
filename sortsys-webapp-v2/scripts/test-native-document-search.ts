@@ -370,6 +370,23 @@ try {
   });
   const originalMatches = await findDocuments(ownerBusiness, `"${oldVersionText}"`);
   assert.deepEqual(originalMatches.map(({ id }) => id), [versioned]);
+  const versionedArea = fileCollection(visible.id);
+  const indexed = await required(
+    owner.query(
+      "zerotrust.objects.list",
+      {
+        domain: versionedArea.domain,
+        prefix: versionedArea.prefix,
+        after: null,
+        snapshot: null,
+        indexOnly: true,
+      },
+      { strategy: "network-only" },
+    ),
+  );
+  assert.deepEqual(indexed.objects, []);
+  assert.ok(indexed.index?.length);
+  const beforeReplacement = requests.length;
   const saved = await ownerBusiness.files.save(
     visible.id,
     versioned,
@@ -377,6 +394,34 @@ try {
     approvalEmail(newVersionText),
   );
   assert.equal(saved.version, 2n);
+  const versionedObject = fileObject(visible.id, versioned);
+  type ObjectSelection = QueryInput<"zerotrust.objects.getMany">;
+  const downloaded = requests.slice(beforeReplacement).flatMap((request) => {
+    if (!request.includes('"ids":') || !request.includes('"snapshot":')) return [];
+    const operations: Record<string, { json?: Partial<ObjectSelection> }> =
+      JSON.parse(request);
+    return Object.values(operations).flatMap(({ json }) =>
+      json?.domain === versionedArea.domain && typeof json.snapshot === "string"
+        ? json.ids ?? []
+        : [],
+    );
+  });
+  assert.deepEqual(
+    downloaded,
+    [versionedObject],
+    "Replacing one file downloads only its new envelope from the changed collection",
+  );
+  const [racedSelection, racedError] = await owner.query(
+    "zerotrust.objects.getMany",
+    {
+      domain: versionedArea.domain,
+      ids: [versionedObject],
+      snapshot: indexed.snapshot,
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(racedSelection, null);
+  assert.equal(racedError?.code, "CONFLICT");
 
   const changing = await upload(visible.id, "Zwischenstand.txt", "Eichentür");
   let projectLookups = 0;
@@ -663,6 +708,19 @@ try {
   );
   assert.equal(denied, null);
   assert.equal(deniedError?.code, "FORBIDDEN");
+  const [deniedIndex, deniedIndexError] = await member.query(
+    "zerotrust.objects.list",
+    {
+      domain: area.domain,
+      prefix: area.prefix,
+      after: null,
+      snapshot: null,
+      indexOnly: true,
+    },
+    { strategy: "network-only" },
+  );
+  assert.equal(deniedIndex, null);
+  assert.equal(deniedIndexError?.code, "FORBIDDEN");
   await assert.rejects(() => openTools.read({ projectId: visible.id, fileId: dense }, signal));
   assert.equal(await openChatDocuments(member, titleRace.searchScoped, signal), null);
   const emptyFiles = createProtectedProjectFiles(

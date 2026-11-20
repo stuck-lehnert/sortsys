@@ -61,8 +61,17 @@ in einem Sammelabruf. Für jede Seite prüft sie den Stand der zugehörigen
 Sammlung. Bei einer Folgesuche kann die API bis zu 16 Sammlungsabfragen im
 selben Schritt wie den bereits bekannten Berechtigungsstand prüfen. Hat sich
 dieser geändert, erhält der Browser zuerst das aktuelle Verzeichnis der
-Bereiche und wählt die Abfragen neu aus. DuckDB prüft die Dateidaten und
-Ordnerbeziehungen in einer lokalen Transaktion. Der Browser verwendet dieselbe
+Bereiche und wählt die Abfragen neu aus.
+
+Hat sich eine bereits geladene Dateisammlung geändert, liefert die API ein
+Verzeichnis mit den Objektkennungen und Hashes der aktuellen Chiffrate. Der
+Browser lädt nur Fassungen mit einem neuen Hash und prüft die Signaturen
+einschließlich der Löschsignaturen. Ändert sich der Sammlungsstand während
+des Abrufs, liest der Browser die Sammlung aus einem neuen Stand vollständig
+ein. Auch beim ersten Öffnen lädt er die freigegebenen Dateidaten vollständig.
+
+DuckDB prüft die Dateidaten und Ordnerbeziehungen in einer lokalen
+Transaktion. Der Browser verwendet dieselbe
 DuckDB-Instanz für weitere Prüfungen und rollt die Prüfdaten nach jeder
 Transaktion zurück.
 Ein Wechsel der Freigaberichtlinie oder das Sitzungsende schließt die Instanz.
@@ -77,8 +86,9 @@ Für mögliche Treffer prüft er weiterhin Phrasen, Ausschlüsse und Wortabstän
 Bei größeren Beständen werden Blöcke außerhalb des Caches für jede Suche
 erneut übertragen und durchsucht. Eine neue Suchanfrage stoppt die alte nach
 dem laufenden Block.
-Ändert sich die Dateiauswahl, eine Freigabe oder eine Dateiversion, verwirft
-der Browser den bisherigen Bestand. Das gilt auch am Ende der Sitzung.
+Ändert sich die Dateiauswahl, eine Freigabe oder eine Dateiversion, baut der
+Browser den Suchbestand im Worker neu auf. Am Ende der Sitzung verwirft er
+den Worker.
 
 Der Browser liest die Projektbezeichnungen gebündelt für die angezeigten
 Treffer. Vor der Ausgabe prüft er die Freigaben und Stände aller
@@ -114,7 +124,8 @@ prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der
 [native Mehrinstanztest](../sortsys-webapp-v2/scripts/test-native-document-search.ts)
 prüft gebündelte Folgeseiten, Versionswechsel, eine Löschung während der Suche
 und den Entzug von Freigaben bei geöffnetem Client-Cache. Nach einem
-Versionswechsel einer E-Mail findet er nur den Text der aktuellen Fassung.
+Versionswechsel einer E-Mail lädt er nur deren neues Chiffrat und findet den
+Text der aktuellen Fassung. Die API weist einen Abruf für den alten Stand ab.
 Chromium zählt die wiederverwendeten Textblöcke beim Ändern der Suchbegriffe.
 Bei einem Rechteentzug über einen anderen API-Prozess verschwinden der Treffer
 und sein Worker aus der laufenden Sitzung. Weitere Browsertests suchen in

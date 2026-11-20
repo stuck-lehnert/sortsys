@@ -566,6 +566,7 @@ export type ListInput = {
     known?: string;
     includeOpenings?: boolean;
     headOnly?: boolean;
+    indexOnly?: boolean;
 };
 
 export type LiveCheckpoint = {
@@ -640,6 +641,11 @@ export type MigrationOrigin = {
     history?: HistoryOrigin;
 };
 
+export type ObjectIndexEntry = {
+    object: string;
+    reference: string;
+};
+
 export type ObjectPage = {
     snapshot: string;
     keyGeneration: string;
@@ -647,6 +653,7 @@ export type ObjectPage = {
     after: string | null;
     recipientAccess: Array<RecipientAccess>;
     openings?: Array<DomainOpening>;
+    index?: Array<ObjectIndexEntry>;
 };
 
 export type OpenedRegistration = {
@@ -1557,6 +1564,7 @@ export type QueryInputs = {
     "zerotrust.objects.getMany": {
         domain: string;
         ids: Array<string>;
+        snapshot?: string;
     };
     "zerotrust.objects.list": {
         domain: string;
@@ -1566,6 +1574,7 @@ export type QueryInputs = {
         known?: string;
         includeOpenings?: boolean;
         headOnly?: boolean;
+        indexOnly?: boolean;
     };
     "zerotrust.objects.pages": {
         selections: Array<ListInput>;
@@ -3300,6 +3309,7 @@ export type QueryOutputs = {
         after: string | null;
         recipientAccess: Array<RecipientAccess>;
         openings?: Array<DomainOpening>;
+        index?: Array<ObjectIndexEntry>;
     };
     "zerotrust.objects.pages": Array<{
         snapshot: string;
@@ -3308,6 +3318,7 @@ export type QueryOutputs = {
         after: string | null;
         recipientAccess: Array<RecipientAccess>;
         openings?: Array<DomainOpening>;
+        index?: Array<ObjectIndexEntry>;
     }>;
     "zerotrust.objects.recipientAccess": Array<{
         domain: string;

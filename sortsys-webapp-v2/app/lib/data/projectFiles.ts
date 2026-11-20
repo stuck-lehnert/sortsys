@@ -181,11 +181,14 @@ export function createProtectedProjectFiles(
     objects: Map<string, OpenedObject>,
     id: string,
   ): Store {
+    const visible = [...objects].filter(
+      ([, { envelope }]) => envelope?.format !== TOMBSTONE_FORMAT,
+    );
     return {
       collection,
       head: collection.snapshot(),
       objects,
-      ...projectFileEntries(id, objects),
+      ...projectFileEntries(id, visible),
     };
   }
   async function closeValidationDatabase() {
@@ -227,7 +230,8 @@ export function createProtectedProjectFiles(
   }
 
   function filePage(id: string): CollectionPageRequest {
-    return { area: fileCollection(id), known: stores.get(id)?.head };
+    const cached = stores.get(id);
+    return { area: fileCollection(id), known: cached?.head, indexOnly: !!cached };
   }
 
   async function checkFilePolicy({ root }: Collections) {
@@ -273,8 +277,8 @@ export function createProtectedProjectFiles(
         opened.push(collection);
         const old = stores.get(id);
         const entries = old
-          ? await collection.readIfChanged(old.head)
-          : await collection.read();
+          ? await collection.readIndexedIfChanged(old.head, old.objects)
+          : await collection.read(undefined, { includeTombstones: true });
         live();
         return { id, collection, old, entries };
       });
@@ -492,20 +496,11 @@ export function createProtectedProjectFiles(
               return false;
             }
             for (const packet of packets) {
-              if (packet.envelope.format === TOMBSTONE_FORMAT) {
-                const deleted = await current.collection.get(
-                  packet.envelope.object,
-                );
-                live();
-                if (
-                  deleted.envelope.signature !== packet.envelope.signature ||
-                  deleted.value !== null
-                ) {
-                  return false;
-                }
-              } else if (
-                current.objects.get(packet.envelope.object)?.envelope
-                  .signature !== packet.envelope.signature
+              const verified = current.objects.get(packet.envelope.object);
+              if (
+                verified?.envelope.signature !== packet.envelope.signature ||
+                (packet.envelope.format === TOMBSTONE_FORMAT &&
+                  verified.value !== null)
               ) {
                 return false;
               }

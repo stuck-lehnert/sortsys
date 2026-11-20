@@ -79,6 +79,7 @@ export type CollectionPageRequest = {
   snapshot?: string;
   known?: string;
   headOnly?: boolean;
+  indexOnly?: boolean;
 };
 type ObjectPage = QueryResult<"zerotrust.objects.list">;
 type PageInput = QueryInput<"zerotrust.objects.list">;
@@ -102,7 +103,8 @@ function pageRequest(
     snapshot: options.snapshot ?? null,
     known: options.known,
     headOnly: options.headOnly,
-    includeOpenings: !options.headOnly,
+    indexOnly: options.indexOnly,
+    includeOpenings: !options.headOnly && !options.indexOnly,
   };
 }
 
@@ -117,6 +119,7 @@ function pageKey(request: QueryInput<"zerotrust.objects.list">): string {
     request.snapshot,
     request.known,
     request.headOnly ?? false,
+    request.indexOnly ?? false,
   ]);
 }
 export type OpenedObject = {
@@ -129,6 +132,23 @@ export type OpenedObject = {
 };
 
 type SelectedEnvelopes = QueryResult<"zerotrust.objects.getMany">;
+
+const ciphertextReferences = new WeakMap<EncryptedObject, Promise<string>>();
+
+function ciphertextReference(envelope: EncryptedObject): Promise<string> {
+  let known = ciphertextReferences.get(envelope);
+  if (!known) {
+    // The API hashes the sorted-key JSON representation of the signed envelope.
+    const canonical = JSON.stringify(envelope, Object.keys(envelope).sort());
+    known = crypto.subtle.digest("SHA-256", bytes(canonical)).then((result) =>
+      Array.from(new Uint8Array(result), (byte) =>
+        byte.toString(16).padStart(2, "0"),
+      ).join(""),
+    );
+    ciphertextReferences.set(envelope, known);
+  }
+  return known;
+}
 
 /** Only signed, explicitly bound domains may supply collection keys. Names and
  * query text never leave the browser. A complete page walk is published once. */
@@ -769,10 +789,39 @@ function openCollection(
       !Array.isArray(page.objects) ||
       page.objects.length !== 0 ||
       page.after !== null ||
-      page.openings !== undefined
+      page.openings !== undefined ||
+      page.index !== undefined
     )
       throw new InvalidProtectedData();
   }
+  function checkPage(page: ObjectPage, snapshot: string | null) {
+    if (
+      !Array.isArray(page.objects) ||
+      page.objects.length > 32 ||
+      typeof page.snapshot !== "string" ||
+      !/^(0|[1-9]\d*)$/.test(page.snapshot) ||
+      (page.after !== null && typeof page.after !== "string") ||
+      page.keyGeneration !== domain!.generation ||
+      (snapshot !== null && snapshot !== page.snapshot)
+    ) {
+      throw new InvalidProtectedData();
+    }
+  }
+
+  function checkCursor(
+    prefix: string,
+    after: string | null,
+    next: string | null,
+    lastId: string,
+  ) {
+    if (
+      next !== null &&
+      (!next.startsWith(prefix) || next <= (after ?? "") || next < lastId)
+    ) {
+      throw new InvalidProtectedData();
+    }
+  }
+
   async function readSnapshot(
     prefix = collection.prefix,
     previous?: string,
@@ -797,21 +846,11 @@ function openCollection(
             includeOpenings: after === null || previous === undefined,
           });
           live();
-          if (
-            !Array.isArray(page.objects) ||
-            page.objects.length > 32 ||
-            typeof page.snapshot !== "string" ||
-            !/^(0|[1-9]\d*)$/.test(page.snapshot) ||
-            (page.after !== null && typeof page.after !== "string")
-          )
-            throw new InvalidProtectedData();
           // A snapshot and its encryption epoch come from one locked server
           // transaction. Never seal a composite part with an older key after
           // merely observing a newer domain head.
-          if (page.keyGeneration !== domain!.generation)
-            throw new InvalidProtectedData();
-          if (snapshot !== null && snapshot !== page.snapshot)
-            throw new InvalidProtectedData();
+          checkPage(page, snapshot);
+          if (page.index !== undefined) throw new InvalidProtectedData();
           snapshot = page.snapshot;
           if (
             after === null &&
@@ -856,13 +895,7 @@ function openCollection(
           // Visibility filters may hide the last scanned object or an entire
           // page. The cursor must still advance beyond the preceding scan and
           // must not skip backwards over any object returned on this page.
-          if (
-            page.after !== null &&
-            (!page.after.startsWith(prefix) ||
-              page.after <= (after ?? "") ||
-              page.after < previousId)
-          )
-            throw new InvalidProtectedData();
+          checkCursor(prefix, after, page.after, previousId);
           const opened: OpenedObject[] = [];
           for (let offset = 0; offset < envelopes.length; offset += 16) {
             opened.push(
@@ -911,6 +944,152 @@ function openCollection(
     }
     throw new InvalidProtectedData();
   }
+  async function readSelected(
+    ids: readonly string[],
+    options: { snapshot?: string; includeTombstones?: boolean } = {},
+  ): Promise<OpenedObject[]> {
+    if (
+      new Set(ids).size !== ids.length ||
+      ids.some((id) => !id.startsWith(collection.prefix))
+    )
+      throw new InvalidProtectedData();
+    const objects: OpenedObject[] = [];
+    async function fetchSelected(ids: string[]): Promise<SelectedEnvelopes> {
+      live();
+      if (ids.length === 1 && options.snapshot === undefined) {
+        const [value, error] = await client.query(
+          "zerotrust.objects.get",
+          { id: ids[0]! },
+          { strategy: "network-only" },
+        );
+        live();
+        if (error?.code === "NOT_FOUND") return [null];
+        if (error) throw error;
+        if (!value) throw new InvalidProtectedData();
+        return [value];
+      }
+      const [values, error] = await client.query(
+        "zerotrust.objects.getMany",
+        { domain: collection.domain, ids, snapshot: options.snapshot },
+        { strategy: "network-only" },
+      );
+      live();
+      if (
+        error instanceof RpcClientError &&
+        error.data?.httpCode === 413 &&
+        ids.length > 1
+      ) {
+        const middle = Math.ceil(ids.length / 2);
+        const first = await fetchSelected(ids.slice(0, middle));
+        const last = await fetchSelected(ids.slice(middle));
+        return [...first, ...last];
+      }
+      if (error) throw error;
+      if (!Array.isArray(values) || values.length !== ids.length)
+        throw new InvalidProtectedData();
+      return values;
+    }
+    for (let offset = 0; offset < ids.length; offset += 32) {
+      const selectedIds = ids.slice(offset, offset + 32);
+      const envelopes = await fetchSelected(selectedIds);
+      const part = await mapConcurrent(envelopes, 16, (envelope, index) => {
+        live();
+        if (envelope === null) return Promise.resolve(null);
+        return openEnvelope(envelope, selectedIds[index]!);
+      });
+      objects.push(
+        ...part.filter((object): object is OpenedObject => object !== null),
+      );
+    }
+    await checkStockObjects(client, objects, history, live);
+    await checkDeliveryObjects(client, objects, live);
+    await checkPlanningRecipients(client, objects, history, live);
+    live();
+    return options.includeTombstones
+      ? objects
+      : objects.filter(({ envelope }) => envelope.format !== TOMBSTONE_FORMAT);
+  }
+
+  async function readIndexedSnapshot(
+    previous: string,
+    cached: ReadonlyMap<string, OpenedObject>,
+  ): Promise<OpenedObject[] | null> {
+    const { prefix } = collection;
+    let after: string | null = null;
+    let snapshot: string | null = null;
+    const orderedIds: string[] = [];
+    const retained = new Map<string, OpenedObject>();
+    const changed = new Map<string, string>();
+    do {
+      live();
+      const page = await loadPage({
+        ...pageRequest(collection, {
+          known: after === null ? previous : undefined,
+          indexOnly: true,
+        }),
+        after,
+        snapshot,
+      });
+      live();
+      checkPage(page, snapshot);
+      snapshot = page.snapshot;
+      if (after === null && snapshot === previous) {
+        checkHeadOnly(page);
+        head = snapshot;
+        return null;
+      }
+      if (
+        page.objects.length ||
+        page.openings !== undefined ||
+        !Array.isArray(page.index) ||
+        page.index.length > 32
+      ) {
+        throw new InvalidProtectedData();
+      }
+      let lastId = after ?? "";
+      for (const { object, reference } of page.index) {
+        identifier(object);
+        if (
+          !object.startsWith(prefix) ||
+          object <= lastId ||
+          !/^[0-9a-f]{64}$/.test(reference)
+        ) {
+          throw new InvalidProtectedData();
+        }
+        orderedIds.push(object);
+        lastId = object;
+      }
+      checkCursor(prefix, after, page.after, lastId);
+      await mapConcurrent(page.index, 16, async ({ object, reference }) => {
+        const existing = cached.get(object);
+        if (existing && (await ciphertextReference(existing.envelope)) === reference) {
+          retained.set(object, existing);
+        } else {
+          changed.set(object, reference);
+        }
+      });
+      after = page.after;
+    } while (after !== null);
+
+    // The verified cache supplies exact envelopes. Anything new is opened
+    // against the same authorized snapshot, including signed deletions.
+    if (snapshot === null) throw new InvalidProtectedData();
+    const fetched = await readSelected([...changed.keys()], {
+      snapshot,
+      includeTombstones: true,
+    });
+    if (fetched.length !== changed.size) throw new InvalidProtectedData();
+    await mapConcurrent(fetched, 16, async ({ envelope }) => {
+      if ((await ciphertextReference(envelope)) !== changed.get(envelope.object)) {
+        throw new InvalidProtectedData();
+      }
+    });
+    for (const object of fetched) retained.set(object.envelope.object, object);
+    live();
+    head = snapshot;
+    return orderedIds.map((id) => retained.get(id)!);
+  }
+
   async function preparePacket(
     id: string,
     value: unknown,
@@ -1173,63 +1352,8 @@ function openCollection(
       head = page.snapshot;
       return head;
     },
-    async selected(ids: readonly string[]): Promise<OpenedObject[]> {
-      if (
-        new Set(ids).size !== ids.length ||
-        ids.some((id) => !id.startsWith(collection.prefix))
-      )
-        throw new InvalidProtectedData();
-      const objects: OpenedObject[] = [];
-      async function fetchSelected(ids: string[]): Promise<SelectedEnvelopes> {
-        live();
-        if (ids.length === 1) {
-          const [value, error] = await client.query(
-            "zerotrust.objects.get",
-            { id: ids[0]! },
-            { strategy: "network-only" },
-          );
-          live();
-          if (error?.code === "NOT_FOUND") return [null];
-          if (error) throw error;
-          if (!value) throw new InvalidProtectedData();
-          return [value];
-        }
-        const [values, error] = await client.query(
-          "zerotrust.objects.getMany",
-          { domain: collection.domain, ids },
-          { strategy: "network-only" },
-        );
-        live();
-        if (error instanceof RpcClientError && error.data?.httpCode === 413) {
-          const middle = Math.ceil(ids.length / 2);
-          const first = await fetchSelected(ids.slice(0, middle));
-          const last = await fetchSelected(ids.slice(middle));
-          return [...first, ...last];
-        }
-        if (error) throw error;
-        if (!Array.isArray(values) || values.length !== ids.length)
-          throw new InvalidProtectedData();
-        return values;
-      }
-      for (let offset = 0; offset < ids.length; offset += 32) {
-        const selectedIds = ids.slice(offset, offset + 32);
-        const envelopes = await fetchSelected(selectedIds);
-        const part = await mapConcurrent(envelopes, 16, (envelope, index) => {
-          live();
-          if (envelope === null) return Promise.resolve(null);
-          return openEnvelope(envelope, selectedIds[index]!);
-        });
-        objects.push(
-          ...part.filter((object): object is OpenedObject => object !== null),
-        );
-      }
-      await checkStockObjects(client, objects, history, live);
-      await checkDeliveryObjects(client, objects, live);
-      await checkPlanningRecipients(client, objects, history, live);
-      live();
-      return objects.filter(
-        (object) => object.envelope.format !== TOMBSTONE_FORMAT,
-      );
+    selected(ids: readonly string[]) {
+      return readSelected(ids);
     },
     async open(input: unknown, id: string) {
       const object = await openEnvelope(input, id);
@@ -1281,6 +1405,23 @@ function openCollection(
         : result.objects.filter(
             (object) => object.envelope.format !== TOMBSTONE_FORMAT,
           );
+    },
+    async readIndexedIfChanged(
+      verifiedHead: string,
+      cached: ReadonlyMap<string, OpenedObject>,
+    ) {
+      try {
+        return await readIndexedSnapshot(verifiedHead, cached);
+      } catch (error) {
+        live();
+        if (!(error instanceof RpcClientError) || error.code !== "CONFLICT") {
+          throw error;
+        }
+        // A peer changed the collection mid-read. The ordinary retrying page
+        // walk starts again without mixing an index and a different head.
+        const result = await readSnapshot(collection.prefix, verifiedHead);
+        return result.unchanged ? null : result.objects;
+      }
     },
     snapshot(): string {
       live();

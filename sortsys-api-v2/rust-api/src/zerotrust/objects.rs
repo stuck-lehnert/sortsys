@@ -146,6 +146,8 @@ struct IdInput {
 struct ObjectSelection {
     domain: String,
     ids: Vec<String>,
+    #[ts(optional)]
+    snapshot: Option<String>,
 }
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -298,6 +300,8 @@ struct ListInput {
     include_openings: Option<bool>,
     #[ts(optional)]
     head_only: Option<bool>,
+    #[ts(optional)]
+    index_only: Option<bool>,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -314,6 +318,12 @@ struct DomainOpening {
     key_authority: Option<KeyAuthority>,
 }
 #[derive(Serialize, TS)]
+struct ObjectIndexEntry {
+    object: String,
+    reference: String,
+}
+
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub(super) struct ObjectPage {
     snapshot: String,
@@ -324,6 +334,9 @@ pub(super) struct ObjectPage {
     #[serde(skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     openings: Option<Vec<DomainOpening>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    index: Option<Vec<ObjectIndexEntry>>,
 }
 #[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]

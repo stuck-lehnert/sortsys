@@ -138,7 +138,7 @@ export type Level = "error" | "warning";
 
 export type ListBatchInput = { selections: Array<ListInput>, };
 
-export type ListInput = { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, };
+export type ListInput = { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, indexOnly?: boolean, };
 
 export type LiveCheckpoint = { format: string, tenant: string, scope: string, document: string, facet: string, sequence: string, covered: string, target: string, generation: string, policyVersion: string, author: string, content?: string, replay?: DocumentPart, signature: string, };
 
@@ -158,7 +158,9 @@ export type Message = { sequence: string, kind: Kind, key: string, authorityGene
 
 export type MigrationOrigin = { generation: string, signature: string, history?: HistoryOrigin, };
 
-export type ObjectPage = { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, };
+export type ObjectIndexEntry = { object: string, reference: string, };
+
+export type ObjectPage = { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, index?: Array<ObjectIndexEntry>, };
 
 export type OpenedRegistration = { head: DocumentHead, facets: Array<EncryptedObject<Facet>>, };
 
@@ -417,8 +419,8 @@ export type QueryInputs = {
   "zerotrust.members.list": { after: Id | null, };
   "zerotrust.members.status": { id: Id, };
   "zerotrust.objects.get": { id: string, };
-  "zerotrust.objects.getMany": { domain: string, ids: Array<string>, };
-  "zerotrust.objects.list": { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, };
+  "zerotrust.objects.getMany": { domain: string, ids: Array<string>, snapshot?: string, };
+  "zerotrust.objects.list": { domain: string, prefix: string, after: string | null, snapshot: string | null, known?: string, includeOpenings?: boolean, headOnly?: boolean, indexOnly?: boolean, };
   "zerotrust.objects.pages": { selections: Array<ListInput>, };
   "zerotrust.objects.recipientAccess": { objects: Array<string>, };
   "zerotrust.objects.shared": { prefix: string, snapshot: string | null, after: string | null, };
@@ -577,8 +579,8 @@ export type QueryOutputs = {
   "zerotrust.members.status": { username: string, id: Id, version: string, atMicros: string, deactivatedMicros: string | null, archivedMicros: string | null, deletedMicros: string | null, };
   "zerotrust.objects.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
   "zerotrust.objects.getMany": Array<{ tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, } | null>;
-  "zerotrust.objects.list": { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, };
-  "zerotrust.objects.pages": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, }>;
+  "zerotrust.objects.list": { snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, index?: Array<ObjectIndexEntry>, };
+  "zerotrust.objects.pages": Array<{ snapshot: string, keyGeneration: string, objects: Array<EncryptedObject<Facet>>, after: string | null, recipientAccess: Array<RecipientAccess>, openings?: Array<DomainOpening>, index?: Array<ObjectIndexEntry>, }>;
   "zerotrust.objects.recipientAccess": Array<{ domain: string, access: ResourceAccessState, recipientKey: RecipientKey | null, } | null>;
   "zerotrust.objects.shared": { snapshot: string, objects: Array<SharedObject>, after: string | null, projectTitles?: Array<SharedTitle>, };
   "zerotrust.planningTitles.audience": { snapshot: string, recipients: Array<AudienceRecipient>, };
