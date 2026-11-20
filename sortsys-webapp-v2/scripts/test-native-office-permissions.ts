@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import {
   chromium,
@@ -29,6 +30,11 @@ const fileName = "Vertrauliches Aufmaßprotokoll.docx";
 const diagramName = "Vertraulicher Bauablauf beim Verbindungswechsel.drawio";
 const diagramLabel = "DIAGRAM_BEFORE_SAVE_594821";
 const diagramEdit = "DIAGRAM_RETRY_PROTECTED_594822";
+const quantitiesName = "Vertrauliches Aufmaß.xlsx";
+const quantitiesOriginal = "OFFICE_QUANTITIES_ORIGINAL_847216";
+const quantitiesReplaced = "OFFICE_QUANTITIES_REPLACED_847216";
+const sheetMime =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const mime =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const officeTimeout = 120_000;
@@ -81,9 +87,12 @@ async function interruptAutosaveUpload(
   }
 }
 
-async function documentEngine(page: Page) {
-  const isEngine = (frame: import("playwright").Frame) =>
-    frame.url().includes("/documenteditor/main/");
+async function officeEngine(
+  page: Page,
+  kind: "document" | "spreadsheet" = "document",
+) {
+  const isEngine = (frame: Frame) =>
+    frame.url().includes(`/${kind}editor/main/`);
   await expect(officeFrame(page)).toBeVisible({ timeout: officeTimeout });
   return (
     page.frames().find(isEngine) ??
@@ -91,6 +100,102 @@ async function documentEngine(page: Page) {
       predicate: isEngine,
       timeout: officeTimeout,
     }))
+  );
+}
+
+async function quantitiesWorkbook(label: string, quantity: number) {
+  const workbook = new ExcelJS.Workbook();
+  const quantities = workbook.addWorksheet("Mengen");
+  quantities.getCell("A1").value = label;
+  quantities.getCell("B2").value = quantity;
+  quantities.getCell("B3").value = { formula: "B2*2", result: quantity * 2 };
+  workbook.addWorksheet("Übersicht").getCell("A1").value = {
+    formula: "Mengen!B3",
+    result: quantity * 2,
+  };
+  return new Blob([await workbook.xlsx.writeBuffer()], { type: sheetMime });
+}
+
+async function testSpreadsheetProjectFile(
+  business: ReturnType<typeof createBusinessClient>,
+  projectId: string,
+  appOrigin: string,
+  reader: Page,
+  writer: Page,
+) {
+  const fileId = await business.files.upload({
+    projectId,
+    name: quantitiesName,
+    mime: sheetMime,
+    blob: await quantitiesWorkbook(quantitiesOriginal, 5),
+  });
+  const address = `${appOrigin}/projects/${projectId}/files/${fileId}`;
+  const status = () => business.files.officeStatus(projectId, fileId);
+  const cell = (frame: Frame) => frame.locator("#ce-cell-content");
+
+  await reader.goto(address);
+  const first = await officeEngine(reader, "spreadsheet");
+  await expect(cell(first)).toHaveValue(quantitiesOriginal, {
+    timeout: officeTimeout,
+  });
+  assert.equal((await status()).epoch, null);
+
+  const replacement = await business.files.save(
+    projectId,
+    fileId,
+    1n,
+    await quantitiesWorkbook(quantitiesReplaced, 7),
+  );
+  assert.equal(replacement.version, 2n);
+  assert.equal((await status()).epoch, null);
+  await expect
+    .poll(() => first.isDetached(), { timeout: officeTimeout })
+    .toBe(true);
+  await expect(reader).toHaveURL(address);
+  const second = await officeEngine(reader, "spreadsheet");
+  await expect(cell(second)).toHaveValue(quantitiesReplaced, {
+    timeout: officeTimeout,
+  });
+  console.log(
+    "Office permissions: an independent XLSX reader followed the confirmed file replacement",
+  );
+
+  await writer.goto(address);
+  const editable = await officeEngine(writer, "spreadsheet");
+  await expect(cell(editable)).toHaveValue(quantitiesReplaced, {
+    timeout: officeTimeout,
+  });
+  const room = await status();
+  assert.ok(room.epoch);
+  await expect
+    .poll(() => second.isDetached(), { timeout: officeTimeout })
+    .toBe(true);
+  await officeEngine(reader, "spreadsheet");
+
+  const range = editable.locator("#ce-cell-name");
+  await range.fill("B2");
+  await range.press("Enter");
+  await expect(cell(editable)).toHaveValue("7");
+  await cell(editable).selectText();
+  await cell(editable).pressSequentially("9");
+  await cell(editable).press("Enter");
+  await expect
+    .poll(async () => {
+      const saved = await business.files.blob(projectId, fileId);
+      const workbook = new ExcelJS.Workbook();
+      await workbook.xlsx.load(await saved.arrayBuffer());
+      const quantities = workbook.getWorksheet("Mengen");
+      const overview = workbook.getWorksheet("Übersicht");
+      return {
+        quantity: quantities?.getCell("B2").value,
+        formula: quantities?.getCell("B3").formula,
+        total: overview?.getCell("A1").result,
+      };
+    }, { timeout: officeTimeout })
+    .toEqual({ quantity: 9, formula: "B2*2", total: 18 });
+  assert.equal((await status()).epoch, room.epoch);
+  console.log(
+    "Office permissions: XLSX keyboard autosave confirmed the recalculated workbook in encrypted project storage",
   );
 }
 
@@ -108,6 +213,9 @@ function observePlaintext(page: Page, leaks: string[]) {
       diagramName,
       diagramLabel,
       diagramEdit,
+      quantitiesName,
+      quantitiesOriginal,
+      quantitiesReplaced,
     ]) {
       if (payload.some((value) => value.includes(marker))) leaks.push(marker);
     }
@@ -201,7 +309,7 @@ export async function testOfficeRevocation({
       "Private-editor-member-password-2026!",
     );
     await member.goto(path);
-    const writer = await documentEngine(member);
+    const writer = await officeEngine(member);
     const opened = await fileStatus();
     assert.ok(opened.epoch);
     const initial = await savedText();
@@ -334,7 +442,7 @@ export async function testOfficeRevocation({
     assert.equal(after.contentVersion, confirmed.contentVersion);
     assert.equal(after.previousSession?.epoch, confirmed.epoch);
     assert.ok(!(await savedText()).includes(unconfirmedEdit));
-    const reader = await documentEngine(member);
+    const reader = await officeEngine(member);
     assert.notEqual(reader, writer);
     console.log(
       "Office permissions: downgrade closed the writer and rejected its pending autosave",
@@ -366,7 +474,7 @@ export async function testOfficeRevocation({
     await expect
       .poll(() => reader.isDetached(), { timeout: officeTimeout })
       .toBe(true);
-    const replacement = await documentEngine(member);
+    const replacement = await officeEngine(member);
     console.log(
       "Office permissions: explicit draft approval published the content in a new room",
     );
@@ -406,8 +514,16 @@ export async function testOfficeRevocation({
     assert.ok(
       BigInt(afterDiagramSave.contentVersion) > BigInt(before.contentVersion),
     );
-    assert.deepEqual(leaks, []);
     console.log("Office permissions: the same Drawio editor confirmed its edit after the failed upload");
+    await grant("read");
+    await testSpreadsheetProjectFile(
+      business,
+      projectId,
+      app.origin,
+      member,
+      administrator,
+    );
+    assert.deepEqual(leaks, []);
   } finally {
     releaseSave.resolve();
     try {

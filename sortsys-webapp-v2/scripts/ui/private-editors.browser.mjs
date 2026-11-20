@@ -784,6 +784,19 @@ async function open(canEdit = true, key, application = "doc") {
   return { context, page, frame };
 }
 
+const protectedFrame = (page) =>
+  page.getByTitle(/^(Dokumenteditor|Document editor)$/);
+
+async function openProtectedFrame(page) {
+  const target = protectedFrame(page);
+  await target.waitFor({ state: "attached" });
+  const frame = await (await target.elementHandle()).contentFrame();
+  await frame.waitForFunction(() => window.boot);
+  await frame.evaluate(() => window.boot());
+  await target.waitFor({ state: "visible" });
+  return frame;
+}
+
 async function nextPaint(page) {
   await page.evaluate(
     () =>
@@ -852,6 +865,52 @@ test("the private editor rejects other windows and commits capabilities before s
           req.method === "GET" &&
           !/capability|document|callback|ooapidl|oosave/.test(req.url),
       ),
+    );
+  } finally {
+    await context.close();
+  }
+});
+
+test("an independent read-only Office preview follows the confirmed file version", async () => {
+  const context = await browser.newContext();
+  try {
+    const page = await context.newPage();
+    await page.goto(`${server.origin}/private-editors.html`);
+    await page.waitForFunction(() => window.privateEditorFixture);
+    await page.evaluate(
+      (origin) =>
+        window.privateEditorFixture.protected(origin, false, { readOnly: true }),
+      editor.origin,
+    );
+
+    const original = await openProtectedFrame(page);
+    assert.deepEqual(
+      await original.evaluate(() => ({
+        readOnly: window.state.start.readOnly,
+        document: window.state.start.document,
+      })),
+      { readOnly: true, document: "private browser document" },
+    );
+    await page.evaluate(() =>
+      window.replaceConfirmedPrivateOfficeFile("Confirmed replacement"),
+    );
+    await page.waitForFunction(
+      () => window.privateOfficeLoads.length === 2,
+      undefined,
+      { timeout: 4000 },
+    );
+    assert.equal(original.isDetached(), true);
+    const reader = await openProtectedFrame(page);
+    assert.deepEqual(
+      await reader.evaluate(() => ({
+        readOnly: window.state.start.readOnly,
+        document: window.state.start.document,
+      })),
+      { readOnly: true, document: "Confirmed replacement" },
+    );
+    assert.equal(
+      await page.evaluate(() => window.privateEditorFixture.state.published),
+      0,
     );
   } finally {
     await context.close();
@@ -1291,14 +1350,7 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
         0,
       );
       await fallback.click();
-      const target = page.locator(
-        'iframe[title="Dokumenteditor"],iframe[title="Document editor"]',
-      );
-      await target.waitFor({ state: "attached" });
-      const replacement = await (await target.elementHandle()).contentFrame();
-      await replacement.waitForFunction(() => window.boot);
-      await replacement.evaluate(() => window.boot());
-      await target.waitFor({ state: "visible" });
+      const replacement = await openProtectedFrame(page);
       assert.equal(
         await replacement.evaluate(() => window.state.start.document),
         "private browser document",
@@ -1325,15 +1377,8 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
           window.privateEditorFixture.protected(origin, false, { fileName }),
         { origin: editor.origin, fileName },
       );
-      const locate = () =>
-        page.locator(
-          'iframe[title="Dokumenteditor"],iframe[title="Document editor"]',
-        );
-      const first = await (await locate().elementHandle()).contentFrame();
-      await first.waitForFunction(() => window.boot);
-      await first.evaluate(() => window.boot());
-      await first.waitForFunction(() => window.state.start?.readOnly === false);
-      await locate().waitFor({ state: "visible" });
+      const first = await openProtectedFrame(page);
+      assert.equal(await first.evaluate(() => window.state.start.readOnly), false);
       await first.evaluate(() => window.command("SAVE", new Blob(["Unbound file"])));
       await first.waitForFunction(() =>
         window.state.acks.some((ack) => ack.args?.error === "SAVE_REJECTED"),
@@ -1356,15 +1401,14 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
       await page.waitForFunction(
         () => window.privateEditorFixture.state.ready >= 2,
       );
-      await locate().waitFor({ state: "attached" });
       assert.equal(first.isDetached(), true);
-      const second = await (await locate().elementHandle()).contentFrame();
-      await second.waitForFunction(() => window.boot);
-      await second.evaluate(() => window.boot());
-      await second.waitForFunction(() => window.state.start?.readOnly === true);
-      assert.equal(
-        await second.evaluate(() => window.state.start.key),
-        "view-capability",
+      const second = await openProtectedFrame(page);
+      assert.deepEqual(
+        await second.evaluate(() => ({
+          key: window.state.start.key,
+          readOnly: window.state.start.readOnly,
+        })),
+        { key: "view-capability", readOnly: true },
       );
       assert.equal(
         await page.evaluate(() => window.privateEditorFixture.state.published),
@@ -1403,9 +1447,6 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
         await page.waitForFunction(
           () => window.privateOfficeLoads.length === 1,
         );
-        const target = page.locator(
-          'iframe[title="Dokumenteditor"],iframe[title="Document editor"]',
-        );
         if (reset === "revoke") {
           await page.evaluate(() => window.denyPrivateOffice());
           await page
@@ -1413,7 +1454,7 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
             .waitFor();
           await page.evaluate(() => window.releasePrivateOfficeLoad());
           await nextPaint(page);
-          assert.equal(await target.count(), 0);
+          assert.equal(await protectedFrame(page).count(), 0);
           assert.equal(
             await page.evaluate(
               () => window.privateEditorFixture.state.published,
@@ -1422,13 +1463,7 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
           );
         } else {
           await page.evaluate(() => window.switchPrivateOfficeFile("6"));
-          await target.waitFor({ state: "attached" });
-          const intermediate = await (
-            await target.elementHandle()
-          ).contentFrame();
-          await intermediate.waitForFunction(() => window.boot);
-          await intermediate.evaluate(() => window.boot());
-          await target.waitFor({ state: "visible" });
+          const intermediate = await openProtectedFrame(page);
           assert.equal(
             await intermediate.evaluate(() => window.state.start.document),
             "Private document 6",
@@ -1437,15 +1472,12 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
           await page.waitForFunction(
             () => window.privateOfficeLoads.length === 3,
           );
-          const current = await (await target.elementHandle()).contentFrame();
-          await current.waitForFunction(() => window.boot);
-          await current.evaluate(() => window.boot());
-          await target.waitFor({ state: "visible" });
+          const current = await openProtectedFrame(page);
           await page.evaluate(() => window.releasePrivateOfficeLoad());
           await nextPaint(page);
           assert.equal(intermediate.isDetached(), true);
           assert.equal(current.isDetached(), false);
-          assert.equal(await target.count(), 1);
+          assert.equal(await protectedFrame(page).count(), 1);
           assert.equal(
             await current.evaluate(() => window.state.start.document),
             "private browser document",

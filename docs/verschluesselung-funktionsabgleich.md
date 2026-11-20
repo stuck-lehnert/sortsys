@@ -482,8 +482,11 @@ WebSocket-Abbruch und das automatische Speichern nach dem fehlgeschlagenen
 Upload. Weitere Browserläufe prüfen bei XLSX eine blattübergreifende
 Neuberechnung und bei PPTX ein neu eingefügtes Textfeld. Sie prüfen für beide
 Formate das automatische Speichern im Editor und das erneute Öffnen mit
-Leserechten. Komplexere Tabellen und Präsentationslayouts sind noch zu
-prüfen. Siehe [Editorprüfungen](editoren-ohne-klartextserver.md).
+Leserechten. Die Neuberechnung wurde auch in der verschlüsselten Projektablage
+bestätigt. Die schreibgeschützte XLSX-Vorschau lud dabei eine zwischenzeitlich
+ersetzte Datei unter demselben Link. Komplexere Tabellen und
+Präsentationslayouts sind noch zu prüfen. Siehe
+[Editorprüfungen](editoren-ohne-klartextserver.md).
 
 **diagrams.net.** Diagramme verwenden denselben geschützten Editorablauf und
 dieselbe verschlüsselte Projektablage wie Office-Dateien. Der echte Diensttest

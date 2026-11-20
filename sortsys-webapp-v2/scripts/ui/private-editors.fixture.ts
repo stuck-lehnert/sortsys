@@ -455,44 +455,50 @@ Object.assign(window, {
     protected(
       editorOrigin: string,
       recoverDraft = false,
-      options: { fileName?: string; holdFirstLoad?: boolean } = {},
+      options: {
+        fileName?: string;
+        holdFirstLoad?: boolean;
+        readOnly?: boolean;
+      } = {},
     ) {
       bridge?.close();
       iframe.remove();
       state.ready = state.errors = state.published = 0;
       state.saved = [];
       state.recovered = [];
-      let canEdit = true;
+      let canEdit = !options.readOnly;
       let allowed = true;
       let fileId = "5";
       let epoch: string | null = null;
+      let contentVersion = "1";
+      let replacement: string | undefined;
       let releaseLoad: (() => void) | undefined;
       const loads: string[] = [];
       let previousSession = recoverDraft
         ? { epoch: "old-office-room", viewKey: "view-capability", version: "1" }
         : null;
       const subscribers = new Set<() => void>();
-      const current = () => ({
-        editorOrigin,
-        document: new Blob([
-          fileId === "5"
-            ? "private browser document"
-            : `Private document ${fileId}`,
-        ]),
-        fileName: options.fileName ?? "Private.docx",
-        canEdit,
-        epoch,
-        contentVersion: "1",
-        policyVersion: "1",
-        keyGeneration: "1",
-        previousSession,
-        viewKey: epoch ? "view-capability" : undefined,
-        accessKey: epoch
-          ? canEdit
-            ? "new-edit-capability"
-            : "view-capability"
-          : undefined,
-      });
+      const current = () => {
+        const original =
+          fileId === "5" ? "private browser document" : `Private document ${fileId}`;
+        return {
+          editorOrigin,
+          document: new Blob([replacement ?? original]),
+          fileName: options.fileName ?? "Private.docx",
+          canEdit,
+          epoch,
+          contentVersion,
+          policyVersion: "1",
+          keyGeneration: "1",
+          previousSession,
+          viewKey: epoch ? "view-capability" : undefined,
+          accessKey: epoch
+            ? canEdit
+              ? "new-edit-capability"
+              : "view-capability"
+            : undefined,
+        };
+      };
       projectFiles.office = async (_project, requestedFile) => {
         state.ready++;
         if (!allowed) throw new Error("Document access denied");
@@ -557,6 +563,11 @@ Object.assign(window, {
         },
         replacePrivateOfficeRoom: () => {
           epoch = "new-shared-room";
+          for (const subscriber of subscribers) subscriber();
+        },
+        replaceConfirmedPrivateOfficeFile: (text: string) => {
+          replacement = text;
+          contentVersion = "2";
           for (const subscriber of subscribers) subscriber();
         },
       });

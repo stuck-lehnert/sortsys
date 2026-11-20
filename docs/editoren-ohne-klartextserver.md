@@ -144,7 +144,8 @@ keinen neuen gemeinsamen Raum. Auch beim Speichern prüft der Browser die
 Sitzungskennung; alte Fenster können den aktuellen Dateistand nicht ersetzen.
 Für eine Datei ohne gemeinsame Sitzung darf ein Leser eine unabhängige,
 schreibgeschützte Kopie öffnen. Diese erhält keine Speicherfreigabe für das
-Projekt.
+Projekt. Wird die Projektdatei inzwischen ersetzt, öffnet der Dialog unter
+demselben Link automatisch die neue bestätigte Fassung.
 
 Vor einem Export zum Speichern fragt der Editor den bestätigten Dateistand ab.
 Die Versionsnummer bleibt mit dem Export verbunden. Bestätigt ein anderer
@@ -184,13 +185,18 @@ denselben öffentlichen Anlagenachweis wie die ursprünglichen Teilnehmer. Dadur
 erkennen sie den gemeinsamen Raum, ohne den Bearbeitungszugang entschlüsseln zu
 können.
 
-Der [DOCX-Browsertest](../sortsys-webapp-v2/scripts/test-native-office-permissions.ts)
+Der [Browsertest für Office-Dateien](../sortsys-webapp-v2/scripts/test-native-office-permissions.ts)
 hält eine verschlüsselte Speicheranfrage zurück, bevor die API sie erhält. Die
 zweite API-Instanz meldet die Herabstufung auf Lesen. Der schreibbare Editor
 schließt, und derselbe Dateilink öffnet den bestätigten Stand zum Lesen. Die
 API weist die noch wartende Speicheranfrage ab. Anschließend kann ein
 berechtigtes Konto den Entwurf prüfen und ausdrücklich in einen neuen Raum
 übernehmen. Der vollständige Entzug schließt auch die laufende Lesesitzung.
+
+Der Lauf öffnet außerdem eine XLSX-Projektdatei mit Leserechten und ersetzt sie
+über die andere API-Instanz. Die neue Fassung erscheint im selben Dialog. Beim
+anschließenden Bearbeiten speichert der Editor den geänderten Wert und das
+blattübergreifend neu berechnete Ergebnis in der verschlüsselten Projektdatei.
 
 ## Betrieb des Office-Dienstes
 

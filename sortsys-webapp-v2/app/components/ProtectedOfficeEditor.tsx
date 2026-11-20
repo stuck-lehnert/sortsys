@@ -155,7 +155,7 @@ export function ProtectedOfficeEditor({
         if (
           status.epoch !== epoch ||
           status.canEdit !== canEdit ||
-          (!shared && status.epoch && status.contentVersion !== contentVersion)
+          (!shared && status.contentVersion !== contentVersion)
         ) {
           dispose();
           setAttempt((value) => value + 1);
