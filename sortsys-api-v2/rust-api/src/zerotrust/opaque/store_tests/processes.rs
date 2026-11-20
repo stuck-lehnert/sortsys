@@ -7,14 +7,31 @@ pub(super) async fn run_browser(settings: &Config, root: &Path, mode: &str) {
     run_browser_sequence(settings, root, &[mode], None).await;
 }
 
+pub(super) async fn run_browser_with_mcp(settings: &Config, root: &Path, mode: &str) {
+    let first = ApiProcess::start(settings, root, "first").await;
+    let mcp_url = format!("{}internal/llm/mcp", first.endpoint);
+    let second = ApiProcess::start_with_mcp(settings, root, "second", Some(&mcp_url)).await;
+    run_browser_on_pair(root, &[mode], None, first, second).await;
+}
+
 pub(super) async fn run_browser_sequence(
     settings: &Config,
     root: &Path,
     modes: &[&str],
     tenant: Option<&str>,
 ) {
-    let mut first = ApiProcess::start(settings, root, "first").await;
-    let mut second = ApiProcess::start(settings, root, "second").await;
+    let first = ApiProcess::start(settings, root, "first").await;
+    let second = ApiProcess::start(settings, root, "second").await;
+    run_browser_on_pair(root, modes, tenant, first, second).await;
+}
+
+async fn run_browser_on_pair(
+    root: &Path,
+    modes: &[&str],
+    tenant: Option<&str>,
+    mut first: ApiProcess,
+    mut second: ApiProcess,
+) {
     assert_ne!(first.pid, second.pid);
     assert_ne!(first.endpoint, second.endpoint);
     let endpoints = [first.endpoint.clone(), second.endpoint.clone()];
@@ -50,10 +67,20 @@ pub(super) struct ApiProcess {
 
 impl ApiProcess {
     pub async fn start(settings: &Config, root: &Path, label: &str) -> Self {
+        Self::start_with_mcp(settings, root, label, None).await
+    }
+
+    async fn start_with_mcp(
+        settings: &Config,
+        root: &Path,
+        label: &str,
+        mcp_url: Option<&str>,
+    ) -> Self {
         let executable = std::env::var("SORTSYS_NATIVE_API_EXECUTABLE")
             .expect("scripts/test-native-auth must build the isolated API example");
         let log = std::fs::File::create(root.join(format!("api-{label}.log"))).unwrap();
-        let mut child = Command::new(executable)
+        let mut command = Command::new(executable);
+        command
             .kill_on_drop(true)
             .env("SORTSYS_DISPOSABLE_AUTH_TEST", "1")
             .env(
@@ -85,10 +112,14 @@ impl ApiProcess {
                 settings.editors.office_origin.as_deref().unwrap_or(""),
             )
             .env_remove("LLM_LIVE_INTERNAL_URL")
+            .env_remove("LLM_MCP_URL")
+            .env("LLM_ENCRYPTION_KEY", "disposable-native-test-provider-key")
             .stdout(Stdio::piped())
-            .stderr(log)
-            .spawn()
-            .unwrap();
+            .stderr(log);
+        if let Some(url) = mcp_url {
+            command.env("LLM_MCP_URL", url);
+        }
+        let mut child = command.spawn().unwrap();
         let pid = child.id().unwrap();
         assert_ne!(pid, std::process::id());
         let stdout = child.stdout.take().unwrap();

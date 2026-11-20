@@ -98,7 +98,6 @@ async fn serve_inner(
     }
     *stage = "identity";
     let auth = authenticate(state, &ticket).await?;
-    authorize(state, &auth, ticket.kind).await?;
     *stage = "proof";
     crate::zerotrust::verify_live_identity(
         &state.auth,
@@ -108,6 +107,7 @@ async fn serve_inner(
         &admission.proof,
     )
     .await?;
+    configured_provider(state, ticket.kind).await?;
     let _slot = Arc::clone(&state.live_llm.requests)
         .try_acquire_owned()
         .map_err(|_| busy())?;
@@ -159,12 +159,9 @@ async fn serve_inner(
         let request = prepare(socket, ticket.kind).await?;
         *stage = "provider_setup";
         let setup = async {
-            let auth = authenticate(state, &ticket).await?;
-            let ((_, generation), configuration) = authorize(state, &auth, ticket.kind).await?;
-            if generation != ticket.generation {
-                return Err(forbidden());
-            }
-            Ok((auth, configuration))
+            let auth = authenticate_current_run(state, &ticket).await?;
+            let configuration = configured_provider(state, ticket.kind).await?;
+            Ok::<_, RpcError>((auth, configuration))
         };
         let (auth, configuration) = tokio::select! {
             biased;
@@ -264,9 +261,7 @@ async fn serve_inner(
         };
         *stage = "usage";
         record(state, &ticket, &configuration, &usage, false).await?;
-        let current = authenticate(state, &ticket).await?;
-        persistence::authorize_current_run(&state.auth, &current, ticket.kind, &ticket.generation)
-            .await?;
+        authenticate_current_run(state, &ticket).await?;
         send(socket, json!({"type":"complete","content":content,"usage":{
             "inputTokens":usage.input_tokens,"outputTokens":usage.output_tokens,"totalTokens":usage.total_tokens}})).await
     };
@@ -277,8 +272,7 @@ async fn serve_inner(
                 result = &mut operation => return result,
                 changed = access.changed() => {
                     changed?;
-                    let current = authenticate(state, &ticket).await?;
-                    persistence::authorize_current_run(&state.auth, &current, ticket.kind, &ticket.generation).await?;
+                    authenticate_current_run(state, &ticket).await?;
                 }
             }
         }
@@ -302,6 +296,12 @@ async fn authenticate(state: &Runtime, ticket: &Ticket) -> RpcResult<AuthResult>
     if !ticket.matches(&auth, ticket.scope()?) {
         return Err(forbidden());
     }
+    Ok(auth)
+}
+
+async fn authenticate_current_run(state: &Runtime, ticket: &Ticket) -> RpcResult<AuthResult> {
+    let auth = authenticate(state, ticket).await?;
+    persistence::authorize_current_run(&state.auth, &auth, ticket.kind, &ticket.generation).await?;
     Ok(auth)
 }
 

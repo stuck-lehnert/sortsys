@@ -347,34 +347,7 @@ async fn live_llm_uses_native_configuration_and_authenticated_cross_instance_mcp
     settings.admin_hash = bcrypt::hash("Native-model-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let first = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let second = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let first_url = format!("http://{}/", first.local_addr().unwrap());
-    let second_url = format!("http://{}/", second.local_addr().unwrap());
-    let mut tasks = Vec::new();
-    for listener in [first, second] {
-        let service = Arc::new(auth_service(&settings, records.clone()));
-        let mut configuration = crate::llm::control::Settings::default();
-        configuration.encryption_key = Some([0x3c; 32]);
-        // Both replicas use the same public MCP address. The browser connects
-        // to the second replica, so model tools must be forwarded by the first.
-        configuration.mcp_url = Some(format!("{}internal/llm/mcp", first_url));
-        let runtime = crate::llm::live::Runtime::new(Arc::clone(&service), Arc::new(configuration));
-        runtime
-            .live_llm
-            .bind_to(None, None, listener.local_addr().unwrap())
-            .await
-            .unwrap();
-        let router = crate::standalone::router_with_runtime(
-            service,
-            runtime,
-            crate::editors::EditorConfig::default(),
-        );
-        tasks.push(ApiTask(tokio::spawn(async move {
-            axum::serve(listener, router).await.unwrap();
-        })));
-    }
-    browser("llm", &root, Some(&[first_url, second_url])).await;
+    processes::run_browser_with_mcp(&settings, &root, "llm").await;
     let stored = records
         .read::<serde_json::Value>(key("llm-provider-accounts", "openrouter"))
         .await

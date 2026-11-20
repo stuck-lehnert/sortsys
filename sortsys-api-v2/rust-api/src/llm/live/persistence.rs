@@ -66,7 +66,7 @@ async fn allowed(
     Ok(identity)
 }
 
-pub(super) async fn authorize(
+pub(super) async fn authorize_for_admission(
     service: &AuthService,
     auth: &AuthResult,
     kind: LiveKind,
@@ -80,6 +80,7 @@ pub(super) async fn authorize(
     .await
 }
 
+/// An admitted run still needs its live grants. Usage only gates new admissions.
 pub(super) async fn authorize_current_run(
     service: &AuthService,
     auth: &AuthResult,

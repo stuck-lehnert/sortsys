@@ -74,8 +74,10 @@ Freigaben, verbrauchte Verbindungstickets und Tokenzahlen liegen im gemeinsamen
 DuckDB-Dienst. Damit gilt die Begrenzung auf vier gleichzeitig laufende Anfragen
 je Mandant auch bei mehreren API-Instanzen. Nach einem Prozessabbruch läuft die
 Reservierung nach zehn Minuten aus. Die Monatsquote berücksichtigt den vom
-Modellanbieter zurückgemeldeten Verbrauch; bereits laufende Anfragen können die
-verbleibende Quote überschreiten.
+Modellanbieter gemeldeten Verbrauch und begrenzt den Start neuer Anfragen.
+Bereits zugelassene Anfragen dürfen weiterlaufen und können die verbleibende
+Quote überschreiten. Die API prüft weiterhin, ob Sitzung und Freigaben gültig
+sind.
 
 Anbieterzugänge und die Auswahl des Modells werden in der Betreiberverwaltung
 festgelegt. Gespeicherte API-Schlüssel sind mit `LLM_ENCRYPTION_KEY`
@@ -293,10 +295,15 @@ Der Integrationstest mit einem lokalen Modell-Testdienst prüft den Transport,
 Produktsuche aus dem entschlüsselnden Client, Originaldateien in mehreren
 Blöcken, Abbruch während des Uploads und nach seinem letzten Block sowie das
 Schließen einer bereits laufenden HTTP-Verbindung zum Anbieter. Er prüft auch
-die Abweisung falscher Signaturen und wiederverwendeter Eintrittskarten. Für
-Einlesen prüft er außerdem den Ergebnisablauf mit verschlüsselter Speicherung,
-Listenaktualisierung und erneutem Öffnen sowie eine fehlende Bestätigung nach
-dem Speichern. Der echte XLSX-Worker wird zusätzlich im Browser geprüft. Beim
+die Abweisung falscher Signaturen und wiederverwendeter Eintrittskarten. Der
+Test läuft mit zwei getrennten API-Prozessen. Er setzt die Monatsquote nach
+der Zulassung eines Imports auf den bereits erfassten Verbrauch. Der Import
+gleicht die Datei weiterhin über MCP mit dem Produktkatalog ab. Die API weist
+einen neuen Lauf bei erreichter Quote ab.
+
+Für Einlesen prüft der Test außerdem das verschlüsselte Speichern,
+Listenaktualisierung und erneutes Öffnen sowie eine fehlende Bestätigung nach
+dem Speichern. Der XLSX-Worker wird zusätzlich im Browser geprüft. Beim
 Chat kommen Annahme nach verlorener Bestätigung, gleichzeitige Änderungen,
 Ablehnung, Überarbeitung und erneutes Öffnen hinzu. Der native Test zur
 Chatübernahme prüft außerdem ursprüngliche Entscheidungen, konkurrierende

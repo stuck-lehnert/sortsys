@@ -34,6 +34,7 @@ PROCESS_TESTS = {
     TEST_PREFIX + "prepared_backups_check_absence_decision_signatures",
     TEST_PREFIX + "deferred_tool_rates_preserve_exact_prices_across_api_processes",
     TEST_PREFIX + "local_document_search_enforces_live_access_across_independent_api_instances",
+    TEST_PREFIX + "live_llm_uses_native_configuration_and_authenticated_cross_instance_mcp",
     TEST_PREFIX + "private_editors_use_native_configuration_and_separate_file_permissions",
     TEST_PREFIX + "delivery_moves_preserve_the_number_across_api_processes",
     COLD_RESTORE_TEST,

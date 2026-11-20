@@ -1,16 +1,12 @@
 // Deterministic provider; no real model credentials or external LLM requests.
 import assert from "node:assert/strict";
-import { createClient, type Client } from "@sortsys/v2-client";
+import { createClient, RpcClientError, type Client } from "@sortsys/v2-client";
+import { bytes, digest, frame, sign } from "@sortsys/zerotrust/sortsys";
+import { administratorContext } from "../app/lib/crypto/administration";
 import {
-  bytes,
-  digest,
-  frame,
-  sign,
-  policy,
-  record,
-  signPolicy,
-} from "@sortsys/zerotrust/sortsys";
-import { openAuthority } from "../app/lib/crypto/setup";
+  publishVerifiedPolicy,
+  readVerifiedPolicy,
+} from "../app/lib/crypto/policy";
 import { trustedHistory, unlockedAccount } from "../app/lib/crypto/session";
 import { runLiveLlm, type LiveLlmRequest } from "../app/lib/liveLlm";
 import { required } from "../app/lib/data/protectedObjects";
@@ -225,14 +221,16 @@ export async function testLiveLlm(
     }),
   );
   administrator.setToken(admin.token);
-  try {
-    await required(
+  const setQuota = (monthlyTokenQuota: bigint | null) =>
+    required(
       administrator.mutate("admin.llm.tenants.update", {
         name: unlockedAccount()!.tenant,
         enabled: true,
-        monthlyTokenQuota: null,
+        monthlyTokenQuota,
       }),
     );
+  try {
+    await setQuota(null);
     await required(
       administrator.mutate("admin.llm.providers.update", {
         provider: "openrouter",
@@ -331,6 +329,8 @@ export async function testLiveLlm(
     const uploadFrames: number[] = [];
     let cancelUpload: AbortController | undefined;
     let cancelPreparedImport: AbortController | undefined;
+    const uploadPrepared = Promise.withResolvers<() => void>();
+    let pauseFinalFrame = true;
     const browserSocket = globalThis.WebSocket;
     globalThis.WebSocket = new Proxy(browserSocket, {
       construct(target, arguments_, newTarget) {
@@ -341,30 +341,56 @@ export async function testLiveLlm(
         );
         const send = socket.send.bind(socket);
         socket.send = (message) => {
+          const finalImportFrame =
+            typeof message === "string" && JSON.parse(message)?.type === "import";
+          if (pauseFinalFrame && finalImportFrame) {
+            pauseFinalFrame = false;
+            uploadPrepared.resolve(() => send(message));
+            return;
+          }
           send(message);
           if (message instanceof ArrayBuffer) {
             uploadFrames.push(message.byteLength);
             cancelUpload?.abort();
-          } else if (
-            cancelPreparedImport &&
-            typeof message === "string" &&
-            JSON.parse(message)?.type === "import"
-          ) {
-            cancelPreparedImport.abort();
+          } else if (finalImportFrame) {
+            cancelPreparedImport?.abort();
           }
         };
         return socket;
       },
     });
     try {
-      const imported = await runLiveLlm(
+      const controller = new AbortController();
+      const processing = runLiveLlm(
         client,
         ownerEndpoint,
         importRequest,
         tools,
-        new AbortController().signal,
+        AbortSignal.any([controller.signal, AbortSignal.timeout(30_000)]),
       );
-      assert.equal(JSON.parse(imported.content).documentType, "deliveryNote");
+      try {
+        // The second API has admitted the run and acknowledged the original.
+        const finishUpload = await Promise.race([
+          uploadPrepared.promise,
+          processing.then(() => assert.fail("The final import frame was not held")),
+        ]);
+        await setQuota(BigInt(response.usage.totalTokens));
+        const [, denied] = await client.mutate("zerotrust.llm.open", {
+          kind: "document_import",
+          chatId: null,
+          queries: tools.queries,
+          mutations: [],
+        });
+        assert.ok(denied instanceof RpcClientError);
+        assert.equal(denied.code, "TOO_MANY_REQUESTS");
+        finishUpload();
+        const imported = await processing;
+        assert.equal(JSON.parse(imported.content).documentType, "deliveryNote");
+        assert.equal(imported.usage.totalTokens, 30);
+      } finally {
+        controller.abort();
+        await setQuota(null);
+      }
       assert.deepEqual(uploadFrames, [blockBytes, blockBytes, 13]);
       assert.ok(checkedProviderOriginals > 0);
 
@@ -396,7 +422,7 @@ export async function testLiveLlm(
       globalThis.WebSocket = browserSocket;
     }
     console.log(
-      "Live import sent the original in three bounded binary frames, verified the exact source bytes and stopped a cancelled upload before calling the model",
+      "Live import verified exact original bytes, upload and MCP after admission at the monthly limit, quota denial for new runs and cancellation before calling the model.",
     );
     assert.equal(turns, 4);
     assert.equal(toolReplies, 2);
@@ -449,28 +475,15 @@ export async function testLiveLlm(
                   },
                 }),
               );
-              const status = await required(
-                client.query("zerotrust.status", undefined),
+              const administrator = await administratorContext(client, signal);
+              const { permissions } = await readVerifiedPolicy(
+                client,
+                administrator,
               );
-              const authority = await openAuthority(client, status.profile);
-              const current = record(
-                await required(client.query("zerotrust.policy.get", undefined)),
-                ["tenant", "version", "rules", "signature"],
-              );
-              const { signature: _signature, ...raw } = current;
-              const previous = policy(raw);
-              await required(
-                client.mutate(
-                  "zerotrust.policy.replace",
-                  await signPolicy(
-                    {
-                      ...previous,
-                      version: (BigInt(previous.version) + 1n).toString(),
-                    },
-                    authority,
-                  ),
-                ),
-              );
+              await publishVerifiedPolicy(client, administrator, {
+                ...permissions,
+                version: (BigInt(permissions.version) + 1n).toString(),
+              });
               return response;
             },
           },

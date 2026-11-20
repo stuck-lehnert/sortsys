@@ -34,10 +34,8 @@ pub(in crate::llm) async fn handle(
         if scope != expected {
             return Err(forbidden());
         }
-        let ((_, generation), _) = authorize(&state, &auth, owner.kind).await?;
-        if generation != owner.generation {
-            return Err(forbidden());
-        }
+        persistence::authorize_current_run(&state.auth, &auth, owner.kind, &owner.generation)
+            .await?;
         Ok((owner, auth, scope))
     }
     .await;

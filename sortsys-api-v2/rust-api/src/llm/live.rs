@@ -344,7 +344,9 @@ async fn open(
     mut input: OpenInput,
 ) -> RpcResult<OpenOutput> {
     let auth = state.auth.authenticate(&context.headers).await?;
-    let ((subject, generation), _) = authorize(state, &auth, input.kind).await?;
+    let (subject, generation) =
+        persistence::authorize_for_admission(&state.auth, &auth, input.kind).await?;
+    configured_provider(state, input.kind).await?;
     for (paths, kind) in [
         (&mut input.queries, ProcedureKind::Query),
         (&mut input.mutations, ProcedureKind::Mutation),
@@ -389,12 +391,11 @@ async fn open(
         generation,
     })
 }
-async fn authorize(
+
+async fn configured_provider(
     state: &Runtime,
-    auth: &AuthResult,
     kind: LiveKind,
-) -> RpcResult<((String, String), super::ProviderConfiguration)> {
-    let identity = persistence::authorize(&state.auth, auth, kind).await?;
+) -> RpcResult<super::ProviderConfiguration> {
     let use_case = match kind {
         LiveKind::Chat => super::CHAT_USE_CASE,
         LiveKind::DocumentImport => super::DOCUMENT_IMPORT_USE_CASE,
@@ -407,7 +408,7 @@ async fn authorize(
     {
         return Err(unavailable());
     }
-    Ok((identity, configuration))
+    Ok(configuration)
 }
 
 fn random() -> RpcResult<String> {
