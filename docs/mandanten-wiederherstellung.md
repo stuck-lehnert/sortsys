@@ -405,6 +405,11 @@ prüft auch unbestätigte DOCX- und Drawio-Änderungen im kopierten
 Office-Volume. Die Absicherung gegen einen gleichzeitigen Verlust sämtlicher
 aktueller Nachweise braucht weiterhin einen unabhängig aufbewahrten Stand.
 
+Im selben Test bleibt eine ausgestellte Abschlagsrechnung gesperrt. Eine
+wiederholte Zahlungsbuchung ändert den Saldo nur einmal. Der offene Restbetrag
+lässt sich nach dem Neustart im Browser buchen. Nach dem zweiten Phrase-Wechsel
+übernimmt die Schlussrechnung den Abschlag und erhält die nächste Rechnungsnummer.
+
 - Zwei API-Instanzen versuchen gleichzeitig dieselbe Phrase zu verwenden. Genau
   eine Operation startet; die andere darf weder einen zweiten Administrator
   erzeugen noch die neue Phrase überschreiben.

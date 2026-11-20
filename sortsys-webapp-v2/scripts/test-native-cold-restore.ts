@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { createClient, RpcClientError, type Client } from "@sortsys/v2-client";
@@ -17,6 +18,15 @@ import {
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { required } from "../app/lib/data/protectedObjects";
 import { duckDriver } from "../app/lib/data/testing/duckDriver.mjs";
+import { cliGaebProcessor } from "./lib/gaebProcessor";
+import {
+  checkColdBilling,
+  finishColdBilling,
+  prepareColdBilling,
+  privateBillingTexts,
+  resumeColdBilling,
+  type ColdBillingFixture,
+} from "./test-native-cold-billing";
 import type { RestoredOfficeRoom } from "./test-native-office-restore";
 
 assert.equal(process.env.SORTSYS_DISPOSABLE_AUTH_TEST, "1");
@@ -61,6 +71,7 @@ type Fixture = {
   snapshotOperation: string;
   project: string;
   file: string;
+  billing: ColdBillingFixture;
   retiredPhrase: string;
   currentPhrase: string;
   retiredToken: string;
@@ -86,7 +97,10 @@ const second = createClient(endpoints[1], "cold-restore-second", {
 const operator = createClient(endpoints[0], "cold-restore-operator");
 
 function openBusiness(client: Client) {
-  return createBusinessClient(client, { productDriver: duckDriver });
+  return createBusinessClient(client, {
+    productDriver: duckDriver,
+    gaebProcessor: cliGaebProcessor,
+  });
 }
 
 async function signInOperator() {
@@ -173,6 +187,31 @@ async function renameProject(client: Client, project: string, title: string) {
   }
 }
 
+async function payRestoredInvoiceInBrowser(
+  caseId: string,
+  payment: { amount: string; paidOn: string; reference: string },
+) {
+  await new Promise<void>((resolve, reject) => {
+    const browser = spawn("node", ["scripts/e2e/coldRestoreBilling.browser.mjs"], {
+      stdio: "inherit",
+      env: {
+        ...process.env,
+        SORTSYS_COLD_BILLING_USER: username,
+        SORTSYS_COLD_BILLING_PASSWORD: currentPassword,
+        SORTSYS_COLD_BILLING_CASE: caseId,
+        SORTSYS_COLD_BILLING_AMOUNT: payment.amount,
+        SORTSYS_COLD_BILLING_DATE: payment.paidOn,
+        SORTSYS_COLD_BILLING_REFERENCE: payment.reference,
+      },
+    });
+    browser.once("error", reject);
+    browser.once("exit", (code, signal) => {
+      if (code === 0) resolve();
+      else reject(new Error(`Cold billing browser failed: ${signal ?? code}`));
+    });
+  });
+}
+
 async function prepareSource() {
   await signInOperator();
   const setup = await tenantSetupRequest(tenant);
@@ -185,6 +224,7 @@ async function prepareSource() {
   const business = openBusiness(first);
   let project: string;
   let file: string;
+  let billing: ColdBillingFixture;
   try {
     const created = await required(
       business.mutate("projects.create", { title: originalTitle }),
@@ -196,6 +236,7 @@ async function prepareSource() {
       mime: "text/plain",
       blob: new Blob([fileBytes]),
     });
+    billing = await prepareColdBilling(business, project);
   } finally {
     business.dispose();
   }
@@ -210,8 +251,15 @@ async function prepareSource() {
   assert.equal(download.status, 200);
   const previous = Buffer.from(await download.arrayBuffer());
   assert.equal(previous.length, snapshot.bytes);
-  for (const value of [draft.phrase, originalPassword, originalTitle, fileName])
+  for (const value of [
+    draft.phrase,
+    originalPassword,
+    originalTitle,
+    fileName,
+    ...privateBillingTexts,
+  ]) {
     assert.ok(!previous.includes(value));
+  }
   assert.ok(!previous.includes(Buffer.from(fileBytes)));
   await writeFile(join(root, "retired-tenant.duckdb"), previous, {
     mode: 0o600,
@@ -231,12 +279,19 @@ async function prepareSource() {
     snapshotOperation: operation,
     project,
     file,
+    billing,
     retiredPhrase: draft.phrase,
     currentPhrase,
     retiredToken,
     currentToken,
   };
   await checkData(second, fixture, currentTitle);
+  const billingReader = openBusiness(second);
+  try {
+    await checkColdBilling(billingReader, fixture.billing);
+  } finally {
+    billingReader.dispose();
+  }
   if (officeRestore) {
     const editor = openBusiness(second);
     try {
@@ -327,6 +382,21 @@ async function useRestoredFiles(fixture: Fixture) {
   );
   await signIn(second, { tenant, username, password: currentPassword });
   await checkData(second, fixture, currentTitle);
+  first.setToken(fixture.currentToken);
+  const writer = openBusiness(second);
+  const reader = openBusiness(first);
+  try {
+    const payInBrowser =
+      process.env.SORTSYS_NATIVE_BROWSER === "1"
+        ? payRestoredInvoiceInBrowser.bind(null, fixture.billing.invoice.caseId)
+        : undefined;
+    await resumeColdBilling(writer, reader, fixture.billing, payInBrowser);
+  } finally {
+    reader.dispose();
+    writer.dispose();
+    first.setToken(null);
+  }
+  console.log("Reopened the issued invoice, rejected a change and booked its remaining payment");
   if (officeRestore) {
     assert.ok(fixture.officeRooms?.length === 2);
     const editor = openBusiness(second);
@@ -351,6 +421,16 @@ async function useRestoredFiles(fixture: Fixture) {
   );
   await signIn(first, { tenant, username, password: nextPassword });
   await checkData(first, fixture, nextTitle);
+  second.setToken(await verifiedSessionToken(first));
+  const issuer = openBusiness(first);
+  const invoiceReader = openBusiness(second);
+  try {
+    await finishColdBilling(issuer, invoiceReader, fixture.billing);
+  } finally {
+    invoiceReader.dispose();
+    issuer.dispose();
+  }
+  console.log("Issued a final invoice with the next number after the second recovery");
   if (officeRestore) {
     assert.ok(fixture.officeRooms?.length === 2);
     const editor = openBusiness(first);

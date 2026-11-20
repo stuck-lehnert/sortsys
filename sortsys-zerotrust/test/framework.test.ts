@@ -275,8 +275,14 @@ test("request fingerprints depend on the stable data key and their exact purpose
 test("another application performs two seed recoveries and retains its historical content", async () => {
   await opaqueReady;
   let administrator = 0;
+  const appointmentCreation = {
+    scope: "create:appointment",
+    facet: "appointments",
+    actions: ["create"],
+  } as const;
   const framework = createZeroTrust({
     facets: ["patient-notes", "appointments"],
+    setup: { ownerGrants: [appointmentCreation] },
     recovery: {
       createAdministrator: () => {
         administrator += 1;
@@ -510,6 +516,19 @@ test("another application performs two seed recoveries and retains its historica
     second.plan.oldKeyEnvelopes.map((envelope) => envelope.generation).sort(),
   ).toEqual(["1", "2"]);
   expect(second.plan.domains[0]!.generation).toBe("3");
+  for (const current of [setup, first.plan.nextSetup, second.plan.nextSetup]) {
+    const grants = current.policy.rules.filter(
+      (rule) => rule.scope === appointmentCreation.scope,
+    );
+    expect(grants).toEqual([
+      {
+        ...appointmentCreation,
+        actions: [...appointmentCreation.actions],
+        subject: current.owner.user,
+        effect: "allow",
+      },
+    ]);
+  }
   for (const secret of [firstPhrase, secondPhrase, thirdPhrase, password]) {
     expect(transmitted.join("\n")).not.toContain(secret);
   }

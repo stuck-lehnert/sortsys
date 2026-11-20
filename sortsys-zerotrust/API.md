@@ -550,6 +550,14 @@ Kontospeicher und anfänglichen Schlüsselzustand. Rust stellt denselben Rahmen 
 einmalige Einrichtungsberechtigung zusammen mit Konto und Schlüsselzustand
 verbrauchen; der Signaturnachweis ersetzt diesen atomaren Schritt nicht.
 
+Über `createZeroTrust({ facets, setup: { ownerGrants } })` kann eine Anwendung
+dem Inhaber auch Rechte für Bereiche ohne verschlüsselte Datensätze geben.
+Ein Anlegerecht kann zum Beispiel aus `scope: "create:appointment"`,
+`facet: "appointments"` und `actions: ["create"]` bestehen. Der Einrichtungscode
+signiert diese Rechte sowohl für das erste Konto als auch für den Inhaber nach
+einer Recovery. Der Serveradapter bestimmt, welche zusätzlichen Regeln er in
+der signierten Einrichtungsrichtlinie akzeptiert.
+
 `security.domains.createDomain` verteilt einen Bereichsschlüssel an die
 festgelegten Leser und den Recovery-Schlüssel. Delegiertes Anlegen benötigt
 einen ausdrücklich angebundenen `domainCreation`-Prüfer. Ohne ihn werden

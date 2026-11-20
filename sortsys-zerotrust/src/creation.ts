@@ -57,6 +57,9 @@ export const CREATION_FACETS = {
   tool: ["master-data", "procurement", "measurement"],
   "tool-tracking": ["master-data", "procurement", "scope"],
 } as const;
+export const CREATION_NAMESPACES = Object.freeze(
+  Object.keys(CREATION_FACETS) as CreationNamespace[],
+);
 export const PROJECT_MODULE_FACETS = {
   "delivery-notes": ["master-data", "procurement"],
   "daily-reports": ["master-data", "calculation"],

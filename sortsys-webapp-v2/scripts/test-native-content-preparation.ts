@@ -55,6 +55,7 @@ import {
 import { RestoreProjectFileConflict } from "../app/lib/backups/projectFileReview";
 import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
+import { adoptGaebOrder } from "./lib/adoptGaebOrder";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
 import {
   checkGaebReplayAfterRestore,
@@ -218,30 +219,11 @@ async function checkAttachmentReview(
   );
 }
 
-async function adoptOrder(owner: Client, projectId: string) {
-  const contract = await required(
-    owner.mutate("commercial.cases.adoptContract", {
-      projectId,
-      title: originalOrderTitle,
-      sourcePhase: "86",
-      sourceXml: gaebWorkflowXml("86"),
-      sourceFileName: "Auftrag.x86",
-      offerXml: gaebWorkflowXml("84"),
-      referenceXml: null,
-      netAmount: "1776.00",
-    }),
-  );
-  const workflow = await required(
-    owner.query("commercial.cases.get", contract),
-  );
-  const order = workflow.documents.find((item) => item.purpose === "order");
-  assert.ok(order);
-  return { caseId: contract.id, order };
-}
+type AdoptedGaebOrder = Awaited<ReturnType<typeof adoptGaebOrder>>;
 
 async function createConfirmation(
   owner: Client,
-  basis: Awaited<ReturnType<typeof adoptOrder>>,
+  basis: AdoptedGaebOrder,
 ) {
   const { caseId, order } = basis;
   const draft = gaebWorkflowXml("87");
@@ -290,7 +272,7 @@ async function changeStoredCaseTitle(
 
 function prepareConfirmation(
   owner: Client,
-  basis: Awaited<ReturnType<typeof adoptOrder>>,
+  basis: AdoptedGaebOrder,
 ) {
   return async (peer: Client) => {
     await changeStoredCaseTitle(
@@ -405,7 +387,7 @@ function prepareConfirmation(
 async function createRestorableInvoice(
   owner: Client,
   projectId: string,
-  contract: Awaited<ReturnType<typeof adoptOrder>>,
+  contract: AdoptedGaebOrder,
 ) {
   const fields = {
     projectId,
@@ -440,7 +422,7 @@ async function issueInvoiceAfterBackup(
   owner: Client,
   peer: Client,
   projectId: string,
-  contract: Awaited<ReturnType<typeof adoptOrder>>,
+  contract: AdoptedGaebOrder,
 ) {
   const { id, document, fields } = await createRestorableInvoice(owner, projectId, contract);
   const contextInput = { contractCaseId: contract.caseId };
@@ -599,7 +581,7 @@ async function rejectInvoiceWithoutContract(
     );
   }
   const withoutContract = await snapshot();
-  const contract = await adoptOrder(owner, project);
+  const contract = await adoptGaebOrder(owner, project, originalOrderTitle);
   const olderOrder = await snapshot();
   await required(
     owner.mutate("commercial.documents.create", {
@@ -757,7 +739,7 @@ async function rejectSnapshotWithoutLockedCase(
       operation: base64(randomSecret()),
     }),
   );
-  const basis = await adoptOrder(owner, project.id);
+  const basis = await adoptGaebOrder(owner, project.id, originalOrderTitle);
   const { target } = await createConfirmation(owner, basis);
   await required(
     owner.mutate("commercial.documents.finalize", { ...target, version: 1n }),
@@ -995,7 +977,7 @@ export async function exerciseGaebCaseBatches(
   const project = await required(
     owner.mutate("projects.create", { title: "Betriebsgebäude im GAEB-Batchtest" }),
   );
-  const contract = await adoptOrder(owner, project.id);
+  const contract = await adoptGaebOrder(owner, project.id, originalOrderTitle);
   await peer.files.upload({
     projectId: project.id,
     name: "Baufoto.png",
@@ -1186,7 +1168,7 @@ export async function exerciseContentPreparation(
     photoBytes,
     thumbnailBytes,
   );
-  const contract = await adoptOrder(owner, project.id);
+  const contract = await adoptGaebOrder(owner, project.id, originalOrderTitle);
   const finalizeConfirmation = prepareConfirmation(owner, contract);
   const ownerSession = await required(
     owner.query("auth.sessionInfo", undefined),

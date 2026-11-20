@@ -841,8 +841,10 @@ laufen über diesen Speicher. Der optionale Backupweg verwendet eine lokale
 SQL-Quelle, keine laufende alte Datenbank. Der Datendienst verweigert inzwischen
 eine Mandantendatei mit älteren Recovery- oder Sicherheitsnachweisen. Im
 [Wiederanlauftest](mandanten-wiederherstellung.md#nachweise-vor-produktiver-nutzung)
-bleibt ein zweiter Mandant in diesem Fall erreichbar. Die vollständige
-Prüfung aller Fachabläufe nach einem Wiederanlauf steht noch aus.
+bleibt ein zweiter Mandant in diesem Fall erreichbar. Für die Abrechnung prüft
+der Test den GAEB-Auftrag, eine gesperrte Abschlagsrechnung, ihre Zahlungen und
+die anschließende Schlussrechnung mit fortlaufender Nummer. Die Prüfung aller
+Fachabläufe nach einem Wiederanlauf steht noch aus.
 
 Die [Betreiberverwaltung](verschluesselte-sicherungen.md) erstellt mit
 `COPY FROM DATABASE` eine eigene DuckDB-Datei und schließt sie vor der

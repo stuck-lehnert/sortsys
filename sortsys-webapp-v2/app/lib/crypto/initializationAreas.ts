@@ -1,5 +1,3 @@
-import { CREATION_FACETS } from "@sortsys/zerotrust/sortsys";
-import type { CreationNamespace } from "@sortsys/zerotrust/sortsys";
 import { CUSTOMER_COLLECTION, CONTACT_COLLECTION } from "../data/addressBook";
 import { absenceCollection } from "../data/absenceData";
 import { ORGANIZATION_AREAS } from "../data/organizationData";
@@ -11,10 +9,6 @@ import { privateLlmCollection } from "../data/privateLlm";
 import type { Collection } from "../data/protectedObjects";
 import { TOOL_INDEX } from "../data/toolData";
 import { VENDOR_COLLECTION } from "../data/vendorData";
-
-export const OWNER_CREATION_NAMESPACES = Object.keys(
-  CREATION_FACETS,
-) as CreationNamespace[];
 
 export function initialOwnerCollections(userId: string): Collection[] {
   const subject = `user:${userId}`;

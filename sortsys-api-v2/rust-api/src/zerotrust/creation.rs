@@ -28,6 +28,12 @@ pub(super) const COMMERCIAL_FACETS: [Facet; 9] = [
     Facet::Attachment,
 ];
 pub(super) const TOOL_RETURN_PURPOSE: &str = "tool-return";
+pub(super) const CREATION_SCOPES: [(&str, &str); 4] = [
+    ("project", "create:project"),
+    ("commercial", "create:commercial"),
+    ("tool", "create:tool"),
+    ("tool-tracking", "create:tool-tracking"),
+];
 
 #[derive(Clone, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -572,13 +578,10 @@ pub(super) struct CapabilityInput {
     pub subject: Option<String>,
 }
 pub(super) fn creation_scope(namespace: &str) -> RpcResult<&'static str> {
-    match namespace {
-        "project" => Ok("create:project"),
-        "commercial" => Ok("create:commercial"),
-        "tool" => Ok("create:tool"),
-        "tool-tracking" => Ok("create:tool-tracking"),
-        _ => Err(invalid()),
-    }
+    CREATION_SCOPES
+        .iter()
+        .find_map(|&(name, scope)| (name == namespace).then_some(scope))
+        .ok_or_else(invalid)
 }
 
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {

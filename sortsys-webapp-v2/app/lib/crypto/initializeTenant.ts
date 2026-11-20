@@ -2,7 +2,7 @@ import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
 import {
   base64,
   certifyCreationCapability,
-  creationScope,
+  CREATION_NAMESPACES,
   frame,
   InvalidProtectedData,
   randomSecret,
@@ -25,13 +25,9 @@ import { createProtectedPersonnel } from "../data/personnel";
 import { PERSONNEL_FACETS, personnelCollection } from "../data/personnelData";
 import { openAuthority } from "./setup";
 import { trustedHistory, unlockedAccount } from "./session";
-import { readVerifiedPolicy, publishVerifiedPolicy } from "./policy";
 import { readInitializationSource } from "./initializationSource";
 import { uiText } from "../i18n";
-import {
-  initialOwnerCollections,
-  OWNER_CREATION_NAMESPACES,
-} from "./initializationAreas";
+import { initialOwnerCollections } from "./initializationAreas";
 
 type Completion = MutateInput<"zerotrust.setup.complete">;
 type Status = QueryResult<"zerotrust.status">;
@@ -182,36 +178,7 @@ export async function initializeTenant(
   } finally {
     personnel.close();
   }
-  const policyContext = { account, history, authority, live };
-  const { permissions } = await readVerifiedPolicy(client, policyContext);
-  const missingCreationRules = OWNER_CREATION_NAMESPACES.filter(
-    (namespace) =>
-      !permissions.rules.some(
-        (rule) =>
-          rule.subject === subject &&
-          rule.scope === creationScope(namespace) &&
-          rule.facet === "master-data" &&
-          rule.effect === "allow" &&
-          rule.actions.includes("create"),
-      ),
-  );
-  if (missingCreationRules.length) {
-    await publishVerifiedPolicy(client, policyContext, {
-      ...permissions,
-      version: (BigInt(permissions.version) + 1n).toString(),
-      rules: [
-        ...permissions.rules,
-        ...missingCreationRules.map((namespace) => ({
-          subject,
-          scope: creationScope(namespace),
-          facet: "master-data" as const,
-          effect: "allow" as const,
-          actions: ["create" as const],
-        })),
-      ],
-    });
-  }
-  for (const namespace of OWNER_CREATION_NAMESPACES) {
+  for (const namespace of CREATION_NAMESPACES) {
     const [existing, error] = await client.query(
       "zerotrust.creations.capability",
       { namespace },

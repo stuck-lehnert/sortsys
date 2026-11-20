@@ -14,7 +14,7 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 use ts_rs::TS;
 
 #[cfg(test)]
@@ -22,14 +22,18 @@ mod tests {
     use super::super::crypto::encode;
     use super::*;
 
-    #[test]
-    fn browser_bootstrap_verifies_without_private_or_recovery_keys_on_the_server() {
+    fn setup_fixture() -> SetupInput {
         let fixture: Value =
             serde_json::from_str(include_str!("../../tests/fixtures/zerotrust-setup.json"))
                 .unwrap();
-        let input: SetupInput = serde_json::from_value(fixture["setup"].clone()).unwrap();
-        let encryption = sized::<32>(fixture["owner"]["encryptionKey"].as_str().unwrap()).unwrap();
-        let signing = sized::<32>(fixture["owner"]["signingKey"].as_str().unwrap()).unwrap();
+        serde_json::from_value(fixture["setup"].clone()).unwrap()
+    }
+
+    #[test]
+    fn browser_bootstrap_verifies_without_private_or_recovery_keys_on_the_server() {
+        let input = setup_fixture();
+        let encryption = sized::<32>(&input.owner.encryption_key).unwrap();
+        let signing = sized::<32>(&input.owner.signing_key).unwrap();
         input
             .validate("test", "user:interop", &encryption, &signing)
             .unwrap();
@@ -50,17 +54,62 @@ mod tests {
                 .validate("test", "user:interop", &encryption, &signing)
                 .is_err()
         );
-        let mut bad = fixture["setup"].clone();
+        let mut bad = serde_json::to_value(input).unwrap();
         bad["seedPhrase"] = serde_json::json!("must never be an accepted server parameter");
         assert!(serde_json::from_value::<SetupInput>(bad).is_err());
     }
 
     #[test]
+    fn creation_grants_allow_only_the_owner_to_create_in_registered_namespaces() {
+        let mut policy = setup_fixture().policy;
+        let grant = super::super::wire::Rule {
+            subject: "user:interop".into(),
+            scope: "create:commercial".into(),
+            facet: Facet::MasterData,
+            actions: vec![Action::Create],
+            effect: Effect::Allow,
+            origin: None,
+        };
+        let valid =
+            |policy: &SignedPolicy| validate_owner_grants(policy, "test", "user:interop", &[]);
+        policy.rules.push(grant.clone());
+        valid(&policy).unwrap();
+        policy.rules.push(grant.clone());
+        assert!(valid(&policy).is_err());
+        policy.rules.truncate(policy.rules.len() - 2);
+
+        for invalid_grant in [
+            super::super::wire::Rule {
+                subject: "user:other".into(),
+                ..grant.clone()
+            },
+            super::super::wire::Rule {
+                scope: "create:unknown".into(),
+                ..grant.clone()
+            },
+            super::super::wire::Rule {
+                facet: Facet::Billing,
+                ..grant.clone()
+            },
+            super::super::wire::Rule {
+                actions: vec![Action::Create, Action::Grant],
+                ..grant
+            },
+        ] {
+            policy.rules.push(invalid_grant);
+            assert!(valid(&policy).is_err());
+            policy.rules.pop();
+        }
+        let mut suspended_owner = policy.clone();
+        suspended_owner.suspended = Some(vec!["user:interop".into()]);
+        assert!(valid(&suspended_owner).is_err());
+        policy.rules.remove(0);
+        assert!(valid(&policy).is_err());
+    }
+
+    #[test]
     fn access_status_requires_a_certificate_matching_the_current_root_and_account_keys() {
-        let fixture: Value =
-            serde_json::from_str(include_str!("../../tests/fixtures/zerotrust-setup.json"))
-                .unwrap();
-        let setup: SetupInput = serde_json::from_value(fixture["setup"].clone()).unwrap();
+        let setup = setup_fixture();
         let make = || AccountCertification {
             identity_certificate: serde_json::to_value(&setup.owner).unwrap(),
             encryption_key: sized::<32>(&setup.owner.encryption_key).unwrap().to_vec(),
@@ -396,6 +445,57 @@ pub(super) async fn history(
 }
 
 pub(super) use super::crypto::packet_hash;
+
+fn validate_owner_grants(
+    policy: &SignedPolicy,
+    tenant: &str,
+    subject: &str,
+    scopes: &[(String, Facet)],
+) -> RpcResult<()> {
+    if policy
+        .suspended
+        .as_ref()
+        .is_some_and(|members| members.iter().any(|member| member == subject))
+    {
+        return Err(invalid());
+    }
+    let tenant_scope = format!("tenant:{tenant}");
+    let mut required: BTreeSet<_> = Facet::ALL
+        .iter()
+        .map(|facet| (tenant_scope.as_str(), facet.name()))
+        .chain(
+            scopes
+                .iter()
+                .map(|(scope, facet)| (scope.as_str(), facet.name())),
+        )
+        .collect();
+    let mut creation: BTreeSet<_> = super::creation::CREATION_SCOPES
+        .iter()
+        .map(|&(_, scope)| scope)
+        .collect();
+    for rule in &policy.rules {
+        if rule.subject != subject || rule.effect != Effect::Allow || rule.origin.is_some() {
+            return Err(invalid());
+        }
+        let scope = rule.scope.as_str();
+        if required.remove(&(scope, rule.facet.name())) {
+            // Verified policy rules contain distinct actions from the six-action vocabulary.
+            if rule.actions.len() != 6 {
+                return Err(invalid());
+            }
+        } else if rule.facet != Facet::MasterData
+            || rule.actions != [Action::Create]
+            || !creation.remove(scope)
+        {
+            return Err(invalid());
+        }
+    }
+    if !required.is_empty() {
+        return Err(invalid());
+    }
+    Ok(())
+}
+
 impl SetupInput {
     pub fn frame(&self) -> RpcResult<Vec<u8>> {
         let hashes = [
@@ -455,39 +555,7 @@ impl SetupInput {
         let authority = sized::<32>(&self.authority.authority_signing_key)?;
         self.owner.verify(&authority)?;
         self.policy.verify(&authority)?;
-        let mut expected = vec![
-            Facet::Scope,
-            Facet::ContractQuantities,
-            Facet::Measurement,
-            Facet::OfferPrices,
-            Facet::Calculation,
-            Facet::Procurement,
-            Facet::Billing,
-            Facet::MasterData,
-            Facet::Personnel,
-            Facet::Attachment,
-        ]
-        .into_iter()
-        .map(|facet| (format!("tenant:{tenant}"), facet))
-        .collect::<Vec<_>>();
-        for scope in scopes {
-            if !expected.contains(scope) {
-                expected.push(scope.clone());
-            }
-        }
-        if self.policy.rules.len() != expected.len()
-            || self.policy.rules.iter().any(|r| {
-                r.subject != subject
-                    || !expected.contains(&(r.scope.clone(), r.facet))
-                    || r.effect != Effect::Allow
-                    || r.actions.len() != 6
-            })
-            || expected
-                .iter()
-                .any(|(scope, facet)| !self.policy.allows(subject, scope, *facet, Action::Grant))
-        {
-            return Err(invalid());
-        }
+        validate_owner_grants(&self.policy, tenant, subject, scopes)?;
         let authority_subject = format!("authority:{generation}");
         let recovery_subject = format!("recovery:{generation}");
         for (envelope, purpose, object, recipient) in [

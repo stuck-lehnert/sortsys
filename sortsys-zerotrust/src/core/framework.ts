@@ -6,7 +6,7 @@ import {
   type DomainCreation,
   type DomainCreationCodec,
 } from "./domains";
-import { createSetupCodec } from "./setup";
+import { createSetupCodec, type SetupOptions } from "./setup";
 import { createKeyAuthorityCodec } from "./keyAuthorities";
 import { createRecoveryCodec, type RecoveryOptions } from "./recovery";
 
@@ -20,12 +20,13 @@ export function createZeroTrust<
   facets: readonly F[];
   policy?: PolicyOptions<F, O>;
   domainCreation?: DomainCreationCodec<F, C>;
+  setup?: SetupOptions<F>;
   recovery?: RecoveryOptions;
 }) {
   const objects = createObjectCodec(options.facets);
   const policies = createPolicyCodec(options.facets, options.policy);
   const domains = createDomainCodec(options.facets, options.domainCreation);
-  const setup = createSetupCodec(options.facets, policies);
+  const setup = createSetupCodec(options.facets, policies, options.setup);
   return Object.freeze({
     objects,
     verifyTrustHistory: createTrustHistoryVerifier(objects),

@@ -30,7 +30,7 @@ import {
   verify,
 } from "../identity";
 import type { PrivateIdentity } from "../identity";
-import { ACTIONS } from "./policy";
+import { ACTIONS, type Action } from "./policy";
 import { facetVocabulary } from "./vocabulary";
 import { publicSigningKey, recoveryIdentity } from "../recovery";
 
@@ -43,13 +43,23 @@ export type TenantSetup<F extends string = string, O extends string = never> = {
   proof: string;
 };
 
+export type SetupOptions<F extends string> = {
+  /** Owner permissions for application scopes without a data domain. */
+  ownerGrants?: readonly { scope: string; facet: F; actions: readonly Action[] }[];
+};
+
 export function createSetupCodec<F extends string, O extends string = never>(
   facets: readonly F[],
   policies: PolicyCodec<F, O>,
+  options: SetupOptions<F> = {},
 ) {
   const facetsSnapshot = Object.freeze([...facets]);
   facetVocabulary(facetsSnapshot);
   const { policyFrame, signPolicy, verifyPolicy } = policies;
+  const ownerGrants = (options.ownerGrants ?? []).map((grant) => ({
+    ...grant,
+    actions: [...grant.actions],
+  }));
   async function verifyTenantSetup(
     input: unknown,
     pinned: { tenant: string; generation: string; recoverySigningKey: string },
@@ -239,24 +249,31 @@ export function createSetupCodec<F extends string, O extends string = never>(
       signingKey: authorityKey.privateKey,
       ...(options.catalogStorage ? { storage: options.catalogStorage } : {}),
     });
-    const scopes = new Map<string, { scope: string; facet: F }>();
+    const grants = new Map<string, (typeof ownerGrants)[number]>();
+    for (const grant of ownerGrants) {
+      grants.set(`${grant.scope}\0${grant.facet}`, grant);
+    }
     for (const scope of [
       ...facetsSnapshot.map((facet) => ({
         scope: `tenant:${tenant}`,
         facet,
       })),
       ...(options.scopes ?? []),
-    ])
-      scopes.set(`${scope.scope}\0${scope.facet}`, scope);
+    ]) {
+      grants.set(`${scope.scope}\0${scope.facet}`, {
+        ...scope,
+        actions: [...ACTIONS],
+      });
+    }
     const policy = await signPolicy(
       {
         tenant,
         version: policyVersion,
-        rules: [...scopes.values()].map(({ scope, facet }) => ({
+        rules: [...grants.values()].map(({ scope, facet, actions }) => ({
           subject,
           scope,
           facet,
-          actions: [...ACTIONS],
+          actions,
           effect: "allow",
         })),
       },
