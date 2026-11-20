@@ -7,6 +7,8 @@ import {
   domainBoxSigner,
   encryptObject,
   openBox,
+  replaceProjectRole,
+  signPolicy,
   TOMBSTONE_FORMAT,
   verifyDomain,
 } from "@sortsys/zerotrust/sortsys";
@@ -16,6 +18,8 @@ import {
   unlockedAccount,
   type UnlockedAccount,
 } from "../app/lib/crypto/session";
+import { administratorContext } from "../app/lib/crypto/administration";
+import { readVerifiedPolicy } from "../app/lib/crypto/policy";
 import {
   approveMemberInvitation,
   createMemberInvitation,
@@ -304,6 +308,21 @@ async function exerciseProjectClosure(
   const fileDomain = baseline.domains.find(({ id }) => id === files.domain);
   assert.ok(fileDomain);
   const policies = await required(ownerClient.query("zerotrust.policy.get", undefined, fresh));
+  const administrator = await administratorContext(ownerClient, signal);
+  const { permissions } = await readVerifiedPolicy(ownerClient, administrator);
+  const staleProjectRole = await signPolicy(
+    {
+      ...permissions,
+      version: (BigInt(permissions.version) + 1n).toString(),
+      rules: replaceProjectRole(
+        permissions.rules,
+        member.vault.subject,
+        project,
+        "project-overview",
+      ),
+    },
+    administrator.authority,
+  );
   async function backup() {
     return required(operator.mutate("admin.storage.snapshots.create", {
       tenant: owner.tenant,
@@ -377,6 +396,13 @@ async function exerciseProjectClosure(
   }, fresh));
   assert.equal(reply.unchanged, false);
   assert.equal(reply.domains.some(({ id }) => id === files.domain), false);
+  const [staleResult, staleError] = await ownerClient.mutate(
+    "zerotrust.policy.replace",
+    staleProjectRole,
+  );
+  assert.equal(staleResult, null, "A prepared role cannot grant access after the project was deleted");
+  assert.ok(staleError instanceof RpcClientError);
+  assert.equal(staleError.code, "FORBIDDEN");
   assert.equal((await required(ownerClient.query("zerotrust.policy.get", undefined, fresh))).signature, policies.signature);
   const confirmed = await required(ownerClient.query("zerotrust.objects.get", { id: root.prefix }, fresh));
   assert.equal(confirmed.format, TOMBSTONE_FORMAT);

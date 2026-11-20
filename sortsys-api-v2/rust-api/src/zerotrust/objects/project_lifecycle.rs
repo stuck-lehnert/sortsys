@@ -1,9 +1,10 @@
 //! Project closure is derived from the signed canonical tombstone in the
 //! selected content view. The per-transaction read also fences racing writes.
 use super::{Facet, Id, RpcResult, SaveInput, forbidden, invalid, persistence};
+use super::super::wire::{Effect, Rule};
 use crate::control::Transaction;
 use sortsys_zerotrust::metadata::RecordKey;
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 
 pub(in crate::zerotrust) fn project_scope(scope: &str) -> Option<&str> {
     let rest = scope.strip_prefix("project:")?;
@@ -65,6 +66,16 @@ pub(super) async fn closed<'a>(
     let projects: BTreeSet<_> = areas
         .filter_map(|(scope, facet)| dependent_project(scope, facet))
         .collect();
+    closed_roots(transaction, projects).await
+}
+
+async fn closed_roots(
+    transaction: &mut Transaction,
+    projects: BTreeSet<&str>,
+) -> RpcResult<BTreeSet<String>> {
+    if projects.is_empty() {
+        return Ok(BTreeSet::new());
+    }
     let records = transaction
         .many(
             projects
@@ -80,6 +91,72 @@ pub(super) async fn closed<'a>(
         }
     }
     Ok(result)
+}
+
+#[derive(PartialEq, Eq, Hash)]
+struct ProjectPermission<'a> {
+    project: &'a str,
+    subject: &'a str,
+    scope: &'a str,
+    facet: &'static str,
+}
+
+fn project_permissions<'a>(
+    rules: impl Iterator<Item = &'a Rule>,
+) -> HashMap<ProjectPermission<'a>, u8> {
+    let mut permissions = HashMap::<_, (u8, u8)>::new();
+    for rule in rules {
+        let Some(project) = project_scope(&rule.scope) else {
+            continue;
+        };
+        let (allowed, denied) = permissions
+            .entry(ProjectPermission {
+                project,
+                subject: &rule.subject,
+                scope: &rule.scope,
+                facet: rule.facet.name(),
+            })
+            .or_default();
+        let mask = rule.actions.iter().fold(0, |mask, action| mask | action.bit());
+        match rule.effect {
+            Effect::Allow => *allowed |= mask,
+            Effect::Deny => *denied |= mask,
+        }
+    }
+    permissions
+        .into_iter()
+        .map(|(permission, (allowed, denied))| (permission, allowed & !denied))
+        .collect()
+}
+
+fn projects_with_added_rights<'a>(
+    previous: &'a [Rule],
+    next: &'a [Rule],
+    inherited: &'a [Rule],
+) -> BTreeSet<&'a str> {
+    let old = project_permissions(previous.iter().chain(inherited));
+    project_permissions(next.iter().chain(inherited))
+        .into_iter()
+        .filter(|(permission, allowed)| {
+            allowed & !old.get(permission).copied().unwrap_or(0) != 0
+        })
+        .map(|(permission, _)| permission.project)
+        .collect()
+}
+
+pub(super) async fn require_active_grants(
+    transaction: &mut Transaction,
+    previous: &[Rule],
+    next: &[Rule],
+    inherited: &[Rule],
+) -> RpcResult<()> {
+    let projects = projects_with_added_rights(previous, next, inherited);
+    // Keep existing root readers able to verify the tombstone. A policy that
+    // expands access must read the roots in the same transaction as its write.
+    if !closed_roots(transaction, projects).await?.is_empty() {
+        return Err(forbidden());
+    }
+    Ok(())
 }
 
 pub(in crate::zerotrust) async fn is_active(

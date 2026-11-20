@@ -876,6 +876,13 @@ pub(in crate::zerotrust) async fn replace_policy(
     {
         return Err(conflict());
     }
+    super::project_lifecycle::require_active_grants(
+        transaction,
+        &guard.policy.rules,
+        &input.rules,
+        &guard.inherited,
+    )
+    .await?;
     publish_policy_version(transaction, guard, input).await
 }
 

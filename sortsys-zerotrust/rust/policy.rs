@@ -222,6 +222,17 @@ impl Action {
             Self::Grant => "grant",
         }
     }
+
+    pub fn bit(self) -> u8 {
+        match self {
+            Self::Read => 1,
+            Self::Create => 2,
+            Self::Update => 4,
+            Self::Delete => 8,
+            Self::Approve => 16,
+            Self::Grant => 32,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]

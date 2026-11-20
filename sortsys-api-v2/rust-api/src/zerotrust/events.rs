@@ -528,16 +528,6 @@ async fn verify_admission(
 fn scope_key(scope: &str, facet: &str) -> [u8; 32] {
     Sha256::digest(frame("sortsys/event-scope/v1", &[scope, facet])).into()
 }
-fn action_bit(action: Action) -> u8 {
-    match action {
-        Action::Read => 1,
-        Action::Create => 2,
-        Action::Update => 4,
-        Action::Delete => 8,
-        Action::Approve => 16,
-        Action::Grant => 32,
-    }
-}
 fn capabilities(
     policy: &super::wire::SignedPolicy,
     subject: &str,
@@ -559,7 +549,7 @@ fn capabilities(
         let mask = rule
             .actions
             .iter()
-            .fold(0, |mask, action| mask | action_bit(*action));
+            .fold(0, |mask, action| mask | action.bit());
         let target = if rule.effect == Effect::Deny {
             &mut denied
         } else {
@@ -646,7 +636,7 @@ async fn snapshot_after_changes(
             .get(&scope_key(&area.scope, area.facet.name()))
             .copied()
             .unwrap_or(0);
-        actions & action_bit(Action::Read) != 0
+        actions & Action::Read.bit() != 0
     })
     .await?
     .into_iter()

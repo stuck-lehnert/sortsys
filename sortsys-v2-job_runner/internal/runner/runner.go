@@ -74,15 +74,11 @@ type thumbnailJobPayload struct {
 	SourceObjectKey        string            `json:"sourceObjectKey"`
 	SourceMimeType         string            `json:"sourceMimeType"`
 	SourceFileName         string            `json:"sourceFileName"`
-	SourceWebpFileName     string            `json:"sourceWebpFileName"`
 	ThumbnailObjectKey     string            `json:"thumbnailObjectKey"`
 	ThumbnailMimeType      string            `json:"thumbnailMimeType"`
 	MaxWidth               int               `json:"maxWidth"`
 	MaxHeight              int               `json:"maxHeight"`
 	SourceDownloadURL      string            `json:"sourceDownloadUrl"`
-	SourceUploadURL        string            `json:"sourceUploadUrl"`
-	SourceUploadMethod     string            `json:"sourceUploadMethod"`
-	SourceUploadHeaders    map[string]string `json:"sourceUploadHeaders"`
 	ThumbnailUploadURL     string            `json:"thumbnailUploadUrl"`
 	ThumbnailUploadMethod  string            `json:"thumbnailUploadMethod"`
 	ThumbnailUploadHeaders map[string]string `json:"thumbnailUploadHeaders"`
@@ -109,10 +105,6 @@ type completePayload struct {
 type thumbnailCompleteResult struct {
 	ThumbnailObjectKey string `json:"thumbnailObjectKey"`
 	ThumbnailMimeType  string `json:"thumbnailMimeType"`
-	SourceMimeType     string `json:"sourceMimeType,omitempty"`
-	SourceFileName     string `json:"sourceFileName,omitempty"`
-	SourceSizeBytes    int64  `json:"sourceSizeBytes,omitempty"`
-	SourceETag         string `json:"sourceEtag,omitempty"`
 	Width              int    `json:"width"`
 	Height             int    `json:"height"`
 	SizeBytes          int64  `json:"sizeBytes"`
@@ -363,9 +355,6 @@ func (r *Runner) generateAndUploadThumbnail(ctx context.Context, payload thumbna
 	if payload.SourceDownloadURL == "" {
 		return thumbnailCompleteResult{}, fmt.Errorf("missing sourceDownloadUrl")
 	}
-	if payload.SourceUploadURL == "" {
-		return thumbnailCompleteResult{}, fmt.Errorf("missing sourceUploadUrl")
-	}
 	if payload.ThumbnailUploadURL == "" {
 		return thumbnailCompleteResult{}, fmt.Errorf("missing thumbnailUploadUrl")
 	}
@@ -380,16 +369,6 @@ func (r *Runner) generateAndUploadThumbnail(ctx context.Context, payload thumbna
 	}
 
 	sourceBytes, err := r.downloadBytes(ctx, payload.SourceDownloadURL)
-	if err != nil {
-		return thumbnailCompleteResult{}, err
-	}
-
-	sourceWebp, err := ConvertToWebP(sourceBytes)
-	if err != nil {
-		return thumbnailCompleteResult{}, err
-	}
-
-	sourceETag, err := r.uploadSourceImage(ctx, payload, sourceWebp.Data)
 	if err != nil {
 		return thumbnailCompleteResult{}, err
 	}
@@ -409,10 +388,6 @@ func (r *Runner) generateAndUploadThumbnail(ctx context.Context, payload thumbna
 	return thumbnailCompleteResult{
 		ThumbnailObjectKey: payload.ThumbnailObjectKey,
 		ThumbnailMimeType:  mimeType,
-		SourceMimeType:     "image/webp",
-		SourceFileName:     normalizedWebpFileName(payload),
-		SourceSizeBytes:    int64(len(sourceWebp.Data)),
-		SourceETag:         strings.Trim(sourceETag, `"`),
 		Width:              thumb.Width,
 		Height:             thumb.Height,
 		SizeBytes:          int64(len(thumb.Data)),
@@ -490,7 +465,11 @@ func (r *Runner) uploadThumbnail(ctx context.Context, payload thumbnailJobPayloa
 		method = http.MethodPut
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, payload.ThumbnailUploadURL, bytes.NewReader(data))
+	target, err := r.uploadURL(payload.ThumbnailUploadURL)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("build thumbnail upload request: %w", err)
 	}
@@ -514,43 +493,17 @@ func (r *Runner) uploadThumbnail(ctx context.Context, payload thumbnailJobPayloa
 	return resp.Header.Get("ETag"), nil
 }
 
-func (r *Runner) uploadSourceImage(ctx context.Context, payload thumbnailJobPayload, data []byte) (string, error) {
-	method := payload.SourceUploadMethod
-	if method == "" {
-		method = http.MethodPut
-	}
-
-	req, err := http.NewRequestWithContext(ctx, method, payload.SourceUploadURL, bytes.NewReader(data))
-	if err != nil {
-		return "", fmt.Errorf("build source upload request: %w", err)
-	}
-
-	for key, value := range payload.SourceUploadHeaders {
-		req.Header.Set(key, value)
-	}
-	req.Header.Set("Content-Type", "image/webp")
-
-	resp, err := r.httpClient.Do(req)
-	if err != nil {
-		return "", fmt.Errorf("upload source image: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		body, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return "", fmt.Errorf("source upload returned status %d (%s)", resp.StatusCode, strings.TrimSpace(string(body)))
-	}
-
-	return resp.Header.Get("ETag"), nil
-}
-
 func (r *Runner) uploadTenantLogo(ctx context.Context, payload tenantLogoJobPayload, data []byte) (string, error) {
 	method := payload.LogoUploadMethod
 	if method == "" {
 		method = http.MethodPut
 	}
 
-	req, err := http.NewRequestWithContext(ctx, method, payload.LogoUploadURL, bytes.NewReader(data))
+	target, err := r.uploadURL(payload.LogoUploadURL)
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, method, target, bytes.NewReader(data))
 	if err != nil {
 		return "", fmt.Errorf("build tenant logo upload request: %w", err)
 	}
@@ -572,35 +525,6 @@ func (r *Runner) uploadTenantLogo(ctx context.Context, payload tenantLogoJobPayl
 	}
 
 	return resp.Header.Get("ETag"), nil
-}
-
-func normalizedWebpFileName(payload thumbnailJobPayload) string {
-	value := strings.TrimSpace(payload.SourceWebpFileName)
-	if value != "" {
-		return value
-	}
-
-	name := strings.TrimSpace(payload.SourceFileName)
-	if name == "" {
-		return "image.webp"
-	}
-
-	lastSlash := strings.LastIndexAny(name, `/\\`)
-	lastDot := strings.LastIndex(name, ".")
-	if lastDot > lastSlash {
-		name = name[:lastDot]
-	}
-
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return "image.webp"
-	}
-
-	if len(name) > 250 {
-		name = name[:250]
-	}
-
-	return name + ".webp"
 }
 
 func normalizedLogoWebpFileName(payload tenantLogoJobPayload) string {

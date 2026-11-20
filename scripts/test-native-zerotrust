@@ -1,0 +1,176 @@
+#!/usr/bin/env python3
+"""Isolated native PostgreSQL/Quack checks; no Docker or development stack."""
+import contextlib
+import json
+import os
+from pathlib import Path
+import secrets
+import shlex
+import shutil
+import signal
+import socket
+import subprocess
+import sys
+import tempfile
+import time
+import urllib.error
+import urllib.parse
+import urllib.request
+
+WORKSPACE = Path(__file__).resolve().parent.parent
+API = WORKSPACE / "sortsys-api-v2"
+
+
+def stop(process):
+    if process is None:
+        return
+    # A failed test parent may already have exited while one of its children
+    # is still shutting down. Every group here was created by this runner.
+    with contextlib.suppress(ProcessLookupError):
+        os.killpg(process.pid, signal.SIGTERM)
+    if process.poll() is None:
+        try:
+            process.wait(timeout=15)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(process.pid, signal.SIGKILL)
+            process.wait(timeout=5)
+
+
+def command(arguments, env, log):
+    result = subprocess.run(arguments, cwd=API, env=env, stdout=log, stderr=subprocess.STDOUT, check=False)
+    if result.returncode:
+        raise RuntimeError(f"Befehl fehlgeschlagen ({result.returncode}): {arguments[0]}")
+
+
+def main():
+    test_filter = os.environ.get("SORTSYS_NATIVE_TEST_FILTER", "zerotrust::")
+    if not test_filter.startswith("zerotrust::") or len(test_filter) > 200 or any(
+        not (character.isascii() and (character.isalnum() or character in "_:"))
+        for character in test_filter
+    ):
+        raise RuntimeError("SORTSYS_NATIVE_TEST_FILTER muss einen zerotrust::-Test auswählen")
+    for name in ["cargo"]:
+        if shutil.which(name) is None:
+            raise RuntimeError(f"Voraussetzung fehlt: {name}")
+    pg = os.environ.get("SORTSYS_NATIVE_PG_BINDIR")
+    if pg is None:
+        initdb = shutil.which("initdb")
+        if initdb is None:
+            raise RuntimeError("PostgreSQL fehlt; SORTSYS_NATIVE_PG_BINDIR auf sein bin-Verzeichnis setzen")
+        pg = str(Path(initdb).parent)
+    pg = Path(pg)
+    for name in ["initdb", "pg_ctl", "postgres"]:
+        if not (pg / name).is_file():
+            raise RuntimeError(f"PostgreSQL-Programm fehlt: {pg / name}")
+    if not os.environ.get("DUCKDB_EXTENSION_DIRECTORY"):
+        raise RuntimeError("DUCKDB_EXTENSION_DIRECTORY mit httpfs und quack wird benötigt")
+    bun = shutil.which(os.environ.get("SORTSYS_NATIVE_BUN", "bun"))
+    if bun is None:
+        raise RuntimeError("Bun fehlt; SORTSYS_NATIVE_BUN auf das Programm setzen")
+    root = Path(tempfile.mkdtemp(prefix="sortsys-native-zerotrust-", dir="/tmp"))
+    print(f"Isolierter Testlauf; Protokolle: {root}", flush=True)
+    env = os.environ.copy()
+    # All database names and all storage files belong to this new test cluster.
+    # No inherited production database or datastore configuration is used.
+    process = None
+    quack = None
+    success = False
+    with (root / "run.log").open("w") as log:
+        try:
+            command(["cargo", "build", "--manifest-path", str(WORKSPACE / "sortsys-store/Cargo.toml"), "--locked", "--bin", "sortsys-duckdb"], env, log)
+            metadata = json.loads(subprocess.check_output(["cargo", "metadata", "--manifest-path", str(WORKSPACE / "sortsys-store/Cargo.toml"), "--no-deps", "--format-version=1"], cwd=API, env=env))
+            binary = Path(metadata["target_directory"]) / "debug" / "sortsys-duckdb"
+            # Reserve simultaneously to get three distinct candidate ports.
+            with contextlib.ExitStack() as stack:
+                sockets = [stack.enter_context(socket.socket()) for _ in range(3)]
+                for connection in sockets:
+                    connection.bind(("127.0.0.1", 0))
+                pg_port, quack_port, control_port = [connection.getsockname()[1] for connection in sockets]
+            (root / "socket").mkdir(mode=0o700)
+            command([str(pg / "initdb"), "-D", str(root / "pg"), "--username=sortsys_native_test", "--no-locale", "-E", "UTF8", "-A", "trust", "--no-sync"], env, log)
+            options = shlex.join(["-k", str(root / "socket"), "-c", "listen_addresses=", "-p", str(pg_port)])
+            command([str(pg / "pg_ctl"), "-D", str(root / "pg"), "-l", str(root / "pg.log"), "-o", options, "-w", "-t", "15", "start"], env, log)
+            env.update({
+                "SORTSYS_NATIVE_BUN": bun,
+                "SORTSYS_DISPOSABLE_NATIVE_TEST": "1",
+                "SORTSYS_NATIVE_TEST_DIRECTORY": str(root),
+                "DUCKDB_DATA_DIRECTORY": str(root / "duckdb"),
+                "DUCKDB_SERVICE_TOKEN": secrets.token_urlsafe(32),
+                "DUCKDB_QUACK_LISTEN": f"127.0.0.1:{quack_port}",
+                "DUCKDB_CONTROL_LISTEN": f"127.0.0.1:{control_port}",
+                "DUCKDB_QUACK_URI": f"quack:127.0.0.1:{quack_port}",
+                "DUCKDB_CONTROL_URL": f"http://127.0.0.1:{control_port}",
+                "DUCKDB_QUACK_DISABLE_SSL": "true",
+                "PG_MASTER_DSN": "postgresql:///postgres?" + urllib.parse.urlencode({"host": str(root / "socket"), "user": "sortsys_native_test", "port": pg_port}),
+                "JWT_SECRET": secrets.token_urlsafe(32),
+                "ADMIN_HASH": "unused-isolated-administrator-hash",
+                "NODE_ENV": "development", "AUTO_BACKUPS_ENABLED": "false",
+                "JOB_RUNNER_TOKEN": secrets.token_urlsafe(32),
+                # Unexpected S3 requests fail. The legacy-file scenario supplies
+                # its own read-only HTTP fixture for the original source files;
+                # this runner does not replace S3 compatibility tests.
+                "TEST_S3_ENDPOINT": "http://127.0.0.1:1",
+                "TEST_S3_REGION": "us-east-1", "TEST_S3_BUCKET": "unused-native-scenario",
+                "TEST_S3_ACCESS_KEY_ID": "synthetic-test-key", "TEST_S3_SECRET_ACCESS_KEY": "synthetic-test-secret",
+            })
+            with (root / "quack.log").open("w") as quack_log, (root / "tests.log").open("w") as tests_log:
+                quack = subprocess.Popen([str(binary)], cwd=API, env=env, stdout=quack_log, stderr=subprocess.STDOUT, start_new_session=True)
+                deadline = time.monotonic() + 30
+                while True:
+                    if quack.poll() is not None:
+                        raise RuntimeError("DuckDB wurde beim Start beendet; quack.log prüfen")
+                    try:
+                        with urllib.request.urlopen(env["DUCKDB_CONTROL_URL"] + "/health", timeout=1) as response:
+                            if response.status == 200:
+                                break
+                    except (OSError, urllib.error.URLError):
+                        pass
+                    if time.monotonic() > deadline:
+                        raise RuntimeError("DuckDB ist nicht rechtzeitig bereit")
+                    time.sleep(0.1)
+                process = subprocess.Popen(["cargo", "test", "--locked", "--test", "network_scenarios", test_filter, "--", "--include-ignored", "--test-threads=1", "--nocapture"], cwd=API, env=env, stdout=tests_log, stderr=subprocess.STDOUT, start_new_session=True)
+                result = process.wait()
+                if result:
+                    raise RuntimeError(f"Native Mehrinstanztests fehlgeschlagen ({result}); tests.log prüfen")
+                success = True
+                print((root / "tests.log").read_text(), end="", flush=True)
+        finally:
+            signal.signal(signal.SIGINT, signal.SIG_IGN)
+            signal.signal(signal.SIGTERM, signal.SIG_IGN)
+            failures = []
+            for child in [process, quack]:
+                try:
+                    stop(child)
+                except (OSError, subprocess.SubprocessError) as error:
+                    failures.append(str(error))
+            try:
+                if (root / "pg" / "postmaster.pid").exists():
+                    command([str(pg / "pg_ctl"), "-D", str(root / "pg"), "-m", "fast", "-w", "-t", "15", "stop"], env, log)
+            except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+                failures.append(str(error))
+            if (root / "pg" / "postmaster.pid").exists():
+                failures.append("PostgreSQL-PID-Datei blieb bestehen")
+            if not failures and success:
+                for directory in ["pg", "duckdb", "socket"]:
+                    shutil.rmtree(root / directory, ignore_errors=False)
+            (root / "cleanup.json").write_text(json.dumps({"servicesStopped": not failures, "dataKept": not success, "errors": failures}) + "\n")
+            if failures:
+                raise RuntimeError(f"Testdienste nicht vollständig beendet: {root}")
+            print("Testdienste beendet; Protokolle bleiben im angegebenen Verzeichnis.", flush=True)
+
+
+def interrupt(_signal, _frame):
+    raise KeyboardInterrupt()
+
+
+if __name__ == "__main__":
+    signal.signal(signal.SIGTERM, interrupt)
+    try:
+        main()
+    except KeyboardInterrupt:
+        print("Testlauf unterbrochen.", file=sys.stderr)
+        sys.exit(130)
+    except (RuntimeError, OSError, subprocess.SubprocessError) as error:
+        print(str(error), file=sys.stderr)
+        sys.exit(1)

@@ -4,3 +4,5 @@ testdata/
 .env
 .dev-data/
 sortsys-react-components/node_modules/
+__pycache__/
+dist/
