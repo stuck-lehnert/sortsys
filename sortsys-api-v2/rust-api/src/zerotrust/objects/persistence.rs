@@ -929,10 +929,22 @@ async fn commit_batch_inner(
     }
     let mut stale = false;
     if let Some(heads) = &input.heads {
+        let tool_rates = super::tool_rate_sources::BookingRateGuards::new(&input.objects);
+        let mut rate_sources = Vec::new();
         for head in heads {
             let area = areas.get(&head.domain).ok_or_else(invalid)?;
-            require_read(&context.security, area)?;
-            stale |= area.content_sequence(content_number)? != head.sequence;
+            let matches = area.content_sequence(content_number)? == head.sequence;
+            if tool_rates.allows(&context.security, area) {
+                if matches {
+                    rate_sources.push(area);
+                }
+            } else {
+                require_read(&context.security, area)?;
+            }
+            stale |= !matches;
+        }
+        if !stale {
+            super::tool_rate_sources::retain(&mut context.transaction, rate_sources).await?;
         }
     }
     if stale {

@@ -17,6 +17,7 @@ pub(super) mod project_lifecycle;
 pub(super) use access_inventory::check_snapshot as metadata_check_inventory_snapshot;
 pub(super) use project_lifecycle::root_record_for_domain as project_root_record_for_domain;
 pub(super) mod registry;
+mod tool_rate_sources;
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
@@ -482,6 +483,7 @@ pub(crate) fn register_metadata(
     service: Arc<crate::auth::AuthService>,
 ) -> ProcedureRegistryBuilder {
     let builder = registry::register(builder, Arc::clone(&service));
+    let builder = tool_rate_sources::register(builder, Arc::clone(&service));
     persistence::register(builder, service)
 }
 pub(super) fn register_creation(
@@ -506,7 +508,7 @@ pub(super) async fn metadata_current_domain(
     Ok(area)
 }
 pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
-    builder
+    tool_rate_sources::register_contract(builder)
         .query_stub::<KeyAuthorityInput, KeyAuthority>("zerotrust.keyAuthorities.get")
         .query_stub::<KeyAuthorityAreaInput, Option<KeyAuthority>>(
             "zerotrust.keyAuthorities.forArea",

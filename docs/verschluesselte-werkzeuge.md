@@ -223,8 +223,10 @@ Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
   der Wechsel für den jeweiligen Bereich vorgemerkt. Weitere Schreibvorgänge
   in diesem Bereich warten bis zur Schlüsselerneuerung.
 - Eine neue Ausgabe und die Annahme einer Umbuchung benötigen derzeit Zugriff
-  auf die Werkzeugkosten, um den historischen Kostenstand anzulegen. Eine
-  Übernahme dieses Kostenstands ohne Entschlüsselung ist noch anzuschließen.
+  auf die Werkzeugkosten. Die API kann für eine Ausgabe bereits einen Verweis
+  auf die genaue verschlüsselte Preisfassung festhalten. Den Preisbeleg kann
+  nur ein Konto mit Lesefreigabe für Werkzeugkosten abrufen. Ausgabe,
+  Umbuchung und Projektkosten verwenden diesen Weg noch nicht.
 - Die gemeinsame lokale Suche unterstützt Wortpräfixe. Der vollständige
   Vergleich mit der bisherigen PostgreSQL-Textsuche steht noch aus.
 

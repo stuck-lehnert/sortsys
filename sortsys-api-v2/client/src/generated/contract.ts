@@ -429,6 +429,8 @@ export type QueryInputs = {
   "zerotrust.stock.deleted": { object: string, };
   "zerotrust.stock.references": { objects: Array<string>, prepared?: PreparedView, };
   "zerotrust.timestamps.get": { scope: string, object: string, revision: string, };
+  "zerotrust.toolRates.historical": { tool: Id, reference: string, };
+  "zerotrust.toolRates.references": { tools: Array<Id>, };
   "zerotrust.toolReturns.lookup": { verificationKeys: Array<string>, };
   "zerotrust.trust.history": void;
 };
@@ -586,6 +588,8 @@ export type QueryOutputs = {
   "zerotrust.stock.deleted": { object: string, deletion: StockDeletion, references: StockReferences, } | null;
   "zerotrust.stock.references": Array<{ object: string, references: StockReferences, vendorDeletion: StockDeletion | null, }>;
   "zerotrust.timestamps.get": { target: Target, artifact: JsonValue, proofs: Array<string>, } | null;
+  "zerotrust.toolRates.historical": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
+  "zerotrust.toolRates.references": Array<{ tool: Id, reference: string, sequence: string, }>;
   "zerotrust.toolReturns.lookup": Array<{ tenant: string, purpose: string, revision: string, issuedAt: string, verificationKey: string, signature: string, } | null>;
   "zerotrust.trust.history": { authorities: Array<AuthorityHistory>, identities: Array<IdentityCertificate>, };
 };
@@ -1175,6 +1179,8 @@ const queryProcedures = new Set<string>([
   "zerotrust.stock.deleted",
   "zerotrust.stock.references",
   "zerotrust.timestamps.get",
+  "zerotrust.toolRates.historical",
+  "zerotrust.toolRates.references",
   "zerotrust.toolReturns.lookup",
   "zerotrust.trust.history",
 ]);
