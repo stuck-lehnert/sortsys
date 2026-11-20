@@ -169,9 +169,15 @@ Anhänge lesen** umfasst die Projektgrunddaten und Dateien. Mit
 sowie Dateien lesen und hochladen. **Bauleitung** umfasst außerdem die
 Einsatzplanung, Lieferscheine und die Regiestunden.
 
-**Einzelrechte ergänzen** trägt die Vorlage in die Felder des ausgewählten
-Projekts ein. Dort lassen sich die Einträge prüfen oder ändern. Die neue
-Freigabe wird mit **Projektzugriff speichern** wirksam. Rechte für Kosten,
+Die Auswahl zeigt, welche Rechte für das Projekt gelten würden. Mit
+**Projektzugriff speichern** wird die Vorlage dem Konto zugewiesen. Unter
+**Keine Vorlage** lässt sich die Zuweisung wieder entziehen. Einzelfreigaben
+gelten auch nach einem Vorlagenwechsel. Eine ausdrückliche Sperre hat Vorrang.
+
+**Aus Projektvorlage übernehmen** entfernt beim Speichern die individuellen
+Entscheidungen zum Lesen, Anlegen, Bearbeiten und Löschen für das gewählte
+Feld. Frühere Vorlagen, die als Einzelrechte gespeichert wurden, lassen sich
+auf diesem Weg auf die aktuelle Vorlage zurückführen. Rechte für Kosten,
 Rechnungen, Löschung und Freigabeverwaltung werden separat vergeben.
 
 ## Bautagesberichte und Arbeitskosten

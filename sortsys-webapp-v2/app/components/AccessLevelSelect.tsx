@@ -26,13 +26,17 @@ export function AccessLevelSelect({
 }: {
   label: string;
   value: AccessValue;
-  onChange(value: AccessValue, actions: readonly ManagedAction[]): void;
+  onChange(
+    value: AccessValue,
+    actions: readonly ManagedAction[],
+    kind: "preset" | "action",
+  ): void;
   disabled?: boolean;
   noneLabel?: string;
   individual?: boolean;
   actions?: readonly ManagedAction[];
   allowManagement?: boolean;
-  roleAccess?: { pending: boolean; select(): void };
+  roleAccess?: { pending: boolean; label?: string; select(): void };
 }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
@@ -75,7 +79,7 @@ export function AccessLevelSelect({
             }
             if (next === "none" || next === "read" || next === "write") {
               setExpanded(false);
-              onChange(withActions(value, profilePatch(next)), ACTIONS);
+              onChange(withActions(value, profilePatch(next)), ACTIONS, "preset");
             }
           }}
         >
@@ -92,7 +96,10 @@ export function AccessLevelSelect({
           {roleAccess && (
             <SelectItem
               value="roles"
-              text={uiText("Aus Fachrollen übernehmen", "Use business roles")}
+              text={
+                roleAccess.label ??
+                uiText("Aus Fachrollen übernehmen", "Use business roles")
+              }
             />
           )}
         </Select>
@@ -116,6 +123,7 @@ export function AccessLevelSelect({
                 onChange(
                   withActions(value, { [action]: event.target.checked }),
                   [action],
+                  "action",
                 )
               }
             />

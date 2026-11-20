@@ -47,8 +47,8 @@ import {
   accessChanged,
   accessDraft,
   accessDrafts,
-  DATA_ACTIONS,
   editAccessDraft,
+  inheritDataActions,
   MASTER_DATA_FIELDS,
   type AccessDraft,
   type MasterDataField,
@@ -226,9 +226,7 @@ export default function OrganizationInvitations({
     const actions: MemberAccessEdits["actions"] = {};
     for (const key of MASTER_DATA_FIELDS) {
       if (drafts[key].useRoleAccess) {
-        actions[key] = Object.fromEntries(
-          DATA_ACTIONS.map((action) => [action, null]),
-        );
+        actions[key] = inheritDataActions;
       } else if (accessChanged(drafts[key])) {
         actions[key] = drafts[key].patch;
       }

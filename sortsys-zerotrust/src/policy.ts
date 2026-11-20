@@ -3,9 +3,8 @@ import { absenceDomain } from "./absenceRecords";
 import { type Facet, FACETS } from "./objects";
 import { createPolicyCodec } from "./core/policy";
 import {
-  isOrganizationRole,
-  validateOrganizationRoleRule,
-  validateOrganizationRoleSets,
+  validateAccessRoleRule,
+  validateAccessRoleSets,
   type RuleOrigin,
 } from "./organizationRoles";
 import type {
@@ -39,9 +38,8 @@ function validateSuspendedSubject(subject: string): void {
 }
 
 function validateRuleOrigin(rule: Rule): void {
-  if (rule.origin && isOrganizationRole(rule.origin)) {
+  if (validateAccessRoleRule(rule)) {
     validateSuspendedSubject(rule.subject);
-    validateOrganizationRoleRule(rule, rule.origin);
     return;
   }
   if (
@@ -81,7 +79,7 @@ export const sortsysPolicyCodec = createPolicyCodec<Facet, RuleOrigin>(
   FACETS,
   {
     validateRuleOrigin,
-    validateRules: validateOrganizationRoleSets,
+    validateRules: validateAccessRoleSets,
     validateSuspendedSubject,
   },
 );

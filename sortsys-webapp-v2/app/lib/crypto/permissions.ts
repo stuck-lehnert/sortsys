@@ -14,12 +14,14 @@ import {
   identityCertificateFrame,
   identityCertificate,
   record,
+  replaceProjectRole,
   verify,
 } from "@sortsys/zerotrust/sortsys";
 import type {
   CreationNamespace,
   IdentityCertificate,
   Policy,
+  ProjectRole,
   Rule,
 } from "@sortsys/zerotrust/sortsys";
 import { publishVerifiedPolicy, readVerifiedPolicy } from "./policy";
@@ -82,6 +84,10 @@ import {
   parseOrganizationRolePatch,
   type OrganizationRolePatch,
 } from "./organizationRoleAccess";
+import {
+  assignedProjectRole,
+  projectRoleAccessAreas,
+} from "./projectAccessPresets";
 
 export type MemberAccess = ManagedAccess;
 
@@ -201,6 +207,20 @@ export async function memberProjectAccesses(
     if (value !== "none") (result[part.key] ??= {})[part.id] = value;
   }
   return result;
+}
+export async function memberProjectPolicy(
+  client: Client,
+  user: string,
+  signal: AbortSignal,
+): Promise<Policy> {
+  const { effective } = await memberPolicyContext(client, user, signal);
+  return {
+    ...effective,
+    rules: effective.rules.filter(
+      (rule) =>
+        rule.subject === user && projectAccessDomain(`${rule.scope}:${rule.facet}`),
+    ),
+  };
 }
 export async function memberProjectAccess(
   client: Client,
@@ -595,14 +615,53 @@ export async function changeAreaActionAccesses(
   );
   await publishActionChanges(client, user, changes, context, signal);
 }
+
+export async function changeProjectAccessSettings(
+  client: Client,
+  user: string,
+  projectId: string,
+  role: ProjectRole | null | undefined,
+  changes: readonly AreaActionChange<RuleDecisionPatch>[],
+  signal: AbortSignal,
+) {
+  const context = await administrator(client, signal, [
+    ...changes.map(({ area }) => area.domain),
+    ...(role === undefined
+      ? []
+      : projectRoleAccessAreas(projectId).map(({ domain }) => domain)),
+  ]);
+  const assignRoles = role === undefined
+    ? undefined
+    : (rules: readonly Rule[]) => {
+        const previous = assignedProjectRole(rules, user, projectId);
+        if (previous === role) return { rules: [...rules], areas: [] };
+
+        const affected = [previous, role].filter(
+          (value): value is ProjectRole => value !== null,
+        );
+        return {
+          rules: replaceProjectRole(rules, user, projectId, role),
+          areas: projectRoleAccessAreas(projectId, affected),
+        };
+      };
+  await publishActionChanges(client, user, changes, context, signal, {
+    assignRoles,
+  });
+}
+
 async function publishActionChanges(
   client: Client,
   user: string,
   changes: readonly AreaActionChange<RuleDecisionPatch>[],
   context: Awaited<ReturnType<typeof administrator>>,
   signal: AbortSignal,
-  assistant?: boolean,
-  roles?: OrganizationRolePatch,
+  { assistant, assignRoles }: {
+    assistant?: boolean;
+    assignRoles?: (rules: readonly Rule[]) => {
+      rules: Rule[];
+      areas: Collection[];
+    };
+  } = {},
 ): Promise<void> {
   const owner = `user:${context.session.user.id}`;
   if (
@@ -613,8 +672,8 @@ async function publishActionChanges(
     throw new InvalidProtectedData();
   let rules = patchAccessRules(context.permissions.rules, user, changes);
   const areas = new Map(changes.map(({ area }) => [area.domain, area]));
-  if (roles) {
-    const assignment = editOrganizationRoles(rules, user, roles);
+  if (assignRoles) {
+    const assignment = assignRoles(rules);
     rules = assignment.rules;
     for (const area of assignment.areas) areas.set(area.domain, area);
   }
@@ -807,13 +866,9 @@ export async function changeMemberAccess(
     const enabled = canUseAssistant(user, permitted.allows);
     if (access.assistant !== enabled) assistant = access.assistant;
   }
-  return publishActionChanges(
-    client,
-    user,
-    changes,
-    context,
-    signal,
+  const roles = edits?.roles;
+  return publishActionChanges(client, user, changes, context, signal, {
     assistant,
-    edits?.roles,
-  );
+    assignRoles: roles && ((rules) => editOrganizationRoles(rules, user, roles)),
+  });
 }

@@ -35,6 +35,9 @@ export type AccessValue = AccessLevel | { readonly actions: readonly Action[] };
 export type ActionPatch = Partial<Record<Action, boolean>>;
 // A null decision lets the remaining policy rules apply to that action.
 export type RuleDecisionPatch = Partial<Record<Action, boolean | null>>;
+export const inheritDataActions: Readonly<RuleDecisionPatch> = Object.freeze(
+  Object.fromEntries(DATA_ACTIONS.map((action) => [action, null])),
+);
 export type ManagedAccess = {
   [key in MasterDataField]: AccessValue;
 } & { assistant: boolean };

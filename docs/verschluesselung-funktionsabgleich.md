@@ -90,12 +90,16 @@ aktuelle Rechte; mehrere Bereiche werden gemeinsam signiert. Fachliche
 Bedingungen über Geheimwerte prüft der Client. Die unabhängige Löschung von
 Unterzeilen benötigt teils noch feiner aufgeteilte Objekte.
 
-Im Projektzugriff ergänzt eine Vorlage die Einzelrechte etwa für
-Baustellendokumentation oder Bauleitung. Die Verwaltung prüft den Entwurf
-vor dem Speichern. Im Chromium-Test mit zwei API-Instanzen konnte ein
+Im Projektzugriff bündelt eine Vorlage die Rechte für Baustellendokumentation
+oder Bauleitung. Die Verwaltung prüft den Entwurf vor dem Speichern. Die
+signierte Zuweisung gilt für ein Konto und ein Projekt. Ein Vorlagenwechsel
+entfernt dessen bisherige Vorlagenrechte. Eigene Freigaben und Sperren
+gelten unabhängig davon. Im Chromium-Test mit zwei API-Instanzen konnte ein
 Mitarbeiter nach der Freigabe einen Bautagesbericht samt Foto öffnen und
 den Bericht bearbeiten. Die Löschaktion blieb gesperrt. Nach dem Entzug
-verschwand der Bericht aus der laufenden Sitzung. Siehe
+des Berichtszugriffs verschwand der Bericht aus der laufenden Sitzung.
+Nach dem Wechsel und Entzug der Vorlage konnte das Konto das separat
+freigegebene Foto weiterhin in der Projektablage öffnen. Siehe
 [Projektfreigaben](menues-und-datenfreigaben.md#freigabevorlagen-für-projekte).
 
 Die Rollen Büro und Einkauf decken gemeinsame Kataloge ab. Die Verwaltung

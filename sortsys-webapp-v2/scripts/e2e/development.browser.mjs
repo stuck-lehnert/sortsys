@@ -1280,9 +1280,25 @@ try {
         "Freigabevorlage",
         "Baustellendokumentation",
       );
-      await projects
-        .getByRole("button", { name: "Einzelrechte ergänzen", exact: true })
-        .click();
+      await expect(
+        projects.getByRole("button", { name: new RegExp(reportAccess) }),
+      ).toContainText("Kein Zugriff");
+      await save(reportAccess);
+      await expect(
+        projects.getByRole("button", { name: /Freigabevorlage/ }),
+      ).toContainText("Baustellendokumentation");
+      await expect(member.getByText(summary, { exact: true })).toHaveCount(0);
+
+      await selectAccess(
+        page,
+        projects,
+        reportAccess,
+        "Aus Projektvorlage übernehmen",
+      );
+      await save(reportAccess);
+      await expect(member.getByText(summary, { exact: true })).toBeVisible();
+      await expect(photoButton(member)).toHaveCount(0);
+
       const reportActions = projects.getByRole("group", {
         name: `Einzelrechte für ${reportAccess}`,
         exact: true,
@@ -1298,10 +1314,9 @@ try {
       await expect(
         projects.getByRole("button", { name: new RegExp(costs) }),
       ).toContainText("Kein Zugriff");
-      await expect(member.getByText(summary, { exact: true })).toHaveCount(0);
 
-      await save(reportAccess);
-      await expect(member.getByText(summary, { exact: true })).toBeVisible();
+      await selectAccess(page, projects, fileAccess, "Lesen");
+      await save(fileAccess);
       await expectPhoto(photoButton(member).getByRole("img"), 80);
       const reportHeader = member.locator(".ss-page-header").filter({
         has: member.getByRole("heading", {
@@ -1330,11 +1345,24 @@ try {
       await expect(editor).toBeHidden();
       await expect(member.getByText(revisedSummary, { exact: true })).toBeVisible();
 
-      for (const field of [master, fileAccess, reportAccess, regie]) {
-        await selectAccess(page, projects, field, "Kein Zugriff");
-      }
+      await selectAccess(
+        page,
+        projects,
+        "Freigabevorlage",
+        "Projekt und Anhänge lesen",
+      );
       await save(reportAccess);
       await expect(member.getByText(revisedSummary, { exact: true })).toHaveCount(0);
+      await selectAccess(page, projects, "Freigabevorlage", "Keine Vorlage");
+      await save(master);
+      await expect(
+        projects.getByRole("button", { name: new RegExp(master) }),
+      ).toContainText("Kein Zugriff");
+      await expect(
+        projects.getByRole("button", { name: new RegExp(fileAccess) }),
+      ).toContainText("Lesen");
+      await member.goto(`${memberServer.origin}/projects/${seeded.projectId}/files`);
+      await expectPhoto(member.getByRole("img", { name: photoName, exact: true }), 80);
       memberAudit.assertClean();
     } finally {
       await memberContext.close();

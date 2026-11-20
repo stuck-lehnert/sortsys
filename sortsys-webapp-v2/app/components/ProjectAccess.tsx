@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { QueryResult } from "@sortsys/v2-client";
+import {
+  isProjectRole,
+  replaceProjectRole,
+  type Policy,
+  type ProjectRole,
+} from "@sortsys/zerotrust/sortsys";
 import { ComboBox, Select, SelectItem } from "@sortsys/react-components";
 import { client } from "~/lib/client";
 import {
-  changeAreaActionAccesses,
-  memberProjectAccesses,
-  type ProjectAccessLevels,
+  changeProjectAccessSettings,
+  memberProjectPolicy,
 } from "~/lib/crypto/permissions";
 import { uiText } from "~/lib/i18n";
 import { required } from "~/lib/data/protectedObjects";
@@ -18,14 +23,17 @@ import {
   type ProjectAccessKey,
 } from "~/lib/data/projectScope";
 import {
-  accessChanged,
-  accessDrafts,
-  editAccessDraft,
+  compileManagedAccess,
+  DATA_ACTIONS,
+  hasAccess,
+  inheritDataActions,
+  patchAccessRules,
+  type RuleDecisionPatch,
 } from "~/lib/crypto/accessProfiles";
 import {
-  addProjectAccessPreset,
-  PROJECT_ACCESS_PRESETS,
-  type ProjectAccessPreset,
+  assignedProjectRole,
+  projectRoleKeys,
+  projectRoles,
 } from "~/lib/crypto/projectAccessPresets";
 
 const labels: Record<ProjectAccessKey, () => string> = {
@@ -66,14 +74,14 @@ const labels: Record<ProjectAccessKey, () => string> = {
     uiText("Werkzeugkosten im Projekt", "Project tool costs"),
 };
 type Project = QueryResult<"projects.get">;
-const presetLabels: Record<ProjectAccessPreset, () => string> = {
-  overview: () => uiText("Projekt und Anhänge lesen", "Read project and files"),
-  documentation: () =>
+const presetLabels: Record<ProjectRole, () => string> = {
+  "project-overview": () =>
+    uiText("Projekt und Anhänge lesen", "Read project and files"),
+  "project-documentation": () =>
     uiText("Baustellendokumentation", "Site documentation"),
-  management: () => uiText("Bauleitung", "Site management"),
+  "project-management": () => uiText("Bauleitung", "Site management"),
 };
-const presetKeys = Object.keys(presetLabels) as ProjectAccessPreset[];
-const emptyDrafts = () => accessDrafts(PROJECT_ACCESS_KEYS, () => "none");
+type ProjectAccessEdits = Partial<Record<ProjectAccessKey, RuleDecisionPatch>>;
 export function ProjectAccess({
   user,
   disabled = false,
@@ -83,11 +91,11 @@ export function ProjectAccess({
   disabled?: boolean;
   onBusyChange?: (busy: boolean) => void;
 }) {
-  const [projects, setProjects] = useState<Project[] | null>(null),
-    [access, setAccess] = useState<ProjectAccessLevels>({});
-  const [selected, setSelected] = useState<Project | null>(null),
-    [drafts, setDrafts] = useState(emptyDrafts);
-  const [preset, setPreset] = useState<ProjectAccessPreset | "">("");
+  const [projects, setProjects] = useState<Project[] | null>(null);
+  const [policy, setPolicy] = useState<Policy | null>(null);
+  const [selected, setSelected] = useState<Project | null>(null);
+  const [edits, setEdits] = useState<ProjectAccessEdits>({});
+  const [preset, setPreset] = useState<ProjectRole | null>(null);
   const [busy, setBusy] = useState(false),
     [error, setError] = useState(false),
     [version, setVersion] = useState(0);
@@ -95,19 +103,19 @@ export function ProjectAccess({
     const controller = new AbortController();
     setProjects(null);
     setSelected(null);
-    setPreset("");
-    setDrafts(emptyDrafts());
+    setPolicy(null);
+    setPreset(null);
+    setEdits({});
     setError(false);
     setBusy(false);
     void Promise.all([
       required(client.query("projects.list", {})),
-      memberProjectAccesses(client, user, controller.signal),
+      memberProjectPolicy(client, user, controller.signal),
     ])
-      .then(([rows, rights]) => {
+      .then(([rows, saved]) => {
         if (!controller.signal.aborted) {
           setProjects(rows);
-          setAccess(rights);
-          setDrafts(emptyDrafts());
+          setPolicy(saved);
         }
       })
       .catch(() => {
@@ -117,35 +125,57 @@ export function ProjectAccess({
   }, [user, version]);
   const operation = useRef<AbortController | null>(null);
   useEffect(() => () => operation.current?.abort(), [user]);
+
+  const draft = useMemo(() => {
+    if (!selected || !policy) return null;
+    const projectId = selected.id;
+    const scope = `project:${projectId}`;
+    const projectRules = policy.rules.filter(
+      (rule) => rule.scope === scope || rule.scope.startsWith(`${scope}:`),
+    );
+    const original = assignedProjectRole(projectRules, user, projectId);
+    const roleChanged = original !== preset;
+    const rules = roleChanged
+      ? replaceProjectRole(projectRules, user, projectId, preset)
+      : projectRules;
+    const changes = PROJECT_ACCESS_KEYS.flatMap((key) => {
+      const patch = edits[key];
+      if (!patch) return [];
+      return [{ area: projectAccessArea(projectId, key), patch }];
+    });
+    const baseline = compileManagedAccess({ ...policy, rules }, user);
+    const access = changes.length
+      ? compileManagedAccess(
+          { ...policy, rules: patchAccessRules(rules, user, changes) },
+          user,
+        )
+      : baseline;
+    return { roleChanged, changes, baseline, access };
+  }, [user, selected, policy, preset, edits]);
+
+  const hasChanges = !!draft && (draft.roleChanged || draft.changes.length > 0);
+
   async function save() {
-    if (!selected || busy || disabled) return;
+    if (!selected || !draft || !hasChanges || busy || disabled) return;
     const controller = new AbortController();
     operation.current = controller;
     setBusy(true);
     onBusyChange?.(true);
     setError(false);
     try {
-      const changes = PROJECT_ACCESS_KEYS.filter((key) =>
-        accessChanged(drafts[key]),
-      ).map((key) => ({
-        area: projectAccessArea(selected.id, key),
-        patch: drafts[key].patch,
-      }));
-      if (!changes.length) return;
-      await changeAreaActionAccesses(client, user, changes, controller.signal);
-      const saved = await memberProjectAccesses(
+      await changeProjectAccessSettings(
         client,
         user,
+        selected.id,
+        draft.roleChanged ? preset : undefined,
+        draft.changes,
         controller.signal,
       );
+      const saved = await memberProjectPolicy(client, user, controller.signal);
       controller.signal.throwIfAborted();
-      setAccess(saved);
-      setDrafts(
-        accessDrafts(
-          PROJECT_ACCESS_KEYS,
-          (key) => saved[key]?.[selected.id] ?? "none",
-        ),
-      );
+      setPolicy(saved);
+      setPreset(assignedProjectRole(saved.rules, user, selected.id));
+      setEdits({});
     } catch {
       if (!controller.signal.aborted) setError(true);
     } finally {
@@ -167,80 +197,102 @@ export function ProjectAccess({
       <h3 className="text-lg font-semibold">
         {uiText("Projektzugriff", "Project access")}
       </h3>
-      <div className="grid items-start gap-4 sm:grid-cols-3">
+      <div className="grid items-start gap-4 sm:grid-cols-2">
         <ComboBox
           titleText={uiText("Projekt", "Project")}
           items={projects ?? []}
           itemToString={(project: Project) => project.title}
-          disabled={busy || disabled || !projects}
+          disabled={busy || disabled || !policy || !projects}
           loading={!projects && !error}
           loadError={error}
           selectedItem={selected}
           onChange={({ selectedItem }: { selectedItem: Project | null }) => {
             setSelected(selectedItem);
-            setPreset("");
-            setDrafts(
-              accessDrafts(PROJECT_ACCESS_KEYS, (key) =>
-                selectedItem
-                  ? (access[key]?.[selectedItem.id] ?? "none")
-                  : "none",
-              ),
+            setEdits({});
+            setPreset(
+              selectedItem && policy
+                ? assignedProjectRole(policy.rules, user, selectedItem.id)
+                : null,
             );
           }}
         />
         <Select
           labelText={uiText("Freigabevorlage", "Permission template")}
-          value={preset}
-          disabled={busy || disabled || !selected}
+          value={preset ?? "none"}
+          disabled={busy || disabled || !draft}
           onChange={(event: { target: { value: string } }) => {
             const value = event.target.value;
-            if (value === "" || Object.hasOwn(PROJECT_ACCESS_PRESETS, value))
-              setPreset(value as ProjectAccessPreset | "");
+            if (value === "none") setPreset(null);
+            else if (isProjectRole(value)) setPreset(value);
           }}
         >
-          <SelectItem value="" text={uiText("Auswählen", "Select")} />
-          {presetKeys.map((key) => (
+          <SelectItem value="none" text={uiText("Keine Vorlage", "No template")} />
+          {projectRoles.map((key) => (
             <SelectItem key={key} value={key} text={presetLabels[key]()} />
           ))}
         </Select>
-        <MyButton
-          className="self-end justify-self-start"
-          kind="tertiary"
-          disabled={busy || disabled || !selected || !preset}
-          onClick={() => {
-            if (!preset) return;
-            setDrafts((current) => addProjectAccessPreset(current, preset));
-            setPreset("");
-          }}
-        >
-          {uiText("Einzelrechte ergänzen", "Add permissions")}
-        </MyButton>
       </div>
       <div className="grid items-start gap-4 sm:grid-cols-3">
-        {PROJECT_ACCESS_KEYS.map((key) => (
-          <AccessLevelSelect
-            key={`${selected?.id}:${key}`}
-            label={labels[key]()}
-            allowManagement
-            value={drafts[key].value}
-            disabled={busy || disabled || !selected}
-            onChange={(value, actions) =>
-              setDrafts((previous) => ({
-                ...previous,
-                [key]: editAccessDraft(previous[key], value, actions),
-              }))
-            }
-          />
-        ))}
+        {PROJECT_ACCESS_KEYS.map((key) => {
+          const area = selected && projectAccessArea(selected.id, key);
+          return (
+            <AccessLevelSelect
+              key={`${selected?.id}:${key}`}
+              label={labels[key]()}
+              allowManagement
+              value={draft && area ? draft.access(area) : "none"}
+              disabled={busy || disabled || !draft}
+              roleAccess={
+                draft && projectRoleKeys.has(key)
+                  ? {
+                      label: uiText(
+                        "Aus Projektvorlage übernehmen",
+                        "Use project template",
+                      ),
+                      pending: DATA_ACTIONS.every(
+                        (action) => edits[key]?.[action] === null,
+                      ),
+                      select: () =>
+                        setEdits((previous) => ({
+                          ...previous,
+                          [key]: {
+                            ...previous[key],
+                            ...inheritDataActions,
+                          },
+                        })),
+                    }
+                  : undefined
+              }
+              onChange={(value, actions, kind) => {
+                if (!draft || !area) return;
+                const baseline = draft.baseline(area);
+                setEdits((previous) => {
+                  const next = { ...previous };
+                  const patch = { ...previous[key] };
+                  for (const action of actions) {
+                    const allowed = hasAccess(value, action);
+                    if (
+                      kind === "action" &&
+                      patch[action] !== null &&
+                      allowed === hasAccess(baseline, action)
+                    ) {
+                      delete patch[action];
+                    } else {
+                      patch[action] = allowed;
+                    }
+                  }
+                  if (Object.keys(patch).length) next[key] = patch;
+                  else delete next[key];
+                  return next;
+                });
+              }}
+            />
+          );
+        })}
       </div>
       <div className="flex flex-wrap gap-2">
         <MyButton
-          disabled={
-            !selected ||
-            busy ||
-            disabled ||
-            !PROJECT_ACCESS_KEYS.some((key) => accessChanged(drafts[key]))
-          }
+          disabled={busy || disabled || !hasChanges}
           loading={busy}
           onClick={() => void save()}
         >

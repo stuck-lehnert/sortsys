@@ -78,6 +78,9 @@ pub(super) enum RuleOrigin {
     AbsenceDefault,
     OrganizationOffice,
     OrganizationProcurement,
+    ProjectOverview,
+    ProjectDocumentation,
+    ProjectManagement,
 }
 
 type RoleArea = (&'static str, Facet, &'static [Action]);
@@ -88,7 +91,17 @@ impl RuleOrigin {
             Self::AbsenceDefault => "absence-default",
             Self::OrganizationOffice => "organization-office",
             Self::OrganizationProcurement => "organization-procurement",
+            Self::ProjectOverview => "project-overview",
+            Self::ProjectDocumentation => "project-documentation",
+            Self::ProjectManagement => "project-management",
         }
+    }
+
+    fn is_project_role(self) -> bool {
+        matches!(
+            self,
+            Self::ProjectOverview | Self::ProjectDocumentation | Self::ProjectManagement
+        )
     }
 
     fn role_areas(self) -> Option<&'static [RoleArea]> {
@@ -106,6 +119,24 @@ impl RuleOrigin {
                 ("catalog:vendors", Facet::MasterData, EDIT),
                 ("catalog:products", Facet::Procurement, EDIT),
             ]),
+            Self::ProjectOverview => {
+                Some(&[("", Facet::MasterData, READ), ("", Facet::Attachment, READ)])
+            }
+            Self::ProjectDocumentation => Some(&[
+                ("", Facet::MasterData, READ),
+                ("", Facet::Attachment, &[Action::Read, Action::Create]),
+                ("daily-reports", Facet::MasterData, EDIT),
+                ("regie-reports", Facet::MasterData, EDIT),
+            ]),
+            Self::ProjectManagement => Some(&[
+                ("", Facet::MasterData, &[Action::Read, Action::Update]),
+                ("", Facet::Attachment, EDIT),
+                ("delivery-notes", Facet::MasterData, EDIT),
+                ("daily-reports", Facet::MasterData, EDIT),
+                ("regie-reports", Facet::MasterData, EDIT),
+                ("regie-reports", Facet::Personnel, EDIT),
+                ("planning", Facet::MasterData, EDIT),
+            ]),
         }
     }
 }
@@ -114,21 +145,33 @@ impl RuleOrigin {
 mod role_tests {
     use super::*;
 
+    fn rules_for_role(origin: RuleOrigin, project: Option<&str>) -> Vec<Rule> {
+        origin
+            .role_areas()
+            .unwrap()
+            .iter()
+            .map(|(area, facet, actions)| {
+                let scope = match project {
+                    Some(id) if area.is_empty() => format!("project:{id}"),
+                    Some(id) => format!("project:{id}:{area}"),
+                    None => (*area).into(),
+                };
+                Rule {
+                    subject: "user:4".into(),
+                    scope,
+                    facet: *facet,
+                    actions: actions.to_vec(),
+                    effect: Effect::Allow,
+                    origin: Some(origin),
+                }
+            })
+            .collect()
+    }
+
     #[test]
     fn organization_roles_require_all_areas_and_only_fixed_actions() {
         let origin = RuleOrigin::OrganizationOffice;
-        let role = origin.role_areas().unwrap();
-        let mut rules: Vec<_> = role
-            .iter()
-            .map(|(scope, facet, actions)| Rule {
-                subject: "user:4".into(),
-                scope: (*scope).into(),
-                facet: *facet,
-                actions: actions.to_vec(),
-                effect: Effect::Allow,
-                origin: Some(origin),
-            })
-            .collect();
+        let mut rules = rules_for_role(origin, None);
         assert!(validate_rule_origins(&rules).is_ok());
         assert!(validate_rule_origins(&rules[..2]).is_err());
         rules.push(rules[0].clone());
@@ -136,6 +179,34 @@ mod role_tests {
         rules.pop();
         rules[0].actions.push(Action::Delete);
         assert!(validate_rule_origins(&rules).is_err());
+    }
+
+    #[test]
+    fn project_roles_require_a_complete_assignment_in_one_canonical_project() {
+        let origin = RuleOrigin::ProjectDocumentation;
+        let rules = rules_for_role(origin, Some("3"));
+        assert!(validate_rule_origins(&rules).is_ok());
+        assert!(validate_rule_origins(&rules[1..]).is_err());
+
+        let mut cross_project = rules.clone();
+        cross_project[2].scope = "project:5:daily-reports".into();
+        assert!(validate_rule_origins(&cross_project).is_err());
+
+        let mut overbroad = rules.clone();
+        overbroad[2].facet = Facet::Calculation;
+        assert!(validate_rule_origins(&overbroad).is_err());
+
+        let mut invalid_id = rules.clone();
+        invalid_id[0].scope = "project:03".into();
+        assert!(validate_rule_origins(&invalid_id).is_err());
+
+        let mut two_roles = rules.clone();
+        two_roles.extend(rules_for_role(RuleOrigin::ProjectOverview, Some("3")));
+        assert!(validate_rule_origins(&two_roles).is_err());
+
+        let mut two_projects = rules;
+        two_projects.extend(rules_for_role(RuleOrigin::ProjectOverview, Some("5")));
+        assert!(validate_rule_origins(&two_projects).is_ok());
     }
 }
 
@@ -171,9 +242,9 @@ impl Rule {
         }
     }
 
-    fn validate_application_origin(&self) -> RpcResult<()> {
+    fn validate_application_origin(&self) -> RpcResult<Option<RoleBinding<'_>>> {
         let Some(origin) = self.origin else {
-            return Ok(());
+            return Ok(None);
         };
         let subject = self.subject.strip_prefix("user:").ok_or_else(invalid)?;
         if self.effect != Effect::Allow {
@@ -181,10 +252,29 @@ impl Rule {
         }
         validate_rule_id(subject)?;
         if let Some(areas) = origin.role_areas() {
+            let (group, relative_scope) = if origin.is_project_role() {
+                let resource = self.scope.strip_prefix("project:").ok_or_else(invalid)?;
+                let (project, module) = resource.split_once(':').unwrap_or((resource, ""));
+                validate_rule_id(project)?;
+                // Module names must be present when the separator is present.
+                if resource.ends_with(':') {
+                    return Err(invalid());
+                }
+                (project, module)
+            } else {
+                (origin.name(), self.scope.as_str())
+            };
             let valid = areas.iter().any(|(scope, facet, actions)| {
-                *scope == self.scope && *facet == self.facet && *actions == self.actions
+                *scope == relative_scope && *facet == self.facet && *actions == self.actions
             });
-            return if valid { Ok(()) } else { Err(invalid()) };
+            if !valid {
+                return Err(invalid());
+            }
+            return Ok(Some(RoleBinding {
+                origin,
+                group,
+                expected: areas.len(),
+            }));
         }
         let personnel_read = self.facet == Facet::Scope
             && self.actions.iter().all(|action| *action == Action::Read)
@@ -209,7 +299,7 @@ impl Rule {
                 return Err(invalid());
             }
         }
-        Ok(())
+        Ok(None)
     }
 }
 
@@ -221,24 +311,28 @@ fn validate_rule_id(value: &str) -> RpcResult<()> {
     Ok(())
 }
 
+struct RoleBinding<'a> {
+    origin: RuleOrigin,
+    group: &'a str,
+    expected: usize,
+}
+
 fn validate_rule_origins(rules: &[Rule]) -> RpcResult<()> {
-    let mut assignments = HashMap::<_, (usize, HashSet<_>)>::new();
+    let mut assignments = HashMap::<_, (RoleBinding<'_>, HashSet<_>)>::new();
     for rule in rules {
-        rule.validate_application_origin()?;
-        if let Some(origin) = rule.origin
-            && let Some(role_areas) = origin.role_areas()
-        {
-            let (_, actual) = assignments
-                .entry((&rule.subject, origin))
-                .or_insert_with(|| (role_areas.len(), HashSet::new()));
-            if !actual.insert((&rule.scope, rule.facet.name())) {
+        if let Some(binding) = rule.validate_application_origin()? {
+            let origin = binding.origin;
+            let (first, actual) = assignments
+                .entry((&rule.subject, binding.group))
+                .or_insert_with(|| (binding, HashSet::new()));
+            if first.origin != origin || !actual.insert((&rule.scope, rule.facet.name())) {
                 return Err(invalid());
             }
         }
     }
     if assignments
         .values()
-        .any(|(expected, actual)| actual.len() != *expected)
+        .any(|(binding, actual)| actual.len() != binding.expected)
     {
         return Err(invalid());
     }

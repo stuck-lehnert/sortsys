@@ -1,68 +1,62 @@
 import { expect, test } from "bun:test";
-import { PROJECT_ACCESS_KEYS } from "../data/projectScope";
+import { replaceProjectRole } from "@sortsys/zerotrust/sortsys";
+import { projectAccessArea } from "../data/projectScope";
 import {
-  accessActions,
-  accessChanged,
-  accessDrafts,
-  editAccessDraft,
+  compileManagedAccess,
+  hasAccess,
+  inheritDataActions,
+  patchAccessRules,
 } from "./accessProfiles";
 import {
-  addProjectAccessPreset,
-  PROJECT_ACCESS_PRESETS,
+  assignedProjectRole,
+  projectRoleAccessAreas,
+  projectRoles,
 } from "./projectAccessPresets";
 
-test("site documentation adds only the missing actions and preserves independent decisions", () => {
-  const drafts = accessDrafts(PROJECT_ACCESS_KEYS, (key) => {
-    if (key === "billing") return "read";
-    if (key === "attachment") return { actions: ["read", "delete", "grant"] };
-    return "none";
-  });
-  drafts["regie-reports:personnel"] = editAccessDraft(
-    drafts["regie-reports:personnel"],
-    "read",
-    ["read"],
-  );
-  const result = addProjectAccessPreset(drafts, "documentation");
-  expect(result.attachment.patch).toEqual({ create: true });
-  expect(accessActions(result.attachment.value)).toEqual([
-    "read",
-    "create",
-    "delete",
-    "grant",
+test("replacing a project template keeps individual grants, explicit denials, and other projects", () => {
+  const subject = "user:2";
+  const billing = projectAccessArea("3", "billing");
+  const attachment = projectAccessArea("3", "attachment");
+  const report = projectAccessArea("3", "daily-reports:master-data");
+  const decisions = patchAccessRules([], subject, [
+    { area: billing, patch: { read: true } },
+    { area: attachment, patch: { read: false } },
   ]);
-  expect(result.billing).toBe(drafts.billing);
-  expect(result["regie-reports:personnel"]).toBe(
-    drafts["regie-reports:personnel"],
+  const twoProjects = replaceProjectRole(decisions, subject, "5", "project-overview");
+  const documentation = replaceProjectRole(
+    twoProjects, subject, "3", "project-documentation",
   );
-  expect(result["daily-reports:master-data"].patch).toEqual({
-    read: true,
-    create: true,
-    update: true,
-  });
-  expect(drafts["daily-reports:master-data"].value).toBe("none");
-  expect(addProjectAccessPreset(result, "documentation")).toEqual(result);
+  const access = (rules) =>
+    compileManagedAccess({ tenant: "test", version: "1", rules }, subject);
+
+  expect(access(documentation)(attachment)).toEqual({ actions: ["create"] });
+  expect(access(documentation)(billing)).toBe("read");
+  expect(hasAccess(access(documentation)(report), "update")).toBe(true);
+
+  const changed = replaceProjectRole(documentation, subject, "3", "project-overview");
+  expect(assignedProjectRole(changed, subject, "3")).toBe("project-overview");
+  expect(access(changed)(report)).toBe("none");
+
+  const inherited = patchAccessRules(changed, subject, [
+    { area: attachment, patch: inheritDataActions },
+  ]);
+  expect(access(inherited)(attachment)).toBe("read");
+  const removed = replaceProjectRole(inherited, subject, "3", null);
+  expect(assignedProjectRole(removed, subject, "3")).toBeNull();
+  expect(assignedProjectRole(removed, subject, "5")).toBe("project-overview");
+  expect(access(removed)(attachment)).toBe("none");
+  expect(access(removed)(billing)).toBe("read");
 });
 
-test("all templates leave cost areas, authority, and deletion decisions untouched", () => {
-  const drafts = accessDrafts(PROJECT_ACCESS_KEYS, () => "none");
-  for (const preset of Object.keys(PROJECT_ACCESS_PRESETS)) {
-    const result = addProjectAccessPreset(drafts, preset);
-    for (const key of [
-      "offer-prices",
-      "procurement",
-      "billing",
-      "delivery-notes:procurement",
-      "daily-reports:calculation",
-      "tool-usage:procurement",
-    ]) {
-      expect(result[key]).toBe(drafts[key]);
-    }
-    const edited = Object.values(result).filter(accessChanged);
-    expect(edited.length).toBeGreaterThan(0);
-    for (const { patch } of edited) {
-      expect(patch).not.toHaveProperty("delete");
-      expect(patch).not.toHaveProperty("approve");
-      expect(patch).not.toHaveProperty("grant");
-    }
-  }
+test("the template area inventory excludes costs and stays within the selected project", () => {
+  const areas = projectRoleAccessAreas("3", projectRoles);
+  expect(areas.map(({ domain }) => domain).sort()).toEqual([
+    "project:3:attachment",
+    "project:3:daily-reports:master-data",
+    "project:3:delivery-notes:master-data",
+    "project:3:master-data",
+    "project:3:planning:master-data",
+    "project:3:regie-reports:master-data",
+    "project:3:regie-reports:personnel",
+  ]);
 });

@@ -6,6 +6,7 @@ import {
   createIdentity,
   organizationRoleRules,
   policy,
+  projectRoleRules,
   publicIdentity,
   signAdministrativePolicy,
   signPolicy,
@@ -32,6 +33,32 @@ test("the signed role vocabulary requires every prescribed area and exact action
   ).toThrow();
   expect(() =>
     validate([{ ...office[0]!, scope: "project:4" }, ...office.slice(1)]),
+  ).toThrow();
+});
+
+test("project role assignments bind every required area to one project", () => {
+  const rules = projectRoleRules("project-documentation", member, "3");
+  const overview = projectRoleRules("project-overview", member, "5");
+  const validate = (entries: Rule[]) =>
+    policy({ tenant: "test", version: "1", rules: entries });
+
+  expect(validate([...rules, ...overview]).rules).toHaveLength(6);
+  expect(() => validate(rules.slice(1))).toThrow();
+  expect(() =>
+    validate([...rules, ...projectRoleRules("project-overview", member, "3")]),
+  ).toThrow();
+  expect(() =>
+    validate(rules.map((rule, index) =>
+      index === 2 ? { ...rule, scope: "project:5:daily-reports" } : rule,
+    )),
+  ).toThrow();
+  expect(() =>
+    validate(rules.map((rule, index) =>
+      index === 2 ? { ...rule, facet: "calculation" } : rule,
+    )),
+  ).toThrow();
+  expect(() =>
+    projectRoleRules("project-overview", member, "3:planning"),
   ).toThrow();
 });
 
