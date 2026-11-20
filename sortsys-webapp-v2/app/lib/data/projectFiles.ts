@@ -128,10 +128,11 @@ export function createProtectedProjectFiles(
   }
   let stores = new Map<string, Store>();
   let closing: Promise<void> | undefined;
-  let pending: Promise<unknown> = Promise.resolve();
+  let pending = Promise.resolve();
   let validationDatabase: ReturnType<typeof createBusinessDatabase> | undefined;
   let searchController: AbortController | null = null;
   const documentSearch = createDocumentSearch();
+  let searchProjection: ReturnType<typeof projectSearchFiles> | undefined;
   let filePolicy: Collections["root"] | undefined;
   const urls = new Set<string>();
   const live = () => {
@@ -147,14 +148,14 @@ export function createProtectedProjectFiles(
       live();
       return value;
     });
-    pending = result.catch(() => undefined);
+    pending = result.then(() => undefined, () => undefined);
     return result;
   };
   function close() {
     if (closing) return closing;
     closing = closeValidationDatabase();
     searchController?.abort();
-    documentSearch.clear();
+    clearSearch();
     signal.removeEventListener("abort", abort);
     for (const url of urls) {
       URL.revokeObjectURL(url);
@@ -170,6 +171,11 @@ export function createProtectedProjectFiles(
     void close().catch(() => undefined);
   };
   signal.addEventListener("abort", abort, { once: true });
+
+  function clearSearch() {
+    searchProjection = undefined;
+    documentSearch.clear();
+  }
   function decoded(
     collection: Collection,
     objects: Map<string, OpenedObject>,
@@ -230,7 +236,7 @@ export function createProtectedProjectFiles(
       root.generation !== filePolicy.generation ||
       root.policyVersion !== filePolicy.policyVersion
     ) {
-      documentSearch.clear();
+      clearSearch();
       filePolicy = root;
       await closeValidationDatabase();
     }
@@ -288,7 +294,7 @@ export function createProtectedProjectFiles(
         }
       }
       if (changed) {
-        documentSearch.clear();
+        clearSearch();
         await validateFileRows(candidate);
       }
       live();
@@ -873,40 +879,15 @@ export function createProtectedProjectFiles(
       try {
         return await searchSnapshot(query, projectId, limit, active, scope);
       } catch (error) {
+        const changed = isWriteConflict(error);
+        if (changed) clearSearch();
         active.throwIfAborted();
-        if (attempt >= 2 || !isWriteConflict(error)) throw error;
+        if (attempt >= 2 || !changed) throw error;
       }
     }
   }
 
-  async function searchSnapshot(
-    query: string,
-    projectId: string | null,
-    limit: number,
-    active: AbortSignal,
-    scope?: DocumentSearchScope,
-  ) {
-    if (projectId !== null && scope && !scope.projects.has(projectId)) {
-      throw new InvalidProtectedData();
-    }
-    let access: Collections;
-    let readable: string[];
-    if (projectId === null) {
-      access = await protectedCollections(client, active);
-      readable = readableProjectsWithFiles(access);
-    } else {
-      const page = filePage(projectId);
-      access = await protectedCollections(
-        client,
-        active,
-        [page.area.domain, projectCollection(projectId).domain],
-        [page],
-      );
-      readable = [projectId];
-    }
-    const inScope = (id: string) => !scope || scope.projects.has(id);
-    const ids = readable.filter(inScope);
-    await reload(ids, projectId === null ? new Set(readable) : undefined, access);
+  function projectSearchFiles(ids: string[], snapshot: string, active: AbortSignal) {
     const documents: SearchDocument[] = [];
     const entries = new Map<
       string,
@@ -939,10 +920,51 @@ export function createProtectedProjectFiles(
         });
       }
     }
+    return { snapshot, documents, entries };
+  }
+
+  async function searchSnapshot(
+    query: string,
+    projectId: string | null,
+    limit: number,
+    active: AbortSignal,
+    scope?: DocumentSearchScope,
+  ) {
+    if (projectId !== null && scope && !scope.projects.has(projectId)) {
+      throw new InvalidProtectedData();
+    }
+    let access: Collections;
+    let readable: string[];
+    if (projectId === null) {
+      access = await protectedCollections(client, active);
+      readable = readableProjectsWithFiles(access);
+    } else {
+      const page = filePage(projectId);
+      access = await protectedCollections(
+        client,
+        active,
+        [page.area.domain, projectCollection(projectId).domain],
+        [page],
+      );
+      readable = [projectId];
+    }
+    const inScope = (id: string) => !scope || scope.projects.has(id);
+    const ids = readable.filter(inScope).sort();
+    await reload(ids, projectId === null ? new Set(readable) : undefined, access);
+    active.throwIfAborted();
+    const snapshot = JSON.stringify(ids.map((id) => [id, stores.get(id)!.head]));
+    if (searchProjection?.snapshot !== snapshot) {
+      searchProjection = projectSearchFiles(ids, snapshot, active);
+    }
+    const { documents, entries } = searchProjection;
     const matches = await documentSearch.search(documents, query, active);
     const offset = scope?.offset ?? 0;
     const ranked = matches
-      .map(({ id, rank, excerpt }) => ({ ...entries.get(id)!, rank, excerpt }))
+      .map(({ id, rank, excerpt }) => {
+        const entry = entries.get(id);
+        if (!entry) throw new InvalidProtectedData();
+        return { ...entry, rank, excerpt };
+      })
       .sort(
         (a, b) =>
           b.rank - a.rank ||
@@ -1020,6 +1042,7 @@ export function createProtectedProjectFiles(
     active.throwIfAborted();
     return ranked.map((item) => ({
       ...item,
+      modifiedAt: new Date(item.modifiedAt),
       projectTitle: titles.get(item.projectId) ?? "",
     }));
   }

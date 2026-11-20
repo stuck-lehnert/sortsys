@@ -711,8 +711,26 @@ try {
     }));
     await new Promise<void>((resolve, reject) => {
       const child = spawn("node", ["scripts/e2e/documentAccess.browser.mjs", fixture], {
-        stdio: "inherit",
+        stdio: ["ignore", "inherit", "inherit", "ipc"],
         env: { ...process.env, SORTSYS_E2E_READER_PASSWORD: readerPassword },
+      });
+      child.once("message", (message) => {
+        const revoke = async () => {
+          assert.equal(message, "revoke-document-search");
+          await changeProjectAccess(
+            owner,
+            `user:${person.id}`,
+            visible.id,
+            "none",
+            signal,
+            "attachment",
+          );
+          child.send("document-search-revoked");
+        };
+        void revoke().catch((error) => {
+          child.kill();
+          reject(error);
+        });
       });
       child.once("error", reject);
       child.once("exit", (code, signal) => {

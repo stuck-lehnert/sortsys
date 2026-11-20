@@ -1330,27 +1330,15 @@ async fn local_document_search_enforces_live_access_across_independent_api_insta
     let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
     let store = QuackConfig::from_env().unwrap().unwrap();
     assert!(store.control_url.starts_with("http://127.0.0.1:"));
-    let first = Repository::system(CipherStore::new(store.clone()).unwrap());
-    let second = Repository::system(CipherStore::new(store.clone()).unwrap());
     let mut settings = configuration(store);
     settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
     settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
         .unwrap()
         .into();
-    let (first_url, _first_api) = api(auth_service(&settings, first)).await;
-    let (second_url, _second_api) = api(auth_service(&settings, second)).await;
-    let endpoints = [first_url, second_url];
-    browser_with_tenant(
-        "owner-minimal",
+    processes::run_browser_sequence(
+        &settings,
         &root,
-        Some(&endpoints),
-        Some("document-search-tenant"),
-    )
-    .await;
-    browser_with_tenant(
-        "document-search",
-        &root,
-        Some(&endpoints),
+        &["owner-minimal", "document-search"],
         Some("document-search-tenant"),
     )
     .await;

@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { readFile } from "node:fs/promises";
 import { chromium, expect as playwrightExpect } from "playwright/test";
 import { applicationServer } from "./applicationServer.mjs";
@@ -19,6 +20,26 @@ try {
     args: ["--no-sandbox"],
   });
   const page = await browser.newPage({ locale: "de-DE" });
+  await page.addInitScript(() => {
+    const messages = [];
+    const searchWorkers = new WeakSet();
+    window.documentSearchMessages = messages;
+    window.documentSearchStops = 0;
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (...args) {
+      const [message] = args;
+      if (typeof message?.query === "string" && typeof message.batch === "number") {
+        messages.push({ hasSource: !!message.source });
+        searchWorkers.add(this);
+      }
+      return Reflect.apply(post, this, args);
+    };
+    const terminate = Worker.prototype.terminate;
+    Worker.prototype.terminate = function () {
+      if (searchWorkers.delete(this)) window.documentSearchStops++;
+      return Reflect.apply(terminate, this, []);
+    };
+  });
   page.setDefaultTimeout(20_000);
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
@@ -51,6 +72,9 @@ try {
     "href",
     `/projects/${fixture.projectId}/files/${fixture.pagedFileId}`,
   );
+  const workerMessages = () => page.evaluate(() => window.documentSearchMessages);
+  const cold = await workerMessages();
+  assert.ok(cold.length >= 2 && cold.every(({ hasSource }) => hasSource));
 
   await search.fill(textQuery);
   await search.press("Enter");
@@ -58,6 +82,9 @@ try {
   await expect(hit).toBeVisible();
   await expect(page.locator(".documents-search__excerpt mark"))
     .toHaveText("Suchfenster");
+  const warm = (await workerMessages()).slice(cold.length);
+  assert.equal(warm.length, cold.length);
+  assert.ok(warm.every(({ hasSource }) => !hasSource));
   await expect(page).toHaveURL(documentsPage);
   await search.fill(fileNameQuery);
   await search.press("Enter");
@@ -70,6 +97,7 @@ try {
   await search.fill(fileNameQuery);
   await search.press("Enter");
   await expect(hit).toBeVisible();
+  assert.ok((await workerMessages()).some(({ hasSource }) => hasSource));
   assert.ok(searchRequests.length > 0);
   const privateQueries = [pagedQuery, textQuery, fileNameQuery];
   assert.ok(
@@ -100,8 +128,24 @@ try {
   await expect(page.getByRole("heading", { name: "404", exact: true }))
     .toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+
+  await page.goto(documentsPage);
+  await search.fill(fileNameQuery);
+  await search.press("Enter");
+  await expect(hit).toBeVisible();
+  const initialStops = await page.evaluate(() => window.documentSearchStops);
+  assert.ok(process.send);
+  const acknowledgement = once(process, "message", {
+    signal: AbortSignal.timeout(20_000),
+  });
+  process.send("revoke-document-search");
+  const [message] = await acknowledgement;
+  assert.equal(message, "document-search-revoked");
+  await expect(hit).toHaveCount(0);
+  await expect.poll(() => page.evaluate(() => window.documentSearchStops))
+    .toBeGreaterThan(initialStops);
   assert.deepEqual(errors, []);
-  console.log("Chromium opened an authorized search result without project data and denied the other routes.");
+  console.log(`Chromium reused ${warm.length} document batches and discarded the worker on live revocation.`);
 } finally {
   await browser?.close();
   await server.close();

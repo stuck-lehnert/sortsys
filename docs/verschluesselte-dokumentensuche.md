@@ -63,13 +63,18 @@ in einer lokalen Transaktion. Bei weiteren Prüfungen verwendet der Browser
 dieselbe DuckDB-Instanz und rollt die Prüfdaten nach jeder Transaktion zurück.
 Ein Wechsel der Freigaberichtlinie oder das Sitzungsende schließt die Instanz.
 
-Die Textauswertung läuft in einem eigenen Worker.
-Dieser hält Wortformen und Textpositionen eines begrenzten Bestands im
-Arbeitsspeicher, damit auch eine andere Suchanfrage denselben Text wiederverwenden
-kann. Bei geänderten Rechten oder Dateien, beim Abbruch der Textauswertung und
-beim Ende der Sitzung verwirft der Browser diesen Speicher. Er liest die
-Projektbezeichnungen gebündelt für die angezeigten Treffer. Vor der Ausgabe prüft
-er die Freigaben und Stände aller durchsuchten Dateisammlungen erneut.
+Die Textauswertung läuft in einem eigenen Worker. Er hält Textblöcke,
+Wortformen und Textpositionen des geprüften Bestands in einem begrenzten
+Arbeitsspeicher. Beim Ändern der Suchbegriffe verwendet er bereits
+übertragene Blöcke weiter. Größere Bestände werden ebenfalls vollständig
+durchsucht. Ihre übrigen Blöcke werden bei jeder Suche erneut an den Worker
+übertragen. Eine neue Suchanfrage stoppt die alte nach dem laufenden Block.
+Ändert sich die Dateiauswahl, eine Freigabe oder eine Dateiversion, verwirft
+der Browser den bisherigen Bestand. Das gilt auch am Ende der Sitzung.
+
+Der Browser liest die Projektbezeichnungen gebündelt für die angezeigten
+Treffer. Vor der Ausgabe prüft er die Freigaben und Stände aller
+durchsuchten Dateisammlungen erneut.
 Wird eine Datei während der Suche geändert oder gelöscht, wertet der Browser
 den neuen Stand aus. Fortlaufende Änderungen können den Abruf mit einem
 Hinweis auf die geänderten Daten beenden.
@@ -101,6 +106,7 @@ prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der
 prüft gebündelte Folgeseiten, Versionswechsel, eine Löschung während der Suche
 und den Entzug von Freigaben bei geöffnetem Client-Cache. Nach einem
 Versionswechsel einer E-Mail findet er nur den Text der aktuellen Fassung.
-Chromium prüft bei Treffern auf späteren Seiten auch die Sichtbarkeit nach
-Dateifreigabe. Weitere Browsertests suchen in PDF-, Word-, Excel- und
-PowerPoint-Dateien sowie in EML- und MSG-Nachrichten.
+Chromium zählt die wiederverwendeten Textblöcke beim Ändern der Suchbegriffe.
+Bei einem Rechteentzug über einen anderen API-Prozess verschwinden der Treffer
+und sein Worker aus der laufenden Sitzung. Weitere Browsertests suchen in
+PDF-, Word-, Excel- und PowerPoint-Dateien sowie in EML- und MSG-Nachrichten.

@@ -214,3 +214,92 @@ test("the native search provider uses the local matcher and honors cancellation"
   controller.abort();
   await expect(search(documents, "Wand", controller.signal)).rejects.toThrow();
 });
+
+test("a new query reuses acknowledged document batches and a cleared snapshot resends them", async () => {
+  const originalWorker = Object.getOwnPropertyDescriptor(globalThis, "Worker");
+  const originalDocument = Object.getOwnPropertyDescriptor(globalThis, "document");
+  const messages = [];
+  let receive;
+  function nextMessage() {
+    return messages.shift() ?? new Promise((resolve) => {
+      receive = resolve;
+    });
+  }
+  class SearchWorker {
+    terminated = false;
+
+    postMessage(input) {
+      const sent = { worker: this, input };
+      if (receive) {
+        const resolve = receive;
+        receive = undefined;
+        resolve(sent);
+      } else messages.push(sent);
+    }
+
+    reply() {
+      this.onmessage({ data: { matches: [] } });
+    }
+
+    terminate() {
+      this.terminated = true;
+    }
+  }
+  Object.defineProperty(globalThis, "Worker", { configurable: true, value: SearchWorker });
+  Object.defineProperty(globalThis, "document", { configurable: true, value: {} });
+  const provider = createDocumentSearch();
+  const documents = Array.from({ length: 17 }, (_, index) => ({
+    id: String(index),
+    name: `Plan ${index}`,
+    text: "Neue Fenster und Türanschlüsse",
+  }));
+  const signal = new AbortController().signal;
+  try {
+    const aborted = provider.search(documents, "Fenster", signal).catch((error) => error);
+    const first = await nextMessage();
+    expect(first.input.source.documents).toHaveLength(16);
+
+    const refined = provider.search(documents, "Türanschlüsse", signal);
+    first.worker.reply();
+    expect((await aborted).name).toBe("AbortError");
+    const reused = await nextMessage();
+    expect(reused.worker).toBe(first.worker);
+    expect(reused.input).toEqual({ query: "Türanschlüsse", batch: 0 });
+    reused.worker.reply();
+    const rest = await nextMessage();
+    expect(rest.input.source.documents).toHaveLength(1);
+    rest.worker.reply();
+    expect(await refined).toEqual([]);
+
+    const cleared = provider.search(documents, "Plan", signal).catch((error) => error);
+    const previous = await nextMessage();
+    expect(previous.input.source).toBeUndefined();
+    provider.clear();
+    expect(previous.worker.terminated).toBe(true);
+    expect((await cleared).name).toBe("AbortError");
+
+    const refreshed = provider.search(documents, "Fenster", signal);
+    const fresh = await nextMessage();
+    expect(fresh.worker).not.toBe(previous.worker);
+    expect(fresh.input.source.documents).toHaveLength(16);
+    fresh.worker.reply();
+    const last = await nextMessage();
+    last.worker.reply();
+    expect(await refreshed).toEqual([]);
+
+    const oversized = [{ id: "big", name: "Bericht", text: "x".repeat(4 * 1024 * 1024) }];
+    for (const query of ["Bericht", "Fenster"]) {
+      const result = provider.search(oversized, query, signal);
+      const sent = await nextMessage();
+      expect(sent.input.source).toEqual({ documents: oversized, retain: false });
+      sent.worker.reply();
+      expect(await result).toEqual([]);
+    }
+  } finally {
+    provider.clear();
+    if (originalWorker) Object.defineProperty(globalThis, "Worker", originalWorker);
+    else delete globalThis.Worker;
+    if (originalDocument) Object.defineProperty(globalThis, "document", originalDocument);
+    else delete globalThis.document;
+  }
+});

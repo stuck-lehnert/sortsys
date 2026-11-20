@@ -4,7 +4,11 @@ import { stemmer as englishStemmer } from "@orama/stemmers/english";
 export type TextRange = { start: number; end: number };
 export type DocumentExcerpt = { text: string; highlights: TextRange[] };
 export type DocumentMatch = { rank: number; excerpt: DocumentExcerpt | null };
-export type SearchDocument = { id: string; name: string; text: string | null };
+export type SearchDocument = Readonly<{
+  id: string;
+  name: string;
+  text: string | null;
+}>;
 export type SearchMatch = DocumentMatch & { id: string };
 
 export const MAX_CACHED_DOCUMENT_WORDS = 200_000;
@@ -294,7 +298,7 @@ export function createDocumentMatcher(
 
 export function matchDocuments(
   matcher: ReturnType<typeof createDocumentMatcher>,
-  documents: SearchDocument[],
+  documents: readonly SearchDocument[],
   signal?: AbortSignal,
 ): SearchMatch[] {
   const matches: SearchMatch[] = [];
