@@ -17,6 +17,7 @@ import {
   changeMemberAccess,
   finishAccessChanges,
   memberAccessState,
+  type MemberAccessEdits,
 } from "~/lib/crypto/permissions";
 import type { OrganizationRole } from "@sortsys/zerotrust/sortsys";
 import {
@@ -44,12 +45,17 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { showCreateUserModal } from "~/modals/users";
 import {
   accessChanged,
+  accessDraft,
   accessDrafts,
+  DATA_ACTIONS,
   editAccessDraft,
   MASTER_DATA_FIELDS,
+  type AccessDraft,
+  type MasterDataField,
 } from "~/lib/crypto/accessProfiles";
 
 type Member = Awaited<ReturnType<typeof invitationMembers>>[number];
+type MasterDataDraft = AccessDraft & { useRoleAccess?: boolean };
 const initialAccess = (): InvitationAccess => ({
   catalogue: "read",
   customers: "none",
@@ -70,7 +76,7 @@ const roleLabels: Record<OrganizationRole, () => string> = {
       "Purchasing (edit products, suppliers, and prices)",
     ),
 };
-function accessLabel(key: (typeof MASTER_DATA_FIELDS)[number]): string {
+function accessLabel(key: MasterDataField): string {
   switch (key) {
     case "catalogue":
       return uiText("Produktkatalog", "Product catalogue");
@@ -109,8 +115,8 @@ export default function OrganizationInvitations({
   const [loadingAccess, setLoadingAccess] = useState(false);
   const [permissions, setPermissions] = useState(initialAccess);
   const [originalAssistant, setOriginalAssistant] = useState(true);
-  const [drafts, setDrafts] = useState(() =>
-    accessDrafts(MASTER_DATA_FIELDS, (key) => initialAccess()[key]),
+  const [drafts, setDrafts] = useState<Record<MasterDataField, MasterDataDraft>>(
+    () => accessDrafts(MASTER_DATA_FIELDS, (key) => initialAccess()[key]),
   );
   const [roleDraft, setRoleDraft] = useState<{
     original: OrganizationRoleState;
@@ -217,14 +223,20 @@ export default function OrganizationInvitations({
         createMemberInvitation(client, member, { ...access, roles }, signal),
       );
     }
+    const actions: MemberAccessEdits["actions"] = {};
+    for (const key of MASTER_DATA_FIELDS) {
+      if (drafts[key].useRoleAccess) {
+        actions[key] = Object.fromEntries(
+          DATA_ACTIONS.map((action) => [action, null]),
+        );
+      } else if (accessChanged(drafts[key])) {
+        actions[key] = drafts[key].patch;
+      }
+    }
     return act(
       (signal) =>
         changeMemberAccess(client, `user:${member.id}`, access, signal, {
-          actions: Object.fromEntries(
-            MASTER_DATA_FIELDS.filter((key) => accessChanged(drafts[key])).map(
-              (key) => [key, drafts[key].patch],
-            ),
-          ),
+          actions,
           ...(permissions.assistant !== originalAssistant
             ? { assistant: permissions.assistant }
             : {}),
@@ -290,10 +302,28 @@ export default function OrganizationInvitations({
                   ? uiText("Kein Zugriff", "No access")
                   : uiText("Kein zusätzlicher Zugriff", "No additional access")
               }
+              roleAccess={
+                editing
+                  ? {
+                      pending: drafts[key].useRoleAccess === true,
+                      select: () =>
+                        setDrafts((previous) => ({
+                          ...previous,
+                          [key]: {
+                            ...accessDraft(previous[key].original),
+                            useRoleAccess: true,
+                          },
+                        })),
+                    }
+                  : undefined
+              }
               onChange={(value, actions) =>
                 setDrafts((previous) => ({
                   ...previous,
-                  [key]: editAccessDraft(previous[key], value, actions),
+                  [key]: {
+                    ...editAccessDraft(previous[key], value, actions),
+                    useRoleAccess: false,
+                  },
                 }))
               }
             />
@@ -380,7 +410,9 @@ export default function OrganizationInvitations({
             (selected.certified && !editing) ||
             (editing &&
               !rolesChanged &&
-              !MASTER_DATA_FIELDS.some((key) => accessChanged(drafts[key])) &&
+              !MASTER_DATA_FIELDS.some(
+                (key) => drafts[key].useRoleAccess || accessChanged(drafts[key]),
+              ) &&
               permissions.assistant === originalAssistant)
           }
           loading={busy || loadingAccess}

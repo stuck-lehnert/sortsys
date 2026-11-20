@@ -3297,6 +3297,14 @@ try {
         path: join(artifacts, "member-catalogue-revoked.png"),
         fullPage: true,
       });
+      await selectAccess(
+        page,
+        dialog,
+        "Produktkatalog",
+        "Aus Fachrollen übernehmen",
+      );
+      await saveResourceAccess(dialog, "Berechtigungen speichern", "Produktkatalog");
+      await expect(member.locator('nav a[href="/products"]')).toHaveCount(0);
       memberAudit.assertClean();
     } finally {
       await member.screenshot({
@@ -3379,10 +3387,22 @@ try {
         await expect(product).toHaveCount(0);
         await expect(office).toBeChecked();
         await expect(customers).toHaveCount(1);
+
+        await selectAccess(
+          page,
+          dialog,
+          "Produktkatalog",
+          "Aus Fachrollen übernehmen",
+        );
+        await save();
+        await expect(office).toBeChecked();
+        await expect(product).toBeVisible();
+
         await office.press("Space");
         await expect(office).not.toBeChecked();
         await save();
         await expect(customers).toHaveCount(0);
+        await expect(product).toHaveCount(0);
         await mountedDialog.dispose();
         memberAudit.assertClean();
       } finally {

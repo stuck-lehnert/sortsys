@@ -102,7 +102,9 @@ Die Rollen Büro und Einkauf decken gemeinsame Kataloge ab. Die Verwaltung
 kann sie mit der Einladung vergeben oder später ändern. Ihre Zuordnung
 ist Teil der signierten Regel. Im Chromium-Test blieb der Produktkatalog
 nach dem Entzug von Einkauf über Büro erreichbar. Eine ausdrückliche
-Produktsperre blendete den Katalog auch bei aktiver Bürorolle aus.
+Produktsperre blendete den Katalog auch bei aktiver Bürorolle aus. Nach der
+Rückkehr zur Rollenfreigabe war er wieder sichtbar und verschwand beim
+anschließenden Entzug von Büro.
 Mandantenweite Rollen für Projekte und Personal stehen aus. Siehe
 [Fachrollen](menues-und-datenfreigaben.md#fachrollen-für-büro-und-einkauf).
 

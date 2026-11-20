@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { compilePolicy } from "@sortsys/zerotrust/sortsys";
+import { patchAccessRules } from "./accessProfiles";
 import {
   editOrganizationRoles,
   memberOrganizationRoles,
@@ -53,4 +54,40 @@ test("role patches accept only supported incremental boolean decisions", () => {
     parseOrganizationRolePatch({ "organization-procurement": "yes" }),
   ).toThrow();
   expect(() => parseOrganizationRolePatch([])).toThrow();
+});
+
+test("clearing a catalogue override restores role access without granting independent rights", () => {
+  const subject = "user:2";
+  const area = { scope: "catalog:products", facet: "master-data" };
+  const management = {
+    subject,
+    ...area,
+    actions: ["grant"],
+    effect: "allow",
+  };
+  const withRole = editOrganizationRoles([management], subject, {
+    "organization-office": true,
+  }).rules;
+  const denied = patchAccessRules(withRole, subject, [
+    { area, patch: { read: false } },
+  ]);
+  const canRead = (rules) =>
+    compilePolicy({ tenant: "test", version: "1", rules }, [subject]).allows(
+      area.scope,
+      area.facet,
+      "read",
+    );
+  expect(canRead(denied)).toBe(false);
+
+  const inherited = patchAccessRules(denied, subject, [
+    { area, patch: { read: null, update: null } },
+  ]);
+  expect(inherited).toEqual(withRole);
+  expect(canRead(inherited)).toBe(true);
+
+  const removed = editOrganizationRoles(inherited, subject, {
+    "organization-office": false,
+  }).rules;
+  expect(removed).toEqual([management]);
+  expect(canRead(removed)).toBe(false);
 });

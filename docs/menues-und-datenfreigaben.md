@@ -155,6 +155,11 @@ Konto dadurch seinen Lesezugriff, wechselt sortsys den Schlüssel für den
 betroffenen Bereich. Nach einer Mandantenwiederherstellung bestätigt die
 Verwaltung die Konten und weist ihnen ihre Fachrollen erneut zu.
 
+**Aus Fachrollen übernehmen** entfernt beim Speichern Einzelfreigaben und
+Sperren zum Lesen, Anlegen, Bearbeiten und Löschen für den gewählten Katalog.
+Danach gelten dort wieder die Rollenrechte. Das Recht **Freigaben verwalten**
+wird separat eingestellt.
+
 ## Freigabevorlagen für Projekte
 
 Unter **Berechtigungen verwalten → Projektzugriff** lässt sich für das

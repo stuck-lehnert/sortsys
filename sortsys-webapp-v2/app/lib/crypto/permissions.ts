@@ -31,14 +31,16 @@ import {
   MASTER_DATA_FIELDS,
   compileManagedAccess,
   managedAccess,
-  actionPatch,
   hasAccess,
   patchAccessRules,
   profilePatch,
+  ruleDecisionPatch,
   sameAccess,
   type AccessValue,
   type ActionPatch,
   type ManagedAccess,
+  type MasterDataField,
+  type RuleDecisionPatch,
 } from "./accessProfiles";
 import {
   commercialCollection,
@@ -567,7 +569,10 @@ async function changeAreaAccess(
     signal,
   );
 }
-export type AreaActionChange = { area: Collection; patch: ActionPatch };
+export type AreaActionChange<Patch = ActionPatch> = {
+  area: Collection;
+  patch: Patch;
+};
 export async function changeAreaActionAccesses(
   client: Client,
   user: string,
@@ -593,7 +598,7 @@ export async function changeAreaActionAccesses(
 async function publishActionChanges(
   client: Client,
   user: string,
-  changes: readonly AreaActionChange[],
+  changes: readonly AreaActionChange<RuleDecisionPatch>[],
   context: Awaited<ReturnType<typeof administrator>>,
   signal: AbortSignal,
   assistant?: boolean,
@@ -729,7 +734,7 @@ export async function memberAccessState(
 /** The server freezes affected writes until key redistribution finishes.
  * A lost acknowledgement is checked against the exact signed policy. */
 export type MemberAccessEdits = {
-  actions: Partial<Record<(typeof MASTER_DATA_FIELDS)[number], ActionPatch>>;
+  actions: Partial<Record<MasterDataField, RuleDecisionPatch>>;
   assistant?: boolean;
   roles?: OrganizationRolePatch;
 };
@@ -769,7 +774,7 @@ export async function changeMemberAccess(
       actions: Object.fromEntries(
         Object.entries(actions).map(([key, value]) => [
           key,
-          actionPatch(value),
+          ruleDecisionPatch(value),
         ]),
       ),
       ...(value.assistant !== undefined

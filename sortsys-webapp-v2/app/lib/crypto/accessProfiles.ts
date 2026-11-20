@@ -25,6 +25,7 @@ export const MASTER_DATA_FIELDS = [
   "vendors",
   "prices",
 ] as const;
+export type MasterDataField = (typeof MASTER_DATA_FIELDS)[number];
 export type AccessLevel = "none" | "read" | "write";
 export const DATA_ACTIONS = ["read", "create", "update", "delete"] as const;
 export type DataAction = (typeof DATA_ACTIONS)[number];
@@ -32,8 +33,10 @@ type Action = Rule["actions"][number];
 export type ManagedAction = Action;
 export type AccessValue = AccessLevel | { readonly actions: readonly Action[] };
 export type ActionPatch = Partial<Record<Action, boolean>>;
+// A null decision lets the remaining policy rules apply to that action.
+export type RuleDecisionPatch = Partial<Record<Action, boolean | null>>;
 export type ManagedAccess = {
-  [key in (typeof MASTER_DATA_FIELDS)[number]]: AccessValue;
+  [key in MasterDataField]: AccessValue;
 } & { assistant: boolean };
 const PRESETS = { none: [], read: ["read"], write: DATA_ACTIONS } as const;
 
@@ -71,7 +74,10 @@ export function accessPreset(value: AccessValue): AccessLevel | "custom" {
   const checked = accessValue(value);
   return typeof checked === "string" ? checked : "custom";
 }
-export function actionPatch(input: unknown): ActionPatch {
+function parseActionPatch<Decision>(
+  input: unknown,
+  isDecision: (value: unknown) => value is Decision,
+): Partial<Record<Action, Decision>> {
   if (
     !input ||
     typeof input !== "object" ||
@@ -82,9 +88,18 @@ export function actionPatch(input: unknown): ActionPatch {
   )
     throw new InvalidProtectedData();
   const value = record(input, Object.keys(input));
-  if (Object.values(value).some((value) => typeof value !== "boolean"))
+  if (!Object.values(value).every(isDecision))
     throw new InvalidProtectedData();
-  return { ...value } as ActionPatch;
+  return { ...value } as Partial<Record<Action, Decision>>;
+}
+export function actionPatch(input: unknown): ActionPatch {
+  return parseActionPatch(input, (value) => typeof value === "boolean");
+}
+export function ruleDecisionPatch(input: unknown): RuleDecisionPatch {
+  return parseActionPatch(
+    input,
+    (value) => value === null || typeof value === "boolean",
+  );
 }
 export function profilePatch(value: AccessValue): ActionPatch {
   return Object.fromEntries(
@@ -149,7 +164,7 @@ export function patchAccessRules(
   subject: string,
   changes: readonly {
     area: { scope: string; facet: Facet };
-    patch: ActionPatch;
+    patch: RuleDecisionPatch;
   }[],
 ): Rule[] {
   const remaining = rules.map((rule) => ({
@@ -162,7 +177,7 @@ export function patchAccessRules(
     const key = `${area.scope}\0${area.facet}`;
     if (seen.has(key)) throw new InvalidProtectedData();
     seen.add(key);
-    const patch = actionPatch(input);
+    const patch = ruleDecisionPatch(input);
     const allow: Action[] = [];
     const deny: Action[] = [];
     for (const action of ACTIONS) {
@@ -175,17 +190,18 @@ export function patchAccessRules(
           rule.facet === area.facet &&
           rule.actions.includes(action),
       );
-      let decision: boolean | undefined;
+      let decision: boolean | null = null;
       if (matching.some((rule) => rule.effect === "deny")) {
         decision = false;
       } else if (matching.some((rule) => rule.effect === "allow")) {
         decision = true;
       }
-      if (decision === patch[action]) continue;
+      const next = patch[action];
+      if (decision === next) continue;
       for (const rule of matching)
         rule.actions = rule.actions.filter((value) => value !== action);
-      if (patch[action]) allow.push(action);
-      else deny.push(action);
+      if (next === true) allow.push(action);
+      else if (next === false) deny.push(action);
     }
     if (allow.length)
       additions.push({

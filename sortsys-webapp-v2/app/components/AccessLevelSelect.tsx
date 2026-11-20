@@ -22,6 +22,7 @@ export function AccessLevelSelect({
   individual = false,
   actions = DATA_ACTIONS,
   allowManagement = false,
+  roleAccess,
 }: {
   label: string;
   value: AccessValue;
@@ -31,10 +32,12 @@ export function AccessLevelSelect({
   individual?: boolean;
   actions?: readonly ManagedAction[];
   allowManagement?: boolean;
+  roleAccess?: { pending: boolean; select(): void };
 }) {
   const [expanded, setExpanded] = useState(false);
   const id = useId();
   const preset = accessPreset(value);
+  const selection = roleAccess?.pending ? "roles" : preset;
   const editableActions: readonly ManagedAction[] =
     allowManagement && !actions.includes("grant")
       ? [...actions, "grant"]
@@ -57,12 +60,17 @@ export function AccessLevelSelect({
       ) : (
         <Select
           labelText={label}
-          value={expanded ? "custom" : preset}
+          value={expanded ? "custom" : selection}
           disabled={disabled}
           onChange={(event: { target: { value: string } }) => {
             const next = event.target.value;
             if (next === "custom") {
               setExpanded(true);
+              return;
+            }
+            if (next === "roles" && roleAccess) {
+              setExpanded(false);
+              roleAccess.select();
               return;
             }
             if (next === "none" || next === "read" || next === "write") {
@@ -81,9 +89,15 @@ export function AccessLevelSelect({
             text={uiText("Lesen und bearbeiten", "Read and edit")}
           />
           <SelectItem value="custom" text={uiText("Individuell", "Custom")} />
+          {roleAccess && (
+            <SelectItem
+              value="roles"
+              text={uiText("Aus Fachrollen übernehmen", "Use business roles")}
+            />
+          )}
         </Select>
       )}
-      {(individual || expanded || preset === "custom") && (
+      {(individual || expanded || selection === "custom") && (
         <fieldset
           className="space-y-2"
           aria-label={uiText(
@@ -119,7 +133,7 @@ export function AccessLevelSelect({
             )}
         </fieldset>
       )}
-      {!individual && preset === "write" && !expanded && (
+      {!individual && selection === "write" && !expanded && (
         <p className="text-sm text-muted">
           {uiText(
             "Anlegen und Löschen eingeschlossen.",

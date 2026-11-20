@@ -90,7 +90,7 @@ test("profiles normalize action order while rejecting unknown fields, actions an
     { actions: ["read"], extra: true },
   ])
     expect(() => accessValue(bad)).toThrow();
-  for (const bad of [{ unknown: true }, { read: "yes" }, [], null])
+  for (const bad of [{ unknown: true }, { read: "yes" }, { read: null }, [], null])
     expect(() => actionPatch(bad)).toThrow();
   expect(
     managedAccess({
