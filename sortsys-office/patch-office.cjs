@@ -56,6 +56,57 @@ replaceOnce("sframeChan.on('EV_INTEGRATION_DOWNLOADAS', function (format) {", `s
                 }
                 return;
             }`);
+
+// An embedded editor has no CryptDrive. Use the same encrypted upload as
+// pasted images when a user chooses a local file from the toolbar.
+replaceOnce(
+  `            APP.UploadImageFiles = function (files, type, id, jwt, cb) {`,
+  `            const uploadImageTypes = ['image/png', 'image/jpeg'];
+            APP.UploadImageFiles = function (files, type, id, jwt, cb) {`,
+);
+replaceOnce(
+  `                    return (file.type === 'image/png' || file.type === 'image/jpeg');`,
+  `                    return uploadImageTypes.includes(file.type);`,
+);
+replaceOnce(
+  `                var urls = [];
+                var remaining = files.length;`,
+  `                const images = [];
+                var remaining = files.length;`,
+);
+replaceOnce(
+  `                    if (remaining <= 0) { cb(null, urls); }`,
+  `                    if (remaining <= 0) {
+                        cb(null, images.map(image => image.url), images);
+                    }`,
+);
+replaceOnce(
+  `                                if (blobUrl) { urls.push(blobUrl); }`,
+  `                                if (blobUrl) { images.push({ name, url: blobUrl }); }`,
+);
+replaceOnce(
+  `            APP.AddImage = function(cb1, cb2) {`,
+  `            APP.AddImage = function(cb1, cb2) {
+                if (privateData.integrationConfig) {
+                    const input = document.createElement('input');
+                    input.type = 'file';
+                    input.accept = uploadImageTypes.join(',');
+                    input.addEventListener('change', function () {
+                        if (!input.files.length) { return; }
+                        APP.UploadImageFiles(input.files, null, null, null, function (err, urls, images) {
+                            if (err || !images?.length) {
+                                UI.warn(Messages.upload_serverError);
+                                return;
+                            }
+                            cb1(images[0]);
+                        });
+                    }, { once: true });
+                    input.click();
+                    return;
+                }
+
+`,
+);
 fs.writeFileSync(target, source);
 
 const common = path.join(process.argv[2], "www/common/sframe-common.js");

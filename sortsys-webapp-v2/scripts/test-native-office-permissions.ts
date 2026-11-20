@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import ExcelJS from "exceljs";
 import JSZip from "jszip";
 import {
@@ -18,6 +19,7 @@ import { applicationServer } from "./e2e/applicationServer.mjs";
 import {
   changeDiagramLabel,
   diagramEditor,
+  insertSlideText,
   officeTestDiagram,
   officeTestDocument,
 } from "./lib/officeTestPage";
@@ -33,11 +35,37 @@ const diagramEdit = "DIAGRAM_RETRY_PROTECTED_594822";
 const quantitiesName = "Vertrauliches Aufmaß.xlsx";
 const quantitiesOriginal = "OFFICE_QUANTITIES_ORIGINAL_847216";
 const quantitiesReplaced = "OFFICE_QUANTITIES_REPLACED_847216";
+const presentationName = "Vertrauliche Baustellenbesprechung.pptx";
+const presentationTitle = "OFFICE_PROJECT_PRESENTATION_846213";
+const presentationDetail = "OFFICE_PROJECT_DETAIL_846214";
+const presentationImageName = "baustellenplan-846215.png";
+const presentationImage =
+  "iVBORw0KGgoAAAANSUhEUgAAAAQAAAADCAIAAAA7ljmRAAAAEElEQVR4nGNIMLgARww4OQA8thCB8fEjXwAAAABJRU5ErkJggg==";
+const presentationImageBytes = Buffer.from(presentationImage, "base64");
 const sheetMime =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 const mime =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const officeTimeout = 120_000;
+const privateMarkers = [
+  sourceText,
+  reconnectEdit,
+  failedSaveEdit,
+  unconfirmedEdit,
+  fileName,
+  diagramName,
+  diagramLabel,
+  diagramEdit,
+  quantitiesName,
+  quantitiesOriginal,
+  quantitiesReplaced,
+  presentationName,
+  presentationTitle,
+  presentationDetail,
+  presentationImageName,
+  presentationImage,
+  "ppt/presentation.xml",
+];
 
 async function signIn(
   page: Page,
@@ -89,7 +117,7 @@ async function interruptAutosaveUpload(
 
 async function officeEngine(
   page: Page,
-  kind: "document" | "spreadsheet" = "document",
+  kind: "document" | "spreadsheet" | "presentation" = "document",
 ) {
   const isEngine = (frame: Frame) =>
     frame.url().includes(`/${kind}editor/main/`);
@@ -100,6 +128,108 @@ async function officeEngine(
       predicate: isEngine,
       timeout: officeTimeout,
     }))
+  );
+}
+
+async function presentationContents(archive: JSZip) {
+  const metadata = await archive.file("ppt/presentation.xml")?.async("string");
+  const first = await archive.file("ppt/slides/slide1.xml")?.async("string");
+  const second = await archive.file("ppt/slides/slide2.xml")?.async("string");
+  const image = await archive.file(/^ppt\/media\/.+\.png$/)[0]?.async("base64");
+
+  return {
+    slides: metadata?.match(/<p:sldId\b/g)?.length ?? 0,
+    wide: /<p:sldSz\b[^>]*\bcx="12192000"[^>]*\bcy="6858000"/.test(
+      metadata ?? "",
+    ),
+    title: first?.includes(`<a:t>${presentationTitle}</a:t>`) ?? false,
+    detail: second?.includes(`<a:t>${presentationDetail}</a:t>`) ?? false,
+    image: Boolean(second?.includes("<p:pic>") && image === presentationImage),
+  };
+}
+
+async function testPresentationProjectFile(
+  business: ReturnType<typeof createBusinessClient>,
+  projectId: string,
+  appOrigin: string,
+  reader: Page,
+  writer: Page,
+) {
+  const attachments = `${appOrigin}/projects/${projectId}/files`;
+  await writer.goto(attachments);
+  await writer
+    .getByRole("button", { name: "Datei oder Ordner erstellen" })
+    .click();
+  await writer
+    .getByRole("menuitem", { name: "PowerPoint", exact: true })
+    .click();
+  await writer.getByLabel("Dateiname").fill(presentationName);
+  await writer.getByRole("button", { name: "Erstellen", exact: true }).click();
+
+  const editable = await officeEngine(writer, "presentation");
+  const address = writer.url();
+  assert.ok(address.startsWith(`${attachments}/`));
+  const fileId = decodeURIComponent(address.slice(attachments.length + 1));
+  assert.ok(fileId && !fileId.includes("/"));
+
+  await insertSlideText(editable, presentationTitle);
+  await editable.locator("#id-toolbar-btn-add-slide button").first().click();
+  await insertSlideText(editable, presentationDetail);
+
+  await editable
+    .locator('[id^="tlbtn-insertimage-"]:visible .inner-box-icon')
+    .click();
+  const imageItem = editable
+    .getByText(/^(Bild aus Datei|Image from file)$/i)
+    .filter({ visible: true });
+  const [imageChooser] = await Promise.all([
+    writer.waitForEvent("filechooser"),
+    imageItem.click(),
+  ]);
+  await imageChooser.setFiles({
+    name: presentationImageName,
+    mimeType: "image/png",
+    buffer: presentationImageBytes,
+  });
+
+  const expected = { slides: 2, wide: true, title: true, detail: true, image: true };
+  await expect
+    .poll(
+      async () => {
+        const saved = await business.files.blob(projectId, fileId);
+        const archive = await JSZip.loadAsync(await saved.arrayBuffer());
+        return presentationContents(archive);
+      },
+      { timeout: officeTimeout },
+    )
+    .toEqual(expected);
+  console.log(
+    "Office permissions: the project dialog saved both slides and the embedded image",
+  );
+
+  await reader.goto(address);
+  const view = await officeEngine(reader, "presentation");
+  await expect(view.locator("#id_viewer")).toBeVisible({ timeout: officeTimeout });
+  await expect(view.locator('[id^="tlbtn-inserttext-"]:visible')).toHaveCount(0);
+
+  await reader.goto(attachments);
+  const fileRow = reader.getByRole("listitem").filter({
+    has: reader.getByText(presentationName, { exact: true }),
+  });
+  await fileRow.getByRole("button", { name: "Aktionen", exact: true }).click();
+  const downloadItem = reader.getByRole("menuitem", {
+    name: "Herunterladen",
+    exact: true,
+  });
+  const [download] = await Promise.all([
+    reader.waitForEvent("download"),
+    downloadItem.click(),
+  ]);
+  assert.equal(download.suggestedFilename(), presentationName);
+  const archive = await JSZip.loadAsync(await readFile(await download.path()));
+  assert.deepEqual(await presentationContents(archive), expected);
+  console.log(
+    "Office permissions: the reader opened the project link and downloaded the complete presentation",
   );
 }
 
@@ -202,22 +332,14 @@ async function testSpreadsheetProjectFile(
 function observePlaintext(page: Page, leaks: string[]) {
   page.on("request", (request) => {
     const url = new URL(request.url());
-    if (!url.pathname.startsWith("/api/v2/")) return;
-    const payload = [decodeURIComponent(url.search), request.postData() ?? ""];
-    for (const marker of [
-      sourceText,
-      reconnectEdit,
-      failedSaveEdit,
-      unconfirmedEdit,
-      fileName,
-      diagramName,
-      diagramLabel,
-      diagramEdit,
-      quantitiesName,
-      quantitiesOriginal,
-      quantitiesReplaced,
-    ]) {
-      if (payload.some((value) => value.includes(marker))) leaks.push(marker);
+    if (url.protocol !== "http:" && url.protocol !== "https:") return;
+    const address = decodeURIComponent(url.pathname + url.search);
+    const body = request.postDataBuffer();
+    for (const marker of privateMarkers) {
+      if (address.includes(marker) || body?.includes(marker)) leaks.push(marker);
+    }
+    if (body?.includes(presentationImageBytes)) {
+      leaks.push(presentationImageName);
     }
   });
 }
@@ -517,6 +639,13 @@ export async function testOfficeRevocation({
     console.log("Office permissions: the same Drawio editor confirmed its edit after the failed upload");
     await grant("read");
     await testSpreadsheetProjectFile(
+      business,
+      projectId,
+      app.origin,
+      member,
+      administrator,
+    );
+    await testPresentationProjectFile(
       business,
       projectId,
       app.origin,

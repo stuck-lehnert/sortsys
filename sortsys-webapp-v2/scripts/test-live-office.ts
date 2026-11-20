@@ -12,7 +12,11 @@ import {
   type Request,
 } from "playwright";
 import { observeWorkerTraffic } from "./lib/workerTraffic";
-import { officeTestDocument, serveOfficeTestPage } from "./lib/officeTestPage";
+import {
+  insertSlideText,
+  officeTestDocument,
+  serveOfficeTestPage,
+} from "./lib/officeTestPage";
 import { createBlankProjectFile } from "../app/lib/blankProjectFiles";
 
 if (process.env.SORTSYS_DISPOSABLE_OFFICE_TEST !== "1")
@@ -892,26 +896,7 @@ try {
     );
     const slideFrame = slidePage.frame({ url: /\/presentationeditor\/main\// });
     assert.ok(slideFrame);
-    const intro = slideFrame.getByText("Got it", { exact: true });
-    if (await intro.isVisible()) await intro.click();
-    await slideFrame
-      .locator('[id^="tlbtn-inserttext-"]:visible .inner-box-icon')
-      .click();
-    const slide = await slideFrame.locator("#id_viewer").boundingBox();
-    assert.ok(slide);
-    await slidePage.mouse.move(
-      slide.x + slide.width * 0.27,
-      slide.y + slide.height * 0.32,
-    );
-    await slidePage.mouse.down();
-    await slidePage.mouse.move(
-      slide.x + slide.width * 0.72,
-      slide.y + slide.height * 0.5,
-      { steps: 8 },
-    );
-    await slidePage.mouse.up();
-    await slidePage.keyboard.type(presentationText);
-    await slidePage.keyboard.press("Escape");
+    await insertSlideText(slideFrame, presentationText);
 
     async function assertPresentation(bytes: number[]) {
       const archive = await JSZip.loadAsync(Buffer.from(bytes));

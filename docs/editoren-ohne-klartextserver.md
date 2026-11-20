@@ -198,6 +198,15 @@ Der Lauf öffnet außerdem eine XLSX-Projektdatei mit Leserechten und ersetzt si
 anschließenden Bearbeiten speichert der Editor den geänderten Wert und das
 blattübergreifend neu berechnete Ergebnis in der verschlüsselten Projektdatei.
 
+Über „Bild aus Datei“ lassen sich PNG- und JPEG-Dateien vom eigenen Gerät in
+ein Office-Dokument einfügen. Der Editor verschlüsselt die Bilder vor dem
+Upload auf demselben Weg wie beim Einfügen aus der Zwischenablage. Ein
+sortsys-Konto mit Bearbeitungsfreigabe genügt. Im Browsertest entsteht in
+der Projektablage eine Präsentation mit zwei Folien und einem PNG. Nach
+dem automatischen Speichern enthält die Datei beide Folien und das
+unveränderte Bild. Ein Lesekonto öffnet und lädt dieselbe Fassung über
+die Projektablage herunter.
+
 ## Betrieb des Office-Dienstes
 
 Der Dienst [office](../sortsys-office/README.md) baut den geprüften

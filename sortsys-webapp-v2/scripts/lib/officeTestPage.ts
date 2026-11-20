@@ -56,6 +56,31 @@ export async function changeDiagramLabel(frame: Frame, label: string, value: str
   await input.waitFor({ state: "hidden" });
 }
 
+export async function insertSlideText(frame: Frame, text: string) {
+  const page = frame.page();
+  const intro = frame.getByText(/^(Got it|Verstanden)$/);
+  if (await intro.isVisible()) await intro.click();
+
+  await frame
+    .locator('[id^="tlbtn-inserttext-"]:visible .inner-box-icon')
+    .click();
+  const slide = await frame.locator("#id_viewer").boundingBox();
+  assert.ok(slide);
+  await page.mouse.move(
+    slide.x + slide.width * 0.27,
+    slide.y + slide.height * 0.32,
+  );
+  await page.mouse.down();
+  await page.mouse.move(
+    slide.x + slide.width * 0.72,
+    slide.y + slide.height * 0.5,
+    { steps: 8 },
+  );
+  await page.mouse.up();
+  await page.keyboard.type(text);
+  await page.keyboard.press("Escape");
+}
+
 const html = `<!doctype html>
 <html><body style="margin:0">
 <iframe id="editor" style="width:100vw;height:100vh;border:0"></iframe>

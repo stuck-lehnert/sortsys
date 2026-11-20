@@ -480,10 +480,10 @@ kann den Entwurf anschließend ausdrücklich übernehmen. Ein Chromium-Test
 mit dem echten Dienst prüft die Wiederverbindung nach einem API- und
 WebSocket-Abbruch und das automatische Speichern nach dem fehlgeschlagenen
 Upload. Weitere Browserläufe prüfen bei XLSX eine blattübergreifende
-Neuberechnung und bei PPTX ein neu eingefügtes Textfeld. Sie prüfen für beide
-Formate das automatische Speichern im Editor und das erneute Öffnen mit
-Leserechten. Die Neuberechnung wurde auch in der verschlüsselten Projektablage
-bestätigt. Die schreibgeschützte XLSX-Vorschau lud dabei eine zwischenzeitlich
+Neuberechnung und bei PPTX zwei bearbeitete Folien mit einem lokal
+eingefügten PNG. In beiden Fällen speichert der Editor automatisch in der
+verschlüsselten Projektablage, und ein Lesekonto kann die Datei öffnen.
+Die schreibgeschützte XLSX-Vorschau lädt außerdem eine zwischenzeitlich
 ersetzte Datei unter demselben Link. Komplexere Tabellen und
 Präsentationslayouts sind noch zu prüfen. Siehe
 [Editorprüfungen](editoren-ohne-klartextserver.md).
