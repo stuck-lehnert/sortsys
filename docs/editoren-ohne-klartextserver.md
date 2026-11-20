@@ -146,6 +146,13 @@ Für eine Datei ohne gemeinsame Sitzung darf ein Leser eine unabhängige,
 schreibgeschützte Kopie öffnen. Diese erhält keine Speicherfreigabe für das
 Projekt.
 
+Vor einem Export zum Speichern fragt der Editor den bestätigten Dateistand ab.
+Die Versionsnummer bleibt mit dem Export verbunden. Bestätigt ein anderer
+Browser zwischenzeitlich eine neue Fassung, wird der verspätete Export
+abgewiesen. Mit gültiger Schreibfreigabe kann der Editor erneut aus dem
+gemeinsamen Raum exportieren. Die API prüft die verschlüsselte Veröffentlichung
+gegen den erwarteten technischen Stand.
+
 Fällt die sortsys-API während einer Rechteprüfung kurz aus, bleibt der
 Editor im geöffneten Tab erhalten. Der Dialog pausiert die Bedienung und
 fragt die Rechte erneut ab. Erst wenn die Prüfung denselben Dateizugang
@@ -161,6 +168,8 @@ Bei weiteren Ausfällen wächst der Abstand zwischen den Versuchen. Ein
 Chromium-Test unterbricht die API-Abfrage, trennt den WebSocket und lässt
 anschließend einen Upload mit HTTP 503 scheitern. Nach der Wiederverbindung
 enthält die bestätigte DOCX-Datei beide Änderungen aus demselben Editorfenster.
+Bei Drawio prüft derselbe Lauf, dass ein fehlgeschlagener Upload im geöffneten
+Raum wiederholt und die Änderung bestätigt wird.
 
 Der
 [Mehrinstanztest](../sortsys-webapp-v2/scripts/test-live-file-permissions.ts)
@@ -196,6 +205,8 @@ CryptPads normale Integrationsräume sind temporär. Der sortsys-Build nimmt sie
 für Projektdateien von dieser Löschung aus. Der Diensttest schließt alle
 Teilnehmer, startet den Dienst neu und öffnet den gemeinsamen DOCX-Stand mit dem
 Leseschlüssel erneut. Ungespeicherte Exportansichten bleiben temporär.
+Webapp und Office-Dienst verwenden denselben Buildstand, damit beide Seiten
+die Versionsabfrage vor dem Speichern unterstützen.
 
 Der gemeinsame Wiederanlauftest ersetzt den beendeten Office-Container durch
 einen neuen Container mit einer Kopie des Volumes. Auch DuckDB und die beiden
@@ -327,8 +338,7 @@ TEST_OFFICE_PERMISSIONS=1 CONTAINER_RUNTIME=docker ./scripts/test-office
 
 Der weitere Funktionsabgleich muss mehr Formeln und Zahlenformate,
 Bildbearbeitung, komplexe Kopf- und Fußzeilen, Präsentationslayouts und
-gleichzeitige Änderungen derselben Inhalte abdecken. Die Wiederverbindung
-während der Bearbeitung ist bisher für DOCX geprüft. Vor der Ablösung sind die
+gleichzeitige Änderungen derselben Inhalte abdecken. Vor der Ablösung sind die
 bisherigen Klartextkopien und Caches des Dokumentservers zu berücksichtigen.
 Bereits angelegte Betreiberbackups werden durch einen neuen Editor nicht
 nachträglich verschlüsselt.

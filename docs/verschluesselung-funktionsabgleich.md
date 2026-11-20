@@ -647,8 +647,10 @@ Der neue Browseradapter verwendet ausschließlich den Blob-Weg und prüft bei
 bestätigt Speichervorgänge erst nach der verschlüsselten Ablage. Ein Leser
 erhält keinen Bearbeitungszugang. Zwei unabhängige Browseranmeldungen haben in
 einem echten Editorlauf gemeinsam ein DOCX geändert; ein dritter Browser konnte
-den gemeinsamen Stand mit dem Leseschlüssel öffnen. Nicht als Datei bestätigte
-Änderungen vor Rechtewechseln, weitere Dateifunktionen und lokale Editor-Caches
+den gemeinsamen Stand mit dem Leseschlüssel öffnen. Ein verzögerter Export aus
+demselben Raum kann eine inzwischen bestätigte Dateiversion nicht ersetzen. Der
+Browser prüft außerdem die Übernahme unbestätigter DOCX-Änderungen nach einem
+Rechtewechsel. Weitere Dateifunktionen und Cache-Verhalten bei anderen Formaten
 bleiben zu prüfen. Die
 [Quellprüfung der Office- und Diagrammeditoren](editoren-ohne-klartextserver.md)
 beschreibt die geprüften Wege und bisherigen Tests.

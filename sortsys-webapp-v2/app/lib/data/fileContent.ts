@@ -70,7 +70,7 @@ async function fetchFileBlocks(
   const packets = await required(
     client.query(
       "zerotrust.fileChunks.getMany",
-      { domain, ids, prepared },
+      { domain, ids, ...(prepared ? { prepared } : {}) },
       {
         strategy: "network-only",
       },

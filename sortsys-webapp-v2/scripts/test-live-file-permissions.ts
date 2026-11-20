@@ -15,6 +15,7 @@ import {
 import { changeProjectAccess } from "../app/lib/crypto/permissions";
 import { createProjectArea } from "../app/lib/data/createProjectArea";
 import { createBusinessClient } from "../app/lib/data/businessClient";
+import { ProtectedWriteConflict } from "../app/lib/data/atomicWrites";
 import { newProductRowId, publicId } from "../app/lib/data/products";
 import type { DuckDriver } from "../app/lib/data/database";
 import {
@@ -107,6 +108,7 @@ export async function testFilePermissions(
         projectId,
         id,
         readerRoom.epoch,
+        BigInt(readerOffice.contentVersion),
         new Blob(["Denied Office save"]),
       ),
     );
@@ -329,6 +331,7 @@ export async function testFilePermissions(
       undefined,
       room("c"),
     );
+    const oldFile = await owner.files.officeStatus(projectId, id);
     await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
     business = createBusinessClient(memberClient, { productDriver: driver });
     assert.ok((await business.query("projects.get", { id: projectId }))[1]);
@@ -352,6 +355,7 @@ export async function testFilePermissions(
       projectId,
       id,
       sharedRoom.epoch,
+      BigInt(oldFile.contentVersion),
       new Blob(["Edited by a file-only collaborator"]),
     );
     const own = await business.files.upload({
@@ -366,6 +370,25 @@ export async function testFilePermissions(
     );
     business.dispose();
     await acceptVaultWithKey(root.dataKey, root.vault, root.username, false);
+    const confirmedFile = await owner.files.officeStatus(projectId, id);
+    assert.equal(oldFile.epoch, sharedRoom.epoch);
+    assert.equal(confirmedFile.epoch, sharedRoom.epoch);
+    assert.equal(
+      BigInt(confirmedFile.contentVersion),
+      BigInt(oldFile.contentVersion) + 1n,
+    );
+    await assert.rejects(
+      () =>
+        owner.files.saveOffice(
+          projectId,
+          id,
+          sharedRoom.epoch,
+          BigInt(oldFile.contentVersion),
+          new Blob(["Late export from the same editor room"]),
+        ),
+      ProtectedWriteConflict,
+      "The same room and current edit access do not authorize an old export",
+    );
     await changeProjectAccess(rootClient, user, projectId, "read", signal);
     await changeProjectAccess(
       rootClient,
@@ -448,11 +471,14 @@ export async function testFilePermissions(
       await recoveredDraft.text(),
       "A losing handoff must not overwrite the already committed draft",
     );
+    const adopted = await owner.files.officeStatus(projectId, id);
+    const adoptedVersion = BigInt(adopted.contentVersion);
     await assert.rejects(() =>
       owner.files.saveOffice(
         projectId,
         id,
         sharedRoom.epoch,
+        adoptedVersion,
         new Blob(["Stale editor after policy change"]),
       ),
     );
@@ -467,6 +493,7 @@ export async function testFilePermissions(
         projectId,
         id,
         sharedRoom.epoch,
+        adoptedVersion,
         new Blob(["Removed writer cannot save"]),
       ),
     );
@@ -476,6 +503,7 @@ export async function testFilePermissions(
       projectId,
       id,
       nextRoom.epoch,
+      adoptedVersion,
       new Blob(["After ordinary file-only edit"]),
     );
   } finally {

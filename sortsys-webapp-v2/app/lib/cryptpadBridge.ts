@@ -26,7 +26,8 @@ type Options = {
     previous: string | undefined,
     proposed: OfficeSession,
   ) => Promise<OfficeSession>;
-  save: (document: Blob) => Promise<void>;
+  saveVersion?: () => Promise<string>;
+  save: (document: Blob, version?: string) => Promise<void>;
   onReady: () => void;
   onError: () => void;
   onSaveError?: (error: unknown) => void;
@@ -195,6 +196,7 @@ export function openCryptPad(options: Options): {
       readOnly: !options.canEdit,
       editorConfig: { lang: options.locale },
       _config: {
+        sortsysVersionedSaves: !!options.saveVersion,
         sortsysPersistentRoom:
           !standalone && options.persistentSession !== false,
         editorConfig: { lang: options.locale },
@@ -246,12 +248,32 @@ export function openCryptPad(options: Options): {
     received.add(txid);
     if (received.size > 256) received.delete(received.values().next().value!);
     switch (command.q) {
+      case "SAVE_VERSION": {
+        if (!ready || !options.canEdit || !options.saveVersion) {
+          reply(txid, { error: "SAVE_REJECTED" });
+          return;
+        }
+        void options.saveVersion().then(
+          (version) => reply(txid, { version }),
+          (error) => {
+            if (closed) return;
+            reply(txid, { error: "SAVE_FAILED" });
+            options.onSaveError?.(error);
+          },
+        );
+        return;
+      }
       case "SAVE": {
-        const document = command.data;
+        const data = command.data;
+        const bound = options.saveVersion && object(data) ? data : null;
+        const document = bound ? bound.blob : data;
+        const version = bound?.version;
         if (
           !options.canEdit ||
           !(document instanceof Blob) ||
           document.size > MAX_DOCUMENT ||
+          (options.saveVersion &&
+            (typeof version !== "string" || !/^[1-9][0-9]{0,18}$/.test(version))) ||
           saves >= 2
         ) {
           reply(txid, { error: "SAVE_REJECTED" });
@@ -262,7 +284,10 @@ export function openCryptPad(options: Options): {
           .then(async () => {
             if (closed) return;
             try {
-              await options.save(document);
+              await options.save(
+                document,
+                typeof version === "string" ? version : undefined,
+              );
               if (!closed) {
                 reply(txid);
                 options.onDirty?.(false);

@@ -1762,10 +1762,11 @@ export function createBusinessClient(
       projectId: string,
       fileId: string,
       epoch: string,
+      version: bigint,
       document: Blob,
     ) {
       const result = await fileWork((files) =>
-        files.saveOffice(projectId, fileId, epoch, document),
+        files.saveOffice(projectId, fileId, epoch, version, document),
       );
       notify((path) => FILE_QUERIES.has(path));
       return result;

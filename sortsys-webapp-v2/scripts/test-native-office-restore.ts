@@ -3,7 +3,13 @@ import JSZip from "jszip";
 import { chromium, type Browser, type Page } from "playwright";
 import { expect } from "playwright/test";
 import type { createBusinessClient } from "../app/lib/data/businessClient";
-import { officeTestDocument, serveOfficeTestPage } from "./lib/officeTestPage";
+import {
+  changeDiagramLabel,
+  diagramEditor,
+  officeTestDiagram,
+  officeTestDocument,
+  serveOfficeTestPage,
+} from "./lib/officeTestPage";
 
 type Files = ReturnType<typeof createBusinessClient>["files"];
 const examples = {
@@ -32,14 +38,7 @@ export type RestoredOfficeRoom = {
 
 async function localBytes(kind: Kind) {
   if (kind === "doc") return officeTestDocument(examples.doc.initial);
-  return new TextEncoder().encode(
-    `<mxfile><diagram id="schedule" name="Bauablauf"><mxGraphModel><root>
-      <mxCell id="0"/><mxCell id="1" parent="0"/>
-      <mxCell id="note" value="${examples.diagram.initial}" vertex="1" parent="1">
-        <mxGeometry x="80" y="80" width="340" height="80" as="geometry"/>
-      </mxCell>
-    </root></mxGraphModel></diagram></mxfile>`,
-  );
+  return officeTestDiagram(examples.diagram.initial);
 }
 
 async function text(kind: Kind, source: Blob | Uint8Array<ArrayBuffer>) {
@@ -132,23 +131,7 @@ async function editInRoom(page: Page, kind: Kind) {
     await editor.pressSequentially(example.edit);
     return;
   }
-  const isDrawing = (frame: import("playwright").Frame) =>
-    new URL(frame.url()).pathname ===
-    "/components/drawio/src/main/webapp/index.html";
-  const drawing =
-    page.frames().find(isDrawing) ??
-    (await page.waitForEvent("framenavigated", {
-      predicate: isDrawing,
-      timeout: 60_000,
-    }));
-  await drawing
-    .locator(".geDiagramContainer")
-    .getByText(example.initial, { exact: true })
-    .dblclick();
-  const input = drawing.locator(".mxCellEditor[contenteditable=true]");
-  await input.fill(example.edit);
-  await input.press("Control+Enter");
-  await input.waitFor({ state: "hidden" });
+  await changeDiagramLabel(await diagramEditor(page), example.initial, example.edit);
 }
 
 export async function prepareOfficeRooms(files: Files, project: string) {
@@ -264,6 +247,7 @@ export async function restoreOfficeRooms(
           project,
           room.file,
           room.epoch,
+          BigInt(room.version),
           exported,
         );
         assert.equal(confirmed.version, BigInt(room.version) + 1n);

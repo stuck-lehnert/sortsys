@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { build, serve } from "bun";
 import JSZip from "jszip";
+import type { Frame, Page } from "playwright";
 import type {
   OfficeApplication,
   OfficeSession,
@@ -25,6 +26,34 @@ export async function officeTestDocument(text: string) {
     compression: "STORE",
   });
   return new Uint8Array(bytes);
+}
+
+export function officeTestDiagram(label: string) {
+  return new TextEncoder().encode(
+    `<mxfile><diagram id="schedule" name="Bauablauf"><mxGraphModel><root>
+      <mxCell id="0"/><mxCell id="1" parent="0"/>
+      <mxCell id="note" value="${label}" vertex="1" parent="1">
+        <mxGeometry x="80" y="80" width="340" height="80" as="geometry"/>
+      </mxCell>
+    </root></mxGraphModel></diagram></mxfile>`,
+  );
+}
+
+export async function diagramEditor(page: Page) {
+  const isDrawing = (frame: Frame) =>
+    new URL(frame.url()).pathname === "/components/drawio/src/main/webapp/index.html";
+  return page.frames().find(isDrawing) ?? page.waitForEvent("framenavigated", {
+    predicate: isDrawing,
+    timeout: 60_000,
+  });
+}
+
+export async function changeDiagramLabel(frame: Frame, label: string, value: string) {
+  await frame.locator(".geDiagramContainer").getByText(label, { exact: true }).dblclick();
+  const input = frame.locator(".mxCellEditor[contenteditable=true]");
+  await input.fill(value);
+  await input.press("Control+Enter");
+  await input.waitFor({ state: "hidden" });
 }
 
 const html = `<!doctype html>

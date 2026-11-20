@@ -747,7 +747,7 @@ export function createProtectedProjectFiles(
   function save(
     projectId: string,
     fileId: string,
-    version: bigint | null,
+    version: bigint,
     document: Blob,
     officeEpoch?: string,
     liveSave: LiveSave = {},
@@ -759,8 +759,7 @@ export function createProtectedProjectFiles(
         !payload?.file ||
         !payload.original ||
         !store.collection.can("update") ||
-        (version !== null &&
-          BigInt(payload.file.values.office_version as string) !== version) ||
+        BigInt(payload.file.values.office_version as string) !== version ||
         !(document instanceof Blob) ||
         document.size > MAX_FILE_BYTES
       ) {
@@ -771,8 +770,6 @@ export function createProtectedProjectFiles(
         if (current.capsule?.epoch !== officeEpoch) {
           throw new ProtectedWriteConflict();
         }
-      } else if (version === null) {
-        throw new InvalidProtectedData();
       }
       if (
         liveSave.sequence !== undefined &&
@@ -1191,9 +1188,10 @@ export function createProtectedProjectFiles(
       projectId: string,
       fileId: string,
       epoch: string,
+      version: bigint,
       document: Blob,
     ) {
-      return save(projectId, fileId, null, document, epoch);
+      return save(projectId, fileId, version, document, epoch);
     },
     officeStatus(projectId: string, fileId: string) {
       return queue(() => officeStatus(projectId, fileId));

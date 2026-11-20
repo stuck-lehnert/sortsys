@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import JSZip from "jszip";
 import {
   chromium,
+  type Frame,
   type Page,
   type Route,
   type WebSocketRoute,
@@ -13,13 +14,21 @@ import { changeProjectAccess } from "../app/lib/crypto/permissions";
 import type { createBusinessClient } from "../app/lib/data/businessClient";
 import { fileObject } from "../app/lib/data/projectFileData";
 import { applicationServer } from "./e2e/applicationServer.mjs";
-import { officeTestDocument } from "./lib/officeTestPage";
+import {
+  changeDiagramLabel,
+  diagramEditor,
+  officeTestDiagram,
+  officeTestDocument,
+} from "./lib/officeTestPage";
 
 const sourceText = "OFFICE_PERMISSION_SNAPSHOT_487562";
 const reconnectEdit = "_OFFICE_BEFORE_API_INTERRUPTION_593816";
 const failedSaveEdit = "_OFFICE_UNCONFIRMED_DURING_UPLOAD_219853";
 const unconfirmedEdit = "_PENDING_OFFICE_EDIT_716204";
 const fileName = "Vertrauliches Aufmaßprotokoll.docx";
+const diagramName = "Vertraulicher Bauablauf beim Verbindungswechsel.drawio";
+const diagramLabel = "DIAGRAM_BEFORE_SAVE_594821";
+const diagramEdit = "DIAGRAM_RETRY_PROTECTED_594822";
 const mime =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 const officeTimeout = 120_000;
@@ -43,6 +52,34 @@ async function signIn(
 
 const officeFrame = (page: Page) =>
   page.locator('iframe[title="Dokumenteditor"]');
+const pausedMessage = (page: Page) =>
+  page.getByText(/^Verbindung unterbrochen\./);
+
+async function interruptAutosaveUpload(
+  page: Page,
+  frame: Frame,
+  edit: () => Promise<void>,
+) {
+  const upload = (url: URL) =>
+    url.pathname.startsWith("/api/v2/") &&
+    url.pathname.includes("zerotrust.fileChunks.putMany");
+  let failedUploads = 0;
+  const interrupt = async (route: Route) => {
+    failedUploads++;
+    await route.fulfill({ status: 503 });
+  };
+  await page.route(upload, interrupt);
+  try {
+    await edit();
+    await expect
+      .poll(() => failedUploads, { timeout: officeTimeout })
+      .toBeGreaterThan(0);
+    await expect(pausedMessage(page)).toBeVisible({ timeout: officeTimeout });
+    assert.equal(frame.isDetached(), false);
+  } finally {
+    await page.unroute(upload, interrupt);
+  }
+}
 
 async function documentEngine(page: Page) {
   const isEngine = (frame: import("playwright").Frame) =>
@@ -68,6 +105,9 @@ function observePlaintext(page: Page, leaks: string[]) {
       failedSaveEdit,
       unconfirmedEdit,
       fileName,
+      diagramName,
+      diagramLabel,
+      diagramEdit,
     ]) {
       if (payload.some((value) => value.includes(marker))) leaks.push(marker);
     }
@@ -192,8 +232,7 @@ export async function testOfficeRevocation({
     await member.route(accessSnapshot, interruptAccess);
     try {
       await member.evaluate(() => window.dispatchEvent(new Event("online")));
-      const paused = member.getByText(/^Verbindung unterbrochen\./);
-      await expect(paused).toBeVisible({ timeout: officeTimeout });
+      await expect(pausedMessage(member)).toBeVisible({ timeout: officeTimeout });
       assert.ok(failedChecks > 0);
       assert.equal(writer.isDetached(), false);
       await expect(
@@ -210,7 +249,7 @@ export async function testOfficeRevocation({
     } finally {
       await member.unroute(accessSnapshot, interruptAccess);
     }
-    await expect(member.getByText(/^Verbindung unterbrochen\./)).toHaveCount(
+    await expect(pausedMessage(member)).toHaveCount(
       0,
       {
         timeout: officeTimeout,
@@ -225,27 +264,9 @@ export async function testOfficeRevocation({
       "Office permissions: the same editor saved its draft after reconnecting to the API",
     );
 
-    const upload = (url: URL) =>
-      url.pathname.startsWith("/api/v2/") &&
-      url.pathname.includes("zerotrust.fileChunks.putMany");
-    let failedUploads = 0;
-    const interruptUpload = async (route: Route) => {
-      failedUploads++;
-      await route.fulfill({ status: 503 });
-    };
-    await member.route(upload, interruptUpload);
-    try {
-      await input.pressSequentially(failedSaveEdit);
-      await expect
-        .poll(() => failedUploads, { timeout: officeTimeout })
-        .toBeGreaterThan(0);
-      await expect(member.getByText(/^Verbindung unterbrochen\./)).toBeVisible({
-        timeout: officeTimeout,
-      });
-      assert.equal(writer.isDetached(), false);
-    } finally {
-      await member.unroute(upload, interruptUpload);
-    }
+    await interruptAutosaveUpload(member, writer, () =>
+      input.pressSequentially(failedSaveEdit),
+    );
     await expect
       .poll(savedText, { timeout: officeTimeout })
       .toContain(failedSaveEdit);
@@ -357,8 +378,36 @@ export async function testOfficeRevocation({
     await expect(officeFrame(member)).toHaveCount(0, {
       timeout: officeTimeout,
     });
-    assert.deepEqual(leaks, []);
     console.log("Office permissions: full revocation closed the live reader");
+
+    await grant({ actions: ["read", "update"] });
+    const diagramId = await business.files.upload({
+      projectId,
+      name: diagramName,
+      mime: "application/vnd.jgraph.mxfile",
+      blob: new Blob([officeTestDiagram(diagramLabel)]),
+    });
+    await member.goto(`${app.origin}/projects/${projectId}/files/${diagramId}`);
+    const diagram = await diagramEditor(member);
+    const before = await business.files.officeStatus(projectId, diagramId);
+    assert.ok(before.epoch);
+    await interruptAutosaveUpload(member, diagram, () =>
+      changeDiagramLabel(diagram, diagramLabel, diagramEdit),
+    );
+    await expect
+      .poll(async () => {
+        const saved = await business.files.blob(projectId, diagramId);
+        return (await saved.text()).includes(diagramEdit);
+      }, { timeout: officeTimeout })
+      .toBe(true);
+    assert.equal(diagram.isDetached(), false);
+    const afterDiagramSave = await business.files.officeStatus(projectId, diagramId);
+    assert.equal(afterDiagramSave.epoch, before.epoch);
+    assert.ok(
+      BigInt(afterDiagramSave.contentVersion) > BigInt(before.contentVersion),
+    );
+    assert.deepEqual(leaks, []);
+    console.log("Office permissions: the same Drawio editor confirmed its edit after the failed upload");
   } finally {
     releaseSave.resolve();
     try {

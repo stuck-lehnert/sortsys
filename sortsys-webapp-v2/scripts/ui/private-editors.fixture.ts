@@ -537,7 +537,8 @@ Object.assign(window, {
         epoch = "shared-office-room";
         return { ...proposed, epoch };
       };
-      projectFiles.saveOffice = async (_project, _file, _epoch, blob) => {
+      projectFiles.saveOffice = async (_project, _file, _epoch, version, blob) => {
+        if (version !== 1n) throw new Error("Unexpected Office file version");
         state.saved.push(await blob.text());
         return { version: 2n, savedAt: new Date() };
       };

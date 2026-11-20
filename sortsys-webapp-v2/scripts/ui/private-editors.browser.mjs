@@ -1334,8 +1334,20 @@ for (const fileName of ["Private.docx", "Plan.drawio"]) {
       await first.evaluate(() => window.boot());
       await first.waitForFunction(() => window.state.start?.readOnly === false);
       await locate().waitFor({ state: "visible" });
+      await first.evaluate(() => window.command("SAVE", new Blob(["Unbound file"])));
+      await first.waitForFunction(() =>
+        window.state.acks.some((ack) => ack.args?.error === "SAVE_REJECTED"),
+      );
+      await first.evaluate(() => window.command("SAVE_VERSION"));
+      const prepared = await first.waitForFunction(() =>
+        window.state.acks.find((ack) => ack.args?.version)?.args.version,
+      );
+      assert.equal(await prepared.jsonValue(), "1");
       await first.evaluate(() =>
-        window.command("SAVE", new Blob(["actual component save"])),
+        window.command("SAVE", {
+          blob: new Blob(["actual component save"]),
+          version: window.state.acks.find((ack) => ack.args?.version).args.version,
+        }),
       );
       await page.waitForFunction(
         () => window.privateEditorFixture.state.saved.length === 1,

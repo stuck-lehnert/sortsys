@@ -12,6 +12,31 @@ function replaceOnce(before, after) {
   }
   source = source.replace(before, after);
 }
+
+// Both exporters obtain the confirmed project file version before reading
+// their editor state. A delayed export carries that same version to SAVE.
+function bindSaveVersion(indent) {
+  replaceOnce(
+    `${indent}var integrationSave = function (cb) {`,
+    `${indent}var integrationSave = common.bindIntegrationSave(function (cb, version) {`,
+  );
+  replaceOnce(
+    `                                blob: _blob\n`,
+    `                                blob: _blob, version: version\n`,
+  );
+  replaceOnce(
+    `${indent}};\n${indent}const integrationHasUnsavedChanges`,
+    `${indent}});\n${indent}const integrationHasUnsavedChanges`,
+  );
+}
+
+bindSaveVersion("                    ");
+// A channel reply arrives as its second callback argument. Forward a rejected
+// file write so CryptPad releases the save lock without announcing success.
+replaceOnce(
+  `                            }, obj => {\n                                if (!obj?.error) { hasUnsavedChanges = false; }`,
+  `                            }, (err, obj) => {\n                                if (err) { return cb({error: err}); }\n                                if (!obj?.error) { hasUnsavedChanges = false; }`,
+);
 replaceOnce("APP.printPdf = function (obj, cb) {\n            var bin = getContent();", `APP.printPdf = function (obj, cb) {
             var integrationExport = APP.integrationExportPdf === true;
             delete APP.integrationExportPdf;
@@ -33,11 +58,58 @@ replaceOnce("sframeChan.on('EV_INTEGRATION_DOWNLOADAS', function (format) {", `s
             }`);
 fs.writeFileSync(target, source);
 
+const common = path.join(process.argv[2], "www/common/sframe-common.js");
+source = fs.readFileSync(common, "utf8");
+replaceOnce(
+  "    funcs.createIntegration = callWithCommon(Integration.create);",
+  `    funcs.createIntegration = callWithCommon(Integration.create);
+    funcs.bindIntegrationSave = function (save) {
+        return function (callback) {
+            var config = ctx.metadataMgr.getPrivateData().integrationConfig;
+            if (config?._?.sortsysVersionedSaves !== true) {
+                save(callback);
+                return;
+            }
+            ctx.sframeChan.query('Q_INTEGRATION_SAVE_VERSION', null, function (err, result) {
+                if (err || result?.error || typeof result?.version !== 'string') {
+                    callback({error: 'SAVE_VERSION_UNAVAILABLE'});
+                    return;
+                }
+                save(callback, result.version);
+            });
+        };
+    };`,
+);
+fs.writeFileSync(common, source);
+
+const integration = path.join(process.argv[2], "www/integration/main.js");
+source = fs.readFileSync(integration, "utf8");
+replaceOnce(
+  "                chan.send('SAVE', obj.blob, function (err) {",
+  `                var payload = data._config?.sortsysVersionedSaves === true
+                    ? {blob: obj.blob, version: obj.version}
+                    : obj.blob;
+                chan.send('SAVE', payload, function (err) {`,
+);
+replaceOnce(
+  "                        save: save,",
+  `                        save: save,
+                        saveVersion: function (cb) { chan.send('SAVE_VERSION', null, cb); },`,
+);
+fs.writeFileSync(integration, source);
+
 // Upstream integration rooms self-destruct after the last connection leaves
 // and on a storage-process restart. Project collaboration must survive both;
 // unsaved export workspaces retain upstream's temporary-room behavior.
 const outer = path.join(process.argv[2], "www/common/sframe-common-outer.js");
 source = fs.readFileSync(outer, "utf8");
+replaceOnce(
+  "                sframeChan.on('Q_INTEGRATION_SAVE', function (obj, cb) {",
+  `                sframeChan.on('Q_INTEGRATION_SAVE_VERSION', function (obj, cb) {
+                    cfg.integrationUtils.saveVersion(cb);
+                });
+                sframeChan.on('Q_INTEGRATION_SAVE', function (obj, cb) {`,
+);
 replaceOnce("                if (cfg.integration) {\n                    rtConfig.metadata = rtConfig.metadata || {};\n                    rtConfig.metadata.selfdestruct = true;", `                if (cfg.integration && cfg.integrationConfig?._?.sortsysPersistentRoom !== true) {
                     rtConfig.metadata = rtConfig.metadata || {};
                     rtConfig.metadata.selfdestruct = true;`);
@@ -89,6 +161,11 @@ fs.writeFileSync(outer, source);
 // SAVE here. Draft recovery also needs an explicit read-only native export.
 const framework = path.join(process.argv[2], "www/common/sframe-app-framework.js");
 source = fs.readFileSync(framework, "utf8");
+bindSaveVersion("                    ");
+replaceOnce(
+  `                                blob: _blob, version: version\n                            }, cb, {`,
+  `                                blob: _blob, version: version\n                            }, function (err, result) {\n                                cb(err ? {error: err} : result);\n                            }, {`,
+);
 replaceOnce(
   "                    if (firstConnection) {\n                        integrationChannel.on('Q_INTEGRATION_NEEDSAVE', function (data, cb) {",
   `                    if (firstConnection) {

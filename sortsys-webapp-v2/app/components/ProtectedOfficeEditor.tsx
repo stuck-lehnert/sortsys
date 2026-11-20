@@ -3,6 +3,10 @@ import { Loading } from "@sortsys/react-components";
 import { RpcClientError } from "@sortsys/v2-client";
 import { client, projectFiles } from "~/lib/client";
 import { openCryptPad } from "~/lib/cryptpadBridge";
+import {
+  isWriteConflict,
+  ProtectedWriteConflict,
+} from "~/lib/data/atomicWrites";
 import type { OfficeDraftRecovery } from "~/lib/data/projectFiles";
 import {
   OfficeDraftUnavailable,
@@ -295,11 +299,25 @@ export function ProtectedOfficeEditor({
           epoch = committed.epoch;
           return committed;
         },
-        save: async (document) => {
+        saveVersion: async () => {
           live();
-          if (!epoch || !session.canEdit || review)
+          const status = await projectFiles.officeStatus(projectId, fileId);
+          live();
+          if (!epoch || status.epoch !== epoch || !status.canEdit || review)
+            throw new ProtectedWriteConflict();
+          return status.contentVersion;
+        },
+        save: async (document, version) => {
+          live();
+          if (!epoch || !session.canEdit || review || version === undefined)
             throw new Error("Editor cannot save");
-          await projectFiles.saveOffice(projectId, fileId, epoch, document);
+          await projectFiles.saveOffice(
+            projectId,
+            fileId,
+            epoch,
+            BigInt(version),
+            document,
+          );
           live();
           reconnectDelay = 1000;
         },
@@ -319,7 +337,7 @@ export function ProtectedOfficeEditor({
         },
         onSaveError: (error) => {
           if (controller.signal.aborted) return;
-          if (RpcClientError.isUnavailable(error)) {
+          if (RpcClientError.isUnavailable(error) || isWriteConflict(error)) {
             retrySave = true;
             pauseConnection();
           } else {
