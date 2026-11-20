@@ -256,11 +256,25 @@ try {
     "Two project continuations share one objects.pages operation",
   );
 
-  assert.equal(
-    (await required(ownerBusiness.query("projects.files.search", searchInput)))
-      .length,
-    3,
-  );
+  const beforeWarmSearch = requests.length;
+  assert.equal((await findDocuments(ownerBusiness, query)).length, 3);
+  type SnapshotQuery = QueryInput<"zerotrust.access.snapshot">;
+  const conditionalReads = requests.slice(beforeWarmSearch).flatMap((request) => {
+    if (!request.includes('"pages":{"selections":')) return [];
+    const operations: Record<string, { json?: SnapshotQuery }> =
+      JSON.parse(request);
+    return Object.values(operations).flatMap(({ json }) =>
+      json?.known && json.pages ? [json.pages.selections] : [],
+    );
+  });
+  assert.equal(conditionalReads.length, 2);
+  const [load, verify] = conditionalReads;
+  for (const domain of fileDomains) {
+    assert.ok(load!.some((page) => page.domain === domain && page.known));
+    assert.ok(
+      verify!.some((page) => page.domain === domain && page.headOnly && page.snapshot),
+    );
+  }
   const beforeScopedSearch = requests.length;
   const scoped = await required(
     ownerBusiness.query("projects.files.search", {
@@ -611,7 +625,44 @@ try {
   } finally {
     await titleRace.close();
   }
+  const beforeRevocation = await required(
+    member.query("zerotrust.access.snapshot", {}, { strategy: "network-only" }),
+  );
+  const area = fileCollection(visible.id);
+  const readGuard: SnapshotQuery = {
+    known: beforeRevocation.snapshot,
+    pages: {
+      selections: [{
+        domain: area.domain,
+        prefix: area.prefix,
+        after: null,
+        snapshot: null,
+        headOnly: true,
+      }],
+    },
+  };
+  const currentGuard = await required(
+    member.query("zerotrust.access.snapshot", readGuard, {
+      strategy: "network-only",
+    }),
+  );
+  assert.equal(currentGuard.unchanged, true);
+  assert.equal(currentGuard.pages?.length, 1);
   await required(owner.mutate("zerotrust.policy.replace", fileRevocation));
+  const staleGuard = await required(
+    member.query("zerotrust.access.snapshot", readGuard, {
+      strategy: "network-only",
+    }),
+  );
+  assert.equal(staleGuard.unchanged, false);
+  assert.equal(staleGuard.pages, undefined);
+  const [denied, deniedError] = await member.query(
+    "zerotrust.access.snapshot",
+    { ...readGuard, known: staleGuard.snapshot },
+    { strategy: "network-only" },
+  );
+  assert.equal(denied, null);
+  assert.equal(deniedError?.code, "FORBIDDEN");
   await assert.rejects(() => openTools.read({ projectId: visible.id, fileId: dense }, signal));
   assert.equal(await openChatDocuments(member, titleRace.searchScoped, signal), null);
   const emptyFiles = createProtectedProjectFiles(

@@ -144,23 +144,32 @@ pub(super) async fn first(
     let pages = input.pages.take();
     let selected = input.selected_domains()?;
     let include_domains = input.include_domains.unwrap_or(true);
-    if let Some(pages) = &pages {
-        let domains = selected.ok_or_else(invalid)?;
-        if !include_domains || input.known.is_some() {
+    let requested_page_domains = if let Some(pages) = &pages {
+        let fresh_selection = selected.is_some() && input.known.is_none();
+        let known_inventory = selected.is_none() && input.known.is_some();
+        if !include_domains || !(fresh_selection || known_inventory) {
             return Err(invalid());
         }
-        if persistence::selected_domains(pages)?
-            .iter()
-            .any(|domain| !domains.contains(domain))
+        let page_domains = persistence::selected_domains(pages)?;
+        if selected
+            .is_some_and(|domains| page_domains.iter().any(|domain| !domains.contains(domain)))
         {
             return Err(invalid());
         }
-    }
+        page_domains
+    } else {
+        Vec::new()
+    };
     if let Some(known) = &input.known {
         sized::<32>(known)?;
-        let mut context = metadata_context_for_domains(service, request, Some(&[])).await?;
+        let mut context =
+            metadata_context_for_domains(service, request, Some(&requested_page_domains)).await?;
         let snapshot = snapshot(&mut context, include_domains, selected).await?;
         if known == &snapshot {
+            let pages = match pages {
+                Some(pages) => Some(persistence::selected_pages(&mut context, pages).await?),
+                None => None,
+            };
             let history = super::super::setup::metadata_history(&mut context.transaction).await?;
             context.transaction.validate().await?;
             return Ok(AccessSnapshot {
@@ -173,7 +182,7 @@ pub(super) async fn first(
                 snapshot,
                 after: None,
                 unchanged: true,
-                pages: None,
+                pages,
             });
         }
     }
@@ -202,10 +211,11 @@ pub(super) async fn first(
     let snapshot = snapshot(&mut context, include_domains, selected).await?;
     let history = super::super::setup::metadata_history(&mut context.transaction).await?;
     let domains = page_domains(&mut context, include_domains, &domains).await?;
-    let pages = if let Some(pages) = pages {
-        Some(persistence::selected_pages(&mut context, pages).await?)
-    } else {
-        None
+    // Discard warm page requests if the complete inventory changed. The
+    // browser must choose pages again using the newly verified catalogue.
+    let pages = match (selected, pages) {
+        (Some(_), Some(pages)) => Some(persistence::selected_pages(&mut context, pages).await?),
+        _ => None,
     };
     context.transaction.validate().await?;
     Ok(AccessSnapshot {

@@ -154,11 +154,7 @@ export async function protectedCollections(
   selectedDomains?: readonly string[],
   initial: readonly CollectionPageRequest[] = [],
 ) {
-  if (
-    selectedDomains &&
-    initial.length > 0 &&
-    initial.length <= PAGE_BATCH_LIMIT
-  ) {
+  if (initial.length > 0 && initial.length <= PAGE_BATCH_LIMIT) {
     try {
       return await bindCollections(
         client,
@@ -168,14 +164,13 @@ export async function protectedCollections(
         initial,
       );
     } catch (error) {
-      // A missing or unreadable selection has the same protected-data failure
-      // as the separate access check, without fetching another inventory.
-      if (
+      const inaccessible =
         error instanceof RpcClientError &&
-        (error.code === "FORBIDDEN" || error.code === "NOT_FOUND")
-      )
-        throw new InvalidProtectedData();
-      if (!exceedsResponseBudget(error)) throw error;
+        (error.code === "FORBIDDEN" || error.code === "NOT_FOUND");
+      if (inaccessible && selectedDomains) throw new InvalidProtectedData();
+      // Warm pages are a hint. A changed selection can be rebuilt from the
+      // current inventory; a large reply can still use the normal page reader.
+      if (!inaccessible && !exceedsResponseBudget(error)) throw error;
     }
   }
   return bindCollections(client, signal, selectedDomains);
@@ -354,8 +349,10 @@ async function bindCollections(
       context.access.allows(collection.scope, collection.facet, "read")
     );
   }
-  for (const selection of initial)
-    if (!readable(selection.area)) throw new InvalidProtectedData();
+  if (context.pages.size) {
+    for (const selection of initial)
+      if (!readable(selection.area)) throw new InvalidProtectedData();
+  }
 
   async function prefetch(
     selections: readonly CollectionPageRequest[],
@@ -463,8 +460,7 @@ async function collectionContext(
   const pages = new Map<string, ObjectPage>();
   for (const [index, request] of initialRequests.entries()) {
     const page = initialPages?.[index];
-    if (!page) throw new InvalidProtectedData();
-    pages.set(pageKey(request), page);
+    if (page) pages.set(pageKey(request), page);
   }
   return {
     pages,

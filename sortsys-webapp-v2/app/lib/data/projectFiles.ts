@@ -933,10 +933,12 @@ export function createProtectedProjectFiles(
     if (projectId !== null && scope && !scope.projects.has(projectId)) {
       throw new InvalidProtectedData();
     }
+    const inScope = (id: string) => !scope || scope.projects.has(id);
     let access: Collections;
     let readable: string[];
     if (projectId === null) {
-      access = await protectedCollections(client, active);
+      const cachedPages = [...stores.keys()].filter(inScope).map(filePage);
+      access = await protectedCollections(client, active, undefined, cachedPages);
       readable = readableProjectsWithFiles(access);
     } else {
       const page = filePage(projectId);
@@ -948,7 +950,6 @@ export function createProtectedProjectFiles(
       );
       readable = [projectId];
     }
-    const inScope = (id: string) => !scope || scope.projects.has(id);
     const ids = readable.filter(inScope).sort();
     await reload(ids, projectId === null ? new Set(readable) : undefined, access);
     active.throwIfAborted();
@@ -994,7 +995,15 @@ export function createProtectedProjectFiles(
     // The file worker and title lookup can outlast a peer write or an access
     // change. Compare every searched head, including collections with no
     // matches, before returning a ranked result for this snapshot.
-    const current = await protectedCollections(client, active);
+    const expected: CollectionPageRequest[] = ids.map((id) => ({
+      area: fileCollection(id),
+      snapshot: stores.get(id)!.head,
+      headOnly: true,
+    }));
+    for (const id of titles.keys()) {
+      expected.push({ area: projectCollection(id), headOnly: true });
+    }
+    const current = await protectedCollections(client, active, undefined, expected);
     await checkFilePolicy(current);
     const currentReadable =
       projectId === null
@@ -1012,19 +1021,13 @@ export function createProtectedProjectFiles(
     if (currentIds.size !== ids.length || ids.some((id) => !currentIds.has(id))) {
       throw new ProtectedWriteConflict();
     }
-    const expected: CollectionPageRequest[] = ids.map((id) => ({
-      area: fileCollection(id),
-      snapshot: stores.get(id)!.head,
-      headOnly: true,
-    }));
+    const readableHeads = expected.filter(({ area }) => current.readable(area));
     for (const id of titles.keys()) {
-      const area = projectCollection(id);
-      if (current.readable(area)) expected.push({ area, headOnly: true });
-      else titles.delete(id);
+      if (!current.readable(projectCollection(id))) titles.delete(id);
     }
     try {
-      await current.prefetch(expected);
-      await mapConcurrent(expected, 4, async ({ area, snapshot }) => {
+      await current.prefetch(readableHeads);
+      await mapConcurrent(readableHeads, 4, async ({ area, snapshot }) => {
         const collection = current(area);
         try {
           await collection.inspect(snapshot);

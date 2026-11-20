@@ -58,9 +58,13 @@ und die erste Dateiseite zusammen an.
 Die Suche über mehrere Projekte lädt Dateisammlungen gebündelt. Treffen
 Anfragen für Folgeseiten gleichzeitig ein, verarbeitet die API sie ebenfalls
 in einem Sammelabruf. Für jede Seite prüft sie den Stand der zugehörigen
-Sammlung. DuckDB prüft die Dateidaten und Ordnerbeziehungen
-in einer lokalen Transaktion. Bei weiteren Prüfungen verwendet der Browser
-dieselbe DuckDB-Instanz und rollt die Prüfdaten nach jeder Transaktion zurück.
+Sammlung. Bei einer Folgesuche kann die API bis zu 16 Sammlungsabfragen im
+selben Schritt wie den bereits bekannten Berechtigungsstand prüfen. Hat sich
+dieser geändert, erhält der Browser zuerst das aktuelle Verzeichnis der
+Bereiche und wählt die Abfragen neu aus. DuckDB prüft die Dateidaten und
+Ordnerbeziehungen in einer lokalen Transaktion. Der Browser verwendet dieselbe
+DuckDB-Instanz für weitere Prüfungen und rollt die Prüfdaten nach jeder
+Transaktion zurück.
 Ein Wechsel der Freigaberichtlinie oder das Sitzungsende schließt die Instanz.
 
 Die Textauswertung läuft in einem eigenen Worker. Er hält Textblöcke,
@@ -74,7 +78,8 @@ der Browser den bisherigen Bestand. Das gilt auch am Ende der Sitzung.
 
 Der Browser liest die Projektbezeichnungen gebündelt für die angezeigten
 Treffer. Vor der Ausgabe prüft er die Freigaben und Stände aller
-durchsuchten Dateisammlungen erneut.
+durchsuchten Dateisammlungen erneut. Auch diese abschließende Prüfung lässt
+sich mit dem Berechtigungsabruf verbinden.
 Wird eine Datei während der Suche geändert oder gelöscht, wertet der Browser
 den neuen Stand aus. Fortlaufende Änderungen können den Abruf mit einem
 Hinweis auf die geänderten Daten beenden.

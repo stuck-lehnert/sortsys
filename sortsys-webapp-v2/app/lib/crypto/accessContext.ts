@@ -112,16 +112,23 @@ async function readAccessContext(
       ? accountInventories(client, account)
       : undefined;
   const previous = cache?.get(includeDomains);
+  const { pages, ...selection } = options;
+  const requestedPages = pages && (!cache || previous) ? pages : undefined;
   const input = await required(
     client.query(
       "zerotrust.access.snapshot",
-      { ...options, ...(previous ? { known: previous.snapshot } : {}) },
+      {
+        ...selection,
+        ...(previous ? { known: previous.snapshot } : {}),
+        ...(requestedPages ? { pages: requestedPages } : {}),
+      },
       {
         strategy: "network-only",
       },
     ),
   );
   live();
+  const expectedPages = !cache || input.unchanged ? requestedPages : undefined;
   record(input, [
     "subject",
     "username",
@@ -132,7 +139,7 @@ async function readAccessContext(
     "snapshot",
     "after",
     "unchanged",
-    ...(options.pages ? ["pages"] : []),
+    ...(expectedPages ? ["pages"] : []),
   ]);
   if (input.subject !== account.vault.subject) throw new InvalidProtectedData();
   if (
@@ -149,10 +156,9 @@ async function readAccessContext(
   }
   if (selected && input.after !== null) throw new InvalidProtectedData();
   if (
-    options.pages &&
+    expectedPages &&
     (!Array.isArray(input.pages) ||
-      input.pages.length !== options.pages.selections.length ||
-      input.unchanged)
+      input.pages.length !== expectedPages.selections.length)
   )
     throw new InvalidProtectedData();
   const history = await verifyAccountHistory(input.history, account);
