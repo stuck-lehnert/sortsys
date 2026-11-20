@@ -711,6 +711,15 @@ werden nach einer lokalen Änderung aktualisiert. Der
 [Ereignisabgleich](verschluesselte-synchronisierung.md) aktualisiert sie auch
 bei Änderungen über eine andere API-Instanz. Nach Verbindungsabbrüchen werden
 Berechtigungen und Datenstand erneut geprüft.
+
+Die Befehlspalette verwendet denselben Ereignisabgleich. Ändert sich eine
+Produktbeschreibung während der Suche, aktualisiert sich die Trefferliste bei
+derselben Eingabe. Die Palette liest die jeweils betroffenen Bereiche und zeigt
+deren Treffer an, sobald sie verfügbar sind. Ein Wechsel der Suchbegriffe
+beendet die vorherigen Abonnements. Beim Entzug des Katalogzugriffs schließt
+sich eine gerade geöffnete Palette. Nach dem erneuten Öffnen erscheinen darin
+keine Katalogtreffer mehr.
+
 [Einladungen](benutzerfreigaben.md) stellen bestätigten Konten ausgewählte
 Katalog- und Preiszugriffe bereit. Für diese Bereiche ist auch das Ändern
 bestehender Freigaben angebunden. Änderungen am Leserkreis sperren neue

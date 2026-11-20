@@ -2,9 +2,15 @@ import { Autocomplete, Label, ListBox, SearchField } from "@heroui/react";
 import { uiText } from "~/lib/i18n";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { useNavigate } from "react-router";
+import { map, Subscription, type Observable } from "rxjs";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
-import { client, contentAccess, searchDirectory, toolResources } from "~/lib/client";
+import {
+  client,
+  contentAccess,
+  streamDirectorySearch,
+  toolResources,
+} from "~/lib/client";
 import {
   contactName,
   customerName,
@@ -37,8 +43,7 @@ function actionMatches(action: UserAction, query: string) {
 
 type SearchLink = Omit<PaletteEntry, "run" | "group"> & { href: string };
 type SearchResults = {
-  query: string;
-  accessContext: AbortSignal;
+  scope: { query: string; accessContext: AbortSignal };
   links: SearchLink[];
   finished: boolean;
 };
@@ -56,21 +61,41 @@ function useEntitySearchEntries(query: string, close: () => void) {
   const vendors = access.canDo("view:productVendors");
   const deliveryNotes = access.canDo("view:deliveryNotes");
   const trimmedQuery = normalizeSearch(query);
+  const scope = useMemo(
+    () => ({
+      query: trimmedQuery,
+      accessContext,
+      projects,
+      tools,
+      users,
+      products,
+      customers,
+      contacts,
+      vendors,
+      deliveryNotes,
+    }),
+    [
+      trimmedQuery, accessContext, projects, tools, users, products,
+      customers, contacts, vendors, deliveryNotes,
+    ],
+  );
   const [results, setResults] = useState<SearchResults | null>(null);
 
   useEffect(() => {
-    if (!trimmedQuery) return;
+    const { query, accessContext } = scope;
+    if (!query || accessContext.aborted) return;
 
     const groups: SearchLink[][] = [];
-    const controller = new AbortController();
-    const signal = AbortSignal.any([controller.signal, accessContext]);
-    const publish = (finished: boolean) => {
-      if (!signal.aborted)
+    const subscriptions = new Subscription();
+    let remaining = 0;
+    const stop = () => subscriptions.unsubscribe();
+    accessContext.addEventListener("abort", stop, { once: true });
+    const publish = () => {
+      if (!subscriptions.closed && !accessContext.aborted)
         setResults({
-          query: trimmedQuery,
-          accessContext,
+          scope,
           links: groups.flat(),
-          finished,
+          finished: remaining === 0,
         });
     };
 
@@ -78,87 +103,92 @@ function useEntitySearchEntries(query: string, close: () => void) {
     // does not hide ready matches, and the final order stays deterministic.
     function load<Row>(
       enabled: boolean,
-      request: () => Promise<readonly Row[] | null>,
+      stream: () => Observable<[readonly Row[] | null, unknown]>,
       link: (row: Row) => SearchLink,
     ) {
-      if (!enabled) return Promise.resolve();
+      if (!enabled) return;
       const index = groups.length;
       groups.push([]);
-      return request().then((rows) => {
-        if (signal.aborted || !rows?.length) return;
-        groups[index] = rows.map(link);
-        publish(false);
-      });
+      let initial = true;
+      remaining++;
+      const show = (rows: readonly Row[] | null) => {
+        if (initial) {
+          initial = false;
+          remaining--;
+        }
+        groups[index] = rows?.map(link) ?? [];
+        publish();
+      };
+      subscriptions.add(
+        stream().subscribe({
+          next: ([rows]) => show(rows),
+          error: () => show(null),
+        }),
+      );
     }
 
     const timeout = window.setTimeout(() => {
-      if (signal.aborted) return;
-      const find = <Path extends Parameters<typeof searchDirectory>[0]>(path: Path) =>
-        searchDirectory(path, trimmedQuery, signal);
-      const number = /^#?(\d+)$/.exec(trimmedQuery);
+      if (subscriptions.closed) return;
+      const find = <Path extends Parameters<typeof streamDirectorySearch>[0]>(
+        path: Path,
+      ) => streamDirectorySearch(path, query);
+      const number = /^#?(\d+)$/.exec(query);
       const autoId = number ? Number(number[1]) : NaN;
-      const work = [
-        load(projects, () => find("projects.list"), (project) => ({
-          id: `project:${project.id}`,
-          title: project.title,
-          subtitle: uiText("Projekt"),
-          icon: Icons.Project,
-          href: `/projects/${project.id}`,
-        })),
+      load(scope.projects, () => find("projects.list"), (project) => ({
+        id: `project:${project.id}`,
+        title: project.title,
+        subtitle: uiText("Projekt"),
+        icon: Icons.Project,
+        href: `/projects/${project.id}`,
+      }));
+      load(scope.tools, () => toolResources.streamSearch(query), (tool) => ({
+        id: `tool:${tool.id}`,
+        title: `${tool.customId} ${toolTitle(tool)}`,
+        subtitle: uiText("Werkzeug"),
+        icon: Icons.Tool,
+        href: `/tools/${tool.id}`,
+      }));
+      load(scope.users, () => find("users.list"), (user) => ({
+        id: `user:${user.id}`,
+        title: userFullName(user),
+        subtitle: uiText("Benutzer"),
+        icon: Icons.User,
+        href: `/users/${user.id}`,
+      }));
+      load(scope.products, () => find("products.list"), (product) => ({
+        id: `product:${product.id}`,
+        title: `${product.customId} ${productTitle(product)}`,
+        subtitle: uiText("Produkt"),
+        icon: Icons.Product,
+        href: `/products/${product.id}`,
+      }));
+      load(scope.customers, () => find("customers.list"), (customer) => ({
+        id: `customer:${customer.id}`,
+        title: customerName(customer),
+        subtitle: uiText("Kunde"),
+        icon: Icons.Customer,
+        href: `/customers/${customer.id}`,
+      }));
+      load(scope.contacts, () => find("contacts.list"), (contact) => ({
+        id: `contact:${contact.id}`,
+        title: contactName(contact),
+        subtitle: uiText("Kontakt"),
+        icon: Icons.Contact,
+        href: `/contacts/${contact.id}`,
+      }));
+      load(scope.vendors, () => find("products.vendors.list"), (vendor) => ({
+        id: `productVendor:${vendor.id}`,
+        title: vendor.name,
+        subtitle: uiText("Händler"),
+        icon: Icons.ProductVendor,
+        href: `/products/vendors/${vendor.id}`,
+      }));
+      if (scope.deliveryNotes && Number.isSafeInteger(autoId) && autoId > 0) {
         load(
-          tools,
-          () => toolResources.search(trimmedQuery, signal),
-          (tool) => ({
-            id: `tool:${tool.id}`,
-            title: `${tool.customId} ${toolTitle(tool)}`,
-            subtitle: uiText("Werkzeug"),
-            icon: Icons.Tool,
-            href: `/tools/${tool.id}`,
-          }),
-        ),
-        load(users, () => find("users.list"), (user) => ({
-          id: `user:${user.id}`,
-          title: userFullName(user),
-          subtitle: uiText("Benutzer"),
-          icon: Icons.User,
-          href: `/users/${user.id}`,
-        })),
-        load(products, () => find("products.list"), (product) => ({
-          id: `product:${product.id}`,
-          title: `${product.customId} ${productTitle(product)}`,
-          subtitle: uiText("Produkt"),
-          icon: Icons.Product,
-          href: `/products/${product.id}`,
-        })),
-        load(customers, () => find("customers.list"), (customer) => ({
-          id: `customer:${customer.id}`,
-          title: customerName(customer),
-          subtitle: uiText("Kunde"),
-          icon: Icons.Customer,
-          href: `/customers/${customer.id}`,
-        })),
-        load(contacts, () => find("contacts.list"), (contact) => ({
-          id: `contact:${contact.id}`,
-          title: contactName(contact),
-          subtitle: uiText("Kontakt"),
-          icon: Icons.Contact,
-          href: `/contacts/${contact.id}`,
-        })),
-        load(vendors, () => find("products.vendors.list"), (vendor) => ({
-          id: `productVendor:${vendor.id}`,
-          title: vendor.name,
-          subtitle: uiText("Händler"),
-          icon: Icons.ProductVendor,
-          href: `/products/vendors/${vendor.id}`,
-        })),
-      ];
-      if (deliveryNotes && Number.isSafeInteger(autoId) && autoId > 0) {
-        const request = async () => {
-          const [note] = await client.query("deliveryNotes.get", { autoId });
-          return note ? [note] : null;
-        };
-        work.push(
-          load(true, request, (note) => ({
+          true,
+          () => client.streamQuery("deliveryNotes.get", { autoId })
+            .pipe(map(([note, error]) => [note ? [note] : null, error])),
+          (note) => ({
             id: `deliveryNote:${note.id}`,
             title: uiText(
               `Lieferschein #${note.autoId}`,
@@ -170,33 +200,21 @@ function useEntitySearchEntries(query: string, close: () => void) {
             ),
             icon: Icons.DeliveryNote,
             href: `/products/deliveryNotes/${note.id}`,
-          })),
+          }),
         );
       }
-      void Promise.allSettled(work).then(() => publish(true));
+      publish();
     }, 60);
 
     return () => {
-      controller.abort();
+      stop();
+      accessContext.removeEventListener("abort", stop);
       window.clearTimeout(timeout);
     };
-  }, [
-    trimmedQuery,
-    accessContext,
-    projects,
-    tools,
-    users,
-    products,
-    customers,
-    contacts,
-    vendors,
-    deliveryNotes,
-  ]);
+  }, [scope]);
 
   const current =
-    results?.query === trimmedQuery &&
-    results.accessContext === accessContext &&
-    !accessContext.aborted
+    results?.scope === scope && !scope.accessContext.aborted
       ? results
       : null;
   const entries: PaletteEntry[] = useMemo(
@@ -205,11 +223,12 @@ function useEntitySearchEntries(query: string, close: () => void) {
         ...link,
         group: uiText("Treffer", "Results"),
         run: () => {
+          if (scope.accessContext.aborted) return;
           close();
           navigate(href);
         },
       })),
-    [current, close, navigate],
+    [current, scope, close, navigate],
   );
   const searching = !!trimmedQuery && !current?.finished;
   return { entries, searching };

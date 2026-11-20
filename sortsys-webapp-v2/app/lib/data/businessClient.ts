@@ -305,6 +305,40 @@ export function createBusinessClient(
     for (const [listener, path] of listeners)
       if (!matches || matches(path)) listener();
   };
+  function watchQuery<T>(
+    path: string,
+    read: (signal: AbortSignal) => Promise<[T | null, RpcClientError | null]>,
+  ) {
+    return new Observable<[T | null, RpcClientError | null]>((subscriber) => {
+      const cancellation = new AbortController();
+      let displayedContext: AbortSignal | undefined;
+      let displayedAccess: AbortSignal | undefined;
+      const observer = latestQuery(
+        () => read(cancellation.signal),
+        (value) => {
+          const [data, error] = value;
+          if (
+            displayedContext === controller.signal &&
+            displayedAccess === contentAccess.context() &&
+            RpcClientError.isUnavailable(error)
+          ) {
+            return;
+          }
+          displayedContext = data === null ? undefined : controller.signal;
+          displayedAccess = data === null ? undefined : contentAccess.context();
+          subscriber.next(value);
+        },
+        (error) => subscriber.next([null, RpcClientError.from(error)]),
+      );
+      listeners.set(observer.refresh, path);
+      observer.refresh();
+      return () => {
+        observer.close();
+        listeners.delete(observer.refresh);
+        cancellation.abort();
+      };
+    });
+  }
   const adapters = createAdapterRegistry(
     [
       {
@@ -1792,12 +1826,14 @@ export function createBusinessClient(
     return choices;
   }
   const toolResourceActions = {
-    search(search: string, cancellation: AbortSignal) {
-      return readResourceChoices(
-        async () =>
-          (await toolStore()).searchChoices(search, DIRECTORY_SEARCH_LIMIT),
-        cancellation,
-      );
+    streamSearch(search: string) {
+      return watchQuery("tools.list", async (signal) => {
+        const rows = await readResourceChoices(
+          async () => (await toolStore()).searchChoices(search, DIRECTORY_SEARCH_LIMIT),
+          signal,
+        );
+        return [rows, null];
+      });
     },
     tools(cancellation?: AbortSignal) {
       return readResourceChoices(
@@ -1819,14 +1855,20 @@ export function createBusinessClient(
     limit = DIRECTORY_SEARCH_LIMIT,
   ): Promise<QueryResult<Path> | null> {
     return readResourceChoices(async () => {
-      const [result, error] = await readQuery(
-        path,
-        { search },
-        limit,
-      );
+      const [result, error] = await readQuery(path, { search }, limit);
       if (error) throw error;
       return result as QueryResult<Path> | null;
     }, cancellation);
+  }
+
+  function streamDirectorySearch<Path extends DirectorySearchPath>(
+    path: Path,
+    search: string,
+  ) {
+    return watchQuery<QueryResult<Path>>(path, async (signal) => {
+      const rows = await searchDirectory(path, search, signal);
+      return [rows, null];
+    });
   }
   async function documentFile(
     caseId: string,
@@ -2131,7 +2173,7 @@ export function createBusinessClient(
     files: typeof fileActions;
     documents: typeof documentActions;
     toolResources: typeof toolResourceActions;
-    searchDirectory: typeof searchDirectory;
+    streamDirectorySearch: typeof streamDirectorySearch;
     organization: typeof organizationActions;
     logo: typeof logoActions;
     templates: typeof templateActions;
@@ -2147,7 +2189,7 @@ export function createBusinessClient(
     files: fileActions,
     documents: documentActions,
     toolResources: toolResourceActions,
-    searchDirectory,
+    streamDirectorySearch,
     organization: organizationActions,
     logo: logoActions,
     templates: templateActions,
@@ -2169,35 +2211,7 @@ export function createBusinessClient(
         : mutate(path, input, opts),
     streamQuery: ((path, input, opts) => {
       if (technical(path)) return base.streamQuery(path, input, opts);
-      return new Observable<[unknown | null, RpcClientError | null]>(
-        (subscriber) => {
-          let displayedContext: AbortSignal | undefined;
-          let displayedAccess: AbortSignal | undefined;
-          const observer = latestQuery(
-            () => query(path, input),
-            (value) => {
-              const [data, error] = value;
-              if (
-                displayedContext === controller.signal &&
-                displayedAccess === contentAccess.context() &&
-                RpcClientError.isUnavailable(error)
-              )
-                return;
-              displayedContext = data === null ? undefined : controller.signal;
-              displayedAccess =
-                data === null ? undefined : contentAccess.context();
-              subscriber.next(value);
-            },
-            (error) => subscriber.next([null, RpcClientError.from(error)]),
-          );
-          listeners.set(observer.refresh, path);
-          observer.refresh();
-          return () => {
-            observer.close();
-            listeners.delete(observer.refresh);
-          };
-        },
-      );
+      return watchQuery(path, () => query(path, input));
     }) as Client["streamQuery"],
     invalidate,
     invalidateCascading: invalidate,

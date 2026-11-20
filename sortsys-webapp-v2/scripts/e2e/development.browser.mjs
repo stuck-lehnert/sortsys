@@ -102,6 +102,9 @@ function auditPage(page) {
       "WDVS-Sockelschiene-684217",
       "wdvs-sockelschiene",
       "sockelschiene-wdvs",
+      "Verbundwinkel-619047",
+      "verbundwinkel-619047",
+      "fehlendesmerkmal-619047",
       "pirckheimer-gym",
       "gymnasium-pirckheimer",
       "bauleitung-0@example.invalid",
@@ -856,6 +859,69 @@ try {
     await expect(
       palette.getByRole("option", { name: /Nürnberger Wohnbau GmbH/ }),
     ).toBeVisible();
+  });
+  await scenario("live-directory-search", async (page) => {
+    const editorServer = await applicationServer(applicationBuild, endpoints[0]);
+    servers.add(editorServer);
+    const editorContext = await applicationContext();
+    const editorPage = await editorContext.newPage();
+    const editorAudit = auditPage(editorPage);
+    try {
+      await login(page, "john.doe");
+      await expect(page.getByRole("link", { name: "Einstellungen", exact: true }))
+        .toBeVisible();
+      await login(editorPage, "john.doe", "123456", editorServer.origin);
+      await expect(
+        editorPage.getByRole("link", { name: "Einstellungen", exact: true }),
+      ).toBeVisible();
+      await editorPage.goto(`${editorServer.origin}/products`);
+      await editorPage.getByText("Haftgrund, manuell angepasst", { exact: true }).click();
+      await expect(editorPage).toHaveURL(/\/products\/[^/]+$/);
+
+      await page.keyboard.press("Control+k");
+      const palette = page.getByRole("dialog", { name: "Befehlspalette" });
+      const search = palette.getByRole("searchbox", { name: "Befehl oder Suche" });
+      const noMatches = palette.getByText("Keine Treffer.", { exact: true });
+      const product = palette.getByRole("option", {
+        name: /Haftgrund, manuell angepasst/,
+      });
+      const query = "verbundwinkel-619047";
+      await search.fill(query);
+      await expect(noMatches).toBeVisible();
+
+      async function openEditor() {
+        await editorPage.keyboard.press("Control+e");
+        const dialog = editorPage.getByRole("dialog", { name: "Produkt bearbeiten" });
+        await expect(dialog).toBeVisible();
+        return dialog;
+      }
+      async function saveDescription(dialog, description) {
+        await dialog.getByRole("textbox", { name: "Beschreibung" }).fill(description);
+        await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
+        await expect(dialog).toBeHidden();
+      }
+      const editor = await openEditor();
+      const original = await editor.getByRole("textbox", { name: "Beschreibung" }).inputValue();
+      await saveDescription(editor, "Verbundwinkel-619047");
+      try {
+        await expect(product).toBeVisible();
+        await expect(search).toHaveValue(query);
+        await search.fill("fehlendesmerkmal-619047");
+        await expect(product).toHaveCount(0);
+        await expect(noMatches).toBeVisible();
+        await search.fill(query);
+        await expect(product).toBeVisible();
+      } finally {
+        await saveDescription(await openEditor(), original);
+      }
+      await expect(product).toHaveCount(0);
+      await expect(noMatches).toBeVisible();
+      await expect(search).toHaveValue(query);
+      editorAudit.assertClean();
+    } finally {
+      await editorContext.close();
+      await editorServer.close();
+    }
   });
   await scenario("seeded-gaeb-link-and-download", async (page) => {
     await login(page, "john.doe");
@@ -3202,6 +3268,12 @@ try {
         path: join(artifacts, "member-catalogue-granted.png"),
         fullPage: true,
       });
+      await member.keyboard.press("Control+k");
+      const palette = member.getByRole("dialog", { name: "Befehlspalette" });
+      const search = palette.getByRole("searchbox", { name: "Befehl oder Suche" });
+      const result = palette.getByRole("option", { name: /Haftgrund, manuell angepasst/ });
+      await search.fill("haftgrund");
+      await expect(result).toBeVisible();
       await catalogue.click();
       await page
         .getByRole("option", { name: "Kein Zugriff", exact: true })
@@ -3213,6 +3285,14 @@ try {
       await expect(
         member.getByText("Haftgrund, manuell angepasst", { exact: true }),
       ).toHaveCount(0);
+      await expect(palette).toBeHidden();
+      await expect(result).toHaveCount(0);
+      await member.keyboard.press("Control+k");
+      await search.fill("haftgrund");
+      await expect(palette.getByText("Keine Treffer.", { exact: true }))
+        .toBeVisible();
+      await expect(result).toHaveCount(0);
+      await palette.getByText("Schließen", { exact: true }).click();
       await member.screenshot({
         path: join(artifacts, "member-catalogue-revoked.png"),
         fullPage: true,
