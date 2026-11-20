@@ -40,6 +40,7 @@ export async function testLiveLlm(
     peerEndpoint: string;
     adminPassword: string;
     ownerToken: string;
+    ownerLogin: { username: string; password: string };
   },
 ) {
   if (process.env.SORTSYS_DISPOSABLE_AUTH_TEST !== "1")
@@ -66,6 +67,11 @@ export async function testLiveLlm(
   const chatFixture = chatModelFixture();
   const memberFixture = memberModelFixture();
   const documentsFixture = documentModelFixture();
+  const browserTest =
+    process.env.SORTSYS_NATIVE_BROWSER === "1"
+      ? await import("./test-native-import-browser")
+      : undefined;
+  const browserFixture = await browserTest?.browserImportFixture();
   const server = Bun.serve({
     hostname: "0.0.0.0",
     port: 0,
@@ -107,6 +113,8 @@ export async function testLiveLlm(
           checkedProviderOriginals++;
         }
       }
+      const browserReply = await browserFixture?.reply(body.messages);
+      if (browserReply) return browserReply;
       const documentReply = documentsFixture.reply(body);
       if (documentReply) return documentReply;
       const chat = chatAddressWritesReply(body) ?? chatDirectoryReply(body) ?? chatToolsReply(body) ??
@@ -426,6 +434,14 @@ export async function testLiveLlm(
     );
     assert.equal(turns, 4);
     assert.equal(toolReplies, 2);
+
+    if (browserTest && browserFixture) {
+      await browserTest.testImportInBrowser(
+        ownerEndpoint,
+        options.ownerLogin,
+        browserFixture,
+      );
+    }
 
     const requests: { path: string; input: unknown }[] = [];
     const observed: Client = {

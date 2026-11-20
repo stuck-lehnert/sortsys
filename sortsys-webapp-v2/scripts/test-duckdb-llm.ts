@@ -36,6 +36,8 @@ const owner: Client = {
   }) as Client["mutate"],
 };
 const adminPassword = "Native-model-operator-password-2026!";
+const ownerName = "builder";
+const ownerPassword = "Native-model-owner-password-2026!";
 const signal = new AbortController().signal;
 let business: ReturnType<typeof createBusinessClient> | null = null;
 try {
@@ -51,8 +53,8 @@ try {
   const draft = await prepareOwner(
     owner,
     link,
-    "builder",
-    "Native-model-owner-password-2026!",
+    ownerName,
+    ownerPassword,
   );
   await commitOwner(owner, draft);
   await initializeTenant(owner, signal, duckDriver);
@@ -93,6 +95,7 @@ try {
     peerEndpoint: endpoints[0],
     adminPassword,
     ownerToken,
+    ownerLogin: { username: `${ownerName}@${link.tenant}`, password: ownerPassword },
   });
   const rows = await required(
     administrator.query("admin.llm.usage", undefined, {

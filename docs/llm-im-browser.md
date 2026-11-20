@@ -303,8 +303,14 @@ einen neuen Lauf bei erreichter Quote ab.
 
 Für Einlesen prüft der Test außerdem das verschlüsselte Speichern,
 Listenaktualisierung und erneutes Öffnen sowie eine fehlende Bestätigung nach
-dem Speichern. Der XLSX-Worker wird zusätzlich im Browser geprüft. Beim
-Chat kommen Annahme nach verlorener Bestätigung, gleichzeitige Änderungen,
+dem Speichern. Mit `SORTSYS_NATIVE_BROWSER=1` lädt Chromium ein PDF über die
+gebaute Webapp hoch. Der Dialog bleibt beim Wechsel zum Dashboard und nach
+einem abgebrochenen Neuladen offen. Das fertige Ergebnis lässt sich danach aus
+dem persönlichen Verlauf als Lieferschein öffnen. Bei bestätigtem Neuladen
+endet die Modellanfrage, und der abgebrochene Scan erscheint nicht im Verlauf.
+Der XLSX-Worker wird zusätzlich im Browser geprüft.
+
+Beim Chat kommen Annahme nach verlorener Bestätigung, gleichzeitige Änderungen,
 Ablehnung, Überarbeitung und erneutes Öffnen hinzu. Der native Test zur
 Chatübernahme prüft außerdem ursprüngliche Entscheidungen, konkurrierende
 Annahmen, getrennte Benutzerbereiche und die erneute Freigabe eines bestehenden
