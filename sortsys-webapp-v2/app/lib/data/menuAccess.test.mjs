@@ -283,7 +283,7 @@ test("tool menus distinguish individual masters, costs, inventories and tracking
   expect(newBookings.role("view:toolTrackings")).toBe(false);
   const incomplete = project([
     rule("create:tool-tracking", "master-data", ["create"]),
-    rule("tool:4", "master-data", ["read", "update"]),
+    rule("tool:4", "master-data", ["read"]),
     rule("tool:5", "procurement", ["read"]),
   ]);
   expect(incomplete.canBookTool()).toBe(false);
@@ -291,7 +291,6 @@ test("tool menus distinguish individual masters, costs, inventories and tracking
   const eligible = project([
     rule("create:tool-tracking", "master-data", ["create"]),
     rule("tool:4", "master-data", ["read", "update"]),
-    rule("tool:4", "procurement", ["read"]),
   ]);
   expect(eligible.canBookTool()).toBe(true);
   expect(eligible.canBookTool("4")).toBe(true);

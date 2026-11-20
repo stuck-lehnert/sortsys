@@ -6,7 +6,7 @@ import { indexEffectiveHistory } from "./effectiveHistory";
 import type { HistoricalPriceLookup } from "./historicalPrices";
 import { wireFinancialEntry } from "./projectFinancialData";
 import { publicId } from "./products";
-import type { BusinessRow } from "./rowCodec";
+import type { BusinessFields, BusinessRow } from "./rowCodec";
 import type { DailyCosts, DailyPayload } from "./dailyReportData";
 import { wireDailyReport } from "./dailyReportData";
 import type { DeliveryPayload, DeliveryPrices } from "./deliveryNoteData";
@@ -39,6 +39,18 @@ function inPeriod(instant: bigint, period: CostPeriod): boolean {
   return (
     (period.from === null || instant >= period.from) &&
     (period.to === null || instant <= period.to)
+  );
+}
+export function toolUsageInPeriod(
+  values: BusinessFields["values"],
+  period: CostPeriod,
+  now: bigint,
+): boolean {
+  const start = timestampMicros(values.started_at as string);
+  const end = values.ended_at === null ? now : timestampMicros(values.ended_at as string);
+  return (
+    (period.from === null || end >= period.from) &&
+    (period.to === null || start <= period.to)
   );
 }
 function compareIdDescending(left: string, right: string): number {
@@ -255,17 +267,7 @@ export function calculateProjectCosts(
     .map((entry) => entry.wire);
 
   const trackings = source.tools
-    .filter((row) => {
-      const start = timestampMicros(row.values.started_at as string);
-      const end =
-        row.values.ended_at === null
-          ? nowMicros
-          : timestampMicros(row.values.ended_at as string);
-      return (
-        (period.from === null || end >= period.from) &&
-        (period.to === null || start <= period.to)
-      );
-    })
+    .filter(({ values }) => toolUsageInPeriod(values, period, nowMicros))
     .sort((left, right) => compareRows(left, right, "started_at"));
   const toolTrackings = trackings.map(({ values }) => {
     const startedAt = new Date(values.started_at as string);

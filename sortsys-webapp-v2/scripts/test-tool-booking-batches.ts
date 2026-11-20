@@ -10,7 +10,6 @@ import {
   sized,
   TOOL_RETURN_PURPOSE,
   type Action,
-  type Facet,
 } from "@sortsys/zerotrust/sortsys";
 import { publicId, newProductRowId } from "../app/lib/data/products";
 import { protectedCollection, required } from "../app/lib/data/protectedObjects";
@@ -203,17 +202,6 @@ export async function exerciseToolBookingBatches(
       usageCostPerDay: 7.625,
     }),
   );
-  const rateReference = async (tool: string) => {
-    const rates = await required(peer.query(
-      "zerotrust.toolRates.references",
-      { tools: [tool] },
-      { strategy: "network-only" },
-    ));
-    assert.equal(rates.length, 1);
-    assert.equal(rates[0]!.tool, tool);
-    return rates[0]!;
-  };
-  const before = await rateReference(first.id);
   const old = await required(
     owner.mutate("tools.track", {
       id: first.id,
@@ -233,34 +221,6 @@ export async function exerciseToolBookingBatches(
       data: { usageCostPerDay: 19.125 },
     }),
   );
-  const after = await rateReference(first.id);
-  assert.notEqual(before.reference, after.reference);
-  assert.notEqual(before.sequence, after.sequence);
-  const historicalInput = { tool: first.id, reference: before.reference };
-  const historical = await required(peer.query(
-    "zerotrust.toolRates.historical",
-    historicalInput,
-    { strategy: "network-only" },
-  ));
-  const priceArea = toolCollection("tool", first.id, "procurement");
-  const priceCollection = await protectedCollection(
-    peer,
-    priceArea,
-    new AbortController().signal,
-  );
-  try {
-    const opened = await priceCollection.openHistorical(historical, priceArea.prefix);
-    const stored = TOOL_MODEL.decode(opened.value, priceArea.prefix, priceArea);
-    assert.equal(stored.rows[0]!.values.usage_cost_per_day, 11.375);
-  } finally {
-    priceCollection.close();
-  }
-  const [, unrelated] = await peer.query(
-    "zerotrust.toolRates.historical",
-    { ...historicalInput, tool: second.id },
-    { strategy: "network-only" },
-  );
-  assert.equal(unrelated?.code, "NOT_FOUND");
   const sourcePrice = toolUsageCollection(source.id, "procurement");
   const oldPrice = await required(
     owner.query(
@@ -309,19 +269,14 @@ export async function exerciseToolBookingBatches(
     live: () => assert.equal(unlockedAccount(), account),
   };
   const deniedScope = toolCollection("tool", second.id, "master-data").scope;
-  async function denyAction(
-    scope: string,
-    action: Action,
-    denied: boolean,
-    facet: Facet = "master-data",
-  ) {
+  async function denyAction(scope: string, action: Action, denied: boolean) {
     const { permissions } = await readVerifiedPolicy(owner, context);
     const rules = permissions.rules.filter(
       (rule) =>
         !(
           rule.subject === subject &&
           rule.scope === scope &&
-          rule.facet === facet &&
+          rule.facet === "master-data" &&
           rule.effect === "deny" &&
           rule.actions.length === 1 &&
           rule.actions[0] === action
@@ -331,7 +286,7 @@ export async function exerciseToolBookingBatches(
       rules.push({
         subject,
         scope,
-        facet,
+        facet: "master-data",
         actions: [action],
         effect: "deny",
       });
@@ -342,26 +297,7 @@ export async function exerciseToolBookingBatches(
     });
   }
   try {
-    await denyAction(priceArea.scope, "read", true, priceArea.facet);
-    try {
-      assert.deepEqual(await rateReference(first.id), after);
-      const [, denied] = await peer.query(
-        "zerotrust.toolRates.historical",
-        historicalInput,
-        { strategy: "network-only" },
-      );
-      assert.equal(denied?.code, "FORBIDDEN");
-    } finally {
-      await denyAction(priceArea.scope, "read", false, priceArea.facet);
-    }
-
     await denyAction(deniedScope, "update", true);
-    const [, deniedRate] = await peer.query(
-      "zerotrust.toolRates.references",
-      { tools: [second.id] },
-      { strategy: "network-only" },
-    );
-    assert.equal(deniedRate?.code, "FORBIDDEN");
     assert.ok((await owner.mutate("tools.trackMany", input))[1]);
     await assertOriginal();
     await denyAction(deniedScope, "update", false);

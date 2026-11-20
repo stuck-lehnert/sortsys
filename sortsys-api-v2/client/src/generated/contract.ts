@@ -228,7 +228,7 @@ export type Rule = { subject: string, scope: string, facet: Facet, actions: Arra
 
 export type RuleOrigin = "absence-default" | "organization-office" | "organization-procurement";
 
-export type SaveInput = { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, };
+export type SaveInput = { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, toolRate?: ToolRateReference, };
 
 export type ScanDocumentType = "deliveryNote" | "priceList" | "invoice";
 
@@ -271,6 +271,8 @@ export type ToolBookingReference = { toolId: Id, trackingId: Id, };
 export type ToolBookingSelection = { id: Id, expectedTrackingId: Id | null, };
 
 export type ToolBookingTool = { id: Id, customId: number, brand: string, category: string, label: string | null, };
+
+export type ToolRateReference = { tool: Id, reference: string, sequence: string, };
 
 export type TrustHistory = { authorities: Array<AuthorityHistory>, identities: Array<IdentityCertificate>, };
 
@@ -429,7 +431,7 @@ export type QueryInputs = {
   "zerotrust.stock.deleted": { object: string, };
   "zerotrust.stock.references": { objects: Array<string>, prepared?: PreparedView, };
   "zerotrust.timestamps.get": { scope: string, object: string, revision: string, };
-  "zerotrust.toolRates.historical": { tool: Id, reference: string, };
+  "zerotrust.toolRates.historical": { tool: Id, tracking: Id, reference: string, };
   "zerotrust.toolRates.references": { tools: Array<Id>, };
   "zerotrust.toolReturns.lookup": { verificationKeys: Array<string>, };
   "zerotrust.trust.history": void;
@@ -786,7 +788,7 @@ export type MutationInputs = {
   "zerotrust.members.create": { tenant: string, generation: string, author: string, id: string, username: string, source?: InitialMemberState, proof: string, };
   "zerotrust.objects.batch": { objects: Array<SaveInput>, heads?: Array<DomainHead>, documents?: Array<DocumentHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
   "zerotrust.objects.commit": { parts: Array<string>, heads: Array<DomainHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
-  "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, };
+  "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, toolRate?: ToolRateReference, };
   "zerotrust.objects.stage": { objects: Array<SaveInput>, };
   "zerotrust.policy.replace": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
   "zerotrust.recovery.account": { tenant: string, generation: string, nonce: string, proof: string, };

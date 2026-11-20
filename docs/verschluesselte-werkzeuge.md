@@ -205,9 +205,19 @@ Projektbereiche eine zusätzliche verschlüsselte Sicht auf ihre Werkzeugnutzung
 Buchungsdaten und historische Preise bleiben darin getrennt. Änderungen an der
 ursprünglichen Buchung und dieser Sicht werden gemeinsam veröffentlicht. Eine
 Kostenfreigabe für eine Baustelle öffnet dadurch keine Buchungen anderer
-Projekte. Ausgabe, verwaltete Rückgabe und Umbuchung benötigen die jeweils
-betroffenen Schreibrechte auch im Projektbereich. Für die Rückgabe über die
-Buchungsliste gilt der Nachweis aus der ursprünglichen Ausgabe.
+Projekte. Für Ausgabe, verwaltete Rückgabe und Umbuchung sind die passenden
+Schreibrechte für die Buchungsdaten im Projekt nötig. Für die Rückgabe über
+die Buchungsliste gilt der Nachweis aus der ursprünglichen Ausgabe.
+
+Konten mit Buchungsrecht können Werkzeuge ausgeben und Umbuchungen annehmen,
+auch wenn ihnen eine Kostenfreigabe fehlt. Die Buchung hält dann die genaue
+verschlüsselte Fassung des Kostensatzes fest. Öffnet ein Konto mit Zugriff
+auf den Werkzeugpreis und Schreibrecht für die Projektkosten die
+Kostenauswertung, übernimmt dessen Browser den ursprünglichen Satz in den
+Kostenbereich des Projekts. Eine spätere Preisänderung wirkt sich dabei nur
+auf neue Buchungen aus. Bis zur Übernahme weist die Auswertung auf die
+ausstehenden Sätze hin. Das Buchungskonto erhält bei der Übernahme keine
+zusätzliche Lesefreigabe.
 
 Beim Anlegen eines Mandanten kann ein geprüftes Sicherungsarchiv Werkzeugdaten,
 einzelne Buchungen, Inventuren und Umbuchungsanfragen liefern. Vorhandene
@@ -222,11 +232,6 @@ Für vollständige Arbeitsabläufe fehlen noch folgende Anschlüsse:
   Zuständigkeit. Fehlt der buchenden Person die Schlüsselzuständigkeit, bleibt
   der Wechsel für den jeweiligen Bereich vorgemerkt. Weitere Schreibvorgänge
   in diesem Bereich warten bis zur Schlüsselerneuerung.
-- Eine neue Ausgabe und die Annahme einer Umbuchung benötigen derzeit Zugriff
-  auf die Werkzeugkosten. Die API kann für eine Ausgabe bereits einen Verweis
-  auf die genaue verschlüsselte Preisfassung festhalten. Den Preisbeleg kann
-  nur ein Konto mit Lesefreigabe für Werkzeugkosten abrufen. Ausgabe,
-  Umbuchung und Projektkosten verwenden diesen Weg noch nicht.
 - Die gemeinsame lokale Suche unterstützt Wortpräfixe. Der vollständige
   Vergleich mit der bisherigen PostgreSQL-Textsuche steht noch aus.
 

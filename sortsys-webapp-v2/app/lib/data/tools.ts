@@ -39,7 +39,6 @@ import {
   toolRequest,
   toolRow,
   toolTimestamp as timestamp,
-  bookingToolSummary,
   TOOL_INDEX,
   TOOL_MODEL,
   TOOL_MUTATIONS,
@@ -47,7 +46,12 @@ import {
   type ToolNamespace,
   type ToolPart,
 } from "./toolData";
-import { bookProtectedTools } from "./toolBookings";
+import { bookProtectedTools, createToolBooking } from "./toolBookings";
+import {
+  attachBookingRatePins,
+  prepareBookingRates,
+  type BookingRatePin,
+} from "./toolRates";
 import {
   finishToolBookingRotations,
   finishToolResponsibilityChanges,
@@ -264,6 +268,7 @@ export function createProtectedTools(
     selected: readonly DataRequest[],
     work: (tx: DataTransaction) => T | Promise<T>,
     guards: PreparedWrites["head"][] = [],
+    ratePins?: ReadonlyMap<string, BookingRatePin>,
   ) {
     const prepared = await runtime.prepare(
       selected,
@@ -274,6 +279,7 @@ export function createProtectedTools(
       guards,
     );
     try {
+      if (ratePins) attachBookingRatePins(prepared.groups, ratePins);
       await commitProtectedWrites(
         client,
         prepared.groups,
@@ -1084,10 +1090,11 @@ export function createProtectedTools(
               typeof changes.usage_cost_per_day === "number"
                 ? trackingRequests
                     .filter((request) => {
-                      const trackingId = document(view, request)!.value.id;
+                      const tracking = document(view, request)!.value;
+                      if (tracking.deferredRate) return false;
                       const price = toolRequest(
                         "tool-tracking",
-                        trackingId,
+                        tracking.id,
                         "procurement",
                       );
                       return (
@@ -1144,6 +1151,7 @@ export function createProtectedTools(
               const value = document(tx, request)!.value;
               if (
                 value.deleted ||
+                value.deferredRate ||
                 values(tx, request).tool_id !== addressId(resource)
               )
                 continue;
@@ -1268,6 +1276,7 @@ export function createProtectedTools(
                 value.deleted = true;
                 value.rows = [];
                 value.activeTrackingId = null;
+                delete value.deferredRate;
               });
             }
             tx.edit(toolIndexRequest, TOOL_INDEX.prefix, (value) => {
@@ -1444,13 +1453,30 @@ export function createProtectedTools(
         ? null
         : baseline.tracking.project_id;
       const targetProject =
-        p.projectId ?? id(baseline.source.project_id ?? priorProject);
+        (p.projectId ?? id(baseline.source.project_id ?? priorProject)) as string | null;
       const guards = accepting ? await reference(targetProject) : [];
       guards.push(...priorUsage.guards);
       const nextId = publicId(newProductRowId());
       const next = CREATION_FACETS["tool-tracking"].map((facet) =>
         toolRequest("tool-tracking", nextId, facet),
       );
+      const price = toolRequest("tool", baseline.toolId, "procurement");
+      const projectPrice = targetProject === null
+        ? null
+        : toolUsageRequest(targetProject, "procurement");
+      const ratePins = accepting
+        ? await prepareBookingRates(
+            client,
+            signal,
+            await protectedCollections(client, signal, [
+              price.area.domain,
+              ...(projectPrice ? [projectPrice.area.domain] : []),
+            ]),
+            [{ tool: baseline.toolId, tracking: nextId }],
+            targetProject,
+          )
+        : undefined;
+      const deferredRate = ratePins?.get(nextId)?.source.reference;
       if (accepting)
         await provision(
           "tool-tracking",
@@ -1465,8 +1491,8 @@ export function createProtectedTools(
             ...priorUsage.requests,
             ...(targetProject
               ? [
-                  toolUsageRequest(targetProject as string, "master-data"),
-                  toolUsageRequest(targetProject as string, "procurement"),
+                  toolUsageRequest(targetProject, "master-data"),
+                  ...(projectPrice && !deferredRate ? [projectPrice] : []),
                 ]
               : []),
           ]
@@ -1482,7 +1508,7 @@ export function createProtectedTools(
           ? [
               toolRequest("tool", baseline.toolId, "master-data"),
               toolBookingRequest(baseline.toolId),
-              toolRequest("tool", baseline.toolId, "procurement"),
+              ...(!deferredRate ? [price] : []),
               ...next,
             ]
           : []),
@@ -1515,7 +1541,6 @@ export function createProtectedTools(
           tx.require(found.request, "update");
           if (accepting) {
             const tool = toolRequest("tool", baseline.toolId, "master-data");
-            const price = toolRequest("tool", baseline.toolId, "procurement");
             checkToolReturnBinding(tx, baseline.toolId, prior);
             if (
               activeToolBooking(tx, document(tx, tool)!.value) !==
@@ -1530,7 +1555,9 @@ export function createProtectedTools(
               responsible_user_id: found.row.values.transfer_to_user_id,
               started_by_user_id: actorId,
               ended_by_user_id: null,
-              tool_usage_cost_per_day: values(tx, price).usage_cost_per_day,
+              tool_usage_cost_per_day: deferredRate
+                ? null
+                : values(tx, price).usage_cost_per_day,
               comment: null,
               started_at: now,
               ended_at: null,
@@ -1559,22 +1586,7 @@ export function createProtectedTools(
                 ["master-data"],
                 prior.returnKey?.verificationKey,
               );
-            setActiveToolBooking(tx, baseline.toolId, nextId, returnKey?.verificationKey);
-            for (const request of next)
-              replace(
-                tx,
-                request,
-                toolPart(
-                  "tool-tracking",
-                  nextId,
-                  request.area.facet,
-                  [row],
-                  null,
-                  bookingToolSummary(document(tx, tool)!.value.rows[0]!),
-                  returnKey,
-                ),
-              );
-            syncToolUsage(tx, row, undefined, returnKey?.verificationKey);
+            createToolBooking(tx, next, document(tx, tool)!.value, row, returnKey, deferredRate);
           }
           tx.patch(
             "tool_tracking_transfer_requests",
@@ -1583,6 +1595,7 @@ export function createProtectedTools(
           );
         },
         guards,
+        ratePins,
       );
       return { success: true };
     },

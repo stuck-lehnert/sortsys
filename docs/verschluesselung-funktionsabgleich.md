@@ -310,8 +310,12 @@ Werkzeugstatus und Projektkosten berücksichtigen den bestätigten Abschluss.
 Bis zur Einladungsbestätigung können offene Buchungen über die
 Werkzeugverwaltung abgeschlossen werden. Die eigenständige Umbuchung mit
 ausschließlich abgeleitetem Leserecht steht noch aus.
-Die Ausgabe ohne lesbare Kosten und vollständige Textsuchparität stehen ebenfalls
-aus. Siehe
+Ausgabe und Umbuchung funktionieren mit getrennten Buchungs- und Kostenrechten.
+Ein Test mit getrennten Konten und zwei API-Prozessen prüft den gesperrten
+Preiszugriff und die Übernahme der ursprünglichen Sätze trotz späterer
+Preisänderungen. Chromium prüft den Hinweis in der Kostenübersicht, die
+anschließende Projektsumme und die Werkzeugansicht des Buchungskontos.
+Der vollständige Vergleich der Textsuche steht aus. Siehe
 [Werkzeugverwaltung](verschluesselte-werkzeuge.md).
 
 **Einsatzplanung und Baustellensperren.** Bestandsübernahme, Listen, Anlage,

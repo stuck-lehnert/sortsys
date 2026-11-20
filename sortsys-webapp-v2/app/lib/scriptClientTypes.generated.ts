@@ -895,6 +895,7 @@ export type SaveInput = {
     resourceAccess?: ResourceAccessState;
     recipientKey?: RecipientKey;
     planningTitle?: Publication;
+    toolRate?: ToolRateReference;
 };
 
 export type ScanDocumentType = "deliveryNote" | "priceList" | "invoice";
@@ -1065,6 +1066,12 @@ export type ToolBookingTool = {
     brand: string;
     category: string;
     label: string | null;
+};
+
+export type ToolRateReference = {
+    tool: Id;
+    reference: string;
+    sequence: string;
 };
 
 export type TrustHistory = {
@@ -1597,6 +1604,7 @@ export type QueryInputs = {
     };
     "zerotrust.toolRates.historical": {
         tool: Id;
+        tracking: Id;
         reference: string;
     };
     "zerotrust.toolRates.references": {
@@ -4669,6 +4677,7 @@ export type MutationInputs = {
         resourceAccess?: ResourceAccessState;
         recipientKey?: RecipientKey;
         planningTitle?: Publication;
+        toolRate?: ToolRateReference;
     };
     "zerotrust.objects.stage": {
         objects: Array<SaveInput>;

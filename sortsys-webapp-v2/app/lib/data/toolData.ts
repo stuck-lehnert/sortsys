@@ -35,7 +35,15 @@ export type ToolPart = {
   rows: BusinessFields[];
   toolSummary?: ToolBookingTool;
   returnKey?: ToolReturnKey;
+  deferredRate?: string;
 };
+
+export function deferredToolRate(input: unknown): string {
+  if (typeof input !== "string" || !/^[a-f0-9]{64}$/.test(input)) {
+    throw new InvalidProtectedData();
+  }
+  return input;
+}
 
 export function bookingToolSummary(row: BusinessFields): ToolBookingTool {
   if (row.table !== "tools") throw new InvalidProtectedData();
@@ -247,6 +255,8 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
       Object.hasOwn(input, "toolSummary");
     const hasReturnKey =
       !!input && typeof input === "object" && Object.hasOwn(input, "returnKey");
+    const hasDeferredRate =
+      !!input && typeof input === "object" && Object.hasOwn(input, "deferredRate");
     const part = toolDomain(area.domain),
       value = record(input, [
         "format",
@@ -259,6 +269,7 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
         "rows",
         ...(hasSummary ? ["toolSummary"] : []),
         ...(hasReturnKey ? ["returnKey"] : []),
+        ...(hasDeferredRate ? ["deferredRate"] : []),
       ]);
     if (
       !part ||
@@ -292,6 +303,16 @@ export const TOOL_MODEL = defineDataModel<ToolPart>({
         value.deleted
       ) throw new InvalidProtectedData();
       returnKey = toolReturnKey(value.returnKey, area.scope);
+    }
+    if (hasDeferredRate) {
+      if (
+        part.namespace !== "tool-tracking" ||
+        part.facet !== "master-data" ||
+        value.deleted
+      ) {
+        throw new InvalidProtectedData();
+      }
+      deferredToolRate(value.deferredRate);
     }
     const expected = layout(part.namespace, part.facet),
       seen = new Set<string>();
@@ -533,6 +554,7 @@ export function toolPart(
   activeTrackingId: string | null = null,
   toolSummary?: ToolBookingTool,
   returnKey?: ToolReturnKey,
+  deferredRate?: string,
 ): ToolPart {
   const expected = layout(namespace, facet);
   return {
@@ -548,6 +570,9 @@ export function toolPart(
       : {}),
     ...(namespace === "tool-tracking" && facet === "master-data" && returnKey
       ? { returnKey }
+      : {}),
+    ...(namespace === "tool-tracking" && facet === "master-data" && deferredRate
+      ? { deferredRate }
       : {}),
     rows: rows
       .filter((row) => row.table === expected.table)

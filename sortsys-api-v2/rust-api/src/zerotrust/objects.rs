@@ -255,6 +255,8 @@ pub(super) struct SaveInput {
     pub recipient_key: Option<super::object_shares::RecipientKey>,
     #[ts(optional)]
     pub planning_title: Option<super::planning_titles::Publication>,
+    #[ts(optional)]
+    pub tool_rate: Option<tool_rate_sources::ToolRateReference>,
 }
 #[derive(Deserialize, TS)]
 #[serde(deny_unknown_fields)]
@@ -1035,6 +1037,7 @@ mod permission_tests {
             resource_access: None,
             recipient_key: None,
             planning_title: None,
+            tool_rate: None,
         };
         tombstone_binding(&input).unwrap();
         let mut delivery = input.clone();
@@ -1077,6 +1080,7 @@ mod permission_tests {
             resource_access: None,
             recipient_key: None,
             planning_title: None,
+            tool_rate: None,
         };
         tool_object_binding(&input).unwrap();
         input.envelope.object = "tool:abc:master-data:booking".into();
@@ -1123,6 +1127,7 @@ mod permission_tests {
             resource_access: None,
             recipient_key: None,
             planning_title: None,
+            tool_rate: None,
         };
         assert!(import_receipt(&input, "user:1").unwrap());
         assert!(import_receipt(&input, "user:2").is_err());

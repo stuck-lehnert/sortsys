@@ -25,13 +25,17 @@ import {
   toolUsageRequests,
 } from "./projectToolUsage";
 import { protectedCollections } from "./protectedObjects";
+import { attachBookingRatePins, prepareBookingRates } from "./toolRates";
 import { finishToolResponsibilityChanges } from "./toolResponsibility";
 import { prepareToolReturnKeys } from "./toolReturnKey";
 import { loadToolReturns } from "./toolReturns";
+import type { ToolReturnKey } from "./toolReturnKey";
+import type { BusinessRow } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
 import type {
   DataRequest,
   DataRuntime,
+  DataTransaction,
   DataView as BusinessView,
 } from "./runtime/runtime";
 import {
@@ -59,6 +63,39 @@ type Receipt = Output & {
   requestHash: string;
   createdAt: string;
 };
+
+export function createToolBooking(
+  tx: DataTransaction,
+  requests: readonly PartRequest[],
+  tool: ToolPart,
+  row: BusinessRow,
+  returnKey?: ToolReturnKey,
+  deferredRate?: string,
+) {
+  const trackingId = publicId(row.values.id);
+  const summary = bookingToolSummary(tool.rows[0]!);
+  if (summary.id !== publicId(row.values.tool_id)) throw new InvalidProtectedData();
+  for (const request of requests) {
+    tx.create(request, request.area.prefix, toolPart(
+      "tool-tracking",
+      trackingId,
+      request.area.facet,
+      [row],
+      null,
+      summary,
+      returnKey,
+      deferredRate,
+    ));
+  }
+  setActiveToolBooking(tx, summary.id, trackingId, returnKey?.verificationKey);
+  syncToolUsage(
+    tx,
+    row,
+    deferredRate ? ["master-data"] : undefined,
+    returnKey?.verificationKey,
+    deferredRate,
+  );
+}
 
 class ToolBookingSelectionConflict extends ProtectedWriteConflict {
   constructor() {
@@ -341,18 +378,25 @@ export async function bookProtectedTools(
       toolRequest("tool-tracking", trackings[index]!.trackingId, facet),
     ),
   }));
-  const sources = selected.flatMap((selection) => [
+  const masters = selected.flatMap((selection) => [
     selection.tool,
     selection.booking,
-    selection.price,
     ...(selection.previous
       ? [selection.previous.master, selection.previous.scope]
       : []),
   ]);
   const next = selected.flatMap((selection) => selection.next);
+  const project = data.data.projectId;
+  const projectPrice = project ? toolUsageRequest(project, "procurement") : null;
   const domains = [
     ...new Set(
-      [...sources, ...next, receiptRequest].map((request) => request.area.domain),
+      [
+        ...masters,
+        ...selected.map(({ price }) => price),
+        ...next,
+        receiptRequest,
+        ...(projectPrice ? [projectPrice] : []),
+      ].map((request) => request.area.domain),
     ),
   ];
   const collections = await protectedCollections(
@@ -364,6 +408,15 @@ export async function bookProtectedTools(
     const previous = await runtime.read([receiptRequest], saved, collections);
     if (previous) return previous;
   }
+  const pins = await prepareBookingRates(
+    client,
+    signal,
+    collections,
+    selected.map(({ id, trackingId }) => ({ tool: id, tracking: trackingId })),
+    project,
+  );
+  const localPrices = selected.filter(({ trackingId }) => !pins.has(trackingId));
+  const sources = [...masters, ...localPrices.map(({ price }) => price)];
   const previousReturns = (view: BusinessView) => loadToolReturns(
     client,
     selected.map((entry) => toolBookingPointer(view, entry.id)?.returnKey),
@@ -380,7 +433,7 @@ export async function bookProtectedTools(
           throw new ToolBookingSelectionConflict();
         if (!view.can(selection.tool, "update"))
           throw new InvalidProtectedData();
-        part(view, selection.price);
+        if (!pins.has(selection.trackingId)) part(view, selection.price);
         if (selection.previous) {
           const previous = part(view, selection.previous.master);
           const row = previous.rows[0]!;
@@ -415,11 +468,11 @@ export async function bookProtectedTools(
     toolUsageRequests(row, ["master-data"]),
   );
   const newUsage =
-    data.data.projectId === null
+    project === null
       ? []
       : [
-          toolUsageRequest(data.data.projectId, "master-data"),
-          toolUsageRequest(data.data.projectId, "procurement"),
+          toolUsageRequest(project, "master-data"),
+          ...(projectPrice && localPrices.length ? [projectPrice] : []),
         ];
   const usage = [...oldUsage, ...newUsage];
   if (usage.length) {
@@ -492,6 +545,10 @@ export async function bookProtectedTools(
           }
           const deadline = data.data.deadlineAt;
           const returnKey = await returnKeyFor?.(selection.trackingId);
+          const deferredRate = pins.get(selection.trackingId)?.source.reference;
+          const rate = deferredRate
+            ? null
+            : part(tx, selection.price).rows[0]!.values.usage_cost_per_day;
           const row = toolRow("tool_trackings", {
             id: addressId(selection.trackingId),
             tool_id: addressId(selection.id),
@@ -502,8 +559,7 @@ export async function bookProtectedTools(
                 : addressId(data.data.projectId),
             started_by_user_id: actorId,
             ended_by_user_id: null,
-            tool_usage_cost_per_day: part(tx, selection.price).rows[0]!.values
-              .usage_cost_per_day,
+            tool_usage_cost_per_day: rate,
             comment: data.data.comment,
             started_at: now,
             ended_at: null,
@@ -515,23 +571,14 @@ export async function bookProtectedTools(
                 : addressId(selection.expectedTrackingId),
             notes: null,
           });
-          for (const request of selection.next) {
-            tx.create(
-              request,
-              request.area.prefix,
-              toolPart(
-                "tool-tracking",
-                selection.trackingId,
-                request.area.facet,
-                [row],
-                null,
-                bookingToolSummary(part(tx, selection.tool).rows[0]!),
-                returnKey,
-              ),
-            );
-          }
-          setActiveToolBooking(tx, selection.id, selection.trackingId, returnKey?.verificationKey);
-          syncToolUsage(tx, row, undefined, returnKey?.verificationKey);
+          createToolBooking(
+            tx,
+            selection.next,
+            part(tx, selection.tool),
+            row,
+            returnKey,
+            deferredRate,
+          );
         }
         const result = { trackings };
         tx.create(receiptRequest, receiptId, {
@@ -547,6 +594,7 @@ export async function bookProtectedTools(
       guards,
     );
     try {
+      attachBookingRatePins(prepared.groups, pins);
       if (prepared.groups.length)
         await commitProtectedWrites(
           client,

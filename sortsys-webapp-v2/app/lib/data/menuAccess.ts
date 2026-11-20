@@ -184,7 +184,7 @@ export function projectMenuAccess(
   function canBookTool(id?: string): boolean {
     if (!canCreate("tool-tracking")) return false;
     const eligible = (scope: string) =>
-      can(scope, "master-data", "update") && can(scope, "procurement", "read");
+      can(scope, "master-data", "read") && can(scope, "master-data", "update");
     if (id !== undefined) {
       const scope = `tool:${id}`;
       return creationResource(scope) !== null && eligible(scope);

@@ -119,6 +119,7 @@ async fn browser_with_tenant(
             "document-search" => "scripts/test-native-document-search.ts",
             "absence-supervisors" => "scripts/test-native-absence-supervisors.ts",
             "restore-absences" => "scripts/test-native-absence-restore.ts",
+            "deferred-tool-rates" => "scripts/test-native-deferred-tool-rates.ts",
             "administration" => "scripts/test-native-administration.ts",
             "development-seed" => "scripts/test-development-seed.ts",
             "telemetry" => "scripts/test-operator-telemetry.ts",
@@ -208,6 +209,7 @@ async fn browser_with_tenant(
             | "document-search"
             | "absence-supervisors"
             | "restore-absences"
+            | "deferred-tool-rates"
             | "administration"
             | "llm"
             | "editors"
@@ -1398,6 +1400,30 @@ async fn prepared_backups_check_absence_decision_signatures() {
         &root,
         &["owner-minimal", "restore-absences"],
         Some("absence-restore-tenant"),
+    )
+    .await;
+}
+
+#[tokio::test]
+#[ignore = "scripts/test-native-auth provides disposable DuckDB, Bun and loopback listeners"]
+async fn deferred_tool_rates_preserve_exact_prices_across_api_processes() {
+    assert_eq!(
+        std::env::var("SORTSYS_DISPOSABLE_AUTH_TEST").as_deref(),
+        Ok("1")
+    );
+    let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
+    let store = QuackConfig::from_env().unwrap().unwrap();
+    assert!(store.control_url.starts_with("http://127.0.0.1:"));
+    let mut settings = configuration(store);
+    settings.jwt_secret = Arc::from(b"disposable-owner-service-secret-2026".as_slice());
+    settings.admin_hash = bcrypt::hash("Disposable-operator-password-2026!", 4)
+        .unwrap()
+        .into();
+    processes::run_browser_sequence(
+        &settings,
+        &root,
+        &["owner-minimal", "deferred-tool-rates"],
+        Some("deferred-tool-rates-tenant"),
     )
     .await;
 }

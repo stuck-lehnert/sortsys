@@ -15,6 +15,7 @@ import { defineDataModel } from "./runtime/model";
 import { mapConcurrent } from "./runtime/concurrentReads";
 import type { DataTransaction } from "./runtime/runtime";
 import { tableDefinition } from "./schema";
+import { deferredToolRate } from "./toolData";
 
 export const TOOL_USAGE_FACETS = ["master-data", "procurement"] as const;
 export type ToolUsageFacet = (typeof TOOL_USAGE_FACETS)[number];
@@ -24,6 +25,7 @@ export type ToolUsage = {
   facet: ToolUsageFacet;
   tracking: BusinessFields;
   returnKey?: string;
+  deferredRate?: string;
 };
 
 export function toolUsageCollection(
@@ -64,6 +66,7 @@ export function toolUsagePart(
   tracking: BusinessFields,
   facet: ToolUsageFacet,
   returnKey?: string,
+  deferredRate?: string,
 ): ToolUsage {
   const projectId = trackingProject(tracking);
   if (!projectId) throw new InvalidProtectedData();
@@ -77,6 +80,7 @@ export function toolUsagePart(
     facet,
     tracking: decodeBusinessFields("tool_trackings", selected),
     ...(facet === "master-data" && returnKey ? { returnKey } : {}),
+    ...(facet === "master-data" && deferredRate ? { deferredRate } : {}),
   };
 }
 export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
@@ -87,7 +91,7 @@ export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
   sources: () => [],
   decode(input, object, area) {
     const payload = partialAddressRecord(input, [
-      "format", "projectId", "facet", "tracking", "returnKey",
+      "format", "projectId", "facet", "tracking", "returnKey", "deferredRate",
     ]);
     const part = toolUsageDomain(area.domain);
     if (
@@ -102,6 +106,11 @@ export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
       if (part.facet !== "master-data" || typeof returnKey !== "string")
         throw new InvalidProtectedData();
       sized(returnKey, 32);
+    }
+    const deferredRate = payload.deferredRate;
+    if (deferredRate !== undefined) {
+      if (part.facet !== "master-data") throw new InvalidProtectedData();
+      deferredToolRate(deferredRate);
     }
     const expected = toolUsageCollection(part.projectId, part.facet);
     if (
@@ -135,6 +144,7 @@ export const TOOL_USAGE_MODEL = defineDataModel<ToolUsage>({
       facet: part.facet,
       tracking,
       ...(returnKey === undefined ? {} : { returnKey }),
+      ...(deferredRate === undefined ? {} : { deferredRate: deferredToolRate(deferredRate) }),
     };
   },
 });
@@ -224,6 +234,7 @@ export function syncToolUsage(
   tracking: BusinessFields,
   facets: readonly ToolUsageFacet[] = TOOL_USAGE_FACETS,
   returnKey?: string,
+  deferredRate?: string,
 ) {
   for (const request of toolUsageRequests(tracking, facets)) {
     const object = request.area.prefix + publicId(tracking.values.id);
@@ -239,6 +250,7 @@ export function syncToolUsage(
       tracking,
       request.area.facet as ToolUsageFacet,
       returnKey,
+      deferredRate,
     );
     if (previous) {
       transaction.require(request, "update");
@@ -255,12 +267,17 @@ export function deleteToolUsage(
   transaction: DataTransaction,
   tracking: BusinessFields,
 ) {
+  let deferred = false;
   for (const request of toolUsageRequests(tracking)) {
     const object = request.area.prefix + publicId(tracking.values.id);
     const previous = transaction
       .documents(request)
       .find((document) => document.id === object);
-    if (!previous) throw new InvalidProtectedData();
+    if (!previous) {
+      if (request.area.facet === "procurement" && deferred) continue;
+      throw new InvalidProtectedData();
+    }
+    deferred ||= previous.value.deferredRate !== undefined;
     transaction.delete(request, object);
   }
 }
