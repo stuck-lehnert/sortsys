@@ -30,6 +30,12 @@ type ClauseHits = {
 const wordPattern = () => /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu;
 
 type Token = TextRange & { word: Word };
+type Vocabulary = {
+  plain: string[];
+  german: Set<string>;
+  english: Set<string>;
+};
+type CachedDocument = { tokens: Token[]; vocabulary?: Vocabulary };
 type ReadToken = (
   word: Word,
   start: number,
@@ -37,9 +43,32 @@ type ReadToken = (
   position: number,
 ) => void;
 
+function vocabularyFor(tokens: Token[]): Vocabulary {
+  const plain = new Set<string>();
+  const german = new Set<string>();
+  const english = new Set<string>();
+  for (const { word } of tokens) {
+    plain.add(word.plain);
+    german.add(word.german);
+    english.add(word.english);
+  }
+  return { plain: [...plain].sort(), german, english };
+}
+
+function hasPrefix(words: string[], prefix: string): boolean {
+  let start = 0;
+  let end = words.length;
+  while (start < end) {
+    const middle = Math.floor((start + end) / 2);
+    if (words[middle]! < prefix) start = middle + 1;
+    else end = middle;
+  }
+  return words[start]?.startsWith(prefix) ?? false;
+}
+
 export function createDocumentTokenizer(maxCachedWords = 0) {
   const words = new Map<string, Word>();
-  const documents = new Map<string, Token[]>();
+  const documents = new Map<string, CachedDocument>();
   let remainingWords = maxCachedWords;
   let remainingCharacters = maxCachedWords * 10;
 
@@ -64,7 +93,7 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
   }
 
   function scan(text: string, read: ReadToken, remember: boolean): number {
-    const cached = remember ? documents.get(text) : undefined;
+    const cached = remember ? documents.get(text)?.tokens : undefined;
     if (cached) {
       for (const [position, { word, start, end }] of cached.entries()) {
         read(word, start, end, position);
@@ -89,14 +118,27 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
       position++;
     }
     if (entry && position > 0) {
-      documents.set(text, entry);
+      documents.set(text, { tokens: entry });
       remainingWords -= position;
       remainingCharacters -= text.length;
     }
     return position;
   }
 
-  return { word, scan };
+  // Only a complete cached text can prove that a term is absent. Phrase
+  // adjacency and ranking still require the exact positional matcher.
+  function mayContain(text: string, term: Word, phrase: boolean): boolean {
+    const cached = documents.get(text);
+    if (!cached) return true;
+    const vocabulary = (cached.vocabulary ??= vocabularyFor(cached.tokens));
+    return (
+      vocabulary.german.has(term.german) ||
+      vocabulary.english.has(term.english) ||
+      (!phrase && hasPrefix(vocabulary.plain, term.plain))
+    );
+  }
+
+  return { word, scan, mayContain };
 }
 
 /** Search semantics belong to the local query provider. The UI must not filter
@@ -232,6 +274,15 @@ export function createDocumentMatcher(
         best: null,
       }));
       scan(name, (hit) => names[hit.atom]!++);
+      const hasCandidate = clauses.some((clause) =>
+        clause.every((index) => {
+          const atom = atoms[index]!;
+          if (atom.excluded || names[index]! > 0) return true;
+          return !!text && tokenizer.mayContain(text, atom.lastWord, atom.phrase);
+        }),
+      );
+      if (!hasCandidate) return null;
+
       function recordBodyHit(hit: Hit) {
         body[hit.atom]!++;
         const atom = atoms[hit.atom]!;

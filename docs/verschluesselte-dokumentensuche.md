@@ -70,9 +70,13 @@ Ein Wechsel der Freigaberichtlinie oder das Sitzungsende schließt die Instanz.
 Die Textauswertung läuft in einem eigenen Worker. Er hält Textblöcke,
 Wortformen und Textpositionen des geprüften Bestands in einem begrenzten
 Arbeitsspeicher. Beim Ändern der Suchbegriffe verwendet er bereits
-übertragene Blöcke weiter. Größere Bestände werden ebenfalls vollständig
-durchsucht. Ihre übrigen Blöcke werden bei jeder Suche erneut an den Worker
-übertragen. Eine neue Suchanfrage stoppt die alte nach dem laufenden Block.
+übertragene Blöcke weiter. Für vollständig zerlegte Texte hält er eine
+Wortliste bereit. Fehlt in jeder Suchalternative mindestens ein Pflichtbegriff,
+muss der Worker den Text nicht noch einmal nach Wortpositionen durchsuchen.
+Für mögliche Treffer prüft er weiterhin Phrasen, Ausschlüsse und Wortabstände.
+Bei größeren Beständen werden Blöcke außerhalb des Caches für jede Suche
+erneut übertragen und durchsucht. Eine neue Suchanfrage stoppt die alte nach
+dem laufenden Block.
 Ändert sich die Dateiauswahl, eine Freigabe oder eine Dateiversion, verwirft
 der Browser den bisherigen Bestand. Das gilt auch am Ende der Sitzung.
 

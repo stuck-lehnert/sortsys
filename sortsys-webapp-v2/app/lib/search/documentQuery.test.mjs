@@ -196,6 +196,40 @@ test("cached word positions and uncached overflow produce identical matches", ()
   }
 });
 
+test("a warmed vocabulary skips impossible bodies without changing matches or excerpts", () => {
+  const tokenizer = createDocumentTokenizer(64);
+  const body = "Die verputzten Wände und Fensteranschlüsse. Installed window frames.";
+  const name = "Abnahme 4711.pdf";
+  createDocumentMatcher("Fenst", tokenizer).match(name, body);
+
+  let bodyScans = 0;
+  const observed = {
+    ...tokenizer,
+    scan(text, ...args) {
+      if (text === body) bodyScans++;
+      return tokenizer.scan(text, ...args);
+    },
+  };
+  for (const query of ["Fenst Rechnung", '"neue Decke" OR Dach', "4711 Türen"]) {
+    expect(createDocumentMatcher(query, observed).match(name, body)).toBeNull();
+  }
+  expect(bodyScans).toBe(0);
+
+  for (const query of [
+    "Fenst Wand",
+    "4711",
+    "install",
+    '"verputzte Wand" OR Fenster -Asbest',
+    '"Wände verputzten"',
+    "-Wand",
+    "-Asbest",
+  ]) {
+    expect(createDocumentMatcher(query, observed).match(name, body))
+      .toEqual(find(query, body, name));
+  }
+  expect(bodyScans).toBeGreaterThan(0);
+});
+
 test("the native search provider uses the local matcher and honors cancellation", async () => {
   const { search } = createDocumentSearch();
   const documents = Array.from({ length: 35 }, (_, index) => ({
