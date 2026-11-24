@@ -1,10 +1,10 @@
 import { uiText } from "~/lib/i18n";
-import { Tab, TabList, Tabs } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { from } from "rxjs";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDropdown } from "~/components/MyDropdown";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
+import { TabbedOutlet } from "~/components/TabbedOutlet";
 import { MyHeader } from "~/components/MyHeader";
 import { showRemarkFormModal } from "~/components/Remarks";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -130,6 +130,7 @@ export default function ProjectDetailShell() {
       path: filesPath,
       label: uiText("Anhänge"),
       hideIf: !canReadFiles,
+      matchChildren: true,
     },
     {
       path: `/projects/${id}/costs`,
@@ -150,12 +151,6 @@ export default function ProjectDetailShell() {
     },
   ];
 
-  const _tabs = tabs.filter(({ hideIf }) => !hideIf);
-  const selectedIndex = _tabs.findIndex(
-    ({ path: _path }) =>
-      path === _path ||
-      (_path.endsWith("/files") && path.startsWith(`${_path}/`)),
-  );
   const archivedAt =
     (project as any).archivedAt ?? (project as any).archivedSince ?? null;
   const hasDeliveryNotes = (deliveryNotes?.length ?? 0) > 0;
@@ -353,24 +348,9 @@ export default function ProjectDetailShell() {
         </MyCallout>
       )}
 
-      <Tabs
-        selectedIndex={selectedIndex}
-        onChange={({ selectedIndex }: any) => {
-          const { path: _path } = _tabs[selectedIndex];
-          if (_path === path) return;
-          navigate(_path);
-        }}
-      >
-        <TabList>
-          {_tabs.map(({ path, label }) => (
-            <Tab key={path}>{label}</Tab>
-          ))}
-        </TabList>
-      </Tabs>
-
-      <ScopedErrorBoundary scope="project.content" resetKey={path}>
+      <TabbedOutlet scope="project.content" tabs={tabs}>
         <Outlet context={{ project }} />
-      </ScopedErrorBoundary>
+      </TabbedOutlet>
     </>
   );
 }

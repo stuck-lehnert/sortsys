@@ -1,18 +1,32 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { Observable } from "rxjs";
 
-export function useClientStream<T, ErrT>(createStream: () => Observable<[T, ErrT]>, deps: any[] = []) {
-  const [current, setCurrent] = useState<[T, ErrT]>([null, null] as any);
+export function useClientStream<T, ErrT>(
+  createStream: () => Observable<[T, ErrT]>,
+  deps: readonly unknown[] = [],
+) {
+  const request = useMemo(
+    () => ({ createStream, pending: [null, null] as [T, ErrT] }),
+    deps,
+  );
+  const [current, setCurrent] = useState<{
+    request: typeof request;
+    result: [T, ErrT];
+  }>();
 
   useEffect(() => {
-    if (current) setCurrent([null, null] as any);
+    setCurrent((previous) =>
+      previous?.request === request ? previous : undefined,
+    );
 
-    const subscription = createStream().subscribe((event) => {
-      setCurrent(event);
+    const subscription = request.createStream().subscribe((result) => {
+      setCurrent({ request, result });
     });
 
     return () => subscription.unsubscribe();
-  }, deps);
+  }, [request]);
 
-  return current;
+  // Effects run after the new render. Do not commit a previous selection's
+  // data or error while waiting to subscribe to the new request.
+  return current?.request === request ? current.result : request.pending;
 }

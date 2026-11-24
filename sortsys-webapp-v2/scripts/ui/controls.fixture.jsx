@@ -33,7 +33,9 @@ import { Link, BrowserRouter, MemoryRouter, useLocation } from "react-router";
 import { MyDropdown } from "~/components/MyDropdown";
 import { MyHeader } from "~/components/MyHeader";
 import { MyTable } from "~/components/MyTable";
+import { TabbedOutlet } from "~/components/TabbedOutlet";
 import { ApplicationFixture } from "./application.fixture.jsx";
+import { ClientStreamFixture } from "./client-stream.fixture.jsx";
 import { FormFieldsFixture } from "./form-fields.fixture.jsx";
 import { MyExpandable } from "~/components/MyExpandable";
 import { AttrList } from "~/components/AttrList";
@@ -781,6 +783,27 @@ function NoticesFixture() {
   );
 }
 
+function RouteTabsFixture() {
+  const { pathname } = useLocation();
+  const [overviewHidden, setOverviewHidden] = useState(false);
+  const tabs = [
+    { path: "/overview", label: "Overview", hideIf: overviewHidden },
+    { path: "/files", label: "Attachments", matchChildren: true },
+    { path: "/costs", label: "Costs" },
+  ];
+
+  return (
+    <>
+      <button type="button" onClick={() => setOverviewHidden(true)}>
+        Hide overview
+      </button>
+      <TabbedOutlet scope="fixture.route-tabs" tabs={tabs}>
+        <output aria-label="Active route">{pathname}</output>
+      </TabbedOutlet>
+    </>
+  );
+}
+
 function FixtureContent() {
   const { setLocale } = useI18n();
 
@@ -817,6 +840,10 @@ function FixtureContent() {
                 <NoticesFixture />
               ) : parameters.get("screen") === "long" ? (
                 <LongAutocompleteFixture />
+              ) : parameters.get("screen") === "route-tabs" ? (
+                <RouteTabsFixture />
+              ) : parameters.get("screen") === "client-stream" ? (
+                <ClientStreamFixture />
               ) : (
                 <>
                   <FieldsFixture />

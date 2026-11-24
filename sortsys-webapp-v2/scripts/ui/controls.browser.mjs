@@ -20,7 +20,9 @@ let errors;
 
 before(async () => {
   server = await createFixtureServer();
-  browser = await chromium.launch();
+  browser = await chromium.launch({
+    executablePath: process.env.SORTSYS_E2E_CHROMIUM,
+  });
   await mkdir(join(fixtureDirectory, "screenshots"), { recursive: true });
 });
 
@@ -66,8 +68,11 @@ async function openFixture({
   locale = "en",
   theme = "light",
   screen = "controls",
+  path,
 } = {}) {
   const query = new URLSearchParams({ locale, theme, screen });
+  if (path) query.set("path", path);
+
   await page.goto(`${server.origin}/controls?${query}`);
   await page
     .getByRole("heading", {
@@ -89,6 +94,61 @@ async function assertNoPageOverflow() {
   }));
   assert.ok(sizes.content <= sizes.viewport + 1, JSON.stringify(sizes));
 }
+
+test("route tabs retain their active attachment when a preceding tab disappears", async () => {
+  await page.setViewportSize({ width: 375, height: 740 });
+  await openFixture({ screen: "route-tabs", path: "/files/42" });
+
+  const route = page.getByLabel("Active route", { exact: true });
+  const attachments = page.getByRole("tab", {
+    name: "Attachments",
+    selected: true,
+  });
+  const initialTabId = await attachments.getAttribute("id");
+  assert.ok(initialTabId);
+  assert.equal(await route.textContent(), "/files/42");
+
+  await page.getByRole("button", { name: "Hide overview", exact: true }).click();
+  await page
+    .getByRole("tab", { name: "Overview", exact: true })
+    .waitFor({ state: "detached" });
+  assert.equal(await attachments.getAttribute("id"), initialTabId);
+  assert.equal(await route.textContent(), "/files/42");
+
+  await attachments.focus();
+  await page.keyboard.press("ArrowRight");
+  await page.getByRole("tab", { name: "Costs", selected: true }).waitFor();
+  assert.equal(await route.textContent(), "/costs");
+
+  await assertNoPageOverflow();
+});
+
+test("client streams never commit the previous project's value on a switch", async () => {
+  await openFixture({ screen: "client-stream" });
+  await page.waitForFunction(() => window.clientStreamFixture?.subscribed("first"));
+
+  await page.evaluate(() => window.clientStreamFixture.emit("first", "First title"));
+  await page.getByText("First title", { exact: true }).waitFor();
+
+  await page.getByRole("button", { name: "Second project", exact: true }).click();
+  await page.waitForFunction(() => window.clientStreamFixture.subscribed("second"));
+
+  const switched = await page.evaluate(() => {
+    const fixture = window.clientStreamFixture;
+    fixture.emit("first", "Late first title");
+    return {
+      previousSubscribed: fixture.subscribed("first"),
+      commits: fixture.commits().filter(({ project }) => project === "second"),
+    };
+  });
+
+  assert.equal(switched.previousSubscribed, false);
+  assert.deepEqual(switched.commits, [{ project: "second", value: null }]);
+  await page.getByText("Waiting for project", { exact: true }).waitFor();
+
+  await page.evaluate(() => window.clientStreamFixture.emit("second", "Second title"));
+  await page.getByText("Second title", { exact: true }).waitFor();
+});
 
 test("actual fields preserve checkbox, empty-select, Unicode and date-array contracts", async () => {
   await openFixture();
