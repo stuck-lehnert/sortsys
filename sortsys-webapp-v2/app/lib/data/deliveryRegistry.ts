@@ -1,4 +1,5 @@
 import type { Client, QueryInput } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import {
   accountRequestFingerprint,
   frame,
@@ -7,12 +8,11 @@ import {
   sign,
   TOMBSTONE_FORMAT,
 } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "../crypto/session";
+import { captureAccountScope, trustedHistory } from "../crypto/session";
 import { readVerifiedPolicy } from "../crypto/policy";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { decodeBusinessRow } from "./rowCodec";
 import type { OpenedObject } from "./protectedObjects";
-import { mapConcurrent } from "./runtime/concurrentReads";
 import { deliveryObject, isDeliveryPlacement } from "./deliveryIdentity";
 
 const ALLOCATIONS_PER_REQUEST = 64;
@@ -32,16 +32,7 @@ export async function deliveryRequestContext(
   client: Client,
   signal: AbortSignal,
 ) {
-  const account = unlockedAccount();
-  if (!account) {
-    throw new InvalidProtectedData();
-  }
-  const live = () => {
-    signal.throwIfAborted();
-    if (account !== unlockedAccount()) {
-      throw new InvalidProtectedData();
-    }
-  };
+  const { account, live } = captureAccountScope(signal);
   const history = await trustedHistory(client),
     session = await required(
       client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
@@ -168,14 +159,8 @@ export async function checkDeliveryObjects(
       object.envelope.object.startsWith("delivery-note:") &&
       object.envelope.format !== TOMBSTONE_FORMAT,
   );
-  const chunks: OpenedObject[][] = [];
-  for (
-    let offset = 0;
-    offset < selected.length;
-    offset += ALLOCATIONS_PER_REQUEST
-  ) {
-    chunks.push(selected.slice(offset, offset + ALLOCATIONS_PER_REQUEST));
-  }
+
+  const chunks = [...arrayBatches(selected, ALLOCATIONS_PER_REQUEST)];
   await mapConcurrent(chunks, 4, async (chunk) => {
     live();
     const result = await required(

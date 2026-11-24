@@ -17,7 +17,7 @@ import {
   type DocumentHead,
   type DocumentPart,
 } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "../crypto/session";
+import { captureAccountScope, trustedHistory } from "../crypto/session";
 import { required } from "./protectedObjects";
 import { ProtectedWriteConflict } from "./atomicWrites";
 import { partialAddressRecord } from "./addressBook";
@@ -117,12 +117,7 @@ export async function prepareDocumentLivePublications(
 }
 
 async function publicationContext(client: Client, signal: AbortSignal) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account) throw new InvalidProtectedData();
-  };
+  const { account, live } = captureAccountScope(signal);
   live();
   const history = await trustedHistory(client);
   live();
@@ -178,17 +173,10 @@ async function prepareWithContext(
   if (!previousTarget) {
     return null;
   }
+
   const room = documentChannel(input);
-  const account = unlockedAccount();
-  if (!account) {
-    throw new InvalidProtectedData();
-  }
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account) {
-      throw new InvalidProtectedData();
-    }
-  };
+  const { account, live } = captureAccountScope(signal);
+
   const state = await required(
     client.query("zerotrust.documents.messages.state", room, {
       strategy: "network-only",

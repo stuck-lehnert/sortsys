@@ -51,6 +51,21 @@ const listeners = new Set<() => void>();
 export function unlockedAccount(): UnlockedAccount | null {
   return account;
 }
+
+/** Bind an operation to this unlock, not merely to the same account name. */
+export function captureAccountScope(signal: AbortSignal) {
+  const captured = unlockedAccount();
+  if (!captured) throw new InvalidProtectedData();
+
+  return {
+    account: captured,
+    live() {
+      signal.throwIfAborted();
+      if (unlockedAccount() !== captured) throw new InvalidProtectedData();
+    },
+  };
+}
+
 export function cryptoSignInPending(): boolean {
   return signingIn;
 }

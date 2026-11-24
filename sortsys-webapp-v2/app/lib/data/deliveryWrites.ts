@@ -6,7 +6,7 @@ import {
   sign,
   sized,
 } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import { addressId, partialAddressRecord } from "./addressBook";
 import {
   commitProtectedWrites,
@@ -127,16 +127,8 @@ export async function writeDeliveryNote(
   if (path !== "deliveryNotes.create" && path !== "deliveryNotes.update") {
     throw new InvalidProtectedData();
   }
-  const account = unlockedAccount();
-  if (!account) {
-    throw new InvalidProtectedData();
-  }
-  const live = () => {
-    signal.throwIfAborted();
-    if (account !== unlockedAccount()) {
-      throw new InvalidProtectedData();
-    }
-  };
+
+  const { account, live } = captureAccountScope(signal);
   const creating = path === "deliveryNotes.create",
     outer = partialAddressRecord(
       input,

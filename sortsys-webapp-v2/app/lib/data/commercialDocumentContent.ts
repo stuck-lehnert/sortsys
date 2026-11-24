@@ -29,7 +29,7 @@ import {
   unbase64,
   utf8,
 } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope, type UnlockedAccount } from "../crypto/session";
 import {
   commitProtectedWrites,
   type DocumentPublication,
@@ -89,7 +89,6 @@ function fragmentsByFacet(fragments: readonly GaebXmlFragment[]) {
   }
   return groups;
 }
-
 const envelopeHash = (input: unknown) => objectPacketHash(encryptedObject(input));
 const token = () =>
   [...randomSecret().slice(0, 16)]
@@ -118,16 +117,7 @@ export async function commercialDocumentStores(
   selectedScopes?: readonly string[],
   collections?: Awaited<ReturnType<typeof protectedCollections>>,
 ) {
-  const account = unlockedAccount();
-  if (!account) {
-    throw new InvalidProtectedData();
-  }
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account) {
-      throw new InvalidProtectedData();
-    }
-  };
+  const { account, live } = captureAccountScope(signal);
   const selectedDomains = selectedScopes?.flatMap((scope) => {
     const area = commercialDomain(`${scope}:master-data`);
     if (!area) throw new InvalidProtectedData();
@@ -159,7 +149,7 @@ function openDocumentStore(
   scope: string,
   signal: AbortSignal,
   parentLive: () => void,
-  account: NonNullable<ReturnType<typeof unlockedAccount>>,
+  account: UnlockedAccount,
   open: Awaited<ReturnType<typeof protectedCollections>>,
   areas: Parameters<typeof open>[0][],
 ) {
