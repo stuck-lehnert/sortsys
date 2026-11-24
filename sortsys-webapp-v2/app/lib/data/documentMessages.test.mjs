@@ -6,6 +6,8 @@ import {
   documentMessageObject,
   openDocumentMessages,
 } from "./documentMessages";
+import { connectProtectedGaebLive } from "./gaebLive";
+import { announceDataChanges } from "./runtime/changes";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 
@@ -36,6 +38,77 @@ test("a live channel loads only its required key domains and the document header
     expect(messages.canWrite).toBe(true);
   } finally {
     messages.close();
+  }
+});
+
+test("GAEB shares the transport until access changes and stops opening after abort", async () => {
+  const scope = commercialCollection("4", "scope");
+  const header = commercialCollection("4", "master-data");
+  const tenant = await protectedTenant([scope, header]);
+  const query = tenant.client.query.bind(tenant.client);
+  const sent = [];
+
+  tenant.client.query = async (path, input, options) => {
+    if (path !== "zerotrust.documents.messages.pages") return query(path, input, options);
+
+    const pages = input.selections.map(({ after }) => ({
+      after, more: false, messages: [], presence: [],
+    }));
+    return [pages, null];
+  };
+  tenant.client.mutate = async (path, input) => {
+    expect(path).toBe("zerotrust.documents.messages.post");
+    sent.push(input.kind);
+    return [{ success: true }, null];
+  };
+
+  const connections = [];
+  // Exercise the real encrypted transport, without an XML editor in Bun.
+  const sharedFields = {
+    enableFacets() {},
+    acknowledge() {},
+    connectFacet(facet, _, writable) { connections.push({ facet, writable }); },
+    disconnectFacet() {},
+    beginReceive: () => ({ commit() {}, destroy() {} }),
+    cursor: (selection) => selection,
+    participants: (people) => people,
+  };
+  const controller = new AbortController();
+  const statuses = [];
+  const connection = connectProtectedGaebLive(tenant.client, {
+    room: { scope: scope.scope, document: "5" },
+    initial: { xml: "", fileName: "Probe.x83", version: 1n, canEdit: true },
+    readableFacets: ["scope"],
+    sharedFields,
+    signal: controller.signal,
+    name: "Testperson",
+    onParticipants() {},
+    onStatus: (status) => statuses.push(status),
+  });
+  const opens = () =>
+    tenant.calls.filter((call) => call.path === "zerotrust.access.snapshot").length;
+
+  try {
+    expect(await Promise.all([connection.flush(), connection.flush()])).toEqual([
+      { scope: "0" }, { scope: "0" },
+    ]);
+    expect(opens()).toBe(1);
+
+    announceDataChanges(tenant.client, undefined, { control: true });
+    expect(await connection.flush()).toEqual({ scope: "0" });
+    expect(opens()).toBe(2);
+    expect(statuses).toContain("offline");
+    expect(statuses.at(-1)).toBe("online");
+
+    controller.abort();
+    await expect(connection.flush()).rejects.toThrow();
+    expect(opens()).toBe(2);
+    expect(sent).toEqual(["presence", "presence"]);
+    expect(connections).toEqual([
+      { facet: "scope", writable: true }, { facet: "scope", writable: true },
+    ]);
+  } finally {
+    connection.close();
   }
 });
 

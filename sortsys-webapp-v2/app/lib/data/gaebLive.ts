@@ -12,6 +12,7 @@ import {
   GAEB_CONTENT_FACETS,
   type GaebContentFacet,
 } from "@sortsys/gaeb";
+import { createScopedResource } from "@sortsys/zerotrust";
 import {
   base64,
   InvalidProtectedData,
@@ -306,9 +307,7 @@ function connectChannel(
   }
   type Transport = Awaited<ReturnType<typeof openDocumentMessages>>;
   const presenceKey = options.presenceKey;
-  let transport: Transport | undefined;
   let content: string | null | undefined;
-  let opening: Promise<Transport> | undefined;
   let booting: Promise<void> | undefined;
   let connected = false;
   let accessEpoch = 0;
@@ -351,42 +350,19 @@ function connectChannel(
       throw new InvalidProtectedData();
     }
   }
-  async function currentTransport(): Promise<Transport> {
-    live();
-    if (transport) {
-      return transport;
-    }
-    if (!opening) {
-      const expectedAccessEpoch = accessEpoch;
-      opening = (async () => {
-        const value = await openDocumentMessages(
-          client,
-          options.room,
-          options.signal,
-        );
-        try {
-          live();
-          if (accessEpoch !== expectedAccessEpoch) {
-            throw new MessageProofUnavailable(new StaleMessageProof());
-          }
-          options.bindContent(value.content);
-          content = value.content;
-          transport = value;
-          return value;
-        } catch (error) {
-          value.close();
-          throw error;
-        }
-      })().finally(() => {
-        opening = undefined;
-      });
-    }
-    return opening;
-  }
-  function resetTransport() {
-    transport?.close();
-    transport = undefined;
-  }
+  const transport = createScopedResource({
+    signal: () => options.signal,
+    assertActive: live,
+    expired: () => new MessageProofUnavailable(new StaleMessageProof()),
+    open: (signal) => openDocumentMessages(client, options.room, signal),
+    activate(value) {
+      options.bindContent(value.content);
+      content = value.content;
+    },
+    close: (value) => value.close(),
+  });
+  const { get: currentTransport, reset: resetTransport } = transport;
+
   function failed(error: unknown) {
     if (stopped) {
       return;
@@ -426,13 +402,13 @@ function connectChannel(
     try {
       const opened = await source.open(entry);
       live();
-      if (source !== transport) {
+      if (source !== transport.peek()) {
         throw new MessageProofUnavailable(new StaleMessageProof());
       }
       return opened;
     } catch (error) {
       live();
-      if (source !== transport) {
+      if (source !== transport.peek()) {
         throw new MessageProofUnavailable(error);
       }
       if (
@@ -449,13 +425,13 @@ function connectChannel(
     try {
       const opened = await refreshed.open(entry);
       live();
-      if (refreshed !== transport) {
+      if (refreshed !== transport.peek()) {
         throw new MessageProofUnavailable(new StaleMessageProof());
       }
       return opened;
     } catch (error) {
       live();
-      if (refreshed !== transport) {
+      if (refreshed !== transport.peek()) {
         throw new MessageProofUnavailable(error);
       }
       if (error instanceof StaleMessageProof) {
@@ -793,7 +769,7 @@ function connectChannel(
           const target = await options.initial.liveTarget(options.room.facet);
           const resume = await source.resume(target);
           live();
-          if (source === transport && resume) {
+          if (source === transport.peek() && resume) {
             const restored = commercial
               ? options.sharedFields.restoreReplay(
                   options.room.facet,
@@ -896,7 +872,7 @@ function connectChannel(
   }
   return {
     canWrite() {
-      return transport?.canWrite === true;
+      return transport.peek()?.canWrite === true;
     },
     field(field: string | null) {
       selection = { field };
