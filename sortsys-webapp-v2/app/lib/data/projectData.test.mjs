@@ -1,6 +1,28 @@
 import { expect, test } from "bun:test";
 import { row } from "./rowCodec.test.mjs";
-import { createProjectMatcher, projectChanges, projectCollection, projectDomainId, projectPayload, wireProject } from "./projectData";
+import { createProjectMatcher, projectChanges, projectCollection, projectCreationInput, projectDomainId, projectPayload, wireProject } from "./projectData";
+import { projectContactLinks, projectContactRow } from "./projectWrites";
+
+test("creation validates and normalizes contacts with the same rules as project edits", () => {
+  const contacts = [
+    { contactId: "35", label: "Alt" },
+    { contactId: "36" },
+    { contactId: "35", label: " Bauleitung " },
+  ];
+  const creation = projectCreationInput({ title: " Renovierung ", contacts });
+  const links = projectContactLinks(creation.contacts);
+
+  expect(creation.changes.title).toBe("Renovierung");
+  expect([...links]).toEqual([["101", "Bauleitung"], ["102", null]]);
+  expect(projectContactRow("100", "101", links.get("101")).values).toEqual({
+    project_id: "100",
+    contact_id: "101",
+    label: "Bauleitung",
+  });
+  expect(projectCreationInput({ title: "Werkstatt" }).contacts).toBeUndefined();
+  expect(() => projectChanges({ contacts }, false)).toThrow();
+  expect(() => projectContactLinks([{ contactId: "-1" }])).toThrow();
+});
 
 function payload() { return { format: "sortsys-project-v1", project: row("projects", { id: "100", title: "Fenstersanierung", address: '{"city":"Nürnberg","streetAddress":"Pirckheimer Straße"}' }),
   contacts: [row("project_contacts", { project_id: "100", contact_id: "101", label: "Bauleitung" })] }; }

@@ -167,6 +167,19 @@ export function decodeBusinessRow(input: unknown): BusinessRow {
   }
 }
 
+/** Apply the same schema checks to new rows as to imported snapshots. */
+export function createBusinessRow(
+  table: string,
+  values: Record<string, unknown>,
+): BusinessRow {
+  return decodeBusinessRow({
+    format: "sortsys-row-v2",
+    schema: businessSchema.fingerprint,
+    table,
+    values,
+  });
+}
+
 /** Missing fields are unavailable, not SQL NULL. Only supplied cells are
  * validated; every primary-key component must still be known. */
 export function decodeBusinessFields(

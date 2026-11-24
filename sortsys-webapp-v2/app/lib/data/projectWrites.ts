@@ -18,8 +18,7 @@ import {
   type ProjectEditPath,
 } from "./projectData";
 import { publicId } from "./products";
-import { decodeBusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow } from "./rowCodec";
 import type { DataCommand, DataRuntime } from "./runtime/runtime";
 
 export const projectContactRequest = {
@@ -36,6 +35,32 @@ export async function certifyProjectLeader(client: Client, id: string) {
   history.identityCertificate(`user:${id}`);
 }
 
+export function projectContactLinks(input: unknown) {
+  if (!Array.isArray(input) || input.length > 10_000) {
+    throw new InvalidProtectedData();
+  }
+
+  const links = new Map<string, string | null>();
+  for (const entry of input) {
+    const link = partialAddressRecord(entry, ["contactId", "label"]);
+    links.set(addressId(link.contactId), addressText(link.label, false, 127));
+  }
+
+  return links;
+}
+
+export function projectContactRow(
+  projectId: string,
+  contactId: string,
+  label: string | null,
+) {
+  return createBusinessRow("project_contacts", {
+    project_id: projectId,
+    contact_id: contactId,
+    label,
+  });
+}
+
 function contactCommand(path: ProjectEditPath, input: unknown): ProjectCommand {
   const setting = path === "projects.contacts.set";
   const removing = path === "projects.contacts.remove";
@@ -43,21 +68,12 @@ function contactCommand(path: ProjectEditPath, input: unknown): ProjectCommand {
     input,
     setting ? ["projectId", "contacts"] : ["projectId", "contactId", "label"],
   );
-  const selected = projectRequest(publicId(addressId(data.projectId)));
-  const entries = setting
-    ? data.contacts
-    : [{ contactId: data.contactId, label: data.label }];
-  if (!Array.isArray(entries) || entries.length > 10_000) {
-    throw new InvalidProtectedData();
-  }
-  const links = entries.map((entry) => {
-    const link = partialAddressRecord(entry, ["contactId", "label"]);
-    return {
-      id: addressId(link.contactId),
-      label: addressText(link.label, false, 127),
-    };
-  });
-  const checkContacts = !removing && links.length > 0;
+  const projectId = addressId(data.projectId);
+  const selected = projectRequest(publicId(projectId));
+  const links = projectContactLinks(
+    setting ? data.contacts : [{ contactId: data.contactId, label: data.label }],
+  );
+  const checkContacts = !removing && links.size > 0;
 
   return {
     requests: checkContacts ? [selected, projectContactRequest] : [selected],
@@ -69,25 +85,14 @@ function contactCommand(path: ProjectEditPath, input: unknown): ProjectCommand {
       );
       if (setting) current.clear();
 
-      for (const link of links) {
+      for (const [id, label] of links) {
         if (removing) {
-          if (!current.delete(link.id)) throw new InvalidProtectedData();
+          if (!current.delete(id)) throw new InvalidProtectedData();
           continue;
         }
-        tx.row("contacts", { id: link.id });
-        current.set(
-          link.id,
-          decodeBusinessRow({
-            format: "sortsys-row-v2",
-            schema: businessSchema.fingerprint,
-            table: "project_contacts",
-            values: {
-              project_id: original.project!.values.id,
-              contact_id: link.id,
-              label: link.label,
-            },
-          }),
-        );
+
+        tx.row("contacts", { id });
+        current.set(id, projectContactRow(projectId, id, label));
       }
       tx.edit(selected, selected.area.prefix, (payload) => {
         payload.contacts = [...current.values()];

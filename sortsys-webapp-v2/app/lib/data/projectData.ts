@@ -131,6 +131,16 @@ const FIELDS = {
   responsibleProjectLeaderUserId: "responsible_project_leader_user_id",
   orderReceivedAt: "order_received_at",
 };
+
+export function projectCreationInput(input: unknown) {
+  const { contacts, ...fields } = partialAddressRecord(input, [
+    ...Object.keys(FIELDS),
+    "contacts",
+  ]);
+
+  return { changes: projectChanges(fields, true), contacts };
+}
+
 export function projectChanges(
   input: unknown,
   creating: boolean,

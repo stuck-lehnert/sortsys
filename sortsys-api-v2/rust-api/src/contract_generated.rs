@@ -521,7 +521,7 @@ pub const FULL_CONTRACT: &[RawContractSpec] = &[
     RawContractSpec {
         path: "projects.create",
         kind: ProcedureKind::Mutation,
-        input_ts: "{ title: string; address?: undefined | null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId?: undefined | null | string; responsibleProjectLeaderUserId?: undefined | null | string; orderReceivedAt?: undefined | null | Date; }",
+        input_ts: "{ title: string; address?: undefined | null | { city: string; streetAddress: string; country?: undefined | null | string; zip?: undefined | null | string; }; customerId?: undefined | null | string; responsibleProjectLeaderUserId?: undefined | null | string; orderReceivedAt?: undefined | null | Date; contacts?: { contactId: string; label?: undefined | null | string; }[]; }",
         output_ts: "{ id: string; }",
     },
     RawContractSpec {

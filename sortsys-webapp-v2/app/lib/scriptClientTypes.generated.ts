@@ -4011,6 +4011,10 @@ export type MutationInputs = {
         customerId?: undefined | null | string;
         responsibleProjectLeaderUserId?: undefined | null | string;
         orderReceivedAt?: undefined | null | Date;
+        contacts?: {
+            contactId: string;
+            label?: undefined | null | string;
+        }[];
     };
     "projects.dailyReports.create": {
         projectId: string;

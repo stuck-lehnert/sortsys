@@ -188,109 +188,128 @@ function ProjectContactsFormFields({
   );
 }
 
+function ProjectFields({
+  context,
+  modals,
+  project,
+  initialTitle,
+}: {
+  context: MyPublicFormContext;
+  modals: MyModalsInterface;
+  project?: Project;
+  initialTitle?: string;
+}) {
+  const createEntityAction = useCreateEntityAction(modals);
+  const address = project?.address;
+
+  return (
+    <>
+      <MyForm.Input required name="title" labelText={uiText("Titel")} />
+      {!!initialTitle && (
+        <NotifyLoaded
+          onLoad={() => context.field("title")?.setValue(initialTitle)}
+        />
+      )}
+      <p className="light">
+        {project
+          ? uiText(
+              "Änderungen am Titel wirken sich direkt auf Suche, Listen und Exporte aus.",
+            )
+          : uiText(
+              "Verwende einen klaren Projektnamen, damit das Projekt in Listen schnell gefunden wird.",
+            )}
+      </p>
+
+      <MyForm.DateInput
+        name="orderReceivedAt"
+        labelText={uiText("Auftrag erhalten am")}
+      />
+      <p className="light">
+        {uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}
+      </p>
+
+      <MyDivider />
+      <FormAddress initialChecked={project ? !!address : undefined}>
+        {!!address && <NotifyLoaded onLoad={() => context.setValues(address)} />}
+      </FormAddress>
+      <MyDivider />
+
+      <MyForm.MultiSelect
+        labelText={uiText("Kunde")}
+        name="customer"
+        maxSelectedItems={1}
+        getOptions={async ({ query }) => {
+          const [data, err] = await client.query("customers.list", {
+            search: query,
+          });
+          if (err) throw err;
+          return data ?? [];
+        }}
+        renderItem={({ item }) => customerName(item)}
+        renderTile={(item) => <SmallCustomerTile data={item} noLink />}
+        createAction={createEntityAction.customer}
+      />
+      <p className="light">
+        {uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}
+      </p>
+
+      <MyForm.MultiSelect
+        labelText={uiText("Verantwortlicher Projektleiter")}
+        name="responsibleProjectLeader"
+        maxSelectedItems={1}
+        getOptions={async ({ query }) => {
+          const [data, err] = await client.query("users.list", { search: query });
+          if (err) throw err;
+          return data ?? [];
+        }}
+        renderItem={({ item }) => userFullName(item)}
+        renderTile={(item) => <SmallUserTile data={item} noLink />}
+        createAction={createEntityAction.user}
+      />
+      <p className="light">
+        {uiText("Wer verantwortet das Projekt übergreifend?")}
+      </p>
+    </>
+  );
+}
+
+function readProjectFields(values: ReturnType<MyPublicFormContext["getValues"]>) {
+  processFormAddress(values);
+
+  return {
+    title: values.title,
+    address: values.address,
+    customerId: values.customer.at(0)?.id ?? null,
+    responsibleProjectLeaderUserId:
+      values.responsibleProjectLeader?.at(0)?.id ?? null,
+    orderReceivedAt: values.orderReceivedAt ?? null,
+  };
+}
+
 export function showCreateProjectModal(
   modals: MyModalsInterface,
   options: CreateProjectModalOptions = {},
 ) {
   modals.showForm({
-    content: ({ context }) => {
-      const createEntityAction = useCreateEntityAction(modals);
-
-      return (
-        <>
-          <MyForm.Input required name="title" labelText={uiText("Titel")} />
-          {!!options.initialQuery && (
-            <NotifyLoaded
-              onLoad={() =>
-                context.field("title")?.setValue(options.initialQuery)
-              }
-            />
-          )}
-          <p className="light">
-            {uiText(
-              "Verwende einen klaren Projektnamen, damit das Projekt in Listen schnell gefunden wird.",
-            )}
-          </p>
-
-          <MyForm.DateInput
-            name="orderReceivedAt"
-            labelText={uiText("Auftrag erhalten am")}
-          />
-          <p className="light">
-            {uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}
-          </p>
-
-          <MyDivider />
-
-          <FormAddress />
-
-          <MyDivider />
-
-          <MyForm.MultiSelect
-            labelText={uiText("Kunde")}
-            name="customer"
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const [data, err] = await client.query("customers.list", {
-                search: query,
-              });
-              if (err) throw err;
-              return data ?? [];
-            }}
-            renderItem={({ item }) => customerName(item)}
-            renderTile={(item) => <SmallCustomerTile data={item} noLink />}
-            createAction={createEntityAction.customer}
-          />
-          <p className="light">
-            {uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}
-          </p>
-
-          <MyForm.MultiSelect
-            labelText={uiText("Verantwortlicher Projektleiter")}
-            name="responsibleProjectLeader"
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const [data, err] = await client.query("users.list", {
-                search: query,
-              });
-              if (err) throw err;
-              return data ?? [];
-            }}
-            renderItem={({ item }) => userFullName(item)}
-            renderTile={(item) => <SmallUserTile data={item} noLink />}
-            createAction={createEntityAction.user}
-          />
-          <p className="light">
-            {uiText("Wer verantwortet das Projekt übergreifend?")}
-          </p>
-
-          <ProjectContactsFormFields context={context} modals={modals} />
-        </>
-      );
-    },
+    content: ({ context }) => (
+      <>
+        <ProjectFields
+          context={context}
+          modals={modals}
+          initialTitle={options.initialQuery}
+        />
+        <ProjectContactsFormFields context={context} modals={modals} />
+      </>
+    ),
     onSubmit: async ({ context, hide, navigate }) => {
       const values = context.getValues();
 
-      processFormAddress(values);
-
       const [data, err] = await client.mutate("projects.create", {
-        title: values.title,
-        address: values.address,
-        customerId: values.customer.at(0)?.id ?? null,
-        responsibleProjectLeaderUserId:
-          values.responsibleProjectLeader?.at(0)?.id ?? null,
-        orderReceivedAt: values.orderReceivedAt ?? null,
+        ...readProjectFields(values),
+        contacts: projectContactPayload(values),
       });
-
       if (err) throw err;
       if (!data) return;
-
-      const projectContacts = projectContactPayload(values);
-      if (projectContacts.length)
-        await client.mutate("projects.contacts.set", {
-          projectId: data.id,
-          contacts: projectContacts,
-        });
 
       if (options.onCreated) {
         const [created, loadErr] = await client.query(
@@ -322,73 +341,9 @@ export function showModifyProjectModal(
 
   modals.showForm({
     content: ({ context }) => {
-      const createEntityAction = useCreateEntityAction(modals);
-
       return (
         <>
-          <MyForm.Input required name="title" labelText={uiText("Titel")} />
-          <p className="light">
-            {uiText(
-              "Änderungen am Titel wirken sich direkt auf Suche, Listen und Exporte aus.",
-            )}
-          </p>
-
-          <MyForm.DateInput
-            name="orderReceivedAt"
-            labelText={uiText("Auftrag erhalten am")}
-          />
-          <p className="light">
-            {uiText("Wann wurde der Auftrag bestätigt bzw. erhalten?")}
-          </p>
-
-          <MyDivider />
-
-          <FormAddress initialChecked={!!project.address}>
-            <NotifyLoaded
-              onLoad={() => context.setValues(project.address ?? {})}
-            />
-          </FormAddress>
-
-          <MyDivider />
-
-          <MyForm.MultiSelect
-            labelText={uiText("Kunde")}
-            name="customer"
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const [data, err] = await client.query("customers.list", {
-                search: query,
-              });
-              if (err) throw err;
-              return data ?? [];
-            }}
-            renderItem={({ item }) => customerName(item)}
-            renderTile={(item) => <SmallCustomerTile data={item} noLink />}
-            createAction={createEntityAction.customer}
-          />
-          <p className="light">
-            {uiText("Kunde für Zuordnung in Auswertungen und Exporten.")}
-          </p>
-
-          <MyForm.MultiSelect
-            labelText={uiText("Verantwortlicher Projektleiter")}
-            name="responsibleProjectLeader"
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const [data, err] = await client.query("users.list", {
-                search: query,
-              });
-              if (err) throw err;
-              return data ?? [];
-            }}
-            renderItem={({ item }) => userFullName(item)}
-            renderTile={(item) => <SmallUserTile data={item} noLink />}
-            createAction={createEntityAction.user}
-          />
-          <p className="light">
-            {uiText("Wer verantwortet das Projekt übergreifend?")}
-          </p>
-
+          <ProjectFields context={context} modals={modals} project={project} />
           <ProjectContactsFormFields
             context={context}
             modals={modals}
@@ -426,10 +381,9 @@ export function showModifyProjectModal(
         </>
       );
     },
-    onSubmit: async ({ context, hide, navigate }) => {
+    onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
-
-      processFormAddress(values);
+      const dataToUpdate = readProjectFields(values);
 
       const contacts = projectContactPayload(values);
       if (initialProjectContacts === null && contacts.length) {
@@ -443,14 +397,7 @@ export function showModifyProjectModal(
 
       const [data, err] = await client.mutate("projects.update", {
         id: project.id,
-        data: {
-          title: values.title,
-          address: values.address,
-          customerId: values.customer.at(0)?.id ?? null,
-          responsibleProjectLeaderUserId:
-            values.responsibleProjectLeader?.at(0)?.id ?? null,
-          orderReceivedAt: values.orderReceivedAt ?? null,
-        },
+        data: dataToUpdate,
       });
 
       if (err) throw err;

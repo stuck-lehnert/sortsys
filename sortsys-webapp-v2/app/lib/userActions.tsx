@@ -17,6 +17,7 @@ import {
 import { showCreateDeliveryNoteModal } from "~/modals/deliveryNotes";
 import { showCreateProductModal } from "~/modals/products";
 import { showCreateProductVendorModal } from "~/modals/productVendors";
+import { showCreateProjectModal } from "~/modals/projects";
 import { showCreateRegieReportModal } from "~/modals/regieReports";
 import { showCreateToolModal, showTrackToolsModal } from "~/modals/tools";
 import { showCreateUserModal } from "~/modals/users";
@@ -119,6 +120,18 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         icon: Icons.RegieReport,
         available: sessionInfo.canCreate("regie-report"),
         run: () => showCreateRegieReportModal(modals),
+      },
+      {
+        id: "projects.create",
+        label: uiText("Projekt erstellen"),
+        description: uiText(
+          "Projekt direkt ohne vorheriges Angebot anlegen.",
+          "Create a project directly without a prior offer.",
+        ),
+        group: "create",
+        icon: Icons.Project,
+        available: sessionInfo.canCreate("project"),
+        run: () => showCreateProjectModal(modals),
       },
       {
         id: "offers.create",

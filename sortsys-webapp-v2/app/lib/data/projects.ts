@@ -18,7 +18,7 @@ import { newProductRowId, publicId } from "./products";
 import {
   PROJECT_MODEL,
   isProjectEdit,
-  projectChanges,
+  projectCreationInput,
   projectDocument as document,
   projectRequest as request,
   projectCollection,
@@ -32,8 +32,7 @@ import {
 import { readableProjectAreas } from "./projectAreas";
 import { PROJECT_ACCESS_KEYS, projectAccessArea } from "./projectScope";
 import { createResourceAreas } from "./createProjectArea";
-import { decodeBusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow } from "./rowCodec";
 import { commitProtectedWrites } from "./atomicWrites";
 import {
   addProjectOffer,
@@ -47,7 +46,9 @@ import { announceDataChanges } from "./runtime/changes";
 import { attachPlanningTitles } from "./planningTitlePublication";
 import {
   certifyProjectLeader,
+  projectContactLinks,
   projectContactRequest as contactRequest,
+  projectContactRow,
   projectEditCommand,
 } from "./projectWrites";
 
@@ -135,42 +136,58 @@ export function createProtectedProjects(
     offer?: { caseId: string; amount: string; comment: string },
   ) {
     live();
-    const changes = projectChanges(input, true),
-      guards: { domain: string; sequence: string }[] = [];
-    if (changes.customer_id != null)
-      guards.push(
-        await (
-          await directory()
-        ).references("customers", [publicId(changes.customer_id)]),
-      );
-    if (changes.responsible_project_leader_user_id != null)
-      await certifyProjectLeader(
-        client,
-        publicId(changes.responsible_project_leader_user_id),
-      );
-    const session = await required(
-      client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-    );
+    const { changes, contacts } = projectCreationInput(input);
+    const links = projectContactLinks(contacts === undefined ? [] : contacts);
+    const customer = changes.customer_id;
+    const leader = changes.responsible_project_leader_user_id;
+
+    async function directoryGuards() {
+      if (customer == null && !links.size) return [];
+
+      const book = await directory();
+      const guards = [];
+      if (customer != null) {
+        guards.push(await book.references("customers", [publicId(customer)]));
+      }
+      if (links.size) {
+        const ids = [...links.keys()].map(publicId);
+        guards.push(await book.references("contacts", ids));
+      }
+
+      return guards;
+    }
+
+    // Check references before provisioning; publication also guards their heads.
+    const [session, guards] = await Promise.all([
+      required(
+        client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
+      ),
+      directoryGuards(),
+      leader == null ? undefined : certifyProjectLeader(client, publicId(leader)),
+    ]);
     live();
+
     const id = publicId(newProductRowId()),
       now = new Date().toISOString(),
       actor = session.user.id;
-    const project = decodeBusinessRow({
-      format: "sortsys-row-v2",
-      schema: businessSchema.fingerprint,
-      table: "projects",
-      values: {
-        id: addressId(id),
-        created_at: now,
-        modified_at: now,
-        finished_at: null,
-        ...changes,
-        created_by_user_id: addressId(actor),
-      },
+    const projectId = addressId(id);
+    const project = createBusinessRow("projects", {
+      id: projectId,
+      created_at: now,
+      modified_at: now,
+      finished_at: null,
+      ...changes,
+      created_by_user_id: addressId(actor),
     });
     const selected = request(id),
       value = projectPayload(
-        { format: "sortsys-project-v1", project, contacts: [] },
+        {
+          format: "sortsys-project-v1",
+          project,
+          contacts: [...links].map(([id, label]) =>
+            projectContactRow(projectId, id, label),
+          ),
+        },
         selected.area.prefix,
         id,
       );
