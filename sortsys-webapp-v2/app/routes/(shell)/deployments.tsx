@@ -15,14 +15,20 @@ import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { useBoolUrlParam, useStringUrlParam } from "~/hooks/useUrlParam";
 import { client } from "~/lib/client";
+import { parseDateInputValue, startOfDay, toDateInputValue } from "~/lib/calendarDate";
 import { formatDate, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallProjectTile, SmallUserTile } from "~/lib/tiles";
 import type { Project, ProjectDeployment, User } from "~/type-helpers";
 import { TableExportActions } from "~/components/TableExportActions";
 import type { MutateInput } from "@sortsys/v2-client";
-import { isoWeekInfo } from "~/lib/week";
-import { addRecentPlanningProjects } from "~/lib/deploymentPlanning";
+import { isoWeekInfo, startOfIsoWeek } from "~/lib/week";
+import {
+  addRecentPlanningProjects,
+  clipAssignments,
+  prefillPlanningSelection,
+} from "~/lib/deploymentPlanning";
+import { groupBy } from "~/lib/groupBy";
 import { showCreateAbsenceModal } from "~/modals/absences";
 import { newProductRowId, publicId } from "~/lib/data/products";
 
@@ -145,7 +151,7 @@ export default function DeploymentsPage() {
 
   const range = useMemo(() => {
     const start =
-      viewMode === "week" ? startOfWeek(focusDay) : startOfDay(focusDay);
+      viewMode === "week" ? startOfIsoWeek(focusDay) : startOfDay(focusDay);
     const endExclusive = addDays(start, viewMode === "week" ? 7 : 1);
     return { start, endExclusive };
   }, [focusDayKey, viewMode]);
@@ -166,10 +172,6 @@ export default function DeploymentsPage() {
     [canViewAllUsers],
   );
   const [deployments, setDeployments] = useState<ProjectDeployment[]>([]);
-  const [deploymentsReloadCounter, setDeploymentsReloadCounter] = useState(0);
-  const [unavailabilityReloadCounter, setUnavailabilityReloadCounter] =
-    useState(0);
-  const [vacationReloadCounter, setVacationReloadCounter] = useState(0);
   const [deploymentsLoading, setDeploymentsLoading] = useState(true);
   const [deploymentsError, setDeploymentsError] = useState<unknown>(null);
   const rangeEndInclusive = useMemo(
@@ -192,7 +194,7 @@ export default function DeploymentsPage() {
       },
       { strategy: "cache-first" },
     );
-  }, [firstCalendarDay, lastCalendarDay, vacationReloadCounter]);
+  }, [firstCalendarDay, lastCalendarDay]);
   const [unavailabilityRows, projectUnavailabilityError] = useClientStream<
     ProjectUnavailabilityPeriod[] | null,
     any
@@ -205,7 +207,7 @@ export default function DeploymentsPage() {
       },
       { strategy: "cache-first" },
     );
-  }, [firstCalendarDay, lastCalendarDay, unavailabilityReloadCounter]);
+  }, [firstCalendarDay, lastCalendarDay]);
   const vacations = useMemo(
     () => vacationRows?.map(localCalendarPeriod) ?? null,
     [vacationRows],
@@ -215,6 +217,7 @@ export default function DeploymentsPage() {
     [unavailabilityRows],
   );
 
+  // Mutations refresh the existing stream. Reset the calendar only when its date range changes.
   useEffect(() => {
     setDeployments([]);
     setDeploymentsLoading(true);
@@ -230,11 +233,7 @@ export default function DeploymentsPage() {
         setDeployments(rows ?? []);
       });
     return () => subscription.unsubscribe();
-  }, [
-    deploymentsReloadCounter,
-    range.start.getTime(),
-    range.endExclusive.getTime(),
-  ]);
+  }, [range.start.getTime(), range.endExclusive.getTime()]);
 
   const projectMap = useMemo(() => {
     return new Map(
@@ -284,49 +283,22 @@ export default function DeploymentsPage() {
       .sort((left, right) => left.from.getTime() - right.from.getTime());
   }, [deployments, projectMap, range.endExclusive, range.start, userMap]);
 
-  const deploymentsByUserId = useMemo(() => {
-    const map = new Map<string, PlannedDeployment[]>();
-
-    plannedDeployments.forEach((item) => {
-      const list = map.get(item.deployment.userId) ?? [];
-      list.push(item);
-      map.set(item.deployment.userId, list);
-    });
-
-    return map;
-  }, [plannedDeployments]);
-
-  const deploymentsByProjectId = useMemo(() => {
-    const map = new Map<string, PlannedDeployment[]>();
-
-    plannedDeployments.forEach((item) => {
-      const list = map.get(item.deployment.projectId) ?? [];
-      list.push(item);
-      map.set(item.deployment.projectId, list);
-    });
-
-    return map;
-  }, [plannedDeployments]);
-
-  const vacationsByUserId = useMemo(() => {
-    const map = new Map<string, DeploymentVacation[]>();
-    (vacations ?? []).forEach((vacation) => {
-      const list = map.get(vacation.userId) ?? [];
-      list.push(vacation);
-      map.set(vacation.userId, list);
-    });
-    return map;
-  }, [vacations]);
-
-  const unavailabilityByProjectId = useMemo(() => {
-    const map = new Map<string, ProjectUnavailabilityPeriod[]>();
-    (projectUnavailability ?? []).forEach((period) => {
-      const list = map.get(period.projectId) ?? [];
-      list.push(period);
-      map.set(period.projectId, list);
-    });
-    return map;
-  }, [projectUnavailability]);
+  const deploymentsByUserId = useMemo(
+    () => groupBy(plannedDeployments, (item) => item.deployment.userId),
+    [plannedDeployments],
+  );
+  const deploymentsByProjectId = useMemo(
+    () => groupBy(plannedDeployments, (item) => item.deployment.projectId),
+    [plannedDeployments],
+  );
+  const vacationsByUserId = useMemo(
+    () => groupBy(vacations ?? [], (vacation) => vacation.userId),
+    [vacations],
+  );
+  const unavailabilityByProjectId = useMemo(
+    () => groupBy(projectUnavailability ?? [], (period) => period.projectId),
+    [projectUnavailability],
+  );
 
   const rowEntities = useMemo(() => {
     const rows = new Map<string, { id: string; label: string }>();
@@ -484,16 +456,10 @@ export default function DeploymentsPage() {
         vacations: DeploymentVacation[];
       }[];
 
-    const rows = new Map<string, DeploymentVacation[]>();
-    (vacations ?? [])
-      .filter((vacation) =>
-        periodOverlapsWindow(vacation, range.start, visibleRangeEndExclusive),
-      )
-      .forEach((vacation) => {
-        const entries = rows.get(vacation.userId) ?? [];
-        entries.push(vacation);
-        rows.set(vacation.userId, entries);
-      });
+    const visibleVacations = (vacations ?? []).filter((vacation) =>
+      periodOverlapsWindow(vacation, range.start, visibleRangeEndExclusive),
+    );
+    const rows = groupBy(visibleVacations, (vacation) => vacation.userId);
 
     return Array.from(rows, ([id, entries]) => {
       const user = userMap.get(id);
@@ -592,17 +558,77 @@ export default function DeploymentsPage() {
     return deploymentsByProjectId.get(rowId) ?? [];
   }
 
+  function entriesForWindow(rowId: string, start: Date, end: Date) {
+    const segments = clipAssignments(deploymentsForRow(rowId), start, end);
+    const vacations =
+      rowMode === "user"
+        ? (vacationsByUserId.get(rowId) ?? []).filter((vacation) =>
+            periodOverlapsWindow(vacation, start, end),
+          )
+        : [];
+    const unavailability =
+      rowMode === "project"
+        ? (unavailabilityByProjectId.get(rowId) ?? []).filter((period) =>
+            periodOverlapsWindow(period, start, end),
+          )
+        : [];
+
+    return { segments, vacations, unavailability };
+  }
+
   const weekDays = useMemo(() => {
-    if (viewMode !== "week") return [] as Date[];
-    return Array.from({ length: showWeekend ? 7 : 5 }, (_, index) =>
-      addDays(range.start, index),
-    );
-  }, [range.start, showWeekend, viewMode]);
+    if (viewMode !== "week") return [];
+
+    const todayKey = toDateInputValue(today);
+    return Array.from({ length: showWeekend ? 7 : 5 }, (_, index) => {
+      const day = addDays(range.start, index);
+      const dayStart = startOfDay(day);
+      const key = toDateInputValue(day);
+      const isToday = key === todayKey;
+
+      return {
+        day,
+        key,
+        dayStart,
+        dayEnd: addDays(dayStart, 1),
+        isToday,
+        cellClassName: isToday ? "pep-week-cell pep-is-today" : "pep-week-cell",
+      };
+    });
+  }, [range.start, showWeekend, today, viewMode]);
 
   function shiftFocus(direction: "prev" | "next") {
     const step = viewMode === "week" ? 7 : 1;
     const by = direction === "next" ? step : -step;
     setDayRaw(toDateInputValue(addDays(focusDay, by)));
+  }
+
+  function planningProjectField(origin?: string) {
+    return (
+      <MyForm.MultiSelect
+        name="project"
+        labelText={uiText("Projekt")}
+        minSelectedItems={1}
+        maxSelectedItems={1}
+        getOptions={async ({ query }) => {
+          const needle = query.trim().toLowerCase();
+
+          return (projects ?? [])
+            .filter(({ id }) => {
+              if (id === origin) return canPlan(id, "update");
+              if (origin && !canPlan(origin, "delete")) return false;
+
+              return canPlan(id, "create");
+            })
+            .filter(
+              ({ title }) => !needle || title.toLowerCase().includes(needle),
+            );
+        }}
+        renderItem={({ item }) => item.title}
+        renderTile={(item) => <SmallProjectTile data={item} noLink />}
+        createAction={createEntityAction.project}
+      />
+    );
   }
 
   function showDeploymentForm(options: DeploymentFormOptions) {
@@ -639,32 +665,7 @@ export default function DeploymentsPage() {
             createAction={createEntityAction.user}
           />
 
-          <MyForm.MultiSelect
-            name="project"
-            labelText={uiText("Projekt")}
-            minSelectedItems={1}
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const needle = query.trim().toLowerCase();
-              return (projects ?? [])
-                .filter((project) => {
-                  const origin = deployment?.deployment.projectId;
-                  return origin
-                    ? project.id === origin
-                      ? canPlan(origin, "update")
-                      : canPlan(origin, "delete") &&
-                        canPlan(project.id, "create")
-                    : canPlan(project.id, "create");
-                })
-                .filter((project) => {
-                  if (!needle) return true;
-                  return project.title.toLowerCase().includes(needle);
-                });
-            }}
-            renderItem={({ item }) => item.title}
-            renderTile={(item) => <SmallProjectTile data={item} noLink />}
-            createAction={createEntityAction.project}
-          />
+          {planningProjectField(deployment?.deployment.projectId)}
 
           <div className="flex gap-2">
             <div className="min-w-0 basis-1/2 flex-1">
@@ -732,7 +733,6 @@ export default function DeploymentsPage() {
                       (item) => item.id !== deployment.deployment.id,
                     ),
                   );
-                  setDeploymentsReloadCounter((value) => value + 1);
                   hide();
                 }}
               >
@@ -749,51 +749,28 @@ export default function DeploymentsPage() {
                 options.preset?.projectId ??
                 null;
 
-              const selectedUser = selectedUserId
-                ? ((users ?? []).find((user) => user.id === selectedUserId) ??
-                  null)
-                : null;
-              const selectedProject = selectedProjectId
-                ? ((projects ?? []).find(
-                    (project) => project.id === selectedProjectId,
-                  ) ?? null)
-                : null;
-
               context.setValues({
                 fromDate: toDateInputValue(defaultFrom),
                 fromTime: toTimeInputValue(defaultFrom),
                 toDate: toDateInputValue(defaultTo),
                 toTime: toTimeInputValue(defaultTo),
                 note: deployment?.deployment.note ?? "",
-                user: selectedUser ? [selectedUser] : [],
-                project: selectedProject ? [selectedProject] : [],
               });
 
-              if (selectedUserId && !selectedUser) {
-                client
-                  .query(
-                    "users.get",
-                    { id: selectedUserId },
-                    { strategy: "cache-first" },
-                  )
-                  .then(([data]) => {
-                    if (!data) return;
-                    context.setValues({ user: [data] });
-                  });
-              }
-
-              if (selectedProjectId && !selectedProject) {
-                client
-                  .query(
-                    "projects.get",
-                    { id: selectedProjectId },
-                    { strategy: "cache-first" },
-                  )
-                  .then(([data]) => {
-                    if (!data) return;
-                    context.setValues({ project: [data] });
-                  });
-              }
+              void prefillPlanningSelection(
+                context,
+                "user",
+                selectedUserId,
+                users,
+                (id) => client.query("users.get", { id }, { strategy: "cache-first" }),
+              );
+              void prefillPlanningSelection(
+                context,
+                "project",
+                selectedProjectId,
+                projects,
+                (id) => client.query("projects.get", { id }, { strategy: "cache-first" }),
+              );
             }}
           />
         </>
@@ -841,13 +818,9 @@ export default function DeploymentsPage() {
                 userId: selectedUser.id,
               },
             );
-            if (createErr) {
-              setDeploymentsReloadCounter((value) => value + 1);
-              throw createErr;
-            }
+            if (createErr) throw createErr;
             if (!created) return;
           }
-          setDeploymentsReloadCounter((value) => value + 1);
         } else {
           if (!deployment) return;
 
@@ -861,7 +834,6 @@ export default function DeploymentsPage() {
           );
           if (updateErr) throw updateErr;
           if (!updated) return;
-          setDeploymentsReloadCounter((value) => value + 1);
         }
 
         hide();
@@ -892,32 +864,7 @@ export default function DeploymentsPage() {
     modals.showForm({
       content: ({ context, hide }) => (
         <>
-          <MyForm.MultiSelect
-            name="project"
-            labelText={uiText("Projekt")}
-            minSelectedItems={1}
-            maxSelectedItems={1}
-            getOptions={async ({ query }) => {
-              const needle = query.trim().toLowerCase();
-              return (projects ?? [])
-                .filter((project) => {
-                  const origin = period?.projectId;
-                  return origin
-                    ? project.id === origin
-                      ? canPlan(origin, "update")
-                      : canPlan(origin, "delete") &&
-                        canPlan(project.id, "create")
-                    : canPlan(project.id, "create");
-                })
-                .filter((project) => {
-                  if (!needle) return true;
-                  return project.title.toLowerCase().includes(needle);
-                });
-            }}
-            renderItem={({ item }) => item.title}
-            renderTile={(item) => <SmallProjectTile data={item} noLink />}
-            createAction={createEntityAction.project}
-          />
+          {planningProjectField(period?.projectId)}
 
           <div className="flex gap-2">
             <div className="min-w-0 basis-1/2 flex-1">
@@ -953,7 +900,6 @@ export default function DeploymentsPage() {
                 );
                 if (err) throw err;
                 if (!result) return;
-                setUnavailabilityReloadCounter((value) => value + 1);
                 hide();
               }}
             >
@@ -965,32 +911,20 @@ export default function DeploymentsPage() {
             onLoad={() => {
               const selectedProjectId =
                 period?.projectId ?? options.preset?.projectId ?? null;
-              const selectedProject = selectedProjectId
-                ? ((projects ?? []).find(
-                    (project) => project.id === selectedProjectId,
-                  ) ?? null)
-                : null;
-
               context.setValues({
                 from: toDateInputValue(defaultFrom),
                 to: toDateInputValue(defaultTo),
                 reason: period?.reason ?? "",
                 note: period?.note ?? "",
-                project: selectedProject ? [selectedProject] : [],
               });
 
-              if (selectedProjectId && !selectedProject) {
-                client
-                  .query(
-                    "projects.get",
-                    { id: selectedProjectId },
-                    { strategy: "cache-first" },
-                  )
-                  .then(([data]) => {
-                    if (!data) return;
-                    context.setValues({ project: [data] });
-                  });
-              }
+              void prefillPlanningSelection(
+                context,
+                "project",
+                selectedProjectId,
+                projects,
+                (id) => client.query("projects.get", { id }, { strategy: "cache-first" }),
+              );
             }}
           />
         </>
@@ -1035,7 +969,6 @@ export default function DeploymentsPage() {
           if (!updated) return;
         }
 
-        setUnavailabilityReloadCounter((value) => value + 1);
         hide();
       },
       modalProps: () => ({
@@ -1090,7 +1023,6 @@ export default function DeploymentsPage() {
       currentUser: sessionInfo.user as User,
       canManage: canManageVacations,
       initialDay: focusDay,
-      onCreated: () => setVacationReloadCounter((value) => value + 1),
     });
   }
 
@@ -1274,7 +1206,19 @@ export default function DeploymentsPage() {
     usersError ||
     vacationsError ||
     projectUnavailabilityError;
-  const planningLoading = deploymentsLoading || !projects || !users;
+
+  const projectRowsPending = !projects && !projectsError && rowMode === "project";
+  const needsProjectDirectory =
+    !projects &&
+    (plannedDeployments.some(
+      ({ deployment }) => deployment.projectTitle == null,
+    ) ||
+      (rowMode === "project" &&
+        (showEmptyRows ||
+          !rowEntities.length ||
+          rowEntities.some(({ id }) => !deploymentsByProjectId.has(id)))));
+  const planningLoading = deploymentsLoading || !users || needsProjectDirectory;
+
   const selectedWeek = isoWeekInfo(range.start);
   const periodLabel =
     viewMode === "week"
@@ -1566,7 +1510,7 @@ export default function DeploymentsPage() {
             ]}
           />
 
-          {!planningLoading && (
+          {!planningLoading && !projectRowsPending && (
             <div className="pep-summary" aria-live="polite">
               <span>
                 <strong>{rowEntities.length}</strong>{" "}
@@ -1608,13 +1552,20 @@ export default function DeploymentsPage() {
         />
       )}
 
-      {planningLoading && (
+      {(planningLoading || projectRowsPending) && (
         <div className="pep-loading">
           <InlineLoading
-            description={uiText(
-              "Einsatzplanung wird geladen …",
-              "Loading resource planning …",
-            )}
+            description={
+              planningLoading
+                ? uiText(
+                    "Einsatzplanung wird geladen …",
+                    "Loading resource planning …",
+                  )
+                : uiText(
+                    "Weitere Projekte werden geladen …",
+                    "Loading more projects …",
+                  )
+            }
           />
         </div>
       )}
@@ -1633,43 +1584,11 @@ export default function DeploymentsPage() {
           )}
 
           {rowEntities.map((row) => {
-            const rowDeployments = deploymentsForRow(row.id);
-            const rowVacations =
-              rowMode === "user"
-                ? (vacationsByUserId.get(row.id) ?? []).filter((vacation) =>
-                    periodOverlapsWindow(
-                      vacation,
-                      range.start,
-                      range.endExclusive,
-                    ),
-                  )
-                : [];
-            const rowUnavailability =
-              rowMode === "project"
-                ? (unavailabilityByProjectId.get(row.id) ?? []).filter(
-                    (period) =>
-                      periodOverlapsWindow(
-                        period,
-                        range.start,
-                        range.endExclusive,
-                      ),
-                  )
-                : [];
-            const segments = rowDeployments.flatMap((item) => {
-              const segment = clipSegment(
-                item.from,
-                item.to,
-                range.start,
-                range.endExclusive,
-              );
-              if (!segment)
-                return [] as {
-                  item: PlannedDeployment;
-                  start: Date;
-                  end: Date;
-                }[];
-              return [{ item, start: segment.start, end: segment.end }];
-            });
+            const {
+              segments,
+              vacations: rowVacations,
+              unavailability: rowUnavailability,
+            } = entriesForWindow(row.id, range.start, range.endExclusive);
 
             return (
               <div key={row.id} className="pep-day-row">
@@ -1746,27 +1665,21 @@ export default function DeploymentsPage() {
             </caption>
             <colgroup>
               <col className="pep-week-entity-column" />
-              {weekDays.map((day) => (
-                <col
-                  key={toDateInputValue(day)}
-                  className="pep-week-day-column"
-                />
+              {weekDays.map(({ key }) => (
+                <col key={key} className="pep-week-day-column" />
               ))}
             </colgroup>
 
             <thead>
               <tr>
                 <th className="pep-week-user-head">{rowHeading}</th>
-                {weekDays.map((day) => {
+                {weekDays.map(({ day, key, isToday }) => {
                   const dayOfWeek = day.toLocaleDateString(currentLocaleTag(), {
                     weekday: "short",
                   });
-                  const isToday = isSameCalendarDay(day, today);
+
                   return (
-                    <th
-                      key={toDateInputValue(day)}
-                      className={isToday ? "pep-is-today" : undefined}
-                    >
+                    <th key={key} className={isToday ? "pep-is-today" : undefined}>
                       <span>{dayOfWeek}</span>
                       <span className="pep-week-date">{formatDate(day)}</span>
                     </th>
@@ -1793,8 +1706,6 @@ export default function DeploymentsPage() {
               )}
 
               {rowEntities.map((row) => {
-                const rowDeployments = deploymentsForRow(row.id);
-
                 return (
                   <tr key={row.id}>
                     <td className="pep-week-user-cell">
@@ -1803,45 +1714,12 @@ export default function DeploymentsPage() {
                       </div>
                     </td>
 
-                    {weekDays.map((day) => {
-                      const dayStart = startOfDay(day);
-                      const dayEnd = addDays(dayStart, 1);
-                      const cellVacations =
-                        rowMode === "user"
-                          ? (vacationsByUserId.get(row.id) ?? []).filter(
-                              (vacation) =>
-                                periodOverlapsWindow(
-                                  vacation,
-                                  dayStart,
-                                  dayEnd,
-                                ),
-                            )
-                          : [];
-                      const cellUnavailability =
-                        rowMode === "project"
-                          ? (
-                              unavailabilityByProjectId.get(row.id) ?? []
-                            ).filter((period) =>
-                              periodOverlapsWindow(period, dayStart, dayEnd),
-                            )
-                          : [];
-                      const segments = rowDeployments.flatMap((item) => {
-                        const segment = clipSegment(
-                          item.from,
-                          item.to,
-                          dayStart,
-                          dayEnd,
-                        );
-                        if (!segment)
-                          return [] as {
-                            item: PlannedDeployment;
-                            start: Date;
-                            end: Date;
-                          }[];
-                        return [
-                          { item, start: segment.start, end: segment.end },
-                        ];
-                      });
+                    {weekDays.map(({ dayStart, dayEnd, key, cellClassName }) => {
+                      const {
+                        segments,
+                        vacations: cellVacations,
+                        unavailability: cellUnavailability,
+                      } = entriesForWindow(row.id, dayStart, dayEnd);
 
                       const isEmpty =
                         !segments.length &&
@@ -1855,8 +1733,8 @@ export default function DeploymentsPage() {
 
                       return (
                         <td
-                          key={`${row.id}:${toDateInputValue(day)}`}
-                          className={`pep-week-cell${isSameCalendarDay(day, today) ? " pep-is-today" : ""}`}
+                          key={`${row.id}:${key}`}
+                          className={cellClassName}
                         >
                           <div className="pep-week-cell-entries">
                             {isEmpty &&
@@ -1896,19 +1774,19 @@ export default function DeploymentsPage() {
                             {cellVacations.map((vacation) =>
                               renderVacationMarker(
                                 vacation,
-                                `vacation:${vacation.id}:${toDateInputValue(day)}`,
+                                `vacation:${vacation.id}:${key}`,
                               ),
                             )}
                             {cellUnavailability.map((period) =>
                               renderUnavailabilityMarker(
                                 period,
-                                `project-stop:${period.id}:${toDateInputValue(day)}`,
+                                `project-stop:${period.id}:${key}`,
                               ),
                             )}
 
                             {segments.map((segment, index) =>
                               renderDeploymentEntry({
-                                key: `${segment.item.deployment.id}:${toDateInputValue(day)}:${index}`,
+                                key: `${segment.item.deployment.id}:${key}:${index}`,
                                 item: segment.item,
                                 segmentStart: segment.start,
                                 segmentEnd: segment.end,
@@ -1973,17 +1851,15 @@ export default function DeploymentsPage() {
                         </div>
                       </td>
 
-                      {weekDays.map((day) => {
-                        const dayStart = startOfDay(day);
-                        const dayEnd = addDays(dayStart, 1);
+                      {weekDays.map(({ dayStart, dayEnd, key, cellClassName }) => {
                         const cellVacations = row.vacations.filter((vacation) =>
                           periodOverlapsWindow(vacation, dayStart, dayEnd),
                         );
 
                         return (
                           <td
-                            key={`absence:${row.id}:${toDateInputValue(day)}`}
-                            className={`pep-week-cell${isSameCalendarDay(day, today) ? " pep-is-today" : ""}`}
+                            key={`absence:${row.id}:${key}`}
+                            className={cellClassName}
                           >
                             <div className="pep-week-cell-entries">
                               {!cellVacations.length && (
@@ -1992,7 +1868,7 @@ export default function DeploymentsPage() {
                               {cellVacations.map((vacation) =>
                                 renderVacationMarker(
                                   vacation,
-                                  `absence:${vacation.id}:${toDateInputValue(day)}`,
+                                  `absence:${vacation.id}:${key}`,
                                 ),
                               )}
                             </div>
@@ -2055,18 +1931,6 @@ function pad2(value: number) {
   return `${value}`.padStart(2, "0");
 }
 
-function startOfDay(date: Date) {
-  const copy = new Date(date);
-  copy.setHours(0, 0, 0, 0);
-  return copy;
-}
-
-function startOfWeek(date: Date) {
-  const day = startOfDay(date);
-  const distanceToMonday = (day.getDay() + 6) % 7;
-  return addDays(day, -distanceToMonday);
-}
-
 function addDays(date: Date, days: number) {
   const copy = new Date(date);
   copy.setDate(copy.getDate() + days);
@@ -2077,10 +1941,6 @@ function setTime(date: Date, hours: number, minutes: number) {
   const copy = new Date(date);
   copy.setHours(hours, minutes, 0, 0);
   return copy;
-}
-
-function toDateInputValue(date: Date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
 }
 
 function toTimeInputValue(date: Date) {
@@ -2106,25 +1966,6 @@ function formatSegmentTimeLabel(
     startsAtWindowStart && endsAtWindowEnd ? "23:59" : formatTime(segmentEnd);
 
   return `${startText}-${endText}`;
-}
-
-function parseDateInputValue(value: unknown): Date | null {
-  const text = `${value ?? ""}`.trim();
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-
-  const date = new Date(year, month - 1, day);
-  if (isNaN(date.getTime())) return null;
-  if (date.getFullYear() !== year) return null;
-  if (date.getMonth() !== month - 1) return null;
-  if (date.getDate() !== day) return null;
-
-  date.setHours(0, 0, 0, 0);
-  return date;
 }
 
 function combineDateAndTime(
@@ -2181,23 +2022,4 @@ function deploymentOverlapsWindow(
     deployment.from.getTime() < windowEndExclusive.getTime() &&
     deployment.to.getTime() > windowStart.getTime()
   );
-}
-
-function isSameCalendarDay(left: Date, right: Date) {
-  return (
-    left.getFullYear() === right.getFullYear() &&
-    left.getMonth() === right.getMonth() &&
-    left.getDate() === right.getDate()
-  );
-}
-
-function clipSegment(from: Date, to: Date, windowStart: Date, windowEnd: Date) {
-  const start = Math.max(from.getTime(), windowStart.getTime());
-  const end = Math.min(to.getTime(), windowEnd.getTime());
-  if (start >= end) return null;
-
-  return {
-    start: new Date(start),
-    end: new Date(end),
-  };
 }

@@ -1,3 +1,5 @@
+import { startOfDay, toDateInputValue } from "./calendarDate";
+
 export const WEEKDAY_NAMES = [
   "Montag",
   "Dienstag",
@@ -19,12 +21,7 @@ export const WEEKDAY_SHORT_NAMES = [
 ] as const;
 
 export function formatCalendarDateWithOffset(value: Date) {
-  const localMidnight = new Date(value);
-  localMidnight.setHours(0, 0, 0, 0);
-
-  const year = localMidnight.getFullYear();
-  const month = String(localMidnight.getMonth() + 1).padStart(2, "0");
-  const day = String(localMidnight.getDate()).padStart(2, "0");
+  const localMidnight = startOfDay(value);
 
   // getTimezoneOffset has the opposite sign from an RFC 3339 offset.
   const offsetMinutes = -localMidnight.getTimezoneOffset();
@@ -33,31 +30,25 @@ export function formatCalendarDateWithOffset(value: Date) {
   const offsetHours = String(Math.floor(absoluteOffset / 60)).padStart(2, "0");
   const offsetRemainder = String(absoluteOffset % 60).padStart(2, "0");
 
-  return `${year}-${month}-${day}T00:00:00.000${offsetSign}${offsetHours}:${offsetRemainder}`;
-}
-
-export function normalizeDay(value: Date) {
-  const result = new Date(value);
-  result.setHours(0, 0, 0, 0);
-  return result;
+  return `${toDateInputValue(localMidnight)}T00:00:00.000${offsetSign}${offsetHours}:${offsetRemainder}`;
 }
 
 export function startOfIsoWeek(value: Date) {
-  const result = normalizeDay(value);
+  const result = startOfDay(value);
   const dayOfWeek = (result.getDay() + 6) % 7;
   result.setDate(result.getDate() - dayOfWeek);
   return result;
 }
 
 export function dayInIsoWeek(weekStart: Date, dayIndex: number) {
-  const result = normalizeDay(weekStart);
+  const result = startOfDay(weekStart);
   result.setDate(result.getDate() + dayIndex);
   return result;
 }
 
 export function weekdayIndexInIsoWeek(day: Date, weekStart: Date) {
-  const normalizedDay = normalizeDay(day);
-  const normalizedWeekStart = normalizeDay(weekStart);
+  const normalizedDay = startOfDay(day);
+  const normalizedWeekStart = startOfDay(weekStart);
   const asDay = (value: Date) =>
     Date.UTC(value.getFullYear(), value.getMonth(), value.getDate());
   return Math.round(
@@ -66,7 +57,7 @@ export function weekdayIndexInIsoWeek(day: Date, weekStart: Date) {
 }
 
 export function isoWeekInfo(value: Date) {
-  const date = normalizeDay(value);
+  const date = startOfDay(value);
 
   const day = (date.getDay() + 6) % 7;
   date.setDate(date.getDate() + 3 - day);

@@ -563,7 +563,7 @@ function createWorkflowApi() {
 
 before(async () => {
   server = await createFixtureServer();
-  browser = await chromium.launch();
+  browser = await chromium.launch({ executablePath: process.env.SORTSYS_E2E_CHROMIUM });
 });
 
 beforeEach(async () => {
@@ -1710,17 +1710,175 @@ function populatePlanning(employeeCount = 1) {
   api.respond("users.get", employee);
   api.respond("users.vacations.list", []);
   api.respond("projects.unavailability.list", []);
+  const deployments = employees.map((plannedEmployee, index) => ({
+    id: index === 0 ? "deployment-fixture" : `deployment-fixture-${index}`,
+    projectId: project.id,
+    userId: plannedEmployee.id,
+    from: new Date("2026-10-27T09:00:00Z"),
+    to: new Date("2026-10-27T17:00:00Z"),
+    note: "Fixture deployment",
+  }));
+  api.respond("projects.deployments.list", deployments);
+  return { project, deployments };
+}
+
+test("planning employee rows and occupied project rows use assignment titles while the directory is pending", async () => {
+  const { deployments, project } = populatePlanning(2);
+  const assignmentTitle = "Project name on the assignment";
+  const recentProject = { id: "d", title: "Recently changed project" };
+  api.respond("projects.list", [project, recentProject]);
   api.respond(
     "projects.deployments.list",
-    employees.map((plannedEmployee, index) => ({
-      id: index === 0 ? "deployment-fixture" : `deployment-fixture-${index}`,
-      projectId: project.id,
-      userId: plannedEmployee.id,
-      from: new Date("2026-10-27T09:00:00Z"),
-      to: new Date("2026-10-27T17:00:00Z"),
-      note: "Fixture deployment",
+    deployments.map((deployment, index) => ({
+      ...deployment,
+      projectTitle: index === 0 ? assignmentTitle : "",
     })),
   );
+
+  await page.clock.setFixedTime(new Date("2026-10-27T12:00:00Z"));
+  await openApplication("/deployments?day=2026-10-27&holdStream=projects.list");
+  const calendar = page.getByRole("region", { name: "Resource planning" });
+  const employees = page.getByRole("button", { name: "Employees", exact: true });
+  const projects = page.getByRole("button", { name: "Projects", exact: true });
+  const shownTitle = calendar.getByText(assignmentTitle, { exact: true });
+  const currentTitle = calendar.getByText(project.title, { exact: true });
+  const recentTitle = calendar.getByText(recentProject.title, { exact: true });
+  const loadingMore = page.getByText("Loading more projects …", { exact: true });
+
+  await shownTitle.waitFor();
+  assert.equal(await loadingMore.isVisible(), true);
+  assert.equal(await recentTitle.count(), 0);
+
+  await page.getByRole("button", { name: "Assigned only", exact: true }).click();
+  await calendar.waitFor({ state: "hidden" });
+  await page.getByRole("button", { name: "All rows", exact: true }).click();
+  await shownTitle.waitFor();
+
+  await employees.click();
+  await shownTitle.waitFor();
+  assert.equal(
+    await calendar.getByRole("button", { name: /Fixture deployment/ }).count(),
+    2,
+  );
+  assert.equal(await currentTitle.count(), 0);
+  assert.equal(await loadingMore.count(), 0);
+
+  await projects.click();
+  await shownTitle.waitFor();
+  await page.evaluate(() => window.__sortsysReleasePresentationStream());
+  await currentTitle.first().waitFor();
+  await recentTitle.waitFor();
+  assert.equal(await loadingMore.count(), 0);
+
+  await employees.click();
+  await currentTitle.nth(1).waitFor();
+  assert.equal(await shownTitle.count(), 0);
+});
+
+test("planning keeps the calendar visible while a saved assignment refreshes", async () => {
+  const { deployments } = populatePlanning();
+  const savedNote = "Extra material pickup";
+  api.respond("projects.deployments.update", ({ data }) => {
+    api.respond("projects.deployments.list", [
+      { ...deployments[0], note: data.note },
+    ]);
+    return { success: true };
+  });
+
+  await openApplication("/deployments?day=2026-10-27");
+  const calendar = page.getByRole("region", { name: "Resource planning" });
+  const previous = calendar.getByRole("button", { name: /Fixture deployment/ }).first();
+  await previous.click();
+
+  const dialog = page.getByRole("dialog");
+  await dialog.locator("textarea[name='note']").fill(savedNote);
+  const { release } = api.holdNextSnapshot("projects.deployments.list");
+
+  try {
+    await Promise.all([
+      page.waitForRequest((request) =>
+        request.url().includes("projects.deployments.list"),
+      ),
+      dialog.getByRole("button", { name: "Save", exact: true }).click(),
+    ]);
+    await dialog.waitFor({ state: "hidden" });
+    assert.equal(await previous.isVisible(), true);
+  } finally {
+    release();
+  }
+
+  await calendar.getByRole("button", { name: new RegExp(savedNote) }).waitFor();
+  assert.equal(await previous.count(), 0);
+});
+
+test("planning keeps the chosen project when a delayed preset arrives", async () => {
+  const { project, deployments } = populatePlanning();
+  const replacement = { id: "d", title: "Replacement planning project" };
+
+  api.respond("projects.list", [replacement]);
+  api.respond("projects.deployments.list", [
+    { ...deployments[0], projectTitle: project.title },
+  ]);
+  api.respond("projects.deployments.update", { success: true });
+
+  await openApplication("/deployments?day=2026-10-27");
+  const calendar = page.getByRole("region", { name: "Resource planning" });
+  await calendar.getByText(replacement.title, { exact: true }).waitFor();
+  const { release } = api.holdNextSnapshot("projects.get");
+  const isPreset = (request) => request.url().includes("projects.get");
+
+  try {
+    await Promise.all([
+      page.waitForRequest(isPreset),
+      calendar.getByRole("button", { name: /Fixture deployment/ }).first().click(),
+    ]);
+
+    const dialog = page.getByRole("dialog");
+    const picker = dialog.getByRole("combobox", { name: "Project *", exact: true });
+    await picker.fill("replacement planning");
+    await page.getByRole("option", { name: replacement.title, exact: true }).click();
+    await dialog.getByText(replacement.title, { exact: true }).waitFor();
+
+    const replied = page.waitForResponse((response) => isPreset(response.request()));
+    release();
+    await (await replied).finished();
+    await page.evaluate(
+      () => new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve))),
+    );
+
+    await dialog.getByRole("button", { name: "Save", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+
+    const writes = api.requests.filter(({ path }) =>
+      path === "projects.deployments.update",
+    );
+    assert.equal(writes.length, 1);
+    assert.equal(writes[0].input.data.projectId, replacement.id);
+  } finally {
+    release();
+  }
+});
+
+for (const [action, heading, dateFields] of [
+  ["Einsatz hinzufügen", "Einsatz planen", ["fromDate", "toDate"]],
+  ["Baustelle sperren", "Unterbrechung eintragen", ["from", "to"]],
+]) {
+  test(`planning project picker selects the same project in ${heading}`, async () => {
+    populatePlanning();
+    await openApplication("/deployments?day=2026-10-27", "de");
+    await page.getByRole("button", { name: /Fixture deployment/ }).first().waitFor();
+    await page.locator(".pep-actions").getByRole("button", { name: action, exact: true }).click();
+
+    const dialog = page.getByRole("dialog", { name: heading });
+    const picker = dialog.getByRole("combobox", { name: "Projekt *", exact: true });
+    await picker.fill("fixture PROJ");
+    await page.getByRole("option", { name: "Fixture project", exact: true }).click();
+    await dialog.getByText("Fixture project", { exact: true }).waitFor();
+
+    for (const name of dateFields) {
+      assert.equal(await dialog.locator(`input[name="${name}"]`).inputValue(), "2026-10-27");
+    }
+  });
 }
 
 function populateAttachments() {

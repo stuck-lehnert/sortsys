@@ -7,7 +7,7 @@ import { userFullName } from "~/lib/format";
 import { uiText } from "~/lib/i18n";
 import { SmallUserTile } from "~/lib/tiles";
 import { newProductRowId, publicId } from "~/lib/data/products";
-import { startOfDay } from "~/lib/utils";
+import { parseDateInputValue, startOfDay, toDateInputValue } from "~/lib/calendarDate";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import type { PromiseOr, User } from "~/type-helpers";
 
@@ -184,30 +184,4 @@ export function showCreateAbsenceModal(
       noFullscreen: true,
     }),
   });
-}
-
-function pad2(value: number) {
-  return `${value}`.padStart(2, "0");
-}
-
-function toDateInputValue(date: Date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
-
-function parseDateInputValue(value: unknown): Date | null {
-  const text = `${value ?? ""}`.trim();
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) return null;
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-
-  if (isNaN(date.getTime())) return null;
-  if (date.getFullYear() !== year) return null;
-  if (date.getMonth() !== month - 1) return null;
-  if (date.getDate() !== day) return null;
-
-  return startOfDay(date);
 }

@@ -83,11 +83,7 @@ export function addressUrl(address: Address) {
   return `https://www.google.com/maps/search/${encodeURIComponent(formatAddress(address))}`;
 }
 
-export function startOfDay(date: Date) {
-  const newDate = new Date(date);
-  newDate.setHours(0, 0, 0, 0);
-  return newDate;
-}
+export { startOfDay } from "./calendarDate";
 
 export function endOfDay(date: Date) {
   const newDate = new Date(date);

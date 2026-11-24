@@ -347,6 +347,14 @@ Baustellenwechsel, Wiederholungen, veraltete Formulare und verlorene oder
 falsche Speicherantworten sind über zwei echte API-Instanzen geprüft. Siehe
 [Einsatzplanung](verschluesselte-einsatzplanung.md).
 
+Die Projekt- und Mitarbeitendenansicht zeigen belegte Zeilen mit den Titeln
+aus den Einsätzen, bevor die Projektliste geladen ist. Unbelegte Projektzeilen und
+der Excel-Export warten weiterhin auf die vollständige Liste. Der Kalender
+bleibt nach dem Speichern sichtbar, bis die aktualisierten Einsätze eintreffen.
+Eine verspätete Vorbelegung überschreibt keine Auswahl im Formular. Diese
+Abläufe und die Projektauswahl für Einsätze und Sperren sind mit verzögerten
+Antworten in Chromium geprüft.
+
 ## Katalog, Kontakte und Kosten
 
 **Produkte einschließlich Beschreibung suchen.** Listen, Suche, Anlegen,
