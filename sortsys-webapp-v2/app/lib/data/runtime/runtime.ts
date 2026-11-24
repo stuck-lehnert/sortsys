@@ -1,3 +1,4 @@
+import { createSerialQueue } from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
   TOMBSTONE_FORMAT,
@@ -456,7 +457,7 @@ export class DataRuntime {
   private snapshotCache: SnapshotCache = new Map();
   private tables: DataTables = new Map();
   private project?: RowProjection;
-  private pending: Promise<unknown> = Promise.resolve();
+  private readonly operations = createSerialQueue(() => this.live());
   private directoryReads?: DirectoryRead[];
   private database?: Promise<BusinessDatabase>;
   private controller = new AbortController();
@@ -559,16 +560,6 @@ export class DataRuntime {
     }
     for (const listener of this.listeners) listener(domains);
   }
-  private queue<T>(work: () => Promise<T>): Promise<T> {
-    const result = this.pending.then(async () => {
-      this.live();
-      const value = await work();
-      this.live();
-      return value;
-    });
-    this.pending = result.catch(() => undefined);
-    return result;
-  }
   private db(): Promise<BusinessDatabase> {
     if (this.database) return this.database;
     const opening = (async () =>
@@ -587,7 +578,7 @@ export class DataRuntime {
   ): Promise<T> {
     if (options?.batchDirectory && !collections)
       return this.readDirectory(requests, work);
-    return this.queue(async () => {
+    return this.operations.run(async () => {
       await this.loadCurrent(requests, undefined, collections);
       return this.withView(work);
     });
@@ -598,14 +589,15 @@ export class DataRuntime {
   ): Promise<T> {
     const generation = this.generation;
     let active = true;
+    const assertCurrent = () => {
+      this.live();
+      if (!active) throw new InvalidProtectedData();
+      if (generation !== this.generation) throw new ProtectedWriteConflict();
+    };
     const view = new DataView(
       this.projectedResources,
       this.tables,
-      () => {
-        this.live();
-        if (!active) throw new InvalidProtectedData();
-        if (generation !== this.generation) throw new ProtectedWriteConflict();
-      },
+      assertCurrent,
       () => {
         if (!allowSql) throw new InvalidProtectedData();
         return this.db();
@@ -613,7 +605,9 @@ export class DataRuntime {
       this.snapshotCache,
     );
     try {
-      return await work(view);
+      const value = await work(view);
+      assertCurrent();
+      return value;
     } finally {
       active = false;
     }
@@ -659,7 +653,7 @@ export class DataRuntime {
       }
       const batch = [entry];
       this.directoryReads = batch;
-      void this.queue(async () => {
+      void this.operations.run(async () => {
         this.directoryReads = undefined;
         const missing: DirectoryRead[] = [];
         for (const read of batch) {
@@ -971,7 +965,7 @@ export class DataRuntime {
     work: (tx: DataTransaction) => T | Promise<T>,
     options: TransactionOptions,
   ): Promise<T> {
-    return this.queue(async () => {
+    return this.operations.run(async () => {
       const signals = [this.controller.signal];
       if (options.signal) signals.push(options.signal);
       const signal = AbortSignal.any(signals);
@@ -998,7 +992,7 @@ export class DataRuntime {
     work: (tx: DataTransaction) => T | Promise<T>,
     guards: readonly PreparedWrites["head"][] = [],
   ): Promise<PreparedData<T>> {
-    return this.queue(async () => {
+    return this.operations.run(async () => {
       const prepared = await this.prepareWork(requests, work);
       try {
         const heads = new Map(
@@ -1320,7 +1314,7 @@ export class DataRuntime {
   /** Catalogue deletion also updates signed references and uses a separate
    * public proof. It cannot be substituted by an ordinary tombstone. */
   removeStock(request: DataRequest, id: string): Promise<void> {
-    return this.queue(async () => {
+    return this.operations.run(async () => {
       const reads = new Map<string, DataCollection>();
       try {
         await this.loadCurrent([request], reads);
@@ -1355,7 +1349,7 @@ export class DataRuntime {
     this.tables.clear();
     this.stale.clear();
     this.listeners.clear();
-    await this.pending;
+    await this.operations.drained();
     if (database) await (await database).close();
   }
 }

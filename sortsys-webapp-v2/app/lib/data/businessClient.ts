@@ -1,6 +1,7 @@
 import { contractProcedureKind } from "@sortsys/v2-client";
 import { RpcClientError } from "@sortsys/v2-client";
 import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
+import { createScopedResource, latestQuery, pendingReads } from "@sortsys/zerotrust";
 import { revision } from "@sortsys/zerotrust/sortsys";
 import { Observable } from "rxjs";
 import {
@@ -63,7 +64,6 @@ import {
 } from "./deliveryNoteData";
 import { createContentAccess } from "./menuAccess";
 import { announceDataChanges, listenDataChanges } from "./runtime/changes";
-import { latestQuery, pendingReads } from "@sortsys/zerotrust";
 import {
   invalidateReadableAreas,
   setReadableAreasConnection,
@@ -107,42 +107,16 @@ import {
   PERSONAL_HISTORY_MUTATIONS,
   type DashboardPin,
 } from "./personalHistoryData";
-type Tools = ReturnType<(typeof import("./tools"))["createProtectedTools"]>;
-type Vendors = ReturnType<
-  (typeof import("./vendors"))["createProtectedVendors"]
->;
-type Prices = ReturnType<(typeof import("./prices"))["createProtectedPrices"]>;
-type DeliveryNotes = ReturnType<
-  (typeof import("./deliveryNotes"))["createProtectedDeliveryNotes"]
->;
-type Preferences = ReturnType<
-  (typeof import("./preferences"))["createProtectedPreferences"]
->;
 type PrintTemplates = ReturnType<
   (typeof import("./printTemplates"))["createProtectedPrintTemplates"]
 >;
 type LogoStore = ReturnType<
   (typeof import("./organizationLogo"))["createProtectedLogo"]
 >;
-type Organization = ReturnType<
-  (typeof import("./organization"))["createProtectedOrganization"]
->;
-type PositionIndex = ReturnType<
-  (typeof import("./protectedPositionIndex"))["createProtectedPositionIndex"]
->;
-type AddressBook = ReturnType<typeof createProtectedAddressBook>;
 type Files = ReturnType<
   (typeof import("./projectFiles"))["createProtectedProjectFiles"]
 >;
-type Projects = ReturnType<
-  (typeof import("./projects"))["createProtectedProjects"]
->;
-type Commercial = ReturnType<
-  (typeof import("./commercial"))["createProtectedCommercial"]
->;
-
 type Products = ReturnType<typeof openProtectedProducts>;
-type Chats = ReturnType<(typeof import("./chats"))["createProtectedChats"]>;
 type ProductFactory = (
   client: Client,
   signal: AbortSignal,
@@ -267,29 +241,187 @@ export function createBusinessClient(
   let account = unlockedAccount(),
     closed = false;
   let controller = new AbortController();
-  let products: Promise<Products> | null = null;
-  let chats: Promise<Chats> | null = null;
-  let addresses: Promise<AddressBook> | null = null;
-  let projects: Promise<Projects> | null = null;
-  let files: Promise<Files> | null = null;
-  let commercial: Promise<Commercial> | null = null;
-  let organization: Promise<Organization> | null = null;
-  let printTemplates: Promise<PrintTemplates> | null = null;
-  let logo: Promise<LogoStore> | null = null;
-  let preferences: Promise<Preferences> | null = null;
-  let vendors: Promise<Vendors> | null = null;
-  let prices: Promise<Prices> | null = null;
-  let deliveryNotes: Promise<DeliveryNotes> | null = null;
-  let tools: Promise<Tools> | null = null;
-  let positionIndex: Promise<PositionIndex> | null = null;
+  const sessionStores: Array<{ reset(): void }> = [];
+
+  function assertDataSession() {
+    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
+      throw unavailable();
+  }
+
+  function sessionStore<T extends { close(): void }>(
+    open: (signal: AbortSignal) => T | Promise<T>,
+  ) {
+    const store = createScopedResource({
+      signal: () => controller.signal,
+      assertActive: assertDataSession,
+      expired: unavailable,
+      open,
+      close: (resource) => resource.close(),
+    });
+    sessionStores.push(store);
+    return store;
+  }
+
+  const products = sessionStore(async (signal) => {
+    if (options.openProducts) return options.openProducts(base, signal);
+
+    const { openProtectedProducts } = await import("./products");
+    return openProtectedProducts(base, signal, options.productDriver);
+  });
+  const { get: catalog } = products;
+
+  const addresses = sessionStore((signal) =>
+    createProtectedAddressBook(base, signal, options.productDriver),
+  );
+  const { get: directory } = addresses;
+
+  const projects = sessionStore(async (signal) =>
+    (await import("./projects")).createProtectedProjects(
+      base,
+      signal,
+      directory,
+      options.productDriver,
+    ),
+  );
+  const { get: projectStore } = projects;
+
+  const files = sessionStore(async (signal) =>
+    (await import("./projectFiles")).createProtectedProjectFiles(
+      base,
+      signal,
+      async (ids) => (await projectStore()).getMany(ids),
+      options.productDriver,
+    ),
+  );
+  const { get: fileStore } = files;
+
+  const commercial = sessionStore(async (signal) =>
+    (await import("./commercial")).createProtectedCommercial(
+      base,
+      signal,
+      directory,
+      projectStore,
+      options.productDriver,
+      options.gaebProcessor,
+    ),
+  );
+  const { get: commercialStore } = commercial;
+
+  const organization = sessionStore(async (signal) =>
+    (await import("./organization")).createProtectedOrganization(
+      base,
+      signal,
+      options.productDriver,
+    ),
+  );
+  const { get: organizationStore } = organization;
+
+  const printTemplates = sessionStore(async (signal) =>
+    (await import("./printTemplates")).createProtectedPrintTemplates(
+      base,
+      signal,
+      options.productDriver,
+    ),
+  );
+  const { get: templateStore } = printTemplates;
+
+  const logo = sessionStore(async (signal) =>
+    (await import("./organizationLogo")).createProtectedLogo(
+      base,
+      signal,
+      options.productDriver,
+      options.logoProcessor,
+    ),
+  );
+  const { get: logoStore } = logo;
+
+  const vendors = sessionStore(async (signal) =>
+    (await import("./vendors")).createProtectedVendors(
+      base,
+      signal,
+      options.productDriver,
+    ),
+  );
+  const { get: vendorStore } = vendors;
+
+  const { get: priceStore } = sessionStore(async (signal) =>
+    (await import("./prices")).createProtectedPrices(
+      base,
+      signal,
+      options.productDriver,
+    ),
+  );
+
+  const deliveryNotes = sessionStore(async (signal) =>
+    (await import("./deliveryNotes")).createProtectedDeliveryNotes(
+      base,
+      signal,
+      options.productDriver,
+    ),
+  );
+  const { get: deliveryStore } = deliveryNotes;
+
+  const tools = sessionStore(async (signal) =>
+    (await import("./tools")).createProtectedTools(
+      base,
+      signal,
+      projectStore,
+      options.productDriver,
+    ),
+  );
+  const { get: toolStore } = tools;
+
+  const preferences = sessionStore(async (signal) =>
+    (await import("./preferences")).createProtectedPreferences(
+      base,
+      signal,
+      options.productDriver,
+    ),
+  );
+  const { get: preferenceStore } = preferences;
+
   const dataSessionListeners = new Set<() => void>();
   const editorContextListeners = new Set<() => void>();
   let editorController = new AbortController();
+  const editorScope = {
+    signal: () => editorController.signal,
+    assertActive: assertDataSession,
+    expired: unavailable,
+  };
+  const positionIndex = createScopedResource({
+    ...editorScope,
+    open: async (signal) =>
+      (await import("./protectedPositionIndex")).createProtectedPositionIndex(
+        base,
+        signal,
+        options.gaebProcessor,
+      ),
+    close: (index) => index.close(),
+  });
+  const chats = createScopedResource({
+    ...editorScope,
+    open: async (signal) => {
+      const lifetime = AbortSignal.any([controller.signal, signal]);
+      const { createProtectedChats } = await import("./chats");
+      lifetime.throwIfAborted();
+
+      return createProtectedChats(
+        base,
+        facade,
+        options.endpoint ?? "/api/v2",
+        lifetime,
+        searchDirectory,
+        options.productDriver,
+        (...args) => fileWork((store) => store.searchScoped(...args)),
+      );
+    },
+    // Operations own their collections and close them on abort or completion.
+    close() {},
+  });
+
   function resetEditors() {
-    chats = null;
-    const previous = positionIndex;
-    positionIndex = null;
-    void previous?.then((store) => store.close()).catch(() => undefined);
+    chats.reset();
+    positionIndex.reset();
     editorController.abort();
     editorController = new AbortController();
     for (const listener of editorContextListeners) listener();
@@ -491,15 +623,7 @@ export function createBusinessClient(
       },
     ],
     () => controller.signal,
-    () => {
-      if (
-        closed ||
-        !base.loggedIn() ||
-        !account ||
-        account !== unlockedAccount()
-      )
-        throw unavailable();
-    },
+    assertDataSession,
   );
   function affectedQueries(changed?: ReadonlySet<string>, control = false) {
     if (!changed || control) return (_path: string) => true;
@@ -701,25 +825,27 @@ export function createBusinessClient(
       await Promise.all(metadata.map((path) => base.invalidate(path)));
       if (closed || signal.aborted || expected !== unlockedAccount()) return;
       if (
-        positionIndex &&
-        (change.all ||
-          Object.keys(change.domains).some(
-            (domain) => commercialDomain(domain) || fileDomainId(domain),
-          ))
+        change.all ||
+        Object.keys(change.domains).some(
+          (domain) => commercialDomain(domain) || fileDomainId(domain),
+        )
       )
         await refreshPositions();
       if (
         !change.reset &&
         (change.all ||
-          Object.hasOwn(change.domains, "catalog:products:master-data")) &&
-        products
+          Object.hasOwn(change.domains, "catalog:products:master-data"))
       ) {
         try {
-          await (
-            await products
-          ).refresh(
-            change.domains["catalog:products:master-data"] ?? undefined,
-          );
+          const pending = products.getIfOpen();
+          if (pending) {
+            const store = await pending;
+            if (!signal.aborted) {
+              await store.refresh(
+                change.domains["catalog:products:master-data"] ?? undefined,
+              );
+            }
+          }
         } catch (error) {
           if (!signal.aborted && !RpcClientError.isUnavailable(error)) {
             reset();
@@ -729,12 +855,16 @@ export function createBusinessClient(
       }
       if (
         !change.reset &&
-        files &&
         (change.all ||
           Object.keys(change.domains).some((domain) => fileDomainId(domain)))
       ) {
         try {
-          await (await files).refresh(change.all ? undefined : change.domains);
+          const pending = files.getIfOpen();
+          if (pending) {
+            const store = await pending;
+            if (!signal.aborted)
+              await store.refresh(change.all ? undefined : change.domains);
+          }
         } catch (error) {
           if (!signal.aborted && !RpcClientError.isUnavailable(error)) {
             reset();
@@ -753,47 +883,8 @@ export function createBusinessClient(
     synchronization = Promise.resolve();
     controller.abort();
     controller = new AbortController();
+    for (const store of sessionStores) store.reset();
     contentAccess.refresh();
-    const previous = products;
-    products = null;
-    chats = null;
-    void previous?.then((p) => p.close()).catch(() => undefined);
-    const oldAddresses = addresses;
-    addresses = null;
-    void oldAddresses?.then((store) => store.close()).catch(() => undefined);
-    const oldFiles = files;
-    files = null;
-    void oldFiles?.then((store) => store.close()).catch(() => undefined);
-    const oldProjects = projects;
-    projects = null;
-    void oldProjects?.then((store) => store.close()).catch(() => undefined);
-    const oldCommercial = commercial;
-    commercial = null;
-    void oldCommercial?.then((store) => store.close()).catch(() => undefined);
-    const oldOrganization = organization;
-    organization = null;
-    void oldOrganization?.then((store) => store.close()).catch(() => undefined);
-    const oldTemplates = printTemplates;
-    printTemplates = null;
-    void oldTemplates?.then((store) => store.close()).catch(() => undefined);
-    const oldLogo = logo;
-    logo = null;
-    void oldLogo?.then((store) => store.close()).catch(() => undefined);
-    const oldPreferences = preferences;
-    preferences = null;
-    void oldPreferences?.then((store) => store.close()).catch(() => undefined);
-    const oldVendors = vendors;
-    vendors = null;
-    void oldVendors?.then((store) => store.close()).catch(() => undefined);
-    const oldPrices = prices;
-    prices = null;
-    void oldPrices?.then((store) => store.close()).catch(() => undefined);
-    const oldDeliveries = deliveryNotes;
-    deliveryNotes = null;
-    void oldDeliveries?.then((store) => store.close()).catch(() => undefined);
-    const oldTools = tools;
-    tools = null;
-    void oldTools?.then((store) => store.close()).catch(() => undefined);
     for (const listener of dataSessionListeners) listener();
   }
   const unsubscribe = listenCryptoSession(() => {
@@ -809,205 +900,6 @@ export function createBusinessClient(
     restartEvents();
     notify();
   });
-  async function catalog(): Promise<Products> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const expected = account;
-    const signal = controller.signal;
-    products ??= (async () => {
-      if (options.openProducts) return options.openProducts(base, signal);
-      const { openProtectedProducts } = await import("./products");
-      return openProtectedProducts(base, signal, options.productDriver);
-    })().catch((error) => {
-      if (!signal.aborted) products = null;
-      throw error;
-    });
-    const result = await products;
-    if (closed || signal.aborted || expected !== unlockedAccount())
-      throw unavailable();
-    return result;
-  }
-  async function assistant(): Promise<Chats> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = AbortSignal.any([
-      controller.signal,
-      editorController.signal,
-    ]);
-    chats ??= import("./chats").then((module) =>
-      module.createProtectedChats(
-        base,
-        facade,
-        options.endpoint ?? "/api/v2",
-        signal,
-        searchDirectory,
-        options.productDriver,
-        (...args) => fileWork((store) => store.searchScoped(...args)),
-      ),
-    );
-    const result = await chats;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function directory(): Promise<AddressBook> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    addresses ??= Promise.resolve(
-      createProtectedAddressBook(base, signal, options.productDriver),
-    );
-    const result = await addresses;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function projectStore(): Promise<Projects> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    projects ??= import("./projects").then((module) =>
-      module.createProtectedProjects(
-        base,
-        signal,
-        directory,
-        options.productDriver,
-      ),
-    );
-    const result = await projects;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function fileStore(): Promise<Files> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    files ??= import("./projectFiles").then((module) =>
-      module.createProtectedProjectFiles(
-        base,
-        signal,
-        async (ids) => (await projectStore()).getMany(ids),
-        options.productDriver,
-      ),
-    );
-    const result = await files;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function commercialStore(): Promise<Commercial> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    commercial ??= import("./commercial").then((module) =>
-      module.createProtectedCommercial(
-        base,
-        signal,
-        directory,
-        projectStore,
-        options.productDriver,
-        options.gaebProcessor,
-      ),
-    );
-    const result = await commercial;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function organizationStore(): Promise<Organization> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    organization ??= import("./organization").then((module) =>
-      module.createProtectedOrganization(base, signal, options.productDriver),
-    );
-    const result = await organization;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function templateStore(): Promise<PrintTemplates> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    printTemplates ??= import("./printTemplates").then((module) =>
-      module.createProtectedPrintTemplates(base, signal, options.productDriver),
-    );
-    const result = await printTemplates;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function logoStore(): Promise<LogoStore> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    logo ??= import("./organizationLogo").then((module) =>
-      module.createProtectedLogo(
-        base,
-        signal,
-        options.productDriver,
-        options.logoProcessor,
-      ),
-    );
-    const result = await logo;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function vendorStore(): Promise<Vendors> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    vendors ??= import("./vendors").then((module) =>
-      module.createProtectedVendors(base, signal, options.productDriver),
-    );
-    const result = await vendors;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function priceStore(): Promise<Prices> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    prices ??= import("./prices").then((module) =>
-      module.createProtectedPrices(base, signal, options.productDriver),
-    );
-    const result = await prices;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function deliveryStore(): Promise<DeliveryNotes> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    deliveryNotes ??= import("./deliveryNotes").then((module) =>
-      module.createProtectedDeliveryNotes(base, signal, options.productDriver),
-    );
-    const result = await deliveryNotes;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function toolStore(): Promise<Tools> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    tools ??= import("./tools").then((module) =>
-      module.createProtectedTools(
-        base,
-        signal,
-        projectStore,
-        options.productDriver,
-      ),
-    );
-    const result = await tools;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
-  async function preferenceStore(): Promise<Preferences> {
-    if (closed || !base.loggedIn() || !account || account !== unlockedAccount())
-      throw unavailable();
-    const signal = controller.signal;
-    preferences ??= import("./preferences").then((module) =>
-      module.createProtectedPreferences(base, signal, options.productDriver),
-    );
-    const result = await preferences;
-    if (closed || signal.aborted) throw unavailable();
-    return result;
-  }
   async function query(
     path: string,
     input: unknown,
@@ -1064,27 +956,8 @@ export function createBusinessClient(
         return [value, null];
       }
       if (path === "gaeb.positions.search") {
-        if (
-          closed ||
-          !base.loggedIn() ||
-          !account ||
-          account !== unlockedAccount()
-        )
-          throw unavailable();
         const signal = editorController.signal;
-        positionIndex ??= import("./protectedPositionIndex")
-          .then((module) =>
-            module.createProtectedPositionIndex(
-              base,
-              signal,
-              options.gaebProcessor,
-            ),
-          )
-          .catch((error) => {
-            if (!signal.aborted) positionIndex = null;
-            throw error;
-          });
-        const value = await (await positionIndex).search(input);
+        const value = await (await positionIndex.get()).search(input);
         if (closed || signal.aborted) throw unavailable();
         return [value, null];
       }
@@ -1147,7 +1020,7 @@ export function createBusinessClient(
           controller.signal,
           editorController.signal,
         ]);
-        const store = await assistant();
+        const store = await chats.get();
         const value = path.endsWith(".get")
           ? await store.get(text(request.chatId))
           : await store.list();
@@ -1355,8 +1228,9 @@ export function createBusinessClient(
         )
           contentAccess.refresh();
         await refreshPositions();
-        if (path === "commercial.cases.createProject" && projects)
-          await (await projects).refresh();
+        if (closed || signal.aborted) throw unavailable();
+        if (path === "commercial.cases.createProject")
+          await (await projects.getIfOpen())?.refresh();
         if (closed || signal.aborted) throw unavailable();
         notify(
           (query) =>
@@ -1459,7 +1333,7 @@ export function createBusinessClient(
       ) {
         options?.signal?.throwIfAborted();
         const signal = controller.signal,
-          store = await assistant();
+          store = await chats.get();
         const request = object(
           input,
           path === "llm.chats.create"
@@ -1497,7 +1371,7 @@ export function createBusinessClient(
           );
         } else
           value = await store.review(
-            request as Parameters<Chats["review"]>[0],
+            request as Parameters<typeof store.review>[0],
             options?.signal,
           );
         if (closed || signal.aborted) throw unavailable();
@@ -1557,6 +1431,26 @@ export function createBusinessClient(
       return [null, error instanceof Error ? error : unavailable()];
     }
   }
+  async function invalidateStore(
+    store: Promise<{ refresh(): unknown }> | null,
+    queries: ReadonlySet<string>,
+  ) {
+    const signal = controller.signal;
+    try {
+      if (store) {
+        const current = await store;
+        if (signal.aborted) return;
+        await current.refresh();
+        if (signal.aborted) return;
+      }
+    } catch {
+      if (signal.aborted) return;
+      reset();
+    }
+
+    notify((path) => queries.has(path));
+  }
+
   async function invalidate(path: string) {
     if (adapters.owns(path) || adapters.owns(path, true)) {
       try {
@@ -1566,115 +1460,45 @@ export function createBusinessClient(
       }
       notify((query) => adapters.related(query, path));
     }
-    if (TOOL_QUERIES.has(path) || TOOL_MUTATIONS.has(path)) {
-      try {
-        if (tools) await (await tools).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => TOOL_QUERIES.has(path));
-    }
+    if (TOOL_QUERIES.has(path) || TOOL_MUTATIONS.has(path))
+      await invalidateStore(tools.getIfOpen(), TOOL_QUERIES);
+
     if (
       DELIVERY_QUERIES.has(path) ||
       DELIVERY_MUTATIONS.has(path) ||
       path.startsWith("products.priceRecords.")
-    ) {
-      try {
-        if (deliveryNotes) await (await deliveryNotes).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => DELIVERY_QUERIES.has(path));
-    }
-    if (VENDOR_QUERIES.has(path) || VENDOR_MUTATIONS.has(path)) {
-      try {
-        if (vendors) await (await vendors).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => VENDOR_QUERIES.has(path));
-    }
-    if (PREFERENCE_QUERIES.has(path) || PREFERENCE_MUTATIONS.has(path)) {
-      try {
-        if (preferences) await (await preferences).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => PREFERENCE_QUERIES.has(path));
-    }
+    )
+      await invalidateStore(deliveryNotes.getIfOpen(), DELIVERY_QUERIES);
+
+    if (VENDOR_QUERIES.has(path) || VENDOR_MUTATIONS.has(path))
+      await invalidateStore(vendors.getIfOpen(), VENDOR_QUERIES);
+    if (PREFERENCE_QUERIES.has(path) || PREFERENCE_MUTATIONS.has(path))
+      await invalidateStore(preferences.getIfOpen(), PREFERENCE_QUERIES);
+
     if (
       path === "gaeb.positions.search" ||
       COMMERCIAL_QUERIES.has(path) ||
       FILE_QUERIES.has(path)
     )
       await refreshPositions();
-    if (LOGO_QUERIES.has(path)) {
-      try {
-        if (logo) await (await logo).refresh();
-      } catch {
-        reset();
-      }
-      notify((query) => LOGO_QUERIES.has(query));
-    }
-    if (TEMPLATE_QUERIES.has(path) || TEMPLATE_MUTATIONS.has(path)) {
-      try {
-        if (printTemplates) await (await printTemplates).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => TEMPLATE_QUERIES.has(path));
-    }
-    if (ORGANIZATION_QUERIES.has(path) || ORGANIZATION_MUTATIONS.has(path)) {
-      try {
-        if (organization) await (await organization).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => ORGANIZATION_QUERIES.has(path));
-    }
-    if (COMMERCIAL_QUERIES.has(path) || COMMERCIAL_MUTATIONS.has(path)) {
-      try {
-        if (commercial) await (await commercial).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => COMMERCIAL_QUERIES.has(path));
-    }
-    if (FILE_QUERIES.has(path) || FILE_MUTATIONS.has(path)) {
-      try {
-        if (files) await (await files).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => FILE_QUERIES.has(path));
-    }
-    if (PROJECT_QUERIES.has(path) || PROJECT_MUTATIONS.has(path)) {
-      try {
-        if (projects) await (await projects).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => PROJECT_QUERIES.has(path));
-    }
-    if (ADDRESS_QUERIES.has(path) || ADDRESS_MUTATIONS.has(path)) {
-      try {
-        if (addresses) await (await addresses).refresh();
-      } catch {
-        reset();
-      }
-      notify((path) => ADDRESS_QUERIES.has(path));
-    }
-    if (path.startsWith("products.")) {
-      const store = products;
-      if (store) {
-        try {
-          await (await store).refresh();
-        } catch {
-          reset();
-        }
-      }
-      notify((query) => QUERIES.has(query));
-    }
+
+    if (LOGO_QUERIES.has(path))
+      await invalidateStore(logo.getIfOpen(), LOGO_QUERIES);
+    if (TEMPLATE_QUERIES.has(path) || TEMPLATE_MUTATIONS.has(path))
+      await invalidateStore(printTemplates.getIfOpen(), TEMPLATE_QUERIES);
+    if (ORGANIZATION_QUERIES.has(path) || ORGANIZATION_MUTATIONS.has(path))
+      await invalidateStore(organization.getIfOpen(), ORGANIZATION_QUERIES);
+    if (COMMERCIAL_QUERIES.has(path) || COMMERCIAL_MUTATIONS.has(path))
+      await invalidateStore(commercial.getIfOpen(), COMMERCIAL_QUERIES);
+    if (FILE_QUERIES.has(path) || FILE_MUTATIONS.has(path))
+      await invalidateStore(files.getIfOpen(), FILE_QUERIES);
+    if (PROJECT_QUERIES.has(path) || PROJECT_MUTATIONS.has(path))
+      await invalidateStore(projects.getIfOpen(), PROJECT_QUERIES);
+    if (ADDRESS_QUERIES.has(path) || ADDRESS_MUTATIONS.has(path))
+      await invalidateStore(addresses.getIfOpen(), ADDRESS_QUERIES);
+    if (path.startsWith("products."))
+      await invalidateStore(products.getIfOpen(), QUERIES);
+
     if (path.startsWith("deliveryNotes.scan.") || path.startsWith("llm.chats."))
       notify();
     await base.invalidate(path);
@@ -1691,13 +1515,15 @@ export function createBusinessClient(
     return value;
   }
   async function refreshPositions() {
-    const previous = positionIndex;
-    if (!previous) return;
+    const pending = positionIndex.getIfOpen();
+    if (!pending) return;
+
+    const signal = editorController.signal;
     try {
-      const index = await previous;
-      if (positionIndex === previous) index.refresh();
+      const index = await pending;
+      if (!signal.aborted) index.refresh();
     } catch {
-      if (positionIndex === previous) positionIndex = null;
+      // An expired or failed open leaves no index to refresh.
     }
   }
   const dataSession = {
@@ -2157,7 +1983,7 @@ export function createBusinessClient(
       await synchronized();
       const signal = controller.signal;
       cancellation?.throwIfAborted();
-      const result = await (await assistant()).send(input, cancellation, true);
+      const result = await (await chats.get()).send(input, cancellation, true);
       if (closed || signal.aborted) throw unavailable();
       notify();
       return result;

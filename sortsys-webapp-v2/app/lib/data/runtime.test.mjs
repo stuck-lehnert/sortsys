@@ -667,17 +667,22 @@ test("unloaded preference hints keep an active business view valid while affecte
   const notices = [];
   const stop = current.runtime.listen((domains) => notices.push([...domains]));
   try {
-    await current.runtime.read([first], (view) => {
-      const preferences = new Set(["preferences:user:1:master-data"]);
-      current.runtime.invalidate(preferences);
-      expect(
-        view.row("product_price_records", { id: "1" }).require("comment"),
-      ).toBe("Vorher");
-      current.runtime.invalidate(new Set([mainArea.domain]));
-      expect(() => view.rows("product_price_records")).toThrow(
-        ProtectedWriteConflict,
-      );
-    });
+    await expect(
+      current.runtime.read([first], (view) => {
+        const preferences = new Set(["preferences:user:1:master-data"]);
+        current.runtime.invalidate(preferences);
+        const comment = view
+          .row("product_price_records", { id: "1" })
+          .require("comment");
+        expect(comment).toBe("Vorher");
+
+        current.runtime.invalidate(new Set([mainArea.domain]));
+        expect(() => view.rows("product_price_records")).toThrow(
+          ProtectedWriteConflict,
+        );
+        return comment;
+      }),
+    ).rejects.toBeInstanceOf(ProtectedWriteConflict);
     expect(notices).toEqual([
       ["preferences:user:1:master-data"],
       [mainArea.domain],
@@ -685,6 +690,50 @@ test("unloaded preference hints keep an active business view valid while affecte
   } finally {
     stop();
     await current.runtime.close();
+  }
+}, 90000);
+
+test("a cold directory drops a captured result when its area is invalidated", async () => {
+  const { runtime, calls, seed } = fixture();
+  const selected = {
+    model: defineDataModel({
+      name: "directory-label",
+      tables: [],
+      decode: (value) => value,
+    }),
+    area: mainArea,
+  };
+  seed(mainArea, "main:1", { label: "Vorher" });
+
+  const captured = Promise.withResolvers();
+  const resume = Promise.withResolvers();
+  const readLabel = (view) => view.documents(selected)[0].value.label;
+
+  const query = runtime.read(
+    [selected],
+    async (view) => {
+      const label = readLabel(view);
+      captured.resolve(label);
+      await resume.promise;
+      return label;
+    },
+    undefined,
+    { batchDirectory: true },
+  );
+
+  try {
+    expect(await Promise.race([captured.promise, query])).toBe("Vorher");
+    expect(calls.drivers).toBe(0);
+
+    seed(mainArea, "main:1", { label: "Aktuell" });
+    runtime.invalidate(new Set([mainArea.domain]));
+    resume.resolve();
+
+    await expect(query).rejects.toBeInstanceOf(ProtectedWriteConflict);
+    expect(await runtime.read([selected], readLabel)).toBe("Aktuell");
+  } finally {
+    resume.resolve();
+    await runtime.close();
   }
 }, 15000);
 

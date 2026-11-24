@@ -40,7 +40,7 @@ async function account() {
   );
   await acceptVault(key, vault, "owner", false);
 }
-function raw() {
+function raw({ beforeReply } = {}) {
   const requests = [];
   const base = createClient(
     "https://private-client.test",
@@ -49,55 +49,55 @@ function raw() {
       cache: ramCache(),
       fetch: async (url, init) => {
         requests.push({ url: String(url), body: init?.body });
-        const replies = new URL(String(url)).pathname
-          .slice(1)
-          .split(",")
-          .map((path) => {
-            let value = { success: true };
-            if (setup) {
-              if (path === "zerotrust.access.snapshot") {
-                value = {
-                  subject: "user:1",
-                  username: "owner",
-                  history: {
-                    authorities: [
-                      { certificate: setup.authority, transition: null },
-                    ],
-                    identities: [setup.owner],
-                  },
-                  policy: setup.policy,
-                  origins: [],
-                  domains: [],
-                  snapshot: "fixture-access-snapshot",
-                  after: null,
-                  unchanged: false,
-                };
-              } else if (path === "auth.sessionInfo") {
-                value = {
-                  user: { id: "1", username: "owner", locale: "de" },
-                  roles: [":admin"],
-                };
-              } else if (path === "zerotrust.trust.history") {
-                value = {
+        const paths = new URL(String(url)).pathname.slice(1).split(",");
+        if (beforeReply) await beforeReply(paths);
+
+        const replies = paths.map((path) => {
+          let value = { success: true };
+          if (setup) {
+            if (path === "zerotrust.access.snapshot") {
+              value = {
+                subject: "user:1",
+                username: "owner",
+                history: {
                   authorities: [
                     { certificate: setup.authority, transition: null },
                   ],
                   identities: [setup.owner],
-                };
-              } else if (path === "zerotrust.events.open") {
-                value = {
-                  ticket: "disposable-test-ticket",
-                  subject: "user:1",
-                  generation: setup.authority.generation,
-                };
-              } else if (path === "zerotrust.policy.get") {
-                value = setup.policy;
-              } else if (path === "zerotrust.creations.list") {
-                value = [];
-              }
+                },
+                policy: setup.policy,
+                origins: [],
+                domains: [],
+                snapshot: "fixture-access-snapshot",
+                after: null,
+                unchanged: false,
+              };
+            } else if (path === "auth.sessionInfo") {
+              value = {
+                user: { id: "1", username: "owner", locale: "de" },
+                roles: [":admin"],
+              };
+            } else if (path === "zerotrust.trust.history") {
+              value = {
+                authorities: [
+                  { certificate: setup.authority, transition: null },
+                ],
+                identities: [setup.owner],
+              };
+            } else if (path === "zerotrust.events.open") {
+              value = {
+                ticket: "disposable-test-ticket",
+                subject: "user:1",
+                generation: setup.authority.generation,
+              };
+            } else if (path === "zerotrust.policy.get") {
+              value = setup.policy;
+            } else if (path === "zerotrust.creations.list") {
+              value = [];
             }
-            return { result: { data: { json: value } } };
-          });
+          }
+          return { result: { data: { json: value } } };
+        });
         return new Response(JSON.stringify(replies));
       },
     },
@@ -457,6 +457,95 @@ test("explicit product invalidation refreshes product subscribers without restar
     expect(projectResults).toHaveLength(1);
   } finally {
     for (const subscription of subscriptions) subscription.unsubscribe();
+    client.dispose();
+  }
+});
+
+test("a project read does not cross a bearer change and invalidation stays lazy", async () => {
+  await account();
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let blocked = false;
+  const { base, requests } = raw({
+    async beforeReply(paths) {
+      if (blocked || !paths.includes("zerotrust.access.snapshot")) return;
+
+      blocked = true;
+      entered.resolve();
+      await release.promise;
+    },
+  });
+  const client = createBusinessClient(base, { productDriver: duckDriver });
+
+  try {
+    await client.invalidate("projects.list");
+    expect(requests).toEqual([]);
+
+    const oldContext = client.files.context();
+    const pending = client.query("projects.list", {});
+    await entered.promise;
+
+    base.setToken("replacement-project-session-token");
+    const newContext = client.files.context();
+    expect(oldContext.aborted).toBe(true);
+    expect(newContext.aborted).toBe(false);
+    release.resolve();
+
+    const [projects, error] = await pending;
+    expect(projects).toBeNull();
+    expect(error).toBeInstanceOf(Error);
+    expect(await client.query("projects.list", {})).toEqual([[], null]);
+    expect(client.files.context()).toBe(newContext);
+  } finally {
+    release.resolve();
+    client.dispose();
+  }
+});
+
+test("a control change discards a pending GAEB position search without resetting the data session", async () => {
+  await account();
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let snapshots = 0;
+  const { base, requests } = raw({
+    async beforeReply(paths) {
+      if (!paths.includes("zerotrust.access.snapshot")) return;
+      if (++snapshots !== 1) return;
+
+      entered.resolve();
+      await release.promise;
+    },
+  });
+  const client = createBusinessClient(base, { realtime: false });
+  const route = "gaeb.positions.search";
+  const input = { query: "Innenputz" };
+
+  try {
+    await client.invalidate(route);
+    expect(requests).toEqual([]);
+
+    const session = client.dataSession.context();
+    const editor = client.files.editorContext();
+    const pending = client.query(route, input);
+    await entered.promise;
+
+    announceDataChanges(base, undefined, { control: true, revalidate: true });
+    await Promise.resolve();
+    expect(editor.aborted).toBe(true);
+    expect(client.dataSession.context()).toBe(session);
+    expect(session.aborted).toBe(false);
+
+    release.resolve();
+    const [result, error] = await pending;
+    expect(result).toBeNull();
+    expect(error).toBeInstanceOf(Error);
+    expect(await client.query(route, input)).toEqual([
+      { items: [], indexing: false },
+      null,
+    ]);
+    expect(snapshots).toBe(2);
+  } finally {
+    release.resolve();
     client.dispose();
   }
 });
