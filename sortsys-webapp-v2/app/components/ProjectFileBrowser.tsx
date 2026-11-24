@@ -3,7 +3,7 @@ import { Button as UIAction } from "@sortsys/react-components";
 import { Input as UIInput } from "@heroui/react";
 import { uiText } from "~/lib/i18n";
 import { Icons } from "~/lib/icons";
-import { formatDate } from "~/lib/format";
+import { formatDate, formatFileSize } from "~/lib/format";
 import { MyButton } from "~/components/MyButton";
 import { MyDropdown } from "~/components/MyDropdown";
 import type { NewProjectFileType } from "~/lib/blankProjectFiles";
@@ -55,22 +55,6 @@ type InternalDragPayload =
   | { kind: "folder"; id: string };
 
 const INTERNAL_DRAG_TYPE = "application/x-sortsys-project-files";
-
-function formatBytes(bytes: number | null | undefined) {
-  if (bytes == null) return "–";
-  if (bytes < 1024) return `${bytes} B`;
-
-  const units = ["KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let unitIndex = -1;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
-}
 
 function extensionLabel(fileName: string) {
   const extension = fileName.split(".").pop();
@@ -657,7 +641,7 @@ export function ProjectFileBrowser(props: {
               {formatDate(file.modifiedAt)}
             </span>
             <span className="project-file-browser__size">
-              {formatBytes(file.sizeBytes)}
+              {formatFileSize(file.sizeBytes) ?? "–"}
             </span>
             <MyDropdown items={fileMenuItems(file)} />
           </div>

@@ -7281,28 +7281,26 @@ test("project attachment URLs preserve the browser and reopen through history, r
   await page.waitForURL(background);
 });
 
-test("the project image gallery updates its file ID without adding history entries per photo", async () => {
+test("the project image gallery follows file IDs through navigation and list changes", async () => {
   populateAttachments();
   const date = new Date("2026-10-27T08:00:00Z");
   const image =
     "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLbtAAAAABJRU5ErkJggg==";
-  api.respond(
-    "projects.files.list",
-    ["photo-1", "photo-2"].map((id, index) => ({
-      id,
-      projectId: "c",
-      folderId: null,
-      fileName: `Photo ${index + 1}.png`,
-      mimeType: "image/png",
-      kind: "image",
-      status: "uploaded",
-      textExtractionStatus: "none",
-      createdAt: date,
-      modifiedAt: date,
-      uploadedAt: date,
-      downloadUrl: image,
-    })),
-  );
+  const photos = ["photo-1", "photo-2"].map((id, index) => ({
+    id,
+    projectId: "c",
+    folderId: null,
+    fileName: `Photo ${index + 1}.png`,
+    mimeType: "image/png",
+    kind: "image",
+    status: "uploaded",
+    textExtractionStatus: "none",
+    createdAt: date,
+    modifiedAt: date,
+    uploadedAt: date,
+    downloadUrl: image,
+  }));
+  api.respond("projects.files.list", photos);
   await openApplication("/projects/c/files", "en");
   const background = page.url();
   const length = await page.evaluate(() => history.length);
@@ -7324,7 +7322,33 @@ test("the project image gallery updates its file ID without adding history entri
     "Photo 2.png",
   );
   assert.equal(page.url(), link);
+
+  const newPhoto = {
+    ...photos[0],
+    id: "photo-3",
+    fileName: "Photo 3.png",
+    createdAt: new Date("2026-10-27T09:00:00Z"),
+  };
+  api.respond("projects.files.list", [...photos, newPhoto]);
+  await page.evaluate(() =>
+    window.__sortsysRefreshPresentation("projects.files.list"),
+  );
+  await page
+    .locator('.project-files-image-tile img[alt="Photo 3.png"]')
+    .waitFor({ state: "attached" });
+  assert.equal(await dialog.locator(".ss-modal-label").textContent(), "Photo 2.png");
+  assert.equal(page.url(), link);
+
   await page.evaluate(() => history.back());
+  await dialog.waitFor({ state: "hidden" });
+  await page.waitForURL(background);
+
+  await page.getByRole("button", { name: "Photo 2.png", exact: true }).click();
+  await dialog.waitFor();
+  api.respond("projects.files.list", [photos[0], newPhoto]);
+  await page.evaluate(() =>
+    window.__sortsysRefreshPresentation("projects.files.list"),
+  );
   await dialog.waitFor({ state: "hidden" });
   await page.waitForURL(background);
 });

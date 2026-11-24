@@ -135,6 +135,24 @@ export function formatPercent(num: number): string {
   })}%`;
 }
 
+const fileSizeUnits = ["KB", "MB", "GB", "TB"];
+
+export function formatFileSize(bytes: number | null | undefined): string | null {
+  if (bytes == null) return null;
+
+  if (bytes < 1024) return `${bytes} B`;
+
+  let size = bytes;
+  let unitIndex = -1;
+
+  while (size >= 1024 && unitIndex < fileSizeUnits.length - 1) {
+    size /= 1024;
+    unitIndex += 1;
+  }
+
+  return `${size.toFixed(size >= 10 ? 1 : 2)} ${fileSizeUnits[unitIndex]}`;
+}
+
 export function gainOrLossColor(value: number): string {
   return value >= 0 ? Colors.green : Colors.red;
 }

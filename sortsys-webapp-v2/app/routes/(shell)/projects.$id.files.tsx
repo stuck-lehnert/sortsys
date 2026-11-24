@@ -45,7 +45,7 @@ import {
   isVideoAttachment,
   projectFileEditor,
 } from "~/lib/projectFilePreview";
-import { formatDate } from "~/lib/format";
+import { formatDate, formatFileSize } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { downloadBlob } from "~/lib/utils";
 import type { Project } from "~/type-helpers";
@@ -96,23 +96,6 @@ type ProjectFileEntry = {
   downloadAttachmentUrl?: string | null;
   downloadAttachmentExpiresAt?: Date | null;
 };
-
-function formatBytes(bytes: number | null | undefined) {
-  if (bytes == null) return "-";
-
-  if (bytes < 1024) return `${bytes} B`;
-
-  const units = ["KB", "MB", "GB", "TB"];
-  let size = bytes;
-  let unitIndex = -1;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  return `${size.toFixed(size >= 10 ? 1 : 2)} ${units[unitIndex]}`;
-}
 
 function safeZipEntryName(fileName: string, fallbackName: string) {
   const cleaned = `${fileName ?? ""}`
@@ -187,7 +170,7 @@ export default function ProjectFilesPage() {
   const [selectedAttachmentIds, setSelectedAttachmentIds] = useState<string[]>(
     [],
   );
-  const [activeImageIndex, setActiveImageIndex] = useState<number | null>(null);
+  const [activeImageId, setActiveImageId] = useState<string | null>(null);
   const [activeVideoFileId, setActiveVideoFileId] = useState<string | null>(
     null,
   );
@@ -216,7 +199,7 @@ export default function ProjectFilesPage() {
     else closeAllViewers();
   });
   const resetViewers = () => {
-    setActiveImageIndex(null);
+    setActiveImageId(null);
     setActiveVideoFileId(null);
     setActiveDwgFileId(null);
     setOfficeSelection(null);
@@ -290,10 +273,14 @@ export default function ProjectFilesPage() {
     );
   }, [attachments]);
 
-  const activeImage = useMemo(() => {
-    if (activeImageIndex == null) return null;
-    return imageFiles[activeImageIndex] ?? null;
-  }, [activeImageIndex, imageFiles]);
+  const activeImageIndex = useMemo(
+    () => {
+      if (activeImageId === null) return -1;
+      return imageFiles.findIndex((image) => image.id === activeImageId);
+    },
+    [activeImageId, imageFiles],
+  );
+  const activeImage = imageFiles[activeImageIndex] ?? null;
 
   const activeVideo = useMemo(() => {
     if (!activeVideoFileId) return null;
@@ -418,10 +405,19 @@ export default function ProjectFilesPage() {
     return uiText("Keine Vorschau");
   };
 
-  const closeImageViewer = () => {
-    setActiveImageIndex(null);
+  const closeImageViewer = useCallback(() => {
+    setActiveImageId(null);
     closeFileLocation();
-  };
+  }, [closeFileLocation]);
+
+  const openImageViewer = useCallback(
+    (imageId: string) => {
+      openedUrlFileIdRef.current = imageId;
+      setActiveImageId(imageId);
+      fileLocation.open(imageId);
+    },
+    [fileLocation.open],
+  );
 
   const openVideoViewer = (file: ProjectFileEntry) => {
     if (!attachmentDownloadUrl(file)) return;
@@ -477,7 +473,7 @@ export default function ProjectFilesPage() {
     setSelectedAttachmentIds([]);
   };
 
-  const openImageOrToggleSelection = (imageId: string, imageIndex: number) => {
+  const openImageOrToggleSelection = (imageId: string) => {
     if (batchBusyAction) return;
 
     if (selectedAttachmentIds.length > 0) {
@@ -485,8 +481,7 @@ export default function ProjectFilesPage() {
       return;
     }
 
-    setActiveImageIndex(imageIndex);
-    fileLocation.open(imageId);
+    openImageViewer(imageId);
   };
 
   const selectionMenuItems = useMemo<
@@ -512,31 +507,27 @@ export default function ProjectFilesPage() {
     return items;
   }, [attachments.length, batchBusyAction, selectedAttachmentIds.length]);
 
-  const showImage = (direction: number) => {
-    if (activeImageIndex == null || !imageFiles.length) return;
-    const index =
-      (activeImageIndex + direction + imageFiles.length) % imageFiles.length;
-    setActiveImageIndex(index);
-    fileLocation.open(imageFiles[index]!.id);
-  };
+  const showImage = useCallback(
+    (direction: number) => {
+      if (activeImageIndex < 0) return;
+
+      const index =
+        (activeImageIndex + direction + imageFiles.length) % imageFiles.length;
+      openImageViewer(imageFiles[index]!.id);
+    },
+    [activeImageIndex, imageFiles, openImageViewer],
+  );
   const showPreviousImage = () => showImage(-1);
   const showNextImage = () => showImage(1);
 
   useEffect(() => {
-    if (activeImageIndex == null) return;
-
-    if (!imageFiles.length) {
-      setActiveImageIndex(null);
-      return;
+    if (activeImageId && !activeImage && projectFiles && !projectFilesErr) {
+      closeImageViewer();
     }
-
-    if (activeImageIndex >= imageFiles.length) {
-      setActiveImageIndex(imageFiles.length - 1);
-    }
-  }, [activeImageIndex, imageFiles.length]);
+  }, [activeImageId, activeImage, projectFiles, projectFilesErr, closeImageViewer]);
 
   useEffect(() => {
-    if (activeImageIndex == null) return;
+    if (activeImageIndex < 0) return;
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
@@ -546,12 +537,12 @@ export default function ProjectFilesPage() {
 
       if (event.key === "ArrowLeft") {
         event.preventDefault();
-        showPreviousImage();
+        showImage(-1);
       }
 
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        showNextImage();
+        showImage(1);
       }
     };
 
@@ -559,7 +550,7 @@ export default function ProjectFilesPage() {
     return () => {
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [activeImageIndex, imageFiles.length]);
+  }, [activeImageIndex, closeImageViewer, showImage]);
 
   async function uploadProjectFile(file: File, folderId: string | null) {
     return privateProjectFiles.upload({
@@ -1094,13 +1085,14 @@ export default function ProjectFilesPage() {
     if (!attachment) return;
 
     resetViewers();
+    if (attachment.kind === "image" && !isDwgAttachment(attachment)) {
+      openImageViewer(attachment.id);
+      return;
+    }
+
     openedUrlFileIdRef.current = attachment.id;
     fileLocation.open(attachment.id);
-    if (attachment.kind === "image" && !isDwgAttachment(attachment)) {
-      setActiveImageIndex(
-        imageFiles.findIndex((image) => image.id === attachment.id),
-      );
-    } else if (isGaebAttachment(attachment)) {
+    if (isGaebAttachment(attachment)) {
       setActiveGaebFileId(attachment.id);
     } else if (attachmentPreviewKind(attachment)) {
       setActivePreviewFileId(attachment.id);
@@ -1430,7 +1422,7 @@ export default function ProjectFilesPage() {
               "grid grid-cols-[repeat(auto-fill,minmax(min(100%,10rem),1fr))] gap-2",
             ].join(" ")}
           >
-            {imageFiles.map((image, imageIndex) => (
+            {imageFiles.map((image) => (
               <div
                 key={image.id}
                 className={`project-files-image-tile-wrap${selectedAttachmentIdSet.has(image.id) ? " is-selected" : ""}`}
@@ -1439,9 +1431,7 @@ export default function ProjectFilesPage() {
                   kind="ghost"
                   type="button"
                   title={image.fileName}
-                  onClick={() =>
-                    openImageOrToggleSelection(image.id, imageIndex)
-                  }
+                  onClick={() => openImageOrToggleSelection(image.id)}
                   className="project-files-image-tile"
                 >
                   {imageCardUrl(image) ? (
@@ -1679,7 +1669,7 @@ export default function ProjectFilesPage() {
               <div>
                 <div style={{ fontWeight: 600 }}>{activeDwgFile.fileName}</div>
                 <div className="light" style={{ fontSize: ".9rem" }}>
-                  {formatBytes(activeDwgFile.sizeBytes)} ·{" "}
+                  {formatFileSize(activeDwgFile.sizeBytes) ?? "-"} ·{" "}
                   {formatDate(activeDwgFile.createdAt)}
                 </div>
               </div>
@@ -1745,7 +1735,7 @@ export default function ProjectFilesPage() {
               <div className="project-files-media-details">
                 <strong>{activeVideo.fileName}</strong>
                 <span>
-                  {formatBytes(activeVideo.sizeBytes)} ·{" "}
+                  {formatFileSize(activeVideo.sizeBytes) ?? "-"} ·{" "}
                   {formatDate(activeVideo.createdAt)}
                 </span>
               </div>
@@ -1830,9 +1820,9 @@ export default function ProjectFilesPage() {
               <div className="project-files-media-details">
                 <strong>{activeImage.fileName}</strong>
                 <span>
-                  {uiText("Bild", "Image")} {(activeImageIndex ?? 0) + 1}{" "}
+                  {uiText("Bild", "Image")} {activeImageIndex + 1}{" "}
                   {uiText("von", "of")} {imageFiles.length} ·{" "}
-                  {formatBytes(activeImage.sizeBytes)} ·{" "}
+                  {formatFileSize(activeImage.sizeBytes) ?? "-"} ·{" "}
                   {formatDate(activeImage.createdAt)}
                 </span>
               </div>
