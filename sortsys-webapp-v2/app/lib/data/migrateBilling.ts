@@ -112,57 +112,66 @@ export async function prepareIssuedInvoices(
   signal: AbortSignal,
 ) {
   const entries = await readCommercialSource(source);
+  signal.throwIfAborted();
+
+  // Reject inconsistent claims before publishing any part of the ledger.
+  const used = new Set<string>();
+  const invoices = entries.flatMap((entry) => {
+    const current = wireCommercialCase(entry.rows);
+    if (!isInvoice(current.kind)) return [];
+
+    const invoice = wireCommercialInvoice(entry.rows);
+    if (!invoice?.invoiceNumber) return [];
+
+    const number = invoice.invoiceNumber;
+    const { projectId, parentCaseId, status } = current;
+    if (!projectId || !parentCaseId || used.has(number))
+      throw new InvalidProtectedData();
+
+    used.add(number);
+    return [{ entry, projectId, status, invoiceDate: invoice.invoiceDate, number }];
+  });
+
+  for (const row of await readBusinessRows(source, "commercial_invoice_counters")) {
+    signal.throwIfAborted();
+    const legacy = row.values.scope;
+    if (typeof legacy !== "string") throw new InvalidProtectedData();
+
+    const scope = legacy.startsWith("project:")
+      ? `project:${publicId(legacy.slice("project:".length))}`
+      : legacy;
+    const request = invoiceCounterRequest(scope);
+    const value = {
+      format: "sortsys-invoice-counter-v1",
+      scope,
+      nextNumber: nextInvoiceNumber(row.values.next_number),
+    };
+    await copyProtectedCollection(
+      client,
+      request.area,
+      [{ id: request.area.prefix, value }],
+      (value, object) => request.model.decode(value, object, request.area),
+      signal,
+    );
+  }
+
+  signal.throwIfAborted();
+  if (!invoices.length) return;
+
   const numbers = createInvoiceNumbers(client, signal);
   try {
     const namespace = await numbers.namespace();
-    for (const row of await readBusinessRows(
-      source,
-      "commercial_invoice_counters",
-    )) {
-      const legacy = row.values.scope;
-      if (typeof legacy !== "string") throw new InvalidProtectedData();
-      let scope = legacy;
-      if (legacy.startsWith("project:")) {
-        scope = `project:${publicId(legacy.slice("project:".length))}`;
-      }
-      const request = invoiceCounterRequest(scope);
-      const value = {
-        format: "sortsys-invoice-counter-v1",
-        scope,
-        nextNumber: nextInvoiceNumber(row.values.next_number),
-      };
-      await copyProtectedCollection(
-        client,
-        request.area,
-        [{ id: request.area.prefix, value }],
-        (value, object) => request.model.decode(value, object, request.area),
-        signal,
-      );
-    }
-    const used = new Set<string>();
-    for (const entry of entries) {
+    for (const { entry, projectId, status, invoiceDate, number } of invoices) {
       signal.throwIfAborted();
-      const current = wireCommercialCase(entry.rows);
-      const invoice = wireCommercialInvoice(entry.rows);
-      if (!isInvoice(current.kind) || !invoice?.invoiceNumber) continue;
-      if (
-        !current.projectId ||
-        !current.parentCaseId ||
-        used.has(invoice.invoiceNumber)
-      )
-        throw new InvalidProtectedData();
-      used.add(invoice.invoiceNumber);
-      const object = await invoiceNumberObject(
-        namespace.value,
-        invoice.invoiceNumber,
-      );
+
+      const object = await invoiceNumberObject(namespace.value, number);
       const request = invoiceNumberRequest(object);
       const value: InvoiceNumberClaim = {
         format: "sortsys-invoice-number-v1",
         caseId: entry.id,
-        projectId: current.projectId,
-        invoiceDate: invoice.invoiceDate,
-        number: invoice.invoiceNumber,
+        projectId,
+        invoiceDate,
+        number,
       };
       await copyProtectedCollection(
         client,
@@ -171,7 +180,7 @@ export async function prepareIssuedInvoices(
         (value, object) => request.model.decode(value, object, request.area),
         signal,
       );
-      if (!ISSUED_STATUSES.includes(current.status)) continue;
+      if (!ISSUED_STATUSES.includes(status)) continue;
       const rows = copyCommercialRows(entry.rows);
       const selected = rows.filter(
         (row) =>
