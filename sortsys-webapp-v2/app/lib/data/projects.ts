@@ -115,11 +115,18 @@ export function createProtectedProjects(
   async function read(id: string, fresh = false) {
     live();
     if (fresh) runtime.revalidate();
+
     const selected = request(id);
-    const result = await runtime.read([selected], (view) => ({
-      ...document(view, selected),
-      head: view.head(selected),
-    }));
+    const result = await runtime.read(
+      [selected],
+      (view) => ({
+        ...document(view, selected),
+        head: view.head(selected),
+      }),
+      undefined,
+      { batchDirectory: !fresh },
+    );
+
     live();
     return result;
   }
@@ -333,7 +340,7 @@ export function createProtectedProjects(
           );
         },
         undefined,
-        { batchDirectory: limit !== undefined },
+        { batchDirectory: !linkedContact || limit !== undefined },
       );
       live();
       if (data.orderBy === "activity")
