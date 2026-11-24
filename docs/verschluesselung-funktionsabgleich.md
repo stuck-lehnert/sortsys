@@ -433,6 +433,11 @@ verschlüsselte Dateiblöcke. Vorschau, Medienprüfung und Kompilierung bleiben 
 Browser. Einladungen geben die Vorlage zum Drucken frei. Siehe
 [Druckvorlagen](verschluesselte-druckvorlagen.md).
 
+Das Projektdatenblatt lädt Kontakte, Bemerkungen und berechtigte Stammdaten
+parallel. Der Browser bezieht den Typst-Compiler aus der Anwendung, nicht
+von einem CDN. Chromium öffnet das Datenblatt als PDF auch bei blockierten
+externen Anfragen.
+
 **Unternehmensanschrift und Nummernschema.** Die vorhandenen Formulare lesen und
 speichern verschlüsselt. Einladungen geben die Anschrift automatisch zum Lesen
 frei; das Rechnungsnummernschema hat einen eigenen Schlüssel. Jede

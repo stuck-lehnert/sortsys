@@ -146,27 +146,39 @@ export default function ProjectDetailPage() {
     setIsContactSheetPrinting(true);
 
     try {
-      const [freshContacts, contactsErr] = await client.query(
-        "projects.contacts.list",
-        { projectId: project.id },
-        { strategy: "network-first" },
-      );
+      const [
+        [freshContacts, contactsErr],
+        [projectRemarks, projectRemarksErr],
+        [currentCustomer],
+        [projectLeader],
+      ] = await Promise.all([
+        client.query(
+          "projects.contacts.list",
+          { projectId: project.id },
+          { strategy: "network-first" },
+        ),
+        client.query(
+          "remarks.list",
+          { resourceType: "project", resourceId: project.id },
+          { strategy: "network-first" },
+        ),
+        project.customerId
+          ? client.query(
+              "customers.get",
+              { id: project.customerId },
+              { strategy: "cache-first" },
+            )
+          : ([null, null] as const),
+        project.responsibleProjectLeaderUserId && canViewUsers
+          ? client.query(
+              "users.get",
+              { id: project.responsibleProjectLeaderUserId },
+              { strategy: "cache-first" },
+            )
+          : ([null, null] as const),
+      ]);
       if (contactsErr) throw contactsErr;
-
-      const [projectRemarks, projectRemarksErr] = await client.query(
-        "remarks.list",
-        { resourceType: "project", resourceId: project.id },
-        { strategy: "network-first" },
-      );
       if (projectRemarksErr) throw projectRemarksErr;
-
-      const [currentCustomer] = project.customerId
-        ? await client.query(
-            "customers.get",
-            { id: project.customerId },
-            { strategy: "cache-first" },
-          )
-        : ([null, null] as const);
 
       const projectRows: PdfTableSection["rows"] = [
         [uiText("Projekt"), { value: project.title, bold: true }],
@@ -198,22 +210,11 @@ export default function ProjectDetailPage() {
         if (customerEmail) projectRows.push(["Kunden-E-Mail", customerEmail]);
       }
       if (project.responsibleProjectLeaderUserId) {
+        let leaderName = uiText("Keine Berechtigung");
         if (canViewUsers) {
-          const [user] = await client.query(
-            "users.get",
-            { id: project.responsibleProjectLeaderUserId },
-            { strategy: "cache-first" },
-          );
-          projectRows.push([
-            uiText("Verantwortlicher Projektleiter"),
-            user ? userFullName(user) : "Unbekannt",
-          ]);
-        } else {
-          projectRows.push([
-            uiText("Verantwortlicher Projektleiter"),
-            uiText("Keine Berechtigung"),
-          ]);
+          leaderName = projectLeader ? userFullName(projectLeader) : "Unbekannt";
         }
+        projectRows.push([uiText("Verantwortlicher Projektleiter"), leaderName]);
       }
 
       const sortedContacts = [...(freshContacts ?? [])].sort((left, right) => {

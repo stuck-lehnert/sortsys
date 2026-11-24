@@ -12,10 +12,45 @@ const assets = resolve(
   process.env.SORTSYS_UI_ASSETS ?? join(webapp, "build/client"),
 );
 
-assert.ok(
-  existsSync(join(assets, "index.html")),
-  "Build the webapp before UI tests, or set SORTSYS_UI_ASSETS to its built client directory.",
-);
+function productionStyles() {
+  const html = join(assets, "index.html");
+  if (existsSync(html)) {
+    return [
+      ...readFileSync(html, "utf8").matchAll(
+        /<link\b(?=[^>]*\brel="stylesheet")[^>]*\bhref="([^"]+)"[^>]*>/g,
+      ),
+    ].map((match) => match[1]);
+  }
+
+  // Isolated component workflows do not serve the production HTML shell.
+  // This mode verifies them against the real client assets after that build
+  // stage, but does not verify production prerendering or service workers.
+  assert.equal(
+    process.env.SORTSYS_UI_CLIENT_MANIFEST,
+    "1",
+    "Build the webapp before UI tests, or set SORTSYS_UI_ASSETS to its built client directory.",
+  );
+  const manifest = JSON.parse(
+    readFileSync(join(assets, ".vite/manifest.json"), "utf8"),
+  );
+  const root = manifest["app/root.tsx?__react-router-build-client-route"];
+  assert.ok(
+    root?.isEntry && Array.isArray(root.css),
+    "Missing built root stylesheet.",
+  );
+
+  return root.css.map((file) => `/${file}`);
+}
+
+const styles = productionStyles();
+assert.ok(styles.length, "UI tests must use the real production stylesheet.");
+for (const stylesheet of styles) {
+  assert.match(stylesheet, /^\/assets\/[A-Za-z0-9._-]+\.css$/);
+  assert.ok(
+    existsSync(join(assets, stylesheet)),
+    `Missing stylesheet ${stylesheet}`,
+  );
+}
 
 function sourceModule(stem) {
   for (const suffix of [
@@ -162,17 +197,6 @@ assert.ok(
   "The controls fixture must have a real browser entrypoint.",
 );
 const script = "/bundle/controls.js";
-const builtHtml = readFileSync(join(assets, "index.html"), "utf8");
-const styles = [
-  ...builtHtml.matchAll(
-    /<link\b(?=[^>]*\brel="stylesheet")[^>]*\bhref="([^"]+)"[^>]*>/g,
-  ),
-].map((match) => match[1]);
-assert.ok(styles.length, "UI tests must use the real production stylesheet.");
-for (const stylesheet of styles) {
-  assert.match(stylesheet, /^\/assets\/[A-Za-z0-9._-]+\.css$/);
-}
-
 const links = styles
   .map((href) => `<link rel="stylesheet" href="${href}">`)
   .join("\n");

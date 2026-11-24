@@ -1,3 +1,4 @@
+import typstCompilerWasmUrl from "@myriaddreamin/typst-ts-web-compiler/wasm?url";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { client } from "~/lib/client";
 import { fetchFileResource } from "~/lib/fileResources";
@@ -214,8 +215,6 @@ type RenderStructuredPdfBatchOptions = {
 
 let typstPdfRuntimeSetup: Promise<void> | null = null;
 let typstPdfFontSetup: Promise<void> | null = null;
-const TYPST_COMPILER_WASM_URL =
-  "https://cdn.jsdelivr.net/npm/@myriaddreamin/typst-ts-web-compiler@0.7.0/pkg/typst_ts_web_compiler_bg.wasm";
 const MAX_TENANT_FONT_BYTES = 4 * 1024 * 1024;
 const MAX_TENANT_LOGO_BYTES = 10 * 1024 * 1024;
 const MAX_PDF_IMAGE_BYTES = 14 * 1024 * 1024;
@@ -410,7 +409,7 @@ async function ensureTypstPdfRuntime($typst: any) {
       (await import("@myriaddreamin/typst-ts-web-compiler")) as any;
 
     if (typeof compilerModule?.setImportWasmModule === "function") {
-      compilerModule.setImportWasmModule(async () => TYPST_COMPILER_WASM_URL);
+      compilerModule.setImportWasmModule(async () => typstCompilerWasmUrl);
     }
 
     const typstModule = (await import("@myriaddreamin/typst.ts")) as any;
@@ -423,7 +422,7 @@ async function ensureTypstPdfRuntime($typst: any) {
           : [];
 
       $typst.setCompilerInitOptions({
-        getModule: () => TYPST_COMPILER_WASM_URL,
+        getModule: () => typstCompilerWasmUrl,
         beforeBuild,
       });
       didSetInitOptions = true;
@@ -449,7 +448,7 @@ async function ensureTypstPdfRuntime($typst: any) {
           const fontBuilder = typstModule.createTypstFontBuilder();
           await fontBuilder.init({
             beforeBuild: [],
-            getModule: () => TYPST_COMPILER_WASM_URL,
+            getModule: () => typstCompilerWasmUrl,
           });
 
           for (const bytes of fonts) {

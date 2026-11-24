@@ -7915,6 +7915,27 @@ test("regie-report additions focus employees, products and special item names", 
   }
 });
 
+test("project data sheet opens a PDF without an external connection", async () => {
+  api.respond("projects.contacts.list", [existingContact]);
+  api.respond("tools.trackings.list", []);
+
+  await openApplication("/projects/c", "de");
+  await page.getByText("Ansprechpartner (1)", { exact: true }).waitFor();
+  await page
+    .getByText(/Anlieferungen bitte mindestens einen Werktag vorher/)
+    .waitFor();
+
+  const print = page.getByRole("button", { name: "Datenblatt", exact: true });
+  const [file] = await Promise.all([
+    page.waitForEvent("download", { timeout: 30000 }),
+    print.click(),
+  ]);
+  // Headless Chromium has no PDF viewer and downloads the preview's blob URL.
+  assert.ok(file.url().startsWith(`blob:${server.origin}/`), file.url());
+  const bytes = await readFile(await file.path());
+  assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
+});
+
 test("a newly added product unit focuses its name autocomplete", async () => {
   api.respond("products.units.list", ["kg", "m²", "Stk"]);
   await openApplication("/fixtures/forms", "en");

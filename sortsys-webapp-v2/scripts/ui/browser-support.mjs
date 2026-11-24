@@ -65,7 +65,10 @@ export async function createFixtureServer({
         return;
       }
 
-      const root = /^\/(?:assets|pdfjs)\//.test(pathname) ? assets : directory;
+      let root = directory;
+      if (/^\/(?:assets|pdfjs)\//.test(pathname)) root = assets;
+      if (pathname.startsWith("/fonts/")) root = join(webappDirectory, "public");
+
       const filename = containedFile(root, pathname);
       const contentType = filename && contentTypes.get(extname(filename));
       if (!filename || !contentType) {
