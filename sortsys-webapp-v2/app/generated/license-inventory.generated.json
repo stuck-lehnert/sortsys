@@ -4741,6 +4741,14 @@
         "source": "https://www.npmjs.com/package/postal-mime/v/4.2.0"
       },
       {
+        "ecosystem": "data",
+        "name": "PostgreSQL text search stop words",
+        "version": "18.3",
+        "license": "PostgreSQL",
+        "licenseUrl": "/licenses/postgresql-stopwords/COPYRIGHT.txt",
+        "source": "https://github.com/postgres/postgres/tree/REL_18_3/src/backend/snowball"
+      },
+      {
         "ecosystem": "Rust",
         "name": "proc-macro2",
         "version": "1.0.107",

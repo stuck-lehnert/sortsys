@@ -51,8 +51,10 @@ import {
 } from "./officeCapsule";
 import { officeRecipients, sameOfficeRecipients } from "./officeRecipients";
 import { mapConcurrent } from "./runtime/concurrentReads";
+import { timestampMicros } from "./timestamps";
 import { createDocumentSearch } from "../search/documentSearch";
 import {
+  compareRankedDocuments,
   createDocumentMatcher,
   type SearchDocument,
 } from "../search/documentQuery";
@@ -893,8 +895,8 @@ export function createProtectedProjectFiles(
       string,
       Omit<
         QueryResult<"projects.files.search">[number],
-        "rank" | "excerpt" | "projectTitle"
-      >
+        "rank" | "excerpt" | "projectTitle" | "modifiedAt"
+      > & { modifiedAt: string; modifiedAtMicros: bigint }
     >();
     for (const payload of files.values()) {
       const values = payload.file?.values;
@@ -902,6 +904,7 @@ export function createProtectedProjectFiles(
       const fileId = publicId(values.id);
       const key = `${id}:${fileId}`;
       const name = values.file_name as string;
+      const modifiedAt = values.modified_at as string;
       documents.push({
         id: key,
         name,
@@ -913,7 +916,8 @@ export function createProtectedProjectFiles(
         fileName: name,
         mimeType: values.mime_type as string,
         textExtractionStatus: values.text_extraction_status as string,
-        modifiedAt: new Date(values.modified_at as string),
+        modifiedAt,
+        modifiedAtMicros: timestampMicros(modifiedAt),
       });
     }
     return { documents, entries };
@@ -982,10 +986,7 @@ export function createProtectedProjectFiles(
       })
       .sort(
         (a, b) =>
-          b.rank - a.rank ||
-          b.modifiedAt.getTime() - a.modifiedAt.getTime() ||
-          a.id.localeCompare(b.id) ||
-          a.projectId.localeCompare(b.projectId),
+          compareRankedDocuments(a, b) || a.projectId.localeCompare(b.projectId),
       )
       .slice(offset, offset + limit);
 
@@ -1057,9 +1058,9 @@ export function createProtectedProjectFiles(
       throw error;
     }
     active.throwIfAborted();
-    return ranked.map((item) => ({
+    return ranked.map(({ modifiedAt, modifiedAtMicros: _, ...item }) => ({
       ...item,
-      modifiedAt: new Date(item.modifiedAt),
+      modifiedAt: new Date(modifiedAt),
       projectTitle: titles.get(item.projectId) ?? "",
     }));
   }

@@ -3,16 +3,18 @@
 Unter **Dokumente** lassen sich Dateinamen und ausgelesene Texte aus freigegebenen
 Projektanhängen gemeinsam durchsuchen. So findet etwa `Wand Fenster` einen
 Ausführungsplan, in dem „Wände“ und „Fenster“ vorkommen. Die Suche berücksichtigt
-deutsche und englische Wortformen sowie Wortanfänge. Alle eingegebenen Wörter
-müssen vorkommen, sofern sie nicht mit `OR` getrennt werden.
+deutsche und englische Wortformen. Ein abgeschnittener Begriff wie `Stah`
+liefert keinen bloßen Wortanfangstreffer auf „Stahl“. Wie in Master prüft die
+Suche neben den Suchoperatoren auch eine wörtliche Alternative: Sie verlangt
+alle Wörter der Eingabe als indexierte Begriffe, ohne Reihenfolge oder
+Ausschluss. Ein Dateiname wie `Anlage.pdf` zählt als zusammenhängender Begriff.
 
 | Eingabe | Ergebnis |
 | --- | --- |
-| `Fenst Abdicht` | Beide Wortanfänge kommen im Dateinamen oder Text vor. |
-| `"rote Fenster"` | Die Wörter stehen in dieser Reihenfolge unmittelbar nebeneinander. Wortformen werden berücksichtigt. |
+| `Fenster abdichten` | Beide Begriffe kommen im Dateinamen oder Text vor. |
+| `"rote Fenster"` | Die Phrasensuche berücksichtigt Wortformen; die wörtliche Alternative findet auch „rote alte Fenster“. |
 | `Fenster OR Türen` | Mindestens einer der Begriffe kommt vor. |
-| `Fenster -Asbest` | Fenster kommen vor; Asbest wird ausgeschlossen. |
-| `"Fenster ausbauen" OR Fassade -Asbest` | Entweder passt die Phrase, oder Fassade kommt ohne Asbest vor. |
+| `Stahl -Beton` | Der Suchoperator findet Stahl ohne Beton. Die wörtliche Alternative findet auch Dokumente mit beiden Wörtern. |
 
 Dateinamentreffer erhalten ein höheres Gewicht. Im Dokumenttext werden nahe
 beieinanderliegende Suchwörter bevorzugt; häufige Wiederholungen erhöhen die
@@ -115,12 +117,20 @@ Die Suchsyntax orientiert sich an
 Ein Vergleich mit acht Beispieldateien und 28 Suchanfragen hat die frühere
 Abfrage unter PostgreSQL 18.6 in PGlite nachgestellt. Bei 16 Abfragen stimmten
 die Treffer überein, bei 14 auch ihre Reihenfolge. Beide Suchen fanden deutsche
-und englische Wortformen. Die Browsersuche fand bei `Fenst` zusätzlich einen
-Treffer in einer URL. Bei `"rote Fenster"` verlangte sie benachbarte Wörter.
-Die frühere Abfrage lieferte auch „rote alte Fenster“. Bei `Fenster -Asbest`
-schloss die Browsersuche ein Dokument mit „Asbestplatten“ aus, das in den
-früheren Ergebnissen enthalten war. Für reale Mandantenbestände und die Qualität
-der Ausschnitte steht der Vergleich noch aus.
+und englische Wortformen. Die damalige Browsersuche hatte eine zusätzliche
+Präfixregel. Ohne diese Regel liefern beide Suchen bei `Stah` keinen Treffer
+auf „Stahl“. Die Präfixsuche in den Stammdaten bleibt davon unberührt.
+Die Volltextsuche gleicht kombinierende Zeichen und Vollbreitenzeichen
+vor der Wortstammbildung nicht an. Wie in der Referenz findet die Suche
+nach `Übermaß` daher kein Wort, in dem das Ü als U mit nachfolgendem
+Trema gespeichert ist. Der Ausschnitt zeigt die Originalschreibweise.
+Bei gleichem Rang entscheidet wie in Master der Änderungszeitpunkt bis zur
+Mikrosekunde, danach die numerische Dateikennung in absteigender Reihenfolge.
+Der [Vergleich mit PostgreSQL](bedienlatenz.md#trefferreihenfolge-getrennt-prüfen)
+prüft Treffer und Reihenfolge, auch bei E-Mail-Adressen, gemischtsprachigen
+Abfragen und Bindestrichwörtern wie `Geländer-Anschluss`. Die vollständige
+Tokenisierung, Stoppwortregeln, Relevanzformel und Ausschnitte sind damit
+noch nicht als gleichwertig nachgewiesen.
 
 Die [Vergleichsfälle](../sortsys-webapp-v2/app/lib/search/documentQuery.test.mjs)
 prüfen Wortformen, Syntax, Bewertung und Ausschnitte. Der

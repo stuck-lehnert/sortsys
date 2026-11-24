@@ -1,5 +1,8 @@
 import { stemmer as germanStemmer } from "@orama/stemmers/german";
 import { stemmer as englishStemmer } from "@orama/stemmers/english";
+import stopWords from "../../../vendor/postgresql-stopwords/words.json";
+import { searchEmail, searchFilePath, searchHost, searchUrlPath } from "./addressLexemes";
+import { simpleLowercase } from "./simpleLowercase";
 
 export type TextRange = { start: number; end: number };
 export type DocumentExcerpt = { text: string; highlights: TextRange[] };
@@ -11,13 +14,32 @@ export type SearchDocument = Readonly<{
 }>;
 export type SearchMatch = DocumentMatch & { id: string };
 
+type RankedDocument = Pick<SearchMatch, "rank" | "id"> & { modifiedAtMicros: bigint };
+
+export function compareRankedDocuments(a: RankedDocument, b: RankedDocument) {
+  const relevance = b.rank - a.rank;
+  if (relevance) return relevance;
+  if (a.modifiedAtMicros !== b.modifiedAtMicros)
+    return a.modifiedAtMicros > b.modifiedAtMicros ? -1 : 1;
+
+  // Public file IDs are canonical base-32 integers. Compare digits without
+  // parsing 64-bit IDs or applying a locale-dependent string order.
+  const length = b.id.length - a.id.length;
+  if (length || a.id === b.id) return length;
+  return a.id < b.id ? 1 : -1;
+}
+
 export const MAX_CACHED_DOCUMENT_WORDS = 200_000;
-type Word = { plain: string; german: string; english: string };
-type Atom = {
-  lastWord: Word;
-  precedingWords: Word[];
+const WORD_CACHE_LIMIT = 1024;
+type Word = { plain: string; german: string | null; english: string | null };
+type Term = {
+  words: Word[];
   phrase: boolean;
   excluded: boolean;
+};
+type Atom = Omit<Term, "words"> & {
+  lastWord: string;
+  precedingWords: (string | null)[];
   clause: number;
 };
 type Hit = TextRange & { atom: number; position: number };
@@ -26,16 +48,42 @@ type ClauseHits = {
   counts: Map<number, number>;
   best: { quality: number; range: TextRange } | null;
 };
+const fileDictionaries = ["plain"] as const;
+const bodyDictionaries = ["german", "english"] as const;
+const germanStopWords = new Set(stopWords.german);
+const englishStopWords = new Set(stopWords.english);
 
-const wordPattern = () => /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu;
+const plainWords = /[\p{L}\p{N}][\p{L}\p{M}\p{N}]*/gu;
+const compoundPart = "\\p{L}[\\p{L}\\p{M}\\p{N}]*";
+const compoundWord = `(?<compound>${compoundPart}(?:-${compoundPart})+)`;
+const textWords = new RegExp(`${compoundWord}|${plainWords.source}`, "gu");
+const dottedPart = "[A-Za-z0-9][A-Za-z0-9_-]*";
+// The reference parser separates ordinary non-ASCII words at a dot, but
+// permits a leading letter-and-number token such as mörtel12 in a file name.
+const numberedWord = "(?=[\\p{L}\\p{M}]+\\d)[\\p{L}][\\p{L}\\p{M}\\d]*";
+const dottedWord = `(?:${dottedPart}|${numberedWord})(?:\\.${dottedPart})+`;
+const dottedWords = new RegExp(`${dottedWord}|${textWords.source}`, "gu");
+const addressWords = new RegExp(
+  [
+    searchEmail,
+    `(?:https?://)?(?<host>${searchHost})(?<path>${searchUrlPath})?`,
+    searchFilePath,
+    dottedWord,
+    textWords.source,
+  ].join("|"),
+  "giu",
+);
+
+function wordPattern(text: string) {
+  // File names with extensions don't need the heavier URL and path parser.
+  if (text.includes("/") || text.includes("@") || /\.[a-z]{2,}:\d/i.test(text))
+    return addressWords;
+
+  return /\.[\p{L}\p{N}]/u.test(text) ? dottedWords : textWords;
+}
 
 type Token = TextRange & { word: Word };
-type Vocabulary = {
-  plain: string[];
-  german: Set<string>;
-  english: Set<string>;
-};
-type CachedDocument = { tokens: Token[]; vocabulary?: Vocabulary };
+type CachedDocument = { tokens: Token[]; vocabulary?: Set<string> };
 type ReadToken = (
   word: Word,
   start: number,
@@ -43,27 +91,15 @@ type ReadToken = (
   position: number,
 ) => void;
 
-function vocabularyFor(tokens: Token[]): Vocabulary {
-  const plain = new Set<string>();
-  const german = new Set<string>();
-  const english = new Set<string>();
-  for (const { word } of tokens) {
-    plain.add(word.plain);
-    german.add(word.german);
-    english.add(word.english);
-  }
-  return { plain: [...plain].sort(), german, english };
-}
+function vocabularyFor(tokens: Token[]): Set<string> {
+  const vocabulary = new Set<string>();
 
-function hasPrefix(words: string[], prefix: string): boolean {
-  let start = 0;
-  let end = words.length;
-  while (start < end) {
-    const middle = Math.floor((start + end) / 2);
-    if (words[middle]! < prefix) start = middle + 1;
-    else end = middle;
+  for (const { word } of tokens) {
+    if (word.german !== null) vocabulary.add(word.german);
+    if (word.english !== null) vocabulary.add(word.english);
   }
-  return words[start]?.startsWith(prefix) ?? false;
+
+  return vocabulary;
 }
 
 export function createDocumentTokenizer(maxCachedWords = 0) {
@@ -75,18 +111,22 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
   function word(input: string): Word {
     const known = words.get(input);
     if (known) return known;
-    const plain = input.normalize("NFKC").toLowerCase();
-    // Identifiers and malformed giant words need no linguistic processing.
+
+    // PostgreSQL's text dictionaries receive the original code points. Do not
+    // fold combining characters or compatibility forms before stemming.
+    const scheme = input.indexOf("://");
+    const plain = simpleLowercase(scheme < 0 ? input : input.slice(scheme + 3));
+    // Identifiers and giant words need no linguistic processing.
     const result =
-      plain.length > 256
+      plain.length > 256 || plain.includes(".") || plain.includes("/")
         ? { plain, german: plain, english: plain }
         : {
             plain,
-            german: germanStemmer(plain),
-            english: englishStemmer(plain),
+            german: germanStopWords.has(plain) ? null : germanStemmer(plain),
+            english: englishStopWords.has(plain) ? null : englishStemmer(plain),
           };
     if (input.length <= 256 && plain.length <= 256) {
-      if (words.size >= 1024) words.delete(words.keys().next().value!);
+      if (words.size >= WORD_CACHE_LIMIT) words.delete(words.keys().next().value!);
       words.set(input, result);
     }
     return result;
@@ -95,7 +135,8 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
   function scan(text: string, read: ReadToken, remember: boolean): number {
     const cached = remember ? documents.get(text)?.tokens : undefined;
     if (cached) {
-      for (const [position, { word, start, end }] of cached.entries()) {
+      for (let position = 0; position < cached.length; position++) {
+        const { word, start, end } = cached[position]!;
         read(word, start, end, position);
       }
       return cached.length;
@@ -108,15 +149,41 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
       entry = [];
     }
     let position = 0;
-    for (const match of text.matchAll(wordPattern())) {
-      const token = word(match[0]);
-      const start = match.index;
-      const end = start + match[0].length;
+    function visit(value: string, start: number) {
+      const token = word(value);
+      const end = start + value.length;
       if (entry && position >= remainingWords) entry = null;
       entry?.push({ word: token, start, end });
       read(token, start, end, position);
       position++;
     }
+
+    // Each scan owns the cursor, including scans triggered by a reader.
+    const pattern = new RegExp(wordPattern(text));
+    let match: RegExpExecArray | null;
+    while ((match = pattern.exec(text))) {
+      const value = match[0];
+      const path = match.groups?.path;
+      if (!path || path === "/") {
+        visit(path ? value.slice(0, -1) : value, match.index);
+
+        if (match.groups?.compound) {
+          for (const part of value.matchAll(plainWords)) {
+            visit(part[0], match.index + part.index);
+          }
+        }
+        continue;
+      }
+
+      // The former vector stored an address, its host and its path at
+      // consecutive positions, without indexing the protocol separately.
+      const host = match.groups!.host!;
+      const pathStart = match.index + value.length - path.length;
+      visit(value, match.index);
+      visit(host, pathStart - host.length);
+      visit(path, pathStart);
+    }
+
     if (entry && position > 0) {
       documents.set(text, { tokens: entry });
       remainingWords -= position;
@@ -127,15 +194,12 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
 
   // Only a complete cached text can prove that a term is absent. Phrase
   // adjacency and ranking still require the exact positional matcher.
-  function mayContain(text: string, term: Word, phrase: boolean): boolean {
+  function mayContain(text: string, lexeme: string): boolean {
     const cached = documents.get(text);
     if (!cached) return true;
+
     const vocabulary = (cached.vocabulary ??= vocabularyFor(cached.tokens));
-    return (
-      vocabulary.german.has(term.german) ||
-      vocabulary.english.has(term.english) ||
-      (!phrase && hasPrefix(vocabulary.plain, term.plain))
-    );
+    return vocabulary.has(lexeme);
   }
 
   function forget(texts: Iterable<string>) {
@@ -149,7 +213,7 @@ export function createDocumentTokenizer(maxCachedWords = 0) {
     words.clear();
   }
 
-  return { word, scan, mayContain, forget };
+  return { scan, mayContain, forget };
 }
 
 /** Search semantics belong to the local query provider. The UI must not filter
@@ -159,63 +223,167 @@ export function createDocumentMatcher(
   tokenizer = createDocumentTokenizer(),
 ) {
   if (query.length > 1000) throw new RangeError("Document query is too long");
-  const atoms: Atom[] = [];
-  const clauses: number[][] = [[]];
-  for (const match of query.matchAll(/-?"[^"]*(?:"|$)|[^\s"]+/gu)) {
-    const input = match[0];
-    if (input.toUpperCase() === "OR") {
-      if (clauses.at(-1)!.length) clauses.push([]);
-      continue;
+
+  const branches: Term[][] = [[]];
+  let minusCount = 0;
+  // Outside quotes these characters separate operands without adding operators.
+  for (const [input] of query.matchAll(/"[^"]*(?:"|$)|[^\s"()!&]+/gu)) {
+    let operand = input;
+    if (!minusCount && /^or(?![\p{L}\p{M}\p{N}_-])/iu.test(operand)) {
+      if (branches.at(-1)!.length) branches.push([]);
+      operand = operand.slice(2);
     }
-    const excluded = input.startsWith("-");
-    const text = excluded ? input.slice(1) : input;
+
+    const leadingMinus = /^-+/.exec(operand)?.[0].length ?? 0;
+    minusCount += leadingMinus;
+
+    const text = operand.slice(leadingMinus);
     const phrase = text.startsWith('"');
-    const words = [...text.matchAll(wordPattern())].map((value) =>
-      tokenizer.word(value[0]),
-    );
-    const groups = phrase ? [words] : words.map((value) => [value]);
-    for (const group of groups) {
-      const lastWord = group.pop();
-      if (!lastWord) continue;
-      clauses.at(-1)!.push(atoms.length);
+    const words: Word[] = [];
+    tokenizer.scan(text, (word) => words.push(word), false);
+
+    if (!words.length) continue;
+
+    // A single unquoted operand can also produce several positions, e.g.
+    // the compound and its components or an address, its host and path.
+    branches.at(-1)!.push({
+      words,
+      phrase: phrase || words.length > 1,
+      excluded: minusCount % 2 === 1,
+    });
+    minusCount = 0;
+  }
+  if (!branches.at(-1)!.length) branches.pop();
+
+  const atoms: Atom[] = [];
+  const clauses: { branch: number; atomIds: number[] }[] = [];
+  function addClause(branch: number, terms: Term[], dictionary: keyof Word) {
+    const atomIds: number[] = [];
+    for (const { words, phrase, excluded } of terms) {
+      const positions = words.map((word) => word[dictionary]);
+      const first = positions.findIndex((lexeme) => lexeme !== null);
+      if (first === -1) continue;
+
+      // Stop words at the edges do not anchor a phrase. Those between two
+      // searchable lexemes still occupy a position in the phrase.
+      let last = positions.length - 1;
+      while (positions[last] === null) last--;
+
+      const precedingWords = positions.slice(first, last);
+      const lastWord = positions[last]!;
+      const id = atoms.length;
+
       atoms.push({
+        precedingWords,
         lastWord,
-        precedingWords: group,
         phrase,
         excluded,
-        clause: clauses.length - 1,
+        clause: clauses.length,
       });
+      atomIds.push(id);
+    }
+
+    if (atomIds.length) clauses.push({ branch, atomIds });
+  }
+
+  // A branch must match one complete query dictionary. The indexed lexemes
+  // available to each query are the union of both body dictionaries.
+  for (const [branch, terms] of branches.entries()) {
+    addClause(branch, terms, "german");
+    const differs = terms.some(({ words }) =>
+      words.some((word) => word.german !== word.english),
+    );
+    if (differs) {
+      addClause(branch, terms, "english");
     }
   }
-  if (!clauses.at(-1)!.length) clauses.pop();
+
+  // Master also accepts the conjunction produced by plainto_tsquery('simple').
+  // This alternative uses literal terms, with no phrase or exclusion syntax.
+  // OR itself is a term. The body participates through its stem dictionaries,
+  // so compare these terms to indexed lexemes, not to the original text.
+  const plainTerms = new Map<string, Word>();
+  tokenizer.scan(query, (term) => plainTerms.set(term.plain, term), false);
+  const literalBranch = branches.length;
+  if (plainTerms.size) {
+    const terms = Array.from(plainTerms.values(), (word) => ({
+      words: [word],
+      phrase: false,
+      excluded: false,
+    }));
+    addClause(literalBranch, terms, "plain");
+  }
+
   const precedingWordLimit = Math.max(
     0,
     ...atoms.map((atom) => atom.precedingWords.length),
   );
-
-  function matches(token: Word, term: Word, phrase: boolean): boolean {
-    if (token.plain === term.plain) return true;
-    if (!phrase && token.plain.startsWith(term.plain)) return true;
-    return token.german === term.german || token.english === term.english;
+  const atomsByLastWord = new Map<string, number[]>();
+  for (const [index, { lastWord }] of atoms.entries()) {
+    const indexes = atomsByLastWord.get(lastWord);
+    if (indexes) indexes.push(index);
+    else atomsByLastWord.set(lastWord, [index]);
   }
 
-  function scan(text: string, hit: (value: Hit) => void, remember = false): number {
+  const noCandidates: readonly number[] = [];
+  const combinedCandidates = new Map<Word, readonly number[]>();
+
+  function candidates(current: Word, fileName: boolean): readonly number[] {
+    if (fileName) return atomsByLastWord.get(current.plain) ?? noCandidates;
+
+    const german =
+      current.german === null ? undefined : atomsByLastWord.get(current.german);
+    if (current.english === current.german) return german ?? noCandidates;
+
+    const english =
+      current.english === null ? undefined : atomsByLastWord.get(current.english);
+    if (!german || !english) return german ?? english ?? noCandidates;
+
+    // Only a token that hits two different lexemes needs a merged list.
+    // Keep the original atom order for equal-position excerpt windows.
+    const cached = combinedCandidates.get(current);
+    if (cached) return cached;
+
+    const combined = [...german, ...english].sort((a, b) => a - b);
+    if (combinedCandidates.size < WORD_CACHE_LIMIT) {
+      combinedCandidates.set(current, combined);
+    }
+    return combined;
+  }
+
+  function scan(
+    text: string,
+    hit: (value: Hit) => void,
+    remember = false,
+    fileName = false,
+  ): number {
     const preceding: { word: Word; start: number }[] = [];
-    function visitToken(current: Word, tokenStart: number, end: number, position: number) {
-      for (let index = 0; index < atoms.length; index++) {
+    const dictionaries = fileName ? fileDictionaries : bodyDictionaries;
+
+    function visitToken(
+      current: Word,
+      tokenStart: number,
+      end: number,
+      position: number,
+    ) {
+      for (const index of candidates(current, fileName)) {
         const atom = atoms[index]!;
-        if (!matches(current, atom.lastWord, atom.phrase)) continue;
         let start = tokenStart;
         if (atom.precedingWords.length) {
           const first = preceding.length - atom.precedingWords.length;
-          if (
-            first < 0 ||
-            !atom.precedingWords.every((term, offset) =>
-              matches(preceding[first + offset]!.word, term, true),
-            )
-          ) {
-            continue;
-          }
+          if (first < 0) continue;
+
+          const adjacent = dictionaries.some(
+            (dictionary) =>
+              current[dictionary] === atom.lastWord &&
+              atom.precedingWords.every(
+                (lexeme, offset) =>
+                  lexeme === null ||
+                  preceding[first + offset]!.word[dictionary] === lexeme,
+              ),
+          );
+          if (!adjacent) continue;
+
           start = preceding[first]!.start;
         }
         hit({ atom: index, position, start, end });
@@ -284,12 +452,12 @@ export function createDocumentMatcher(
         counts: new Map(),
         best: null,
       }));
-      scan(name, (hit) => names[hit.atom]!++);
-      const hasCandidate = clauses.some((clause) =>
-        clause.every((index) => {
+      scan(name, (hit) => names[hit.atom]!++, false, true);
+      const hasCandidate = clauses.some(({ atomIds }) =>
+        atomIds.every((index) => {
           const atom = atoms[index]!;
           if (atom.excluded || names[index]! > 0) return true;
-          return !!text && tokenizer.mayContain(text, atom.lastWord, atom.phrase);
+          return !!text && tokenizer.mayContain(text, atom.lastWord);
         }),
       );
       if (!hasCandidate) return null;
@@ -299,6 +467,11 @@ export function createDocumentMatcher(
         const atom = atoms[hit.atom]!;
         if (atom.excluded) return;
         const clauseHits = windows[atom.clause]!;
+
+        // One atom achieves its best possible coverage at the first hit.
+        // Keep counting its frequency without maintaining a sliding window.
+        if (clauseHits.best && clauses[atom.clause]!.atomIds.length === 1) return;
+
         clauseHits.recent.push(hit);
         const previousCount = clauseHits.counts.get(hit.atom) ?? 0;
         clauseHits.counts.set(hit.atom, previousCount + 1);
@@ -323,16 +496,18 @@ export function createDocumentMatcher(
       }
       const length = scan(text ?? "", recordBodyHit, cacheText);
       const lengthPenalty = 1 + Math.log1p(length) / 12;
-      let rank = -1;
+      const branchScores = branches.map(() => 0);
+      let literalRank = 0;
+      let winningScore = -1;
       let winningClause = 0;
-      for (const [clauseIndex, clause] of clauses.entries()) {
-        const satisfied = clause.every((index) => {
+      for (const [clauseIndex, { branch, atomIds }] of clauses.entries()) {
+        const satisfied = atomIds.every((index) => {
           const found = names[index]! + body[index]! > 0;
           return atoms[index]!.excluded ? !found : found;
         });
         if (!satisfied) continue;
         let score = 0;
-        for (const index of clause) {
+        for (const index of atomIds) {
           if (atoms[index]!.excluded) continue;
           const frequency =
             Math.log1p(Math.min(8, names[index]!)) * 4 +
@@ -343,15 +518,22 @@ export function createDocumentMatcher(
         score /= lengthPenalty;
         const best = windows[clauseIndex]!.best;
         if (best) score += best.quality / 1000;
-        if (score > rank) {
-          rank = score;
+        if (branch === literalBranch) literalRank = score;
+        else branchScores[branch] = Math.max(branchScores[branch]!, score);
+        if (score > winningScore) {
+          winningScore = score;
           winningClause = clauseIndex;
         }
       }
-      if (rank < 0) return null;
+
+      if (winningScore < 0) return null;
+
+      const rank = branchScores.reduce((sum, score) => sum + score, 0);
       const best = windows[winningClause]!.best;
       return {
-        rank,
+        // Do not count the literal alternative a second time when it is
+        // just another spelling of the same match.
+        rank: Math.max(rank, literalRank),
         excerpt: text && best ? excerpt(text, best.range, winningClause) : null,
       };
     },

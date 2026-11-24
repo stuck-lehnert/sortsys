@@ -51,6 +51,18 @@ const entries = [
     id: "Text",
     fields: ["61", "Arbeitsbericht", "<b>Fuge &amp; Wand</b> D'Artagnan"],
   },
+  {
+    id: "Griechisch",
+    fields: ["62", "Montage ΟΣ", ""],
+  },
+  {
+    id: "Schluss-Sigma",
+    fields: ["63", "Montage ος", ""],
+  },
+  {
+    id: "Türkisch",
+    fields: ["64", "İstanbul", ""],
+  },
 ];
 
 const cases = [
@@ -96,6 +108,11 @@ const cases = [
   ["Fuge / Wand", ["Text"]],
   ["Fuge---Wand", ["Text"]],
   ["D'Art", ["Text"]],
+  ["οσ", ["Griechisch"]],
+  ["ΟΣ", ["Griechisch"]],
+  ["ος", ["Schluss-Sigma"]],
+  ["istan", ["Türkisch"]],
+  ["İst", ["Türkisch"]],
   ["amp", []],
   ["Fenster ---", []],
   ["---", []],
@@ -108,6 +125,29 @@ test.each(cases)("matches the reference catalogue for %j", (query, expected) => 
   const hits = entries.filter(({ fields }) => matches(fields));
   expect(hits.map(({ id }) => id)).toEqual(expected);
   expect(searchCatalogue(query).map(({ id }) => id)).toEqual(expected);
+});
+
+test("addresses are tokenized before Unicode case normalization", () => {
+  const ascii = ["istanbul@example.org"];
+  const dottedI = ["İstanbul@example.org"];
+  const kelvin = ["Kontakt@example.org"];
+
+  expect(createPrefixMatcher("istanbul@example.org")(ascii)).toBe(true);
+  expect(createPrefixMatcher("istanbul@example.org")(dottedI)).toBe(false);
+  expect(createPrefixMatcher("İstanbul@example.org")(dottedI)).toBe(true);
+  expect(createPrefixMatcher("İstanbul@example.org")(ascii)).toBe(false);
+  expect(createPrefixMatcher("example.org")(ascii)).toBe(false);
+  expect(createPrefixMatcher("example.org")(dottedI)).toBe(true);
+  expect(createPrefixMatcher("kontakt")(kelvin)).toBe(true);
+  expect(createPrefixMatcher("kontakt@example.org")(kelvin)).toBe(false);
+});
+
+test("path prefixes keep the slash after a separator", () => {
+  const matches = createPrefixMatcher("/planung/ha");
+
+  expect(matches(["Vorgabe=-/planung/halle.dwg."])).toBe(true);
+  expect(matches(["Vorgabe planung/halle.dwg."])).toBe(false);
+  expect(matches(["/vorentwurf/planung/halle.dwg."])).toBe(false);
 });
 
 test("returns the first eligible matches, including terms from descriptions", () => {
