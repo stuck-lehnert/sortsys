@@ -1,5 +1,4 @@
 import { uiText } from "~/lib/i18n";
-import { OperationalTag } from "@sortsys/react-components";
 import { TrackingTable } from "~/components/TrackingTable";
 import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
@@ -8,10 +7,10 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { useStringUrlParam } from "~/hooks/useUrlParam";
 import { client } from "~/lib/client";
 import { toolTitle, userFullName } from "~/lib/format";
-import { Icons } from "~/lib/icons";
 import { SmallProjectTile, SmallToolTile, SmallUserTile } from "~/lib/tiles";
 import { TableExportActions } from "~/components/TableExportActions";
 import { MyHeader } from "~/components/MyHeader";
+import { ListFilterActions } from "~/components/ListFilterActions";
 
 export function meta() {
     return [
@@ -199,31 +198,16 @@ export default function ToolTrackingsPage() {
         title={uiText("Buchungshistorie")}
         actions={
           <div className="list-page-actions">
-            {!hasFilter ? (
-              <OperationalTag
-                renderIcon={Icons.Filter}
-                text={uiText("Filter")}
-                onClick={showFilterModal}
-              />
-            ) : (
-              <>
-                <OperationalTag
-                  renderIcon={Icons.FilterEdit}
-                  text={uiText("Filter ändern")}
-                  onClick={showFilterModal}
-                />
-                <OperationalTag
-                  renderIcon={Icons.FilterRemove}
-                  text={uiText("Filter aus")}
-                  onClick={() => {
-                    setProjectId(null);
-                    setAuthorId(null);
-                    setResponsibleId(null);
-                    setToolId(null);
-                  }}
-                />
-              </>
-            )}
+            <ListFilterActions
+              active={hasFilter}
+              onEdit={showFilterModal}
+              onClear={() => {
+                setProjectId(null);
+                setAuthorId(null);
+                setResponsibleId(null);
+                setToolId(null);
+              }}
+            />
 
             <TableExportActions
               title={uiText("Buchungshistorie")}

@@ -10,11 +10,13 @@ import { Icons } from "~/lib/icons";
 import { useBoolUrlParam, useStringUrlParam } from "~/hooks/useUrlParam";
 import { useMyModals } from "~/hooks/useMyModals";
 import { MyForm } from "~/components/MyForm";
+import { InventoryFacetField } from "~/components/InventoryFacetField";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
-import { SmallTile, SmallToolTile, ToolTile } from "~/lib/tiles";
+import { SmallToolTile, ToolTile } from "~/lib/tiles";
 import { useMemo } from "react";
 import { TableExportActions } from "~/components/TableExportActions";
 import { MyHeader } from "~/components/MyHeader";
+import { ListFilterActions } from "~/components/ListFilterActions";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -64,45 +66,16 @@ export default function ToolsPage() {
             })}
           />
 
-          <MyForm.MultiSelect
+          <InventoryFacetField
+            catalog="tools"
             name="brand"
             labelText={uiText("Marke")}
-            maxSelectedItems={1}
-            prepare={async () => {
-              const [data, err] = await client.query("tools.brands", undefined);
-              if (err) throw err;
-              return data ?? [];
-            }}
-            getOptions={({ query, init }) => {
-              const normalized = query.toLowerCase();
-              return init
-                .filter((item) => item.toLowerCase().includes(normalized))
-                .map((item) => ({ id: item }));
-            }}
-            renderItem={({ item }) => item.id}
-            renderTile={(item) => <SmallTile title={item.id} />}
           />
 
-          <MyForm.MultiSelect
+          <InventoryFacetField
+            catalog="tools"
             name="category"
             labelText={uiText("Kategorie")}
-            maxSelectedItems={1}
-            prepare={async () => {
-              const [data, err] = await client.query(
-                "tools.categories",
-                undefined,
-              );
-              if (err) throw err;
-              return data ?? [];
-            }}
-            getOptions={({ query, init }) => {
-              const normalized = query.toLowerCase();
-              return init
-                .filter((item) => item.toLowerCase().includes(normalized))
-                .map((item) => ({ id: item }));
-            }}
-            renderItem={({ item }) => item.id}
-            renderTile={(item) => <SmallTile title={item.id} />}
           />
 
           <NotifyLoaded
@@ -156,32 +129,15 @@ export default function ToolsPage() {
               />
             )}
 
-            {!hasFilter ? (
-              <>
-                <OperationalTag
-                  renderIcon={Icons.Filter}
-                  text={uiText("Filter")}
-                  onClick={showFilterModal}
-                />
-              </>
-            ) : (
-              <>
-                <OperationalTag
-                  renderIcon={Icons.FilterEdit}
-                  text={uiText("Filter ändern")}
-                  onClick={showFilterModal}
-                />
-                <OperationalTag
-                  renderIcon={Icons.FilterRemove}
-                  text={uiText("Filter aus")}
-                  onClick={() => {
-                    setStatus(null);
-                    setBrand(null);
-                    setCategory(null);
-                  }}
-                />
-              </>
-            )}
+            <ListFilterActions
+              active={hasFilter}
+              onEdit={showFilterModal}
+              onClear={() => {
+                setStatus(null);
+                setBrand(null);
+                setCategory(null);
+              }}
+            />
 
             <TableExportActions
               title={uiText("Werkzeuge")}

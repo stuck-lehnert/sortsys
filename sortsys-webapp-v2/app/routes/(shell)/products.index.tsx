@@ -1,21 +1,20 @@
 import { uiText } from "~/lib/i18n";
-import { OperationalTag } from "@sortsys/react-components";
 import type { Route } from "./+types";
 import { useNavigate } from "react-router";
 import { useMemo } from "react";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { MyTable } from "~/components/MyTable";
-import { ProductTile, SmallProductTile, SmallTile } from "~/lib/tiles";
+import { ProductTile, SmallProductTile } from "~/lib/tiles";
 import { useMyModals } from "~/hooks/useMyModals";
-import { MyForm } from "~/components/MyForm";
+import { InventoryFacetField } from "~/components/InventoryFacetField";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
-import { Icons } from "~/lib/icons";
 import { useStringUrlParam } from "~/hooks/useUrlParam";
 import { formatCurrency } from "~/lib/format";
 import { TableExportActions } from "~/components/TableExportActions";
 import { EXCEL_CURRENCY_NUM_FMT } from "~/lib/xlsx";
 import { MyHeader } from "~/components/MyHeader";
+import { ListFilterActions } from "~/components/ListFilterActions";
 
 export function meta({}: Route.MetaArgs) {
   return [
@@ -45,48 +44,16 @@ export default function ProductsPage() {
     modals.showForm({
       content: ({ context }) => (
         <>
-          <MyForm.MultiSelect
+          <InventoryFacetField
+            catalog="products"
             name="brand"
             labelText={uiText("Hersteller")}
-            maxSelectedItems={1}
-            prepare={async () => {
-              const [data, err] = await client.query(
-                "products.brands.list",
-                undefined,
-              );
-              if (err) throw err;
-              return data ?? [];
-            }}
-            getOptions={({ query, init }) => {
-              const normalized = query.toLowerCase();
-              return init
-                .filter((item) => item.toLowerCase().includes(normalized))
-                .map((item) => ({ id: item }));
-            }}
-            renderItem={({ item }) => item.id}
-            renderTile={(item) => <SmallTile title={item.id} />}
           />
 
-          <MyForm.MultiSelect
+          <InventoryFacetField
+            catalog="products"
             name="category"
             labelText={uiText("Kategorie")}
-            maxSelectedItems={1}
-            prepare={async () => {
-              const [data, err] = await client.query(
-                "products.categories.list",
-                undefined,
-              );
-              if (err) throw err;
-              return data ?? [];
-            }}
-            getOptions={({ query, init }) => {
-              const normalized = query.toLowerCase();
-              return init
-                .filter((item) => item.toLowerCase().includes(normalized))
-                .map((item) => ({ id: item }));
-            }}
-            renderItem={({ item }) => item.id}
-            renderTile={(item) => <SmallTile title={item.id} />}
           />
 
           <NotifyLoaded
@@ -141,31 +108,14 @@ export default function ProductsPage() {
         title={uiText("Produkte")}
         actions={
           <div className="list-page-actions">
-            {!hasFilter ? (
-              <>
-                <OperationalTag
-                  renderIcon={Icons.Filter}
-                  text={uiText("Filter")}
-                  onClick={showFilterModal}
-                />
-              </>
-            ) : (
-              <>
-                <OperationalTag
-                  renderIcon={Icons.FilterEdit}
-                  text={uiText("Filter ändern")}
-                  onClick={showFilterModal}
-                />
-                <OperationalTag
-                  renderIcon={Icons.FilterRemove}
-                  text={uiText("Filter aus")}
-                  onClick={() => {
-                    setBrand(null);
-                    setCategory(null);
-                  }}
-                />
-              </>
-            )}
+            <ListFilterActions
+              active={hasFilter}
+              onEdit={showFilterModal}
+              onClear={() => {
+                setBrand(null);
+                setCategory(null);
+              }}
+            />
 
             <TableExportActions
               title={uiText("Produkte")}
