@@ -1,5 +1,3 @@
-type ReadInput = { path: string; input: unknown };
-
 // Share ordinary data inputs, including bigint pagination values. Dates,
 // custom objects, sparse arrays and accessors keep the direct path rather than
 // risk matching an input with different validation semantics.
@@ -73,32 +71,25 @@ export function pendingReads<T>(
       }
     },
     async get(path: string, input: unknown): Promise<T> {
-      let key: string | undefined;
-      let request: ReadInput = { path, input };
-      if (input === undefined || shareable(input)) {
-        const encoded = JSON.stringify([
-          path,
-          input === undefined,
-          keyValue(input),
-        ]);
-        if (encoded.length <= 65_536) {
-          key = encoded;
-          request = { path, input: structuredClone(input) };
-        }
+      if (input !== undefined && !shareable(input)) {
+        return copy(await read(path, input));
       }
-      let work = key === undefined ? undefined : pending.get(key)?.work;
-      if (!work) {
-        work = read(request.path, request.input);
-        if (key !== undefined && pending.size < 256) {
-          const entryKey = key;
-          const entry = work.finally(() => {
-            if (pending.get(entryKey)?.work === entry) pending.delete(entryKey);
-          });
-          pending.set(entryKey, { path: request.path, work: entry });
-          work = entry;
-        }
-      }
-      return copy(await work);
+
+      const key = JSON.stringify([path, input === undefined, keyValue(input)]);
+      if (key.length > 65_536) return copy(await read(path, input));
+
+      const existing = pending.get(key);
+      if (existing) return copy(await existing.work);
+
+      const work = read(path, structuredClone(input));
+      if (pending.size >= 256) return copy(await work);
+
+      const entry = work.finally(() => {
+        if (pending.get(key)?.work === entry) pending.delete(key);
+      });
+      pending.set(key, { path, work: entry });
+
+      return copy(await entry);
     },
   };
 }

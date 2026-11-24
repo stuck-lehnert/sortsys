@@ -63,8 +63,7 @@ import {
 } from "./deliveryNoteData";
 import { createContentAccess } from "./menuAccess";
 import { announceDataChanges, listenDataChanges } from "./runtime/changes";
-import { latestQuery } from "./runtime/latestQuery";
-import { pendingReads } from "./runtime/pendingReads";
+import { latestQuery, pendingReads } from "@sortsys/zerotrust";
 import {
   invalidateReadableAreas,
   setReadableAreasConnection,

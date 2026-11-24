@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mapConcurrent } from "./concurrentReads";
+import { mapConcurrent } from "../src";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;

@@ -671,6 +671,21 @@ wenn unveröffentlichte Schlüssel herausgefiltert wurden. Ein `AbortSignal`
 verhindert auch, dass eine verspätete Antwort noch ausgegeben wird. Es gibt kein
 Vorabladen; beim Verlassen des Iterators werden keine weiteren Seiten angefragt.
 
+Für eine laufende Ansicht fasst `latestQuery(read, receive, failed)` mehrere
+`refresh()`-Aufrufe zusammen. Läuft bereits ein Lesevorgang, wird dessen Ergebnis
+verworfen und einmal neu gelesen. `close()` verhindert weitere Rückmeldungen,
+bricht aber keinen laufenden Transport ab. Sitzungsprüfung und Abbruchsignal
+bleiben beim Adapter.
+
+`createCursorHistory(firstPage, pageSize, keyOf?)` hält die bereits geladenen
+Zeilen einer Ansicht. Der erste Datensatz pro `keyOf` bleibt erhalten; ohne
+Angabe ist das die Kennung `id`. Für die nächste Anfrage zählt die letzte
+Kennung der gelieferten Seite, auch wenn diese Zeile schon angezeigt wird.
+Eine kürzere Seite beendet die Abfrage. Schlägt ein Abruf fehl, bleiben Zeilen
+und Cursor für einen erneuten Versuch erhalten. Für einen neuen Anfangsstand
+oder beim Sitzungswechsel wird eine neue Instanz verwendet. Der Lade-Callback
+muss Berechtigungen und Daten prüfen; der Helfer prüft keine Signaturen.
+
 Rusts `pagination::SnapshotPage::from_lookahead` übernimmt höchstens eine
 zusätzliche Zeile aus der Datenbankabfrage. Ihr Vorhandensein erzeugt einen
 Fortsetzungscursor für die letzte tatsächlich ausgelieferte Zeile. Der zusätzliche
@@ -701,6 +716,23 @@ Konfiguration wird beim Erzeugen des Codecs kopiert. Die Kapazitätsgrenzen
 ersetzen keine Prüfung der tatsächlichen Datensatz- und Transportgrößen.
 Insbesondere bleibt die vollständige Vorbereitung und Veröffentlichung auf den
 gesamten Bestand bezogen; unvollständige Bestände werden abgelehnt.
+
+## Unabhängige Arbeit begrenzen
+
+`mapConcurrent(einträge, grenze, verarbeiten)` startet höchstens `grenze`
+Aufgaben gleichzeitig und liefert die Ergebnisse in Eingabereihenfolge.
+Beim ersten Fehler startet die Funktion keine weiteren Aufgaben. Sie wartet
+auf bereits gestartete Aufgaben, bevor sie den Fehler weitergibt. Dadurch
+können gemeinsam genutzte Ressourcen anschließend sicher geschlossen werden.
+Die Funktion prüft keine Rechte und macht Schreibvorgänge nicht atomar.
+
+`pendingReads(lesen, kopieren)` bündelt gleichzeitig laufende Leseaufrufe mit
+demselben Pfad und denselben einfachen Eingabedaten. Eine abgeschlossene
+Antwort bleibt nicht gespeichert. Jeder Aufrufer erhält das Ergebnis über
+`kopieren`. Bei einem Konto- oder Datenwechsel trennt `clear()` die laufenden
+Aufrufe von neuen Anfragen; die Anwendung bleibt für die Gültigkeitsprüfung
+und den Abbruch bereits laufender Aufrufe zuständig. `clear(prüfen)` kann die
+Invalidierung auf einzelne Pfade beschränken.
 
 ## Größere signierte Pakete übertragen
 

@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { pendingReads } from "./pendingReads";
+import { pendingReads } from "../src/core/pendingReads";
 
 function deferred() {
   let resolve;

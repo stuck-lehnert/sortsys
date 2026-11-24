@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { latestQuery } from "./latestQuery";
+import { latestQuery } from "../src";
 
 function heldRead() {
-  let resolve;
-  let reject;
-  const promise = new Promise((done, fail) => {
+  let resolve!: (value: string) => void;
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<string>((done, fail) => {
     resolve = done;
     reject = fail;
   });
@@ -13,9 +13,9 @@ function heldRead() {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("synchronous refreshes share a read and repeated invalidations queue one fresh result", async () => {
-  const requests = [];
-  const results = [];
-  const errors = [];
+  const requests: ReturnType<typeof heldRead>[] = [];
+  const results: string[] = [];
+  const errors: unknown[] = [];
   const query = latestQuery(
     () => {
       const request = heldRead();
@@ -30,11 +30,11 @@ test("synchronous refreshes share a read and repeated invalidations queue one fr
   await tick();
   expect(requests).toHaveLength(1);
   for (let index = 0; index < 100; index++) query.refresh();
-  requests[0].resolve("superseded response");
+  requests[0]!.resolve("superseded response");
   await tick();
   expect(requests).toHaveLength(2);
   expect(results).toEqual([]);
-  requests[1].resolve("current response");
+  requests[1]!.resolve("current response");
   await tick();
   expect(results).toEqual(["current response"]);
   expect(errors).toEqual([]);
@@ -42,9 +42,9 @@ test("synchronous refreshes share a read and repeated invalidations queue one fr
 });
 
 test("a superseded failure is discarded and a current failure permits a later retry", async () => {
-  const requests = [];
-  const results = [];
-  const errors = [];
+  const requests: ReturnType<typeof heldRead>[] = [];
+  const results: string[] = [];
+  const errors: unknown[] = [];
   const query = latestQuery(
     () => {
       const request = heldRead();
@@ -57,23 +57,23 @@ test("a superseded failure is discarded and a current failure permits a later re
   query.refresh();
   await tick();
   query.refresh();
-  requests[0].reject(new Error("obsolete failure"));
+  requests[0]!.reject(new Error("obsolete failure"));
   await tick();
   expect(errors).toEqual([]);
   const failure = new Error("current failure");
-  requests[1].reject(failure);
+  requests[1]!.reject(failure);
   await tick();
   expect(errors).toEqual([failure]);
   query.refresh();
   await tick();
-  requests[2].resolve("retry succeeded");
+  requests[2]!.resolve("retry succeeded");
   await tick();
   expect(results).toEqual(["retry succeeded"]);
   query.close();
 });
 
 test("closing before or during a read prevents later publication and queued work", async () => {
-  const received = [];
+  const received: unknown[] = [];
   const held = heldRead();
   let reads = 0;
   const read = () => {

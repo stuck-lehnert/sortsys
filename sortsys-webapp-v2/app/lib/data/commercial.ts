@@ -105,7 +105,7 @@ import {
 } from "./protectedObjects";
 import type { BusinessRow } from "./rowCodec";
 import { mapConcurrent } from "./runtime/concurrentReads";
-import { pendingReads } from "./runtime/pendingReads";
+import { pendingReads } from "@sortsys/zerotrust";
 import { listenDataChanges } from "./runtime/changes";
 import { commercialRow as row } from "./commercialRows";
 import { commercialRequest, workflowReceiptRequest } from "./commercialModel";
