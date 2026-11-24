@@ -8387,3 +8387,93 @@ test("editing the document designation updates the workflow heading and overview
     0,
   );
 });
+
+test("tool transfer groups share links but only open requests can be decided", async () => {
+  api.setRoles([]);
+  const date = new Date("2026-11-17T08:00:00Z");
+  const request = {
+    toolId: "j",
+    toolTrackingId: "m",
+    projectId: "c",
+    createdByUserId: "f",
+    responsibleUserId: "f",
+    createdAt: date,
+    notes: null,
+    toolUsageCostPerDay: null,
+  };
+  api.respond("tools.get", {
+    id: request.toolId,
+    customId: 11,
+    brand: "Hilti",
+    category: "Bohrhammer",
+    label: "TE 60 ATC AVR",
+  });
+  api.respond("users.get", ({ id }) => ({
+    id,
+    firstName: id === "d" ? "Dana" : "Frank",
+    lastName: "Beispiel",
+  }));
+  api.respond("projects.get", { id: request.projectId, title: "Werkstatt Süd" });
+  api.respond("tools.trackings.transfers.list", [
+    { ...request, id: "k", status: "open", transferToUserId: "d" },
+    { ...request, id: "l", status: "open", transferToUserId: "f" },
+    { ...request, id: "n", status: "accepted", transferToUserId: "d" },
+    { ...request, id: "o", status: "denied", transferToUserId: "d" },
+  ]);
+  const decisions = [];
+  api.respond("tools.trackings.transfers.accept", (input) => {
+    decisions.push(input);
+    return true;
+  });
+
+  await openApplication("/tools/transferRequests", "de");
+  const openRows = page.getByRole("row").filter({ hasText: "Werkstatt Süd" });
+  const assigned = openRows.filter({ hasText: "Dana Beispiel" });
+  const other = openRows.filter({ hasNotText: "Dana Beispiel" });
+  await assigned.getByRole("link", { name: /Hilti/ }).waitFor();
+  assert.equal(await other.getByRole("button", { name: "Annehmen" }).isDisabled(), true);
+  assert.equal(await other.getByRole("button", { name: "Ablehnen" }).isDisabled(), true);
+  const accepted = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.endsWith("/tools.trackings.transfers.accept"),
+  );
+  await assigned.getByRole("button", { name: "Annehmen" }).click();
+  await accepted;
+  assert.deepEqual(decisions, [{ id: "k" }]);
+
+  const deny = assigned.getByRole("button", { name: "Ablehnen" });
+  const denyPath = "tools.trackings.transfers.deny";
+  api.fail(denyPath, "Die Anfrage wurde inzwischen geändert.");
+  await deny.click();
+  const failure = page.getByText("Umbuchung konnte nicht verarbeitet werden", { exact: true });
+  await failure.waitFor();
+  assert.equal(await deny.isEnabled(), true);
+  assert.deepEqual(api.requests.filter(({ path }) => path === denyPath), [
+    { path: denyPath, input: { id: "k" } },
+  ]);
+
+  api.recover(denyPath);
+  api.respond(denyPath, (input) => {
+    decisions.push(input);
+    return true;
+  });
+  const denied = page.waitForResponse((response) =>
+    new URL(response.url()).pathname.endsWith(`/${denyPath}`),
+  );
+  await deny.click();
+  await denied;
+  await failure.waitFor({ state: "hidden" });
+  assert.deepEqual(decisions, [{ id: "k" }, { id: "k" }]);
+
+  for (const title of ["Genehmigt", "Abgelehnt"]) {
+    const trigger = page.getByRole("button", { name: title, exact: true });
+    assert.equal(await trigger.getAttribute("aria-expanded"), "false");
+    await trigger.click();
+    const panelId = await trigger.getAttribute("aria-controls");
+    assert.ok(panelId);
+    const panel = page.locator(`[id=${JSON.stringify(panelId)}]`);
+    await panel.getByRole("link", { name: "Werkstatt Süd" }).waitFor();
+    assert.equal(await panel.getByRole("link", { name: /Hilti/ }).getAttribute("href"), "/tools/j");
+    assert.equal(await panel.getByRole("link", { name: "Dana Beispiel" }).getAttribute("href"), "/users/d");
+    assert.equal(await panel.getByRole("button", { name: /Annehmen|Ablehnen/ }).count(), 0);
+  }
+});

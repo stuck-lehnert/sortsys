@@ -15,6 +15,7 @@ import GlobalAdminTenantsPage from "../../app/routes/(admin)/__admin.tenants";
 import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
 import ToolDetailPage from "../../app/routes/(shell)/tools.$id";
+import ToolTransferRequestsPage from "../../app/routes/(shell)/tools.transferRequests";
 import {
   showCreateUserModal,
   showModifyUserModal,
@@ -252,6 +253,7 @@ export function ApplicationFixture() {
             <Routes>
               <Route path="/customers/:id" element={<CustomerPage />} />
               <Route path="/tools/:id" element={<ToolDetailPage />} />
+              <Route path="/tools/transferRequests" element={<ToolTransferRequestsPage />} />
               <Route path="/fixtures/forms" element={<FormEntrypoints />} />
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/deployments" element={<DeploymentsPage />} />
