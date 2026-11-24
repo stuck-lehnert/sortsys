@@ -7958,13 +7958,25 @@ for (const type of ["procurement", "calculation"]) {
 }
 
 for (const locale of ["en", "de"]) {
-  test(`added daily-report hours focus the new employee field in ${locale}`, async () => {
+  test(`daily-report hours keep focus, validation and row removal in ${locale}`, async () => {
+    populatePlanning();
     await openApplication("/fixtures/forms", locale);
     await page
       .getByRole("button", { name: "Create daily report", exact: true })
       .click();
     const dialog = page.getByRole("dialog");
     await dialog.waitFor();
+
+    const weather = dialog.locator('details:has(input[name="weatherSummary"])');
+    assert.equal(await weather.evaluate((details) => details.open), false);
+    await weather.locator("summary").click();
+    const weatherFields = ["weatherSummary", "temperatureC", "precipitationMm", "windKph"];
+    for (const name of weatherFields) {
+      const field = weather.locator(`input[name="${name}"]`);
+      assert.equal(await field.isVisible(), true, name);
+    }
+    await weather.locator("summary").click();
+
     const add = dialog.getByRole("button", {
       name: locale === "de" ? "Arbeitszeit" : "Work hours",
       exact: true,
@@ -7981,6 +7993,7 @@ for (const locale of ["en", "de"]) {
     );
     await employee.fill("Anna");
     const previousEmployee = await employee.elementHandle();
+    await page.getByRole("option", { name: "Anna Fixture", exact: true }).waitFor();
     await employee.press("Escape");
     await add.click();
     const next = dialog
@@ -7993,6 +8006,36 @@ for (const locale of ["en", "de"]) {
       await next.elementHandle(),
     );
     assert.equal(await previousEmployee.evaluate((node) => node.value), "Anna");
+
+    await next.fill("Anna");
+    await page.getByRole("option", { name: "Anna Fixture", exact: true }).click();
+    const hours = dialog.locator('input[name^="workHour:"][name$=":hours"]');
+    await hours.nth(1).waitFor();
+    const currentHours = hours.last();
+    await page.waitForFunction(
+      (node) => node === document.activeElement,
+      await currentHours.elementHandle(),
+    );
+    await hours.nth((await hours.count()) - 2).fill("3");
+    await currentHours.fill("11");
+    await dialog.getByRole("button", {
+      name: locale === "de" ? "Erstellen" : "Create",
+      exact: true,
+    }).click();
+    await dialog.getByText(
+      locale === "de"
+        ? "Stunden müssen zwischen 0 und 10 liegen"
+        : "Hours must be between 0 and 10",
+      { exact: true },
+    ).waitFor();
+
+    const count = await hours.count();
+    await dialog.getByRole("button", {
+      name: locale === "de" ? "Arbeitszeit entfernen" : "Remove work-hours entry",
+      exact: true,
+    }).last().click();
+    assert.equal(await hours.count(), count - 1);
+    assert.equal(await hours.last().inputValue(), "3");
   });
 }
 
@@ -8061,6 +8104,106 @@ test("regie-report additions focus employees, products and special item names", 
     );
     await input.press("Escape");
   }
+});
+
+test("daily-report editing keeps zero weather values and clears an empty field", async () => {
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("projects.dailyReports.update", { projectId: "c" });
+  await openApplication("/fixtures/forms", "en");
+  await page.getByRole("button", { name: "Edit daily report", exact: true }).click();
+
+  const dialog = page.getByRole("dialog");
+  const weather = dialog.locator('details:has(input[name="temperatureC"])');
+  await weather.locator('input[name="windKph"]').waitFor();
+  await page.waitForFunction(
+    () => document.querySelector('input[name="windKph"]')?.value === "4",
+  );
+  assert.equal(
+    await weather.locator('input[name="temperatureC"]').inputValue(),
+    "0",
+  );
+  assert.equal(
+    await weather.locator('input[name="precipitationMm"]').inputValue(),
+    "0",
+  );
+
+  await weather.locator('input[name="windKph"]').fill("");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+
+  const writes = api.requests.filter(
+    ({ path }) => path === "projects.dailyReports.update",
+  );
+  assert.equal(writes.length, 1);
+  const { expectedRevision, expectedCostRevision, data } = writes[0].input;
+  assert.equal(expectedRevision, "3");
+  assert.equal(expectedCostRevision, "2");
+  assert.equal(data.weather.temperatureC, 0);
+  assert.equal(data.weather.precipitationMm, 0);
+  assert.equal(data.weather.windKph, null);
+});
+
+test("regie-report removal keeps the other hours entry", async () => {
+  await openApplication("/fixtures/forms", "en");
+  await page
+    .getByRole("button", { name: "Create regie report", exact: true })
+    .click();
+  const dialog = page.getByRole("dialog");
+  const hours = dialog.locator('input[name^="workHour:"][name$=":hours"]');
+  await hours.first().fill("4");
+
+  await dialog.getByRole("button", { name: "Work hours", exact: true }).click();
+  await hours.nth(1).fill("2");
+  const added = await hours.nth(1).elementHandle();
+  await dialog
+    .getByRole("button", { name: "Remove work-hours entry", exact: true })
+    .last()
+    .click();
+
+  assert.equal(await added.evaluate((node) => node.isConnected), false);
+  assert.equal(await hours.count(), 1);
+  assert.equal(await hours.first().inputValue(), "4");
+});
+
+test("regie-report editing loads references together and preserves an unshared employee", async () => {
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("users.get", null);
+  api.respond("regieReports.update", { id: "r" });
+  await openApplication("/fixtures/forms", "en");
+
+  api.hold("projects.get");
+  try {
+    await Promise.all([
+      page.waitForRequest((request) => request.url().includes("users.get")),
+      page.getByRole("button", { name: "Edit regie report", exact: true }).click(),
+    ]);
+  } finally {
+    api.release("projects.get");
+  }
+
+  const dialog = page.getByRole("dialog", { name: "Edit time-and-material report" });
+  const hours = dialog.locator('input[name="workHour:h:hours"]');
+  await dialog.getByText("Employee: Not shared", { exact: true }).waitFor();
+  await page.waitForFunction(() => {
+    return document.querySelector('input[name="workHour:h:hours"]')?.value === "4";
+  });
+  assert.equal(await dialog.getByRole("combobox", { name: /^Employee/ }).count(), 0);
+
+  await hours.fill("5");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+
+  const writes = api.requests.filter(({ path }) => path === "regieReports.update");
+  assert.equal(writes.length, 1);
+  const { id, expectedRevision, expectedHoursRevision, data } = writes[0].input;
+  assert.deepEqual({ id, expectedRevision, expectedHoursRevision }, {
+    id: "r",
+    expectedRevision: "3",
+    expectedHoursRevision: "2",
+  });
+  assert.deepEqual(data.workHours.map((row) => ({ ...row, day: row.day.slice(0, 10) })), [
+    { id: "h", userId: "8", day: "2024-06-19", hours: 5 },
+  ]);
 });
 
 test("project data sheet opens a PDF without an external connection", async () => {

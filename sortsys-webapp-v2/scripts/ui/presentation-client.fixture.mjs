@@ -8,6 +8,7 @@ import {
   API_ENDPOINT,
   assistant,
   client,
+  contentAccess,
   dashboardPreferences,
   gaebDocuments,
   organizationSettings,
@@ -127,6 +128,9 @@ export async function installPresentationClient() {
       };
     },
   };
+  // Submit-time permission checks use the same synthetic access as the shell.
+  contentAccess.read = access.read;
+
   const listeners = new Set();
   async function changePin(path, input) {
     const [, error] = await transport.mutate(path, input);

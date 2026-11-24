@@ -21,8 +21,11 @@ import {
   showChangeOwnPasswordModal,
   showSetUserSupervisorModal,
 } from "../../app/modals/users";
-import { showCreateDailyProjectReportModal } from "../../app/modals/dailyProjectReport";
-import { showCreateRegieReportModal } from "../../app/modals/regieReports";
+import {
+  showCreateDailyProjectReportModal,
+  showModifyDailyProjectReportModal,
+} from "../../app/modals/dailyProjectReport";
+import { showCreateRegieReportModal, showModifyRegieReportModal } from "../../app/modals/regieReports";
 import { showCreateProductModal } from "../../app/modals/products";
 import { showCreateDeliveryNoteModal, showModifyDeliveryNoteModal } from "../../app/modals/deliveryNotes";
 import { showCommandPaletteModal } from "../../app/modals/commandPalette";
@@ -133,8 +136,39 @@ function FormEntrypoints() {
       <Button onClick={() => showCreateDailyProjectReportModal(modals)}>
         Create daily report
       </Button>
+      <Button
+        onClick={() => showModifyDailyProjectReportModal(modals, {
+          projectId: "c",
+          day: new Date(2024, 5, 17),
+          revision: "3",
+          costRevision: "2",
+          summary: "Montage",
+          weather: { summary: null, temperatureC: 0, precipitationMm: 0, windKph: 4 },
+          workHours: [],
+        })}
+      >
+        Edit daily report
+      </Button>
       <Button onClick={() => showCreateRegieReportModal(modals)}>
         Create regie report
+      </Button>
+      <Button
+        onClick={() => showModifyRegieReportModal(modals, {
+          id: "r",
+          projectId: "c",
+          revision: "3",
+          hoursRevision: "2",
+          workHoursAvailable: true,
+          day: new Date(2024, 5, 17),
+          summary: "Montage",
+          products: [],
+          specialRecords: [],
+          workHours: [
+            { id: "h", userId: "8", day: new Date(2024, 5, 19), hours: 4 },
+          ],
+        })}
+      >
+        Edit regie report
       </Button>
       <Button onClick={() => showCreateProductModal(modals)}>
         Create product

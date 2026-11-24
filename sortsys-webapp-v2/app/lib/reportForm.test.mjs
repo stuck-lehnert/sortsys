@@ -1,5 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { focusReportHours, isDefaultReportDay } from "./reportForm";
+import {
+  focusReportHours,
+  isDefaultReportDay,
+  isFutureReportDate,
+  validateReportDate,
+} from "./reportForm";
 
 const originalRequestAnimationFrame = globalThis.requestAnimationFrame;
 
@@ -26,6 +31,17 @@ describe("construction report form defaults", () => {
       false,
     ]);
   });
+});
+
+test("today's reports remain valid until local midnight", () => {
+  const now = new Date(2026, 9, 25, 8);
+  const endOfToday = new Date(2026, 9, 25, 23, 59, 59, 999);
+  const tomorrow = new Date(2026, 9, 26);
+
+  expect(isFutureReportDate(endOfToday, now)).toBe(false);
+  expect(isFutureReportDate(tomorrow, now)).toBe(true);
+  expect(now.getHours()).toBe(8);
+  expect(validateReportDate(null)).toBeNull();
 });
 
 describe("employee selection focuses the hours input", () => {

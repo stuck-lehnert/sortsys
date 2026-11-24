@@ -1,20 +1,24 @@
 import { uiText } from "~/lib/i18n";
 import { Fragment, useEffect, useRef, useState } from "react";
+import type { Dispatch, SetStateAction } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyDivider } from "~/components/MyDivider";
-import { MyForm } from "~/components/MyForm";
+import { MyForm, type MyPublicFormContext } from "~/components/MyForm";
+import { ProductRecordFields } from "~/components/ProductRecordFields";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
+import { ReportWorkHourFields } from "~/components/ReportWorkHourFields";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
 import { useForceUpdate } from "~/hooks/useForceUpdate";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client, contentAccess } from "~/lib/client";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { newProductRowId, publicId } from "~/lib/data/products";
+import { mapConcurrent } from "~/lib/data/runtime/concurrentReads";
 import { regieReportForm } from "~/lib/regieReportForm";
-import { productTitle, userFullName } from "~/lib/format";
+import { validateReportDate } from "~/lib/reportForm";
 import { Icons } from "~/lib/icons";
-import { SmallProductTile, SmallProjectTile, SmallUserTile } from "~/lib/tiles";
-import { generateId, parseFloatCustom, upmatchUnit } from "~/lib/utils";
+import { SmallProjectTile } from "~/lib/tiles";
+import { generateId, upmatchUnit } from "~/lib/utils";
 import {
   startOfIsoWeek,
   weekdayIndexInIsoWeek,
@@ -26,6 +30,290 @@ const WEEKDAY_OPTIONS = WEEKDAY_NAMES.map((label, dayIndex) => ({
   id: `${dayIndex}`,
   label,
 }));
+
+type InitialWorkHour = { user: User | null; dayIndex: number; hours: number };
+
+function RegieWorkHours({
+  ids,
+  initialValues,
+  context,
+  createUser,
+  focusField,
+  setFocusField,
+  setIds,
+}: {
+  ids: string[];
+  initialValues?: Record<string, InitialWorkHour>;
+  context: MyPublicFormContext;
+  createUser: ReturnType<typeof useCreateEntityAction>["user"];
+  focusField: string | null;
+  setFocusField: (name: string) => void;
+  setIds: Dispatch<SetStateAction<string[]>>;
+}) {
+  return (
+    <>
+      <h4 className="text-lg leading-snug font-semibold">
+        {uiText("Arbeitszeit")}
+      </h4>
+      <p className="light">
+        {uiText(
+          "Pro Eintrag Tag, Mitarbeiter und Stunden der ausgewählten Woche erfassen.",
+        )}
+      </p>
+
+      {ids.map((id) => {
+        const prefix = `workHour:${id}:`;
+        const initial = initialValues?.[id];
+
+        return (
+          <Fragment key={id}>
+            <ReportWorkHourFields
+              fieldPrefix={`workHour:${id}`}
+              createUser={createUser}
+              focusEmployee={focusField === `${prefix}user`}
+              unavailableEmployee={
+                initial && !initial.user
+                  ? uiText("Nicht freigegeben", "Not shared")
+                  : undefined
+              }
+              numberRule="num"
+              onRemove={() => setIds((ids) => ids.filter((item) => item !== id))}
+            >
+              <MyForm.Select
+                required
+                name={`${prefix}dayIndex`}
+                labelText={uiText("Tag")}
+                getOptions={() => WEEKDAY_OPTIONS}
+                buildOption={({ id: optionId, label }) => ({
+                  text: label,
+                  value: optionId,
+                })}
+              />
+
+            </ReportWorkHourFields>
+
+            {initial && (
+              <NotifyLoaded
+                onLoad={() =>
+                  context.setValues({
+                    [`${prefix}dayIndex`]: `${initial.dayIndex}`,
+                    [`${prefix}hours`]: initial.hours,
+                    ...(initial.user ? { [`${prefix}user`]: [initial.user] } : {}),
+                  })
+                }
+              />
+            )}
+
+            <div style={{ height: "1rem" }} />
+          </Fragment>
+        );
+      })}
+
+      <MyButton
+        kind="secondary"
+        renderIcon={Icons.Plus}
+        onClick={() => {
+          const id = generateId();
+          setIds((ids) => [...ids, id]);
+          setFocusField(`workHour:${id}:user`);
+          context.setValues({ [`workHour:${id}:dayIndex`]: "0" });
+        }}
+      >
+        {uiText("Arbeitszeit")}
+      </MyButton>
+
+      <MyDivider />
+    </>
+  );
+}
+
+type InitialProduct = {
+  product: Product | null;
+  amount: number;
+  unit: string | null;
+};
+type InitialSpecialRecord = { name: string; unit: string; amount: number };
+type MaterialRows<T> = {
+  ids: string[];
+  setIds: Dispatch<SetStateAction<string[]>>;
+  initialValues?: Record<string, T>;
+};
+
+function RegieMaterialFields({
+  products,
+  specialRecords,
+  context,
+  createProduct,
+  onProductChange,
+  focusField,
+  setFocusField,
+}: {
+  products: MaterialRows<InitialProduct>;
+  specialRecords: MaterialRows<InitialSpecialRecord>;
+  context: MyPublicFormContext;
+  createProduct: ReturnType<typeof useCreateEntityAction>["product"];
+  onProductChange: () => void;
+  focusField: string | null;
+  setFocusField: (name: string) => void;
+}) {
+  return (
+    <>
+      <h4 className="text-lg leading-snug font-semibold">
+        {uiText("Produkte")}
+      </h4>
+      <p className="light">
+        {uiText(
+          "Verbrauchte Produkte inklusive Menge und Einheit dokumentieren.",
+        )}
+      </p>
+
+      {products.ids.map((id) => {
+        const prefix = `record:${id}:`;
+        const initial = products.initialValues?.[id];
+
+        return (
+          <Fragment key={id}>
+            <ProductRecordFields
+              prefix={prefix}
+              focusProduct={focusField === `${prefix}product`}
+              productHidden={!!initial && !initial.product}
+              createProduct={createProduct}
+              onProductChange={onProductChange}
+              onRemove={() =>
+                products.setIds((ids) => ids.filter((current) => current !== id))
+              }
+            />
+
+            {initial && (
+              <NotifyLoaded
+                onLoad={() => {
+                  context.setValues({
+                    [`${prefix}amount`]: initial.amount,
+                    ...(initial.product && {
+                      [`${prefix}product`]: [initial.product],
+                    }),
+                    ...(initial.unit && { [`${prefix}unit`]: initial.unit }),
+                  });
+                }}
+              />
+            )}
+
+            <div style={{ height: "1rem" }} />
+          </Fragment>
+        );
+      })}
+
+      <MyButton
+        kind="secondary"
+        renderIcon={Icons.Plus}
+        onClick={() => {
+          const id = generateId();
+          products.setIds((ids) => [...ids, id]);
+          setFocusField(`record:${id}:product`);
+        }}
+      >
+        {uiText("Eintrag")}
+      </MyButton>
+
+      <MyDivider />
+
+      <h4 className="text-lg leading-snug font-semibold">
+        {uiText("Sonderposten")}
+      </h4>
+      <p className="light">
+        {uiText(
+          "Weitere Positionen erfassen, die nicht als Produkt vorhanden sind.",
+        )}
+      </p>
+
+      {specialRecords.ids.map((id) => {
+        const prefix = `specialRecord:${id}:`;
+
+        return (
+          <Fragment key={id}>
+            <div className="flex gap-2 items-end">
+              <div className="grow flex flex-col gap-2">
+                <div>
+                  <MyForm.Input
+                    required
+                    name={`${prefix}name`}
+                    labelText={uiText("Bezeichnung")}
+                    focusOnMount={focusField === `${prefix}name`}
+                  />
+                </div>
+
+                <div className="flex gap-2">
+                  <div className="min-w-0 basis-1/2 flex-1">
+                    <MyForm.Input
+                      required
+                      name={`${prefix}amount`}
+                      labelText={uiText("Menge")}
+                      type="number"
+                      rules={[MyForm.Input.rules.num]}
+                    />
+                  </div>
+
+                  <div className="min-w-0 basis-1/2 flex-1">
+                    <MyForm.Input
+                      required
+                      name={`${prefix}unit`}
+                      labelText={uiText("Einheit")}
+                      suffix={
+                        <MyButton
+                          kind="ghost"
+                          size="sm"
+                          className="ss-input-suffix-btn"
+                          title={uiText("Sonderposten entfernen")}
+                          aria-label={uiText("Sonderposten entfernen")}
+                          onClick={() =>
+                            specialRecords.setIds((ids) =>
+                              ids.filter((current) => current !== id),
+                            )
+                          }
+                        >
+                          <Icons.Delete />
+                        </MyButton>
+                      }
+                    />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {specialRecords.initialValues && (
+              <NotifyLoaded
+                onLoad={() => {
+                  const initial = specialRecords.initialValues?.[id];
+                  if (!initial) return;
+
+                  context.setValues({
+                    [`${prefix}name`]: initial.name,
+                    [`${prefix}unit`]: initial.unit,
+                    [`${prefix}amount`]: initial.amount,
+                  });
+                }}
+              />
+            )}
+
+            <div style={{ height: "1rem" }} />
+          </Fragment>
+        );
+      })}
+
+      <MyButton
+        kind="secondary"
+        renderIcon={Icons.Plus}
+        onClick={() => {
+          const id = generateId();
+          specialRecords.setIds((ids) => [...ids, id]);
+          setFocusField(`specialRecord:${id}:name`);
+        }}
+      >
+        {uiText("Sonderposten")}
+      </MyButton>
+    </>
+  );
+}
 
 export function showCreateRegieReportModal(modals: MyModalsInterface) {
   const operationId = publicId(newProductRowId());
@@ -95,16 +383,7 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
             required
             name="week"
             labelText={uiText("Woche (beliebiger Tag)")}
-            rules={[
-              (date) => {
-                if (!date) return null;
-                const today = new Date();
-                today.setHours(23, 59, 59, 999);
-                if (date.getTime() > today.getTime())
-                  return uiText("Datum darf nicht in der Zukunft liegen");
-                return null;
-              },
-            ]}
+            rules={[validateReportDate]}
           />
           <p className="light">
             {uiText(
@@ -115,299 +394,27 @@ export function showCreateRegieReportModal(modals: MyModalsInterface) {
           <MyDivider />
 
           {canHours && (
-            <>
-              <h4 className="text-lg leading-snug font-semibold">
-                {uiText("Arbeitszeit")}
-              </h4>
-              <p className="light">
-                {uiText(
-                  "Pro Eintrag Tag, Mitarbeiter und Stunden der ausgewählten Woche erfassen.",
-                )}
-              </p>
-
-              {workHourIds.map((id) => {
-                return (
-                  <Fragment key={id}>
-                    <div className="flex flex-col gap-2">
-                      <MyForm.Select
-                        required
-                        name={`workHour:${id}:dayIndex`}
-                        labelText={uiText("Tag")}
-                        getOptions={() => WEEKDAY_OPTIONS}
-                        buildOption={({ id: optionId, label }) => ({
-                          text: label,
-                          value: optionId,
-                        })}
-                      />
-
-                      <MyForm.MultiSelect
-                        name={`workHour:${id}:user`}
-                        labelText={uiText("Mitarbeiter")}
-                        focusOnMount={
-                          autoFocusFieldName === `workHour:${id}:user`
-                        }
-                        minSelectedItems={1}
-                        maxSelectedItems={1}
-                        getOptions={async ({ query }) => {
-                          const [data, err] = await client.query("users.list", {
-                            search: query,
-                          });
-                          if (err) throw err;
-                          return data ?? [];
-                        }}
-                        renderItem={({ item }) => userFullName(item)}
-                        renderTile={(item) => (
-                          <SmallUserTile data={item} noLink />
-                        )}
-                        createAction={createEntityAction.user}
-                      />
-
-                      <div className="flex gap-2 items-end">
-                        <div className="grow">
-                          <MyForm.Input
-                            required
-                            name={`workHour:${id}:hours`}
-                            labelText={uiText("Stunden")}
-                            type="number"
-                            rules={[
-                              MyForm.Input.rules.num,
-                              (value) => {
-                                if (!value.trim()) return null;
-                                const hours = parseFloatCustom(value);
-                                if (isNaN(hours)) return null;
-                                if (hours < 0 || hours > 10)
-                                  return uiText(
-                                    "Stunden müssen zwischen 0 und 10 liegen",
-                                    "Hours must be between 0 and 10",
-                                  );
-                                return null;
-                              },
-                            ]}
-                            suffix={
-                              <MyButton
-                                kind="ghost"
-                                size="sm"
-                                className="ss-input-suffix-btn"
-                                title={uiText("Arbeitszeit entfernen")}
-                                aria-label={uiText("Arbeitszeit entfernen")}
-                                onClick={() => {
-                                  setWorkHourIds((ids) =>
-                                    ids.filter((_id) => _id !== id),
-                                  );
-                                }}
-                              >
-                                <Icons.Delete />
-                              </MyButton>
-                            }
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <div style={{ height: "1rem" }} />
-                  </Fragment>
-                );
-              })}
-
-              <MyButton
-                kind="secondary"
-                renderIcon={Icons.Plus}
-                onClick={() => {
-                  const id = generateId();
-                  setWorkHourIds((ids) => [...ids, id]);
-                  setAutoFocusFieldName(`workHour:${id}:user`);
-                  context.setValues({ [`workHour:${id}:dayIndex`]: "0" });
-                }}
-              >
-                {uiText("Arbeitszeit")}
-              </MyButton>
-
-              <MyDivider />
-            </>
+            <RegieWorkHours
+              ids={workHourIds}
+              context={context}
+              createUser={createEntityAction.user}
+              focusField={autoFocusFieldName}
+              setFocusField={setAutoFocusFieldName}
+              setIds={setWorkHourIds}
+            />
           )}
-          <h4 className="text-lg leading-snug font-semibold">
-            {uiText("Produkte")}
-          </h4>
-          <p className="light">
-            {uiText(
-              "Verbrauchte Produkte inklusive Menge und Einheit dokumentieren.",
-            )}
-          </p>
-
-          {recordIds.map((id) => {
-            const currentProduct = () => {
-              return (context?.field(`record:${id}:product`)?.getValue()?.[0] ??
-                null) as Product | null;
-            };
-
-            return (
-              <Fragment key={id}>
-                <MyForm.MultiSelect
-                  name={`record:${id}:product`}
-                  labelText={uiText("Produkt")}
-                  focusOnMount={autoFocusFieldName === `record:${id}:product`}
-                  minSelectedItems={1}
-                  maxSelectedItems={1}
-                  getOptions={async ({ query }) => {
-                    const [data, err] = await client.query("products.list", {
-                      search: query,
-                    });
-                    if (err) throw err;
-                    return data ?? [];
-                  }}
-                  renderItem={({ item }) =>
-                    `${item.customId} ${productTitle(item)}`
-                  }
-                  renderTile={(item) => <SmallProductTile data={item} noLink />}
-                  createAction={createEntityAction.product}
-                  onValueChange={forceUpdate}
-                />
-
-                <div key={id} className="flex gap-2 items-end">
-                  <div className="grow flex gap-2">
-                    <div className="min-w-0 basis-1/2 flex-1">
-                      <MyForm.Input
-                        required
-                        name={`record:${id}:amount`}
-                        labelText={uiText("Anzahl")}
-                        type="number"
-                        rules={[MyForm.Input.rules.num]}
-                      />
-                    </div>
-
-                    <div className="min-w-0 basis-1/2 flex-1">
-                      <MyForm.Select
-                        name={`record:${id}:unit`}
-                        labelText={uiText("Einheit")}
-                        getOptions={() => {
-                          const _product = currentProduct();
-                          if (!_product) return [];
-                          return [
-                            _product.baseUnit,
-                            ...Object.keys(_product.otherUnits),
-                          ].map((e) => ({ id: e }));
-                        }}
-                        getOptionsDeps={[currentProduct()?.id]}
-                        buildOption={({ id }) => ({ text: id, value: id })}
-                        suffix={
-                          <MyButton
-                            kind="ghost"
-                            size="sm"
-                            className="ss-input-suffix-btn"
-                            title={uiText("Eintrag entfernen")}
-                            aria-label={uiText("Eintrag entfernen")}
-                            onClick={() => {
-                              setRecordIds((ids) =>
-                                ids.filter((_id) => _id !== id),
-                              );
-                            }}
-                          >
-                            <Icons.Delete />
-                          </MyButton>
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ height: "1rem" }} />
-              </Fragment>
-            );
-          })}
-
-          <MyButton
-            kind="secondary"
-            renderIcon={Icons.Plus}
-            onClick={() => {
-              const id = generateId();
-              setRecordIds((ids) => [...ids, id]);
-              setAutoFocusFieldName(`record:${id}:product`);
+          <RegieMaterialFields
+            products={{ ids: recordIds, setIds: setRecordIds }}
+            specialRecords={{
+              ids: specialRecordIds,
+              setIds: setSpecialRecordIds,
             }}
-          >
-            {uiText("Eintrag")}
-          </MyButton>
-
-          <MyDivider />
-
-          <h4 className="text-lg leading-snug font-semibold">
-            {uiText("Sonderposten")}
-          </h4>
-          <p className="light">
-            {uiText(
-              "Weitere Positionen erfassen, die nicht als Produkt vorhanden sind.",
-            )}
-          </p>
-
-          {specialRecordIds.map((id) => {
-            return (
-              <Fragment key={id}>
-                <div className="flex gap-2 items-end">
-                  <div className="grow flex flex-col gap-2">
-                    <div>
-                      <MyForm.Input
-                        required
-                        name={`specialRecord:${id}:name`}
-                        labelText={uiText("Bezeichnung")}
-                        focusOnMount={
-                          autoFocusFieldName === `specialRecord:${id}:name`
-                        }
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      <div className="min-w-0 basis-1/2 flex-1">
-                        <MyForm.Input
-                          required
-                          name={`specialRecord:${id}:amount`}
-                          labelText={uiText("Menge")}
-                          type="number"
-                          rules={[MyForm.Input.rules.num]}
-                        />
-                      </div>
-
-                      <div className="min-w-0 basis-1/2 flex-1">
-                        <MyForm.Input
-                          required
-                          name={`specialRecord:${id}:unit`}
-                          labelText={uiText("Einheit")}
-                          suffix={
-                            <MyButton
-                              kind="ghost"
-                              size="sm"
-                              className="ss-input-suffix-btn"
-                              title={uiText("Sonderposten entfernen")}
-                              aria-label={uiText("Sonderposten entfernen")}
-                              onClick={() => {
-                                setSpecialRecordIds((ids) =>
-                                  ids.filter((_id) => _id !== id),
-                                );
-                              }}
-                            >
-                              <Icons.Delete />
-                            </MyButton>
-                          }
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div style={{ height: "1rem" }} />
-              </Fragment>
-            );
-          })}
-
-          <MyButton
-            kind="secondary"
-            renderIcon={Icons.Plus}
-            onClick={() => {
-              const id = generateId();
-              setSpecialRecordIds((ids) => [...ids, id]);
-              setAutoFocusFieldName(`specialRecord:${id}:name`);
-            }}
-          >
-            {uiText("Sonderposten")}
-          </MyButton>
+            context={context}
+            createProduct={createEntityAction.product}
+            onProductChange={forceUpdate}
+            focusField={autoFocusFieldName}
+            setFocusField={setAutoFocusFieldName}
+          />
 
           <NotifyLoaded
             onLoad={() => {
@@ -492,36 +499,13 @@ export function showModifyRegieReportModal(
         string | null
       >(null);
 
-      const initialRecordValues = useRef<
-        Record<
-          string,
-          {
-            product: Product | null;
-            amount: number;
-            unit: string | null;
-          }
-        >
-      >({}).current;
+      const initialRecordValues = useRef<Record<string, InitialProduct>>({})
+        .current;
       const initialSpecialRecordValues = useRef<
-        Record<
-          string,
-          {
-            name: string;
-            unit: string;
-            amount: number;
-          }
-        >
+        Record<string, InitialSpecialRecord>
       >({}).current;
-      const initialWorkHourValues = useRef<
-        Record<
-          string,
-          {
-            user: User | null;
-            dayIndex: number;
-            hours: number;
-          }
-        >
-      >({}).current;
+      const initialWorkHourValues = useRef<Record<string, InitialWorkHour>>({})
+        .current;
 
       const forceUpdate = useForceUpdate();
       const createEntityAction = useCreateEntityAction(modals);
@@ -566,16 +550,7 @@ export function showModifyRegieReportModal(
             name="week"
             disabled={!canMaterial || !canHours}
             labelText={uiText("Woche (beliebiger Tag)")}
-            rules={[
-              (date) => {
-                if (!date) return null;
-                const today = new Date();
-                today.setHours(23, 59, 59, 999);
-                if (date.getTime() > today.getTime())
-                  return uiText("Datum darf nicht in der Zukunft liegen");
-                return null;
-              },
-            ]}
+            rules={[validateReportDate]}
           />
           <p className="light">
             {uiText(
@@ -596,381 +571,34 @@ export function showModifyRegieReportModal(
             </p>
           )}
           {canHours && (
-            <>
-              <h4 className="text-lg leading-snug font-semibold">
-                {uiText("Arbeitszeit")}
-              </h4>
-              <p className="light">
-                {uiText(
-                  "Pro Eintrag Tag, Mitarbeiter und Stunden der gewählten Woche erfassen.",
-                )}
-              </p>
-
-              {workHourIds.map((id) => {
-                return (
-                  <Fragment key={id}>
-                    <div className="flex flex-col gap-2">
-                      <MyForm.Select
-                        required
-                        name={`workHour:${id}:dayIndex`}
-                        labelText={uiText("Tag")}
-                        getOptions={() => WEEKDAY_OPTIONS}
-                        buildOption={({ id: optionId, label }) => ({
-                          text: label,
-                          value: optionId,
-                        })}
-                      />
-
-                      {initialWorkHourValues[id] &&
-                      !initialWorkHourValues[id].user ? (
-                        <p>
-                          {uiText("Mitarbeiter")}:{" "}
-                          {uiText("Nicht freigegeben", "Not shared")}
-                        </p>
-                      ) : (
-                        <MyForm.MultiSelect
-                          name={`workHour:${id}:user`}
-                          labelText={uiText("Mitarbeiter")}
-                          focusOnMount={
-                            autoFocusFieldName === `workHour:${id}:user`
-                          }
-                          minSelectedItems={1}
-                          maxSelectedItems={1}
-                          getOptions={async ({ query }) => {
-                            const [data, err] = await client.query(
-                              "users.list",
-                              {
-                                search: query,
-                              },
-                            );
-                            if (err) throw err;
-                            return data ?? [];
-                          }}
-                          renderItem={({ item }) => userFullName(item)}
-                          renderTile={(item) => (
-                            <SmallUserTile data={item} noLink />
-                          )}
-                          createAction={createEntityAction.user}
-                        />
-                      )}
-
-                      <div className="flex gap-2 items-end">
-                        <div className="grow">
-                          <MyForm.Input
-                            required
-                            name={`workHour:${id}:hours`}
-                            labelText={uiText("Stunden")}
-                            type="number"
-                            rules={[
-                              MyForm.Input.rules.num,
-                              (value) => {
-                                if (!value.trim()) return null;
-                                const hours = parseFloatCustom(value);
-                                if (isNaN(hours)) return null;
-                                if (hours < 0 || hours > 10)
-                                  return uiText(
-                                    "Stunden müssen zwischen 0 und 10 liegen",
-                                    "Hours must be between 0 and 10",
-                                  );
-                                return null;
-                              },
-                            ]}
-                            suffix={
-                              <MyButton
-                                kind="ghost"
-                                size="sm"
-                                className="ss-input-suffix-btn"
-                                title={uiText("Arbeitszeit entfernen")}
-                                aria-label={uiText("Arbeitszeit entfernen")}
-                                onClick={() => {
-                                  setWorkHourIds((ids) =>
-                                    ids.filter((_id) => _id !== id),
-                                  );
-                                }}
-                              >
-                                <Icons.Delete />
-                              </MyButton>
-                            }
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <NotifyLoaded
-                      onLoad={() => {
-                        const initial = initialWorkHourValues[id];
-                        if (!initial) return;
-
-                        const values: Record<string, any> = {
-                          [`workHour:${id}:dayIndex`]: `${initial.dayIndex}`,
-                          [`workHour:${id}:hours`]: initial.hours,
-                        };
-                        if (initial.user)
-                          values[`workHour:${id}:user`] = [initial.user];
-                        context.setValues(values);
-                      }}
-                    />
-
-                    <div style={{ height: "1rem" }} />
-                  </Fragment>
-                );
-              })}
-
-              <MyButton
-                kind="secondary"
-                renderIcon={Icons.Plus}
-                onClick={() => {
-                  const id = generateId();
-                  setWorkHourIds((ids) => [...ids, id]);
-                  setAutoFocusFieldName(`workHour:${id}:user`);
-                  context.setValues({ [`workHour:${id}:dayIndex`]: "0" });
-                }}
-              >
-                {uiText("Arbeitszeit")}
-              </MyButton>
-
-              <MyDivider />
-            </>
+            <RegieWorkHours
+              ids={workHourIds}
+              initialValues={initialWorkHourValues}
+              context={context}
+              createUser={createEntityAction.user}
+              focusField={autoFocusFieldName}
+              setFocusField={setAutoFocusFieldName}
+              setIds={setWorkHourIds}
+            />
           )}
           {canMaterial && (
-            <>
-              <h4 className="text-lg leading-snug font-semibold">
-                {uiText("Produkte")}
-              </h4>
-              <p className="light">
-                {uiText(
-                  "Verbrauchte Produkte inklusive Menge und Einheit dokumentieren.",
-                )}
-              </p>
-
-              {recordIds.map((id) => {
-                const currentProduct = () => {
-                  return (context
-                    ?.field(`record:${id}:product`)
-                    ?.getValue()?.[0] ?? null) as Product | null;
-                };
-
-                return (
-                  <Fragment key={id}>
-                    {initialRecordValues[id] &&
-                    !initialRecordValues[id].product ? (
-                      <p>
-                        {uiText("Produkt")}:{" "}
-                        {uiText("Nicht freigegeben", "Not shared")}
-                      </p>
-                    ) : (
-                      <MyForm.MultiSelect
-                        name={`record:${id}:product`}
-                        labelText={uiText("Produkt")}
-                        focusOnMount={
-                          autoFocusFieldName === `record:${id}:product`
-                        }
-                        minSelectedItems={1}
-                        maxSelectedItems={1}
-                        getOptions={async ({ query }) => {
-                          const [data, err] = await client.query(
-                            "products.list",
-                            {
-                              search: query,
-                            },
-                          );
-                          if (err) throw err;
-                          return data ?? [];
-                        }}
-                        renderItem={({ item }) =>
-                          `${item.customId} ${productTitle(item)}`
-                        }
-                        renderTile={(item) => (
-                          <SmallProductTile data={item} noLink />
-                        )}
-                        createAction={createEntityAction.product}
-                        onValueChange={forceUpdate}
-                      />
-                    )}
-
-                    <div key={id} className="flex gap-2 items-end">
-                      <div className="grow flex gap-2">
-                        <div className="min-w-0 basis-1/2 flex-1">
-                          <MyForm.Input
-                            required
-                            name={`record:${id}:amount`}
-                            labelText={uiText("Anzahl")}
-                            type="number"
-                            rules={[MyForm.Input.rules.num]}
-                          />
-                        </div>
-
-                        <div className="min-w-0 basis-1/2 flex-1">
-                          <MyForm.Select
-                            name={`record:${id}:unit`}
-                            labelText={uiText("Einheit")}
-                            getOptions={() => {
-                              const _product = currentProduct();
-                              if (!_product) return [];
-                              return [
-                                _product.baseUnit,
-                                ...Object.keys(_product.otherUnits),
-                              ].map((e) => ({ id: e }));
-                            }}
-                            getOptionsDeps={[currentProduct()?.id]}
-                            buildOption={({ id }) => ({ text: id, value: id })}
-                            suffix={
-                              <MyButton
-                                kind="ghost"
-                                size="sm"
-                                className="ss-input-suffix-btn"
-                                title={uiText("Eintrag entfernen")}
-                                aria-label={uiText("Eintrag entfernen")}
-                                onClick={() => {
-                                  setRecordIds((ids) =>
-                                    ids.filter((_id) => _id !== id),
-                                  );
-                                }}
-                              >
-                                <Icons.Delete />
-                              </MyButton>
-                            }
-                          />
-                        </div>
-                      </div>
-                    </div>
-
-                    <NotifyLoaded
-                      onLoad={() => {
-                        const initial = initialRecordValues[id];
-                        if (!initial) return;
-
-                        const values: Record<string, any> = {
-                          [`record:${id}:amount`]: initial.amount,
-                        };
-
-                        if (initial.product)
-                          values[`record:${id}:product`] = [initial.product];
-                        if (initial.unit)
-                          values[`record:${id}:unit`] = initial.unit;
-
-                        context.setValues(values);
-
-                        // if (initial.unit) setTimeout(() => {
-                        //   context.setValues({
-                        //     [`record:${id}:unit`]: initial.unit,
-                        //   });
-                        // }, 10);
-                      }}
-                    />
-
-                    <div style={{ height: "1rem" }} />
-                  </Fragment>
-                );
-              })}
-
-              <MyButton
-                kind="secondary"
-                renderIcon={Icons.Plus}
-                onClick={() => {
-                  const id = generateId();
-                  setRecordIds((ids) => [...ids, id]);
-                  setAutoFocusFieldName(`record:${id}:product`);
-                }}
-              >
-                {uiText("Eintrag")}
-              </MyButton>
-
-              <MyDivider />
-
-              <h4 className="text-lg leading-snug font-semibold">
-                {uiText("Sonderposten")}
-              </h4>
-              <p className="light">
-                {uiText(
-                  "Weitere Positionen erfassen, die nicht als Produkt vorhanden sind.",
-                )}
-              </p>
-
-              {specialRecordIds.map((id) => {
-                return (
-                  <Fragment key={id}>
-                    <div className="flex gap-2 items-end">
-                      <div className="grow flex flex-col gap-2">
-                        <div>
-                          <MyForm.Input
-                            required
-                            name={`specialRecord:${id}:name`}
-                            labelText={uiText("Bezeichnung")}
-                            focusOnMount={
-                              autoFocusFieldName === `specialRecord:${id}:name`
-                            }
-                          />
-                        </div>
-
-                        <div className="flex gap-2">
-                          <div className="min-w-0 basis-1/2 flex-1">
-                            <MyForm.Input
-                              required
-                              name={`specialRecord:${id}:amount`}
-                              labelText={uiText("Menge")}
-                              type="number"
-                              rules={[MyForm.Input.rules.num]}
-                            />
-                          </div>
-
-                          <div className="min-w-0 basis-1/2 flex-1">
-                            <MyForm.Input
-                              required
-                              name={`specialRecord:${id}:unit`}
-                              labelText={uiText("Einheit")}
-                              suffix={
-                                <MyButton
-                                  kind="ghost"
-                                  size="sm"
-                                  className="ss-input-suffix-btn"
-                                  title={uiText("Sonderposten entfernen")}
-                                  aria-label={uiText("Sonderposten entfernen")}
-                                  onClick={() => {
-                                    setSpecialRecordIds((ids) =>
-                                      ids.filter((_id) => _id !== id),
-                                    );
-                                  }}
-                                >
-                                  <Icons.Delete />
-                                </MyButton>
-                              }
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-
-                    <NotifyLoaded
-                      onLoad={() => {
-                        const initial = initialSpecialRecordValues[id];
-                        if (!initial) return;
-
-                        context.setValues({
-                          [`specialRecord:${id}:name`]: initial.name,
-                          [`specialRecord:${id}:unit`]: initial.unit,
-                          [`specialRecord:${id}:amount`]: initial.amount,
-                        });
-                      }}
-                    />
-
-                    <div style={{ height: "1rem" }} />
-                  </Fragment>
-                );
-              })}
-
-              <MyButton
-                kind="secondary"
-                renderIcon={Icons.Plus}
-                onClick={() => {
-                  const id = generateId();
-                  setSpecialRecordIds((ids) => [...ids, id]);
-                  setAutoFocusFieldName(`specialRecord:${id}:name`);
-                }}
-              >
-                {uiText("Sonderposten")}
-              </MyButton>
-            </>
+            <RegieMaterialFields
+              products={{
+                ids: recordIds,
+                setIds: setRecordIds,
+                initialValues: initialRecordValues,
+              }}
+              specialRecords={{
+                ids: specialRecordIds,
+                setIds: setSpecialRecordIds,
+                initialValues: initialSpecialRecordValues,
+              }}
+              context={context}
+              createProduct={createEntityAction.product}
+              onProductChange={forceUpdate}
+              focusField={autoFocusFieldName}
+              setFocusField={setAutoFocusFieldName}
+            />
           )}
           <NotifyLoaded
             onLoad={async () => {
@@ -981,20 +609,20 @@ export function showModifyRegieReportModal(
                 week: report.day,
               });
 
-              if (report.projectId) {
+              const loadProject = async () => {
+                if (!report.projectId) return;
+
                 const [project] = await client.query(
                   "projects.get",
                   { id: report.projectId },
                   { strategy: "cache-first" },
                 );
                 if (project) context.setValues({ project: [project] });
-              }
+              };
 
-              const recordIdList: string[] = [];
-              for (const record of report.products) {
-                const id = record.id;
-                recordIdList.push(id);
-
+              const loadProduct = async (
+                record: RegieReport["products"][number],
+              ) => {
                 const [product] = await client.query(
                   "products.get",
                   { id: record.productId },
@@ -1003,29 +631,16 @@ export function showModifyRegieReportModal(
                 const [amount, unit] = product
                   ? upmatchUnit(product, record.quantity)
                   : [record.quantity, null];
-                initialRecordValues[id] = {
+                initialRecordValues[record.id] = {
                   product: product ?? null,
                   amount,
                   unit,
                 };
-              }
+              };
 
-              const specialRecordIdList: string[] = [];
-              report.specialRecords?.forEach((record) => {
-                const id = record.id;
-                specialRecordIdList.push(id);
-                initialSpecialRecordValues[id] = {
-                  name: record.name,
-                  unit: record.unit,
-                  amount: record.amount,
-                };
-              });
-
-              const workHourIdList: string[] = [];
-              for (const record of report.workHours) {
-                const id = record.id;
-                workHourIdList.push(id);
-
+              const loadWorkHour = async (
+                record: RegieReport["workHours"][number],
+              ) => {
                 let user: User | null = null;
                 if (record.userId) {
                   const [data] = await client.query(
@@ -1045,16 +660,28 @@ export function showModifyRegieReportModal(
                     ? deltaDays
                     : 0;
 
-                initialWorkHourValues[id] = {
+                initialWorkHourValues[record.id] = {
                   user,
                   dayIndex,
                   hours: record.hours,
                 };
+              };
+
+              const reads = [
+                loadProject,
+                ...report.products.map((record) => () => loadProduct(record)),
+                ...report.workHours.map((record) => () => loadWorkHour(record)),
+              ];
+              await mapConcurrent(reads, 4, (read) => read());
+
+              const specialRecords = report.specialRecords ?? [];
+              for (const { id, name, unit, amount } of specialRecords) {
+                initialSpecialRecordValues[id] = { name, unit, amount };
               }
 
-              setRecordIds(recordIdList);
-              setSpecialRecordIds(specialRecordIdList);
-              setWorkHourIds(workHourIdList);
+              setRecordIds(report.products.map(({ id }) => id));
+              setSpecialRecordIds(specialRecords.map(({ id }) => id));
+              setWorkHourIds(report.workHours.map(({ id }) => id));
               initialized = true;
             }}
           />
