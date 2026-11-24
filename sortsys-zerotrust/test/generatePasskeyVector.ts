@@ -7,14 +7,13 @@ import {
   openAccountVault,
   randomSecret,
   opaqueIdentifiers,
-  opaqueReady,
   startOpaqueRegistration,
 } from "../src/index";
-import { server } from "@serenity-kit/opaque";
+import { ready, server } from "@serenity-kit/opaque";
 
 // Public test credentials only. The production server never receives the
 // password export key or the authenticator's PRF output.
-await opaqueReady;
+await ready;
 const password = "SyntheticPasskeyAccount-261113";
 const opaqueServerSetup = server.createSetup();
 const started = await startOpaqueRegistration(password);

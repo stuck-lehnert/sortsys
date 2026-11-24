@@ -13,7 +13,7 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test",
     "test:portable": "node ./scripts/test-portable.mjs",
-    "build": "bun build ./src/index.ts ./src/sortsys.ts --target browser --outdir dist"
+    "build": "bun build ./src/index.ts ./src/sortsys.ts --target browser --splitting --outdir dist"
   },
   "dependencies": {
     "@noble/hashes": "2.4.0",

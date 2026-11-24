@@ -1,9 +1,20 @@
 import { expect, test } from "bun:test";
-import { server } from "@serenity-kit/opaque";
-import { createAccountVault, createIdentity, finishOpaqueLogin, finishOpaqueRegistration, opaqueIdentifiers, opaqueReady, openAccountVault, publicIdentity, rewrapAccountVault, startOpaqueLogin, startOpaqueRegistration } from "../src/sortsys";
+import { ready, server } from "@serenity-kit/opaque";
+import {
+  createAccountVault,
+  createIdentity,
+  finishOpaqueLogin,
+  finishOpaqueRegistration,
+  opaqueIdentifiers,
+  openAccountVault,
+  publicIdentity,
+  rewrapAccountVault,
+  startOpaqueLogin,
+  startOpaqueRegistration,
+} from "../src/sortsys";
 
 test("OPAQUE authenticates without sending a password and unlocks the same client vault", async () => {
-  await opaqueReady;
+  await ready;
   const password = "8#New-password-never-at-the-server";
   const setup = server.createSetup();
   const registration = await startOpaqueRegistration(password);

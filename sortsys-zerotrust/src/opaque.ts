@@ -1,18 +1,26 @@
-import { client, ready } from "@serenity-kit/opaque";
 import { opaqueIdentifiers } from "./credentials";
+
 export { opaqueIdentifiers } from "./credentials";
 
-export { ready as opaqueReady };
+type OpaqueClient = typeof import("@serenity-kit/opaque").client;
 export type OpaqueRegistrationStart = ReturnType<
-  typeof client.startRegistration
+  OpaqueClient["startRegistration"]
 >;
 export type OpaqueRegistrationResult = ReturnType<
-  typeof client.finishRegistration
+  OpaqueClient["finishRegistration"]
 >;
-export type OpaqueLoginStart = ReturnType<typeof client.startLogin>;
+export type OpaqueLoginStart = ReturnType<OpaqueClient["startLogin"]>;
 export type OpaqueLoginResult = NonNullable<
-  ReturnType<typeof client.finishLogin>
+  ReturnType<OpaqueClient["finishLogin"]>
 >;
+
+async function loadClient(): Promise<OpaqueClient> {
+  // Importing the WASM package starts initialization. Do that only when an
+  // OPAQUE operation runs, not when a page imports the shared crypto helpers.
+  const { client, ready } = await import("@serenity-kit/opaque");
+  await ready;
+  return client;
+}
 
 // Argon2id 64 MiB / 3 passes; the wrapper must run in a Worker in browser UIs.
 const keyStretching = {
@@ -22,7 +30,7 @@ const keyStretching = {
 export async function startOpaqueRegistration(
   password: string,
 ): Promise<OpaqueRegistrationStart> {
-  await ready;
+  const client = await loadClient();
   return client.startRegistration({ password });
 }
 
@@ -33,7 +41,7 @@ export async function finishOpaqueRegistration(
   state: OpaqueRegistrationStart,
   registrationResponse: string,
 ): Promise<OpaqueRegistrationResult> {
-  await ready;
+  const client = await loadClient();
   return client.finishRegistration({
     password,
     clientRegistrationState: state.clientRegistrationState,
@@ -46,7 +54,7 @@ export async function finishOpaqueRegistration(
 export async function startOpaqueLogin(
   password: string,
 ): Promise<OpaqueLoginStart> {
-  await ready;
+  const client = await loadClient();
   return client.startLogin({ password });
 }
 
@@ -57,7 +65,7 @@ export async function finishOpaqueLogin(
   state: OpaqueLoginStart,
   loginResponse: string,
 ): Promise<OpaqueLoginResult> {
-  await ready;
+  const client = await loadClient();
   const result = client.finishLogin({
     password,
     clientLoginState: state.clientLoginState,

@@ -1,10 +1,10 @@
 import { expect, test } from "bun:test";
-import { server } from "@serenity-kit/opaque";
-import { opaqueIdentifiers, opaqueReady } from "../src/sortsys";
+import { ready, server } from "@serenity-kit/opaque";
+import { opaqueIdentifiers } from "../src/sortsys";
 import { OpaqueWorkerClient } from "../src/opaqueWorker";
 
 test("password stretching runs in a dedicated worker and preserves the native OPAQUE protocol", async () => {
-  await opaqueReady;
+  await ready;
   const worker = new OpaqueWorkerClient(new Worker(new URL("./support/opaqueWorker.ts", import.meta.url), { type: "module" }));
   try {
     const password = "synthetic-worker-password";

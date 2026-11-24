@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { server } from "@serenity-kit/opaque";
+import { ready, server } from "@serenity-kit/opaque";
 import {
   accountRequestFingerprint,
   areaKey,
@@ -13,7 +13,6 @@ import {
   importSigningKey,
   InvalidProtectedData,
   type ObjectContext,
-  opaqueReady,
   opaqueIdentifiers,
   openBox,
   type Policy,
@@ -273,7 +272,7 @@ test("request fingerprints depend on the stable data key and their exact purpose
 });
 
 test("another application performs two seed recoveries and retains its historical content", async () => {
-  await opaqueReady;
+  await ready;
   let administrator = 0;
   const appointmentCreation = {
     scope: "create:appointment",

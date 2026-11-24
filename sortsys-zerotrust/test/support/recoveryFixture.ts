@@ -1,11 +1,10 @@
-import { server } from "@serenity-kit/opaque";
+import { ready, server } from "@serenity-kit/opaque";
 import {
   base64,
   createDomain,
   createIdentity,
   createRecoveryPhrase,
   createTenantSetup,
-  opaqueReady,
   opaqueIdentifiers,
   prepareRecovery,
   randomSecret,
@@ -13,7 +12,7 @@ import {
 import type { RecoverySource } from "../../src/sortsys";
 
 export async function recoveryFixture(options: { context?: string } = {}) {
-  await opaqueReady;
+  await ready;
   const phrase = createRecoveryPhrase();
   const owner = await createIdentity();
   const { setup, authorityKey } = await createTenantSetup(
