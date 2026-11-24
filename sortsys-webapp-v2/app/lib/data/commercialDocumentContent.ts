@@ -11,7 +11,6 @@ import type {
 import {
   base64,
   bytes,
-  digest,
   DOCUMENT_FACETS,
   documentBlob,
   type DocumentFacet,
@@ -23,11 +22,10 @@ import {
   type DocumentPart,
   encryptedObject,
   InvalidProtectedData,
-  objectFrame,
+  objectPacketHash,
   randomSecret,
   record,
   signDocumentHead,
-  signedPacketFrame,
   unbase64,
   utf8,
 } from "@sortsys/zerotrust/sortsys";
@@ -91,10 +89,8 @@ function fragmentsByFacet(fragments: readonly GaebXmlFragment[]) {
   }
   return groups;
 }
-const envelopeHash = (input: unknown) => {
-  const envelope = encryptedObject(input);
-  return digest(signedPacketFrame(objectFrame(envelope), envelope.signature));
-};
+
+const envelopeHash = (input: unknown) => objectPacketHash(encryptedObject(input));
 const token = () =>
   [...randomSecret().slice(0, 16)]
     .map((byte) => byte.toString(16).padStart(2, "0"))

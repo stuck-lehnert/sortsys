@@ -4,7 +4,7 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { missingBackupFiles, type BackupFiles } from "../backups/files";
 import type { BusinessRow } from "./rowCodec";
 import type { BusinessDatabase } from "./database";
-import { commercialDocumentStore } from "./commercialDocumentContent";
+import { commercialDocumentStores } from "./commercialDocumentContent";
 import { publicId, readBusinessRows } from "./products";
 
 const MAX_XML = 20 * 1024 * 1024;
@@ -67,13 +67,19 @@ export async function prepareCommercialDocuments(
     rows.push(row);
     grouped.set(id, rows);
   }
+
+  if (!grouped.size) return;
+
+  // Reuse the verified inventory for the import, not the document keys or
+  // decrypted parts. Reads and publications still use their own live checks.
+  const scopeOf = (caseId: string) => `commercial:${publicId(caseId)}`;
+  const selected =
+    grouped.size === 1 ? [...grouped.keys()].map(scopeOf) : undefined;
+  const open = await commercialDocumentStores(client, signal, selected);
+
   for (const [caseId, rows] of grouped) {
     signal.throwIfAborted();
-    const store = await commercialDocumentStore(
-      client,
-      `commercial:${publicId(caseId)}`,
-      signal,
-    );
+    const store = open(scopeOf(caseId));
     try {
       for (const row of rows) {
         const p = row.values,
