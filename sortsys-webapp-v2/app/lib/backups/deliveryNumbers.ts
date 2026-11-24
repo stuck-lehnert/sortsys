@@ -1,4 +1,5 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
+import { arrayBatches } from "@sortsys/zerotrust";
 import { frame, InvalidProtectedData, sign } from "@sortsys/zerotrust/sortsys";
 import { administratorContext } from "../crypto/administration";
 import { readInitializationSource } from "../crypto/initializationSource";
@@ -41,8 +42,8 @@ export async function adoptDeliveryNumbers(
   );
   if (status.generation !== admin.history.current.generation)
     throw new InvalidProtectedData();
-  for (let offset = 0; offset < rows.length; offset += 64) {
-    const allocations = rows.slice(offset, offset + 64).map((row) => {
+  for (const page of arrayBatches(rows, 64)) {
+    const allocations = page.map((row) => {
       if (
         row.table !== "product_delivery_notes" ||
         typeof row.values.auto_id !== "string" ||

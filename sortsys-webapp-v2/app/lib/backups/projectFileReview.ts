@@ -14,8 +14,10 @@ import {
   projectFileEntries,
   type FileContent,
 } from "../data/projectFileData";
-import { mapConcurrent } from "../data/runtime/concurrentReads";
-import type { ContentReadView } from "./readContentAreas";
+import {
+  forEachContentArea,
+  type ContentReadView,
+} from "./readContentAreas";
 
 export class RestoreProjectFileConflict extends Error {}
 
@@ -37,61 +39,57 @@ export async function inspectRestoredFiles(
     (project) => !view.readable(fileCollection(project)),
   ).length;
 
-  for (let offset = 0; offset < areas.length; offset += 16) {
-    const batch = areas.slice(offset, offset + 16);
-    await view.prefetch(batch.map((area) => ({ area })));
-    await mapConcurrent(batch, 2, async (area) => {
-      const project = fileDomainId(area.domain)!;
-      const objects = await view.read(area);
-      const images = new Set<string>();
-      photos.set(project, images);
-      const renditions: { id: string; manifest: FileContent }[] = [];
-      try {
-        const decoded = projectFileEntries(
-          project,
-          objects.map((object) => [object.envelope.object, object] as const),
-        );
-        const fileRows = [...decoded.files].filter(
-          ([, payload]) => payload.file,
-        );
-        const folderCount = [...decoded.folders.values()].filter(
-          (row) => row.folder,
-        ).length;
-        files += fileRows.length;
-        folders += folderCount;
-        if (fileRows.length || folderCount) {
-          if (!view.readable(projectCollection(project))) uncheckedAreas++;
-          else if (!projectIds.has(project)) missingProjects++;
-        }
-        for (const [id, payload] of fileRows) {
-          if (payload.original)
-            renditions.push({ id, manifest: payload.original });
-          if (payload.thumbnail)
-            renditions.push({ id, manifest: payload.thumbnail });
-          if (
-            payload.file?.values.kind === "image" &&
-            payload.file.values.status === "uploaded"
-          )
-            images.add(id);
-        }
-        // Immutable blocks still need the same approved view as their
-        // manifest when the corresponding area is closed in the live view.
-        await verifyFileContents(client, project, renditions, signal, view);
-      } catch (error) {
-        if (
-          error instanceof InvalidProtectedData ||
-          (error instanceof RpcClientError && error.code === "NOT_FOUND")
-        ) {
-          signal.throwIfAborted();
-          throw new RestoreProjectFileConflict(
-            "Invalid file contents or folder relationships",
-            { cause: error },
-          );
-        }
-        throw error;
+  await forEachContentArea(view, areas, 2, async (area) => {
+    const project = fileDomainId(area.domain)!;
+    const objects = await view.read(area);
+    const images = new Set<string>();
+    photos.set(project, images);
+
+    try {
+      const decoded = projectFileEntries(
+        project,
+        objects.map((object) => [object.envelope.object, object] as const),
+      );
+      const fileRows = [...decoded.files].filter(([, payload]) => payload.file);
+      const folderCount = [...decoded.folders.values()].filter(
+        (row) => row.folder,
+      ).length;
+      files += fileRows.length;
+      folders += folderCount;
+      if (fileRows.length || folderCount) {
+        if (!view.readable(projectCollection(project))) uncheckedAreas++;
+        else if (!projectIds.has(project)) missingProjects++;
       }
-    });
-  }
+
+      const renditions: { id: string; manifest: FileContent }[] = [];
+      for (const [id, payload] of fileRows) {
+        if (payload.original)
+          renditions.push({ id, manifest: payload.original });
+        if (payload.thumbnail)
+          renditions.push({ id, manifest: payload.thumbnail });
+        if (
+          payload.file?.values.kind === "image" &&
+          payload.file.values.status === "uploaded"
+        )
+          images.add(id);
+      }
+      // Immutable blocks still need the same approved view as their
+      // manifest when the corresponding area is closed in the live view.
+      await verifyFileContents(client, project, renditions, signal, view);
+    } catch (error) {
+      if (
+        error instanceof InvalidProtectedData ||
+        (error instanceof RpcClientError && error.code === "NOT_FOUND")
+      ) {
+        signal.throwIfAborted();
+        throw new RestoreProjectFileConflict(
+          "Invalid file contents or folder relationships",
+          { cause: error },
+        );
+      }
+      throw error;
+    }
+  });
 
   let missingPhotos = 0;
   let uncheckedPhotos = 0;
@@ -99,21 +97,18 @@ export async function inspectRestoredFiles(
     const report = dailyDomain(domain);
     return report && !report.costs ? dailyCollection(report.projectId) : null;
   });
-  for (let offset = 0; offset < reports.length; offset += 16) {
-    const batch = reports.slice(offset, offset + 16);
-    await view.prefetch(batch.map((area) => ({ area })));
-    await mapConcurrent(batch, 4, async (area) => {
-      const images = photos.get(dailyDomain(area.domain)!.projectId);
-      for (const { envelope, value } of await view.read(area)) {
-        const daily = DAILY_MODEL.decode(value, envelope.object, area);
-        for (const photo of daily.photos) {
-          if (!images) uncheckedPhotos++;
-          else if (!images.has(publicId(photo.values.project_file_id)))
-            missingPhotos++;
-        }
+  await forEachContentArea(view, reports, 4, async (area) => {
+    const images = photos.get(dailyDomain(area.domain)!.projectId);
+    for (const { envelope, value } of await view.read(area)) {
+      const daily = DAILY_MODEL.decode(value, envelope.object, area);
+      for (const photo of daily.photos) {
+        if (!images) uncheckedPhotos++;
+        else if (!images.has(publicId(photo.values.project_file_id)))
+          missingPhotos++;
       }
-    });
-  }
+    }
+  });
+
   return {
     files,
     folders,

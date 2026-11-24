@@ -1,4 +1,5 @@
 import type { Client, MutateInput, MutateResult } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import {
   authorityFrame,
   base64,
@@ -60,7 +61,6 @@ import {
   type Collection,
   type OpenedObject,
 } from "../data/protectedObjects";
-import { mapConcurrent } from "../data/runtime/concurrentReads";
 import { loadToolReturns } from "../data/toolReturns";
 import {
   TOOL_BOOKING_MODEL,
@@ -550,8 +550,7 @@ export async function inspectPreparedContent(
     throw new InvalidProtectedData();
   let retainedDocuments = 0;
   const scopes = inspectedCommercialAreas(dependencies.restoredDocumentScopes);
-  for (let offset = 0; offset < scopes.length; offset += 16) {
-    const readCases = scopes.slice(offset, offset + 16);
+  for (const readCases of arrayBatches(scopes, 16)) {
     const [collections] = await Promise.all([
       protectedCollections(client, signal, readCases.map((area) => area.domain)),
       view.prefetch(readCases.map((area) => ({ area }))),
