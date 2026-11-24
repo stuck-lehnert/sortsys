@@ -26,6 +26,7 @@ export const {
   objectContext,
   contextFrame,
   objectFrame,
+  objectPacketHash,
   encryptedObject,
   encryptObject,
   encryptTombstone,

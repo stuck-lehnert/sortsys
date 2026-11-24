@@ -268,6 +268,12 @@ export function createObjectCodec<const F extends string>(
     );
   }
 
+  /** Bind a metadata proof to one exact signed ciphertext revision. This is
+   * an address, not a substitute for verifying the object's signature. */
+  function objectPacketHash(object: EncryptedObject<F>) {
+    return digest(signedPacketFrame(objectFrame(object), object.signature));
+  }
+
   async function objectKeyShareContext(
     input: unknown,
     share: ObjectShareContext,
@@ -280,9 +286,7 @@ export function createObjectCodec<const F extends string>(
     revision(context.authorityGeneration);
     identifier(context.recipient);
     identifier(context.author);
-    const binding = await digest(
-      signedPacketFrame(objectFrame(obj), obj.signature),
-    );
+    const binding = await objectPacketHash(obj);
     return {
       tenant: obj.tenant,
       purpose: "object-key",
@@ -375,6 +379,7 @@ export function createObjectCodec<const F extends string>(
     objectContext,
     contextFrame,
     objectFrame,
+    objectPacketHash,
     encryptedObject,
     encryptObject,
     encryptTombstone,

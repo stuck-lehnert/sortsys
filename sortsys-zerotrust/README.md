@@ -48,6 +48,8 @@ in Rust. `test:portable` packt beide Bibliotheken und installiert sie in einem
 temporären Fremdprojekt. Dessen Browser-Code verwendet eigene Inhaltsbereiche;
 der Rust-Teil prüft die frisch erzeugten Signaturen und OpenTimestamps-Nachweise.
 Der Test veröffentlicht nichts und entfernt das Fremdprojekt anschließend.
+Sind die Abhängigkeiten bereits in den Bun- und Cargo-Caches vorhanden,
+läuft `node scripts/test-portable.mjs --offline` ohne Netzwerkzugriff.
 Die OpenTimestamps-Beispiele behalten ihre
 [ursprüngliche Lizenz](test/fixtures/opentimestamps.LICENSE).
 Die Bibliothek steht unter [AGPL-3.0-only](LICENSE). Eine externe kryptografische

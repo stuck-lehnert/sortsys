@@ -45,10 +45,7 @@ pub fn binding<F: AsRef<str>>(object: &EncryptedObject<F>) -> Result<String> {
     if object.is_tombstone() {
         return Err(invalid());
     }
-    Ok(format!(
-        "object-key:{}",
-        packet_hash(&object.frame()?, &object.signature)?
-    ))
+    Ok(format!("object-key:{}", object.packet_hash()?))
 }
 
 /// Permission, recipient certification, current-version checks and revocation

@@ -187,6 +187,12 @@ impl<F: AsRef<str>> EncryptedObject<F> {
     pub fn is_tombstone(&self) -> bool {
         self.format == "sortsys-object-tombstone-v1"
     }
+
+    /// Bind a metadata proof to this exact signed packet; callers still verify its signature.
+    pub fn packet_hash(&self) -> Result<String> {
+        crate::crypto::packet_hash(&self.frame()?, &self.signature)
+    }
+
     pub fn frame(&self) -> Result<Vec<u8>> {
         identifier(self.facet.as_ref())?;
         for value in [&self.tenant, &self.scope, &self.object, &self.author] {

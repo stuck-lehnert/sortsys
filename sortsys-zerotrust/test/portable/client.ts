@@ -7,15 +7,21 @@ import {
   certifyIdentity,
   credentialIdentifier,
   createAccountVault,
+  createCursorHistory,
   createDelegationCodec,
   createIdentity,
   createResourceCommandKey,
+  createScopedResource,
   createZeroTrust,
-  objectKeyRecipientBinding,
   digest,
+  objectKeyRecipientBinding,
+  findAvailableNumber,
   immutableObject,
   immutableWriteAction,
   InvalidProtectedData,
+  latestQuery,
+  mapConcurrent,
+  pendingReads,
   MigrationInventory,
   preparePayload,
   assemblePayload,
@@ -36,7 +42,6 @@ import {
   record,
   reserveRecoveryInventory,
   serializeOtsTree,
-  signedPacketFrame,
   sized,
   stampOtsDigest,
   VerifiedStore,
@@ -55,7 +60,98 @@ function require(condition: unknown): asserts condition {
   if (!condition) throw new Error("Portable framework assertion failed");
 }
 
+async function exerciseScopedResource() {
+  let controller = new AbortController();
+  let finish!: (value: string) => void;
+  const pending = new Promise<string>((resolve) => {
+    finish = resolve;
+  });
+  const closed: string[] = [];
+  let opened = 0;
+  const resource = createScopedResource({
+    signal: () => controller.signal,
+    assertActive: () => controller.signal.throwIfAborted(),
+    expired: () => new Error("Scope changed"),
+    open: () => (++opened === 1 ? pending : "current workspace"),
+    close: (value) => {
+      closed.push(value);
+    },
+  });
+
+  require(resource.getIfOpen() === null);
+  const previous = resource.get().then(() => false, () => true);
+  await Promise.resolve();
+  require(opened === 1);
+
+  resource.reset();
+  controller.abort();
+  controller = new AbortController();
+  require(resource.getIfOpen() === null);
+  require(await resource.get() === "current workspace");
+
+  finish("previous workspace");
+  require(await previous);
+  require(closed.join() === "previous workspace");
+  resource.reset();
+  await Promise.resolve();
+  require(closed.join() === "previous workspace,current workspace");
+}
+
 export async function exerciseFramework() {
+  await exerciseScopedResource();
+
+  let reads = 0;
+  const latestPage = await new Promise<number>((resolve, reject) => {
+    const query = latestQuery(
+      async () => {
+        const page = ++reads;
+        // A new snapshot arrives while the first read is in progress.
+        if (page === 1) query.refresh();
+        return page;
+      },
+      (page) => {
+        query.close();
+        resolve(page);
+      },
+      reject,
+    );
+    query.refresh();
+  });
+  require(latestPage === 2 && reads === 2);
+
+  const directory = createCursorHistory([{ id: "recent-sample" }], 1);
+  await directory.loadOlder(async (cursor) => {
+    require(cursor === "recent-sample");
+    return [{ id: "earlier-sample" }];
+  });
+  require(directory.getSnapshot().items.map(({ id }) => id).join() ===
+    "recent-sample,earlier-sample");
+
+  let fetchCount = 0;
+  const samples = pendingReads<{ page: number }>(
+    async () => ({ page: ++fetchCount }),
+    structuredClone,
+  );
+  const [samplePage, duplicatePage] = await Promise.all([
+    samples.get("samples", { offset: 20n }),
+    samples.get("samples", { offset: 20n }),
+  ]);
+  require(samplePage.page === 1 && duplicatePage.page === 1);
+  require(samplePage !== duplicatePage);
+  require((await samples.get("samples", { offset: 20n })).page === 2);
+
+  const redactedSamples = new Set(["lab:sample-9007199254740993"]);
+  const sample = await findAvailableNumber({
+    start: 1n,
+    next: 9007199254740993n,
+    max: 9007199254740994n,
+    format: (counter) => `sample-${counter}`,
+    address: async (number) => `lab:${number}`,
+    occupied: async ({ object }) => redactedSamples.has(object),
+  });
+  require(sample?.number === "sample-9007199254740994");
+  require(sample.nextNumber === "9007199254740995");
+
   const inventory = reserveRecoveryInventory(
     { domains: 2, keyGenerations: 10_001 },
     { domains: 0, keyGenerations: 2 },
@@ -66,7 +162,15 @@ export async function exerciseFramework() {
     operation: "restore:17",
   });
   require(payload.parts.length > 1);
-  require(assemblePayload(payload.manifest, payload.parts) === payloadText);
+
+  const inbox = new Map(payload.parts.map((part, index) => [index, part]));
+  const restored = await mapConcurrent(payload.parts, 2, async (_, index) => {
+    const part = inbox.get(index);
+    require(part !== undefined);
+    return part;
+  });
+  require(assemblePayload(payload.manifest, restored) === payloadText);
+
   const security = createZeroTrust({
     facets: ["research-notes", "appointments"],
   });
@@ -498,12 +602,7 @@ export async function exerciseFramework() {
     identity.signingKey.privateKey,
   );
   require(immutableWriteAction(permanent) === "create");
-  const packetDigest = await digest(
-    signedPacketFrame(
-      security.objects.objectFrame(permanent),
-      permanent.signature,
-    ),
-  );
+  const packetDigest = await security.objects.objectPacketHash(permanent);
   const digestBytes = sized(packetDigest, 32);
   const calendar = "https://alice.btc.calendar.opentimestamps.org";
   const proof = await stampOtsDigest(digestBytes, {
@@ -555,9 +654,7 @@ export async function exerciseFramework() {
     kind: "record",
     id: context.object,
     revision: object.revision,
-    hash: await digest(
-      signedPacketFrame(security.objects.objectFrame(object), object.signature),
-    ),
+    hash: await security.objects.objectPacketHash(object),
   });
   const targetInventory = new MigrationInventory();
   targetInventory.add({

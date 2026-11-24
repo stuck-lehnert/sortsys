@@ -1,6 +1,6 @@
-import { digest, frame, identifier, InvalidProtectedData, record, revision, signedPacketFrame, sized } from "./encoding";
+import { frame, identifier, InvalidProtectedData, record, revision, sized } from "./encoding";
 import { sign, verify } from "./identity";
-import { objectFrame } from "./objects";
+import { objectPacketHash } from "./objects";
 import type { EncryptedObject } from "./objects";
 
 export type StockKind = "product" | "vendor" | "price";
@@ -49,7 +49,7 @@ export async function signStockReferences(input: Omit<StockReferences, "signatur
 export async function verifyStockReferences(input: unknown, envelope: EncryptedObject, key: CryptoKey): Promise<StockReferences> {
   const value = stockReferences(input);
   if (value.tenant !== envelope.tenant || value.object !== envelope.object || value.revision !== envelope.revision || value.policyVersion !== envelope.policyVersion || value.author !== envelope.author
-    || value.envelopeHash !== await digest(signedPacketFrame(objectFrame(envelope), envelope.signature)) || value.domain !== `${envelope.scope}:${envelope.facet}`) throw new InvalidProtectedData();
+    || value.envelopeHash !== await objectPacketHash(envelope) || value.domain !== `${envelope.scope}:${envelope.facet}`) throw new InvalidProtectedData();
   await verify(key, value.signature, stockReferenceFrame(value)); return value;
 }
 export function stockDeletion(input: unknown): StockDeletion {

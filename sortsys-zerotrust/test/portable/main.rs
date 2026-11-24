@@ -548,11 +548,7 @@ fn main() {
         immutable::write_action(&vector.permanent).unwrap(),
         Some(Action::Create)
     );
-    let digest = packet_hash(
-        &vector.permanent.frame().unwrap(),
-        &vector.permanent.signature,
-    )
-    .unwrap();
+    let digest = vector.permanent.packet_hash().unwrap();
     assert_eq!(digest, vector.packet_digest);
     let proof = decode(&vector.proof, opentimestamps::MAX_BYTES).unwrap();
     assert!(
@@ -564,8 +560,7 @@ fn main() {
 
     vector.migration.verify(&signer).unwrap();
     let mut source_inventory = MigrationInventory::default();
-    let source_hash =
-        packet_hash(&vector.object.frame().unwrap(), &vector.object.signature).unwrap();
+    let source_hash = vector.object.packet_hash().unwrap();
     source_inventory
         .add(
             "record",
