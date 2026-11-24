@@ -4092,7 +4092,91 @@ for (const { locale, theme, width } of [
   });
 }
 
+test("client scripts load new details once and save code and metadata independently", async () => {
+  await page.goto(`${server.origin}/crypto.html`);
+  await page.waitForFunction(() => window.cryptoFixture);
+  await page.evaluate(() => window.cryptoFixture.showClientScripts({ empty: true }));
+
+  await page.getByRole("button", { name: "Neu", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Skript erstellen" });
+  await dialog.getByRole("textbox", { name: "Name" }).fill("Baustellenexport");
+  await dialog.getByRole("button", { name: "Erstellen", exact: true }).click();
+
+  const editor = page.locator(".script-edit-page");
+  await editor.locator(".monaco-editor").waitFor({ timeout: 20000 });
+  const newDetailReads = await page.evaluate(() =>
+    window.cryptoFixture
+      .clientScriptRequests()
+      .filter((path) => path === "clientScripts.get"),
+  );
+  assert.equal(newDetailReads.length, 1);
+
+  const draft = "const baustellenexport = true;";
+  await page.evaluate((source) => window.cryptoFixture.setScriptDraft(source), draft);
+  const back = editor.getByRole("button", { name: "Zurück", exact: true });
+  await back.click();
+
+  const details = page.locator(".script-editor-tile");
+  const name = details.getByRole("textbox", { name: "Name", exact: true });
+  const saveMetadata = details.getByRole("button", {
+    name: "Speichern",
+    exact: true,
+  });
+  await name.fill("Baustellenexport PDF");
+  await saveMetadata.click();
+  await page.getByRole("button", { name: /Baustellenexport PDF/ }).waitFor();
+  await details.locator(".script-code-preview-content").getByText(draft).waitFor();
+
+  await name.fill("Noch nicht gespeicherter Name");
+  await details.getByRole("button", { name: "Bearbeiten", exact: true }).click();
+  const saveCode = editor.getByRole("button", { name: "Speichern", exact: true });
+  await saveCode.click();
+  await page.waitForFunction(() => {
+    const lists = window.cryptoFixture
+      .clientScriptRequests()
+      .filter((path) => path === "clientScripts.list");
+    return lists.length >= 4;
+  });
+  await saveCode.and(page.locator(":disabled")).waitFor();
+  await back.click();
+  assert.equal(await name.inputValue(), "Noch nicht gespeicherter Name");
+  assert.equal(await saveMetadata.isEnabled(), true);
+  await page.getByRole("button", { name: /Baustellenexport PDF/ }).waitFor();
+});
+
+test("a pending script save does not restore the previous selection", async () => {
+  await page.goto(`${server.origin}/crypto.html`);
+  await page.waitForFunction(() => window.cryptoFixture);
+  await page.evaluate(() =>
+    window.cryptoFixture.showClientScripts({ twoScripts: true }),
+  );
+
+  const first = page.getByRole("button", { name: /Fixture script/ });
+  const second = page.getByRole("button", { name: /Second script/ });
+  const details = page.locator(".script-editor-tile");
+  const name = details.getByRole("textbox", { name: "Name", exact: true });
+
+  // A fresh context loads the encrypted data runtime before showing the list.
+  await first.waitFor({ timeout: 20000 });
+  await first.click();
+  await name.fill("Saved first script");
+  await page.evaluate(() => window.cryptoFixture.holdScriptUpdate());
+  await details.getByRole("button", { name: "Speichern", exact: true }).click();
+  await page.waitForFunction(() => window.cryptoFixture.scriptUpdatePending());
+
+  await second.click();
+  await details.getByRole("heading", { name: "Second script" }).waitFor();
+  await name.fill("Unsaved second script");
+
+  await page.evaluate(() => window.cryptoFixture.releaseScriptUpdate());
+  await page.getByRole("button", { name: /Saved first script/ }).waitFor();
+
+  assert.equal(await second.getAttribute("data-active"), "true");
+  assert.equal(await name.inputValue(), "Unsaved second script");
+});
+
 test("client script Monaco worker validates the current encrypted API and rejects removed calls", async () => {
+  page.setDefaultTimeout(15000);
   await page.goto(`${server.origin}/crypto.html`);
   await page.waitForFunction(() => window.cryptoFixture);
   await page.evaluate(() =>
@@ -4212,6 +4296,46 @@ test("client scripts do not render a draft editor for an empty listing", async (
     false,
   );
   await checkPageLayout("client-scripts-empty");
+});
+
+test("a client script encodes binary data and logs its result in the worker", async () => {
+  const code = `
+const { client } = await import("sortsys-client");
+const { log } = await import("sortsys-log");
+const { fromBase64, fromBase64Url, toBase64, toBase64Url, utf8Decode, utf8Encode } = await import("sortsys-utils");
+
+const title = "Aufmaß für die Tür";
+const bytes = utf8Encode(title.repeat(2_000));
+const encoded = toBase64(bytes);
+if (utf8Decode(fromBase64(encoded)) !== title.repeat(2_000)) {
+  throw new Error("Base64 round trip failed");
+}
+
+const urlSafe = toBase64Url(new Uint8Array([251, 255]));
+if (urlSafe !== "-_8" || fromBase64Url(urlSafe).join(",") !== "251,255") {
+  throw new Error("Base64url round trip failed");
+}
+
+if ("login" in client || "restoreSession" in client) {
+  throw new Error("The script client exposes a session method");
+}
+
+await log("Document encoding verified");`;
+
+  await page.goto(`${server.origin}/crypto.html`);
+  await page.waitForFunction(() => window.cryptoFixture);
+  await page.evaluate(
+    (source) =>
+      window.cryptoFixture.showClientScripts({ locale: "en", code: source }),
+    code,
+  );
+
+  await page.getByRole("button", { name: /Fixture script/ }).click();
+  await page.getByRole("button", { name: /^(Run|Ausführen)$/ }).click();
+  await page
+    .getByRole("log", { name: "Script console" })
+    .getByText("Document encoding verified", { exact: true })
+    .waitFor();
 });
 
 for (const permission of ["create", "delete"]) {

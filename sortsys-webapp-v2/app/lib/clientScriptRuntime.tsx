@@ -7,6 +7,11 @@ import { useMyModals, type MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
 import { Icons } from "~/lib/icons";
 import { sanitizeHtml } from "~/lib/sanitizeHtml";
+import {
+  scriptModuleImportPattern,
+  scriptModuleNames,
+  type ScriptModuleName,
+} from "./scriptModules";
 
 type SerializedError = {
   name: string;
@@ -55,7 +60,6 @@ type PendingResolver = {
   reject: (error: Error) => void;
 };
 
-const ALLOWED_SCRIPT_IMPORTS = ['sortsys-client', 'sortsys-popups', 'sortsys-modal-forms', 'sortsys-log', 'sortsys-utils'] as const;
 const SCRIPT_TIMEOUT_MS = 120_000;
 
 function serializeError(err: unknown): SerializedError {
@@ -134,17 +138,22 @@ function renderLogValue(value: unknown, index: number) {
 }
 
 function assertAllowedImports(code: string) {
-  const allowed = ALLOWED_SCRIPT_IMPORTS.join('|');
-  const stripped = code.replace(new RegExp(`\\bimport\\s*\\(\\s*(['"])(?:${allowed})\\1\\s*\\)`, 'g'), '');
+  const stripped = code.replace(scriptModuleImportPattern(), '');
   if (/\bimport\s*(?:\(|[\w*{])/.test(stripped) || /(^|\n)\s*export\s+/m.test(stripped)) {
-    throw new Error(uiText(`Nur dynamische Imports dieser Module sind erlaubt: ${ALLOWED_SCRIPT_IMPORTS.join(', ')}`, `Only dynamic imports of these modules are allowed: ${ALLOWED_SCRIPT_IMPORTS.join(', ')}`));
+    const modules = scriptModuleNames.join(', ');
+    throw new Error(uiText(
+      `Nur dynamische Imports dieser Module sind erlaubt: ${modules}`,
+      `Only dynamic imports of these modules are allowed: ${modules}`,
+    ));
   }
 }
 
-function replaceAllowedImports(code: string, urls: Record<(typeof ALLOWED_SCRIPT_IMPORTS)[number], string>) {
-  return code.replace(/\bimport\s*\(\s*(['"])(sortsys-client|sortsys-popups|sortsys-modal-forms|sortsys-log|sortsys-utils)\1\s*\)/g, (_match, _quote, moduleName) => {
-    return `import(${JSON.stringify(urls[moduleName as keyof typeof urls])})`;
-  });
+function replaceAllowedImports(code: string, urls: Record<ScriptModuleName, string>) {
+  return code.replace(
+    scriptModuleImportPattern(),
+    (_match, _quote, moduleName: ScriptModuleName) =>
+      `import(${JSON.stringify(urls[moduleName])})`,
+  );
 }
 
 function createBridgeModuleSources() {
@@ -155,11 +164,6 @@ export const client = {
   mutate(path, input, opts) { return rpc('client.mutate', { path, input, opts }); },
   invalidate(path) { return rpc('client.invalidate', { path }); },
   invalidateCascading(path) { return rpc('client.invalidateCascading', { path }); },
-  streamQuery() { throw new Error('streamQuery is not available inside client scripts. Use query instead.'); },
-  login() { throw new Error('login is not available inside client scripts.'); },
-  logout() { throw new Error('logout is not available inside client scripts.'); },
-  setToken() { throw new Error('setToken is not available inside client scripts.'); },
-  restoreSession() { throw new Error('restoreSession is not available inside client scripts.'); },
 };
 `;
 
@@ -259,7 +263,6 @@ const htmlEscapes = {
   '"': '&quot;',
   "'": '&#39;',
 };
-const base64Alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/';
 const textEncoder = new TextEncoder();
 const textDecoder = new TextDecoder('utf-8', { fatal: false });
 
@@ -279,22 +282,6 @@ function toFiniteNumbers(values) {
 
 function positiveInteger(value) {
   if (!Number.isInteger(value) || value < 1) throw new TypeError('Expected positive integer.');
-  return value;
-}
-
-function normalizeBase64(value) {
-  let clean = String(value).replace(/\\s+/g, '').replace(/-/g, '+').replace(/_/g, '/');
-  if (clean.length % 4 === 1) throw new TypeError('Invalid base64 string.');
-  clean += '='.repeat((4 - clean.length % 4) % 4);
-  if (!/^[A-Za-z0-9+/]*={0,2}$/.test(clean) || /=/.test(clean.slice(0, -2))) {
-    throw new TypeError('Invalid base64 string.');
-  }
-  return clean;
-}
-
-function base64Value(char) {
-  const value = base64Alphabet.indexOf(char);
-  if (value < 0) throw new TypeError('Invalid base64 string.');
   return value;
 }
 
@@ -320,38 +307,17 @@ export function utf8Decode(bytes) {
 
 export function toBase64(bytes) {
   bytes = assertBytes(bytes);
-  let out = '';
-  for (let i = 0; i < bytes.length; i += 3) {
-    const a = bytes[i];
-    const b = bytes[i + 1] ?? 0;
-    const c = bytes[i + 2] ?? 0;
-    out += base64Alphabet[a >> 2];
-    out += base64Alphabet[((a & 3) << 4) | (b >> 4)];
-    out += i + 1 < bytes.length ? base64Alphabet[((b & 15) << 2) | (c >> 6)] : '=';
-    out += i + 2 < bytes.length ? base64Alphabet[c & 63] : '=';
+  const chunks = [];
+  const chunkSize = 16_384;
+  for (let offset = 0; offset < bytes.length; offset += chunkSize) {
+    chunks.push(String.fromCharCode(...bytes.subarray(offset, offset + chunkSize)));
   }
-  return out;
+  return btoa(chunks.join(''));
 }
 
 export function fromBase64(value) {
-  const clean = normalizeBase64(value);
-  const padding = clean.endsWith('==') ? 2 : clean.endsWith('=') ? 1 : 0;
-  const out = new Uint8Array((clean.length / 4) * 3 - padding);
-  let outIndex = 0;
-
-  for (let i = 0; i < clean.length; i += 4) {
-    const c1 = base64Value(clean[i]);
-    const c2 = base64Value(clean[i + 1]);
-    const c3 = clean[i + 2] === '=' ? 0 : base64Value(clean[i + 2]);
-    const c4 = clean[i + 3] === '=' ? 0 : base64Value(clean[i + 3]);
-    const n = (c1 << 18) | (c2 << 12) | (c3 << 6) | c4;
-
-    out[outIndex++] = n >> 16;
-    if (outIndex < out.length) out[outIndex++] = (n >> 8) & 255;
-    if (outIndex < out.length) out[outIndex++] = n & 255;
-  }
-
-  return out;
+  const clean = String(value).replace(/\\s+/g, '').replaceAll('-', '+').replaceAll('_', '/');
+  return Uint8Array.from(atob(clean), char => char.charCodeAt(0));
 }
 
 export function toBase64Url(bytes) {

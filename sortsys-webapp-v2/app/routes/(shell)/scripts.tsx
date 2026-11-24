@@ -1,4 +1,5 @@
 import { Button as UIAction } from "@sortsys/react-components";
+import type { QueryResult } from "@sortsys/v2-client";
 import { uiText } from "~/lib/i18n";
 import {
   Checkbox,
@@ -26,18 +27,11 @@ import {
 } from "~/lib/clientScriptRuntime";
 import { NotFound } from "./_404";
 
-type ClientScriptSummary = {
-  id: string;
-  name: string;
-  description: string | null;
-  enabled: boolean;
-  createdAt: Date;
-  modifiedAt: Date;
-};
-
-type ClientScriptDetail = ClientScriptSummary & {
-  code: string;
-};
+type ClientScriptSummary = QueryResult<"clientScripts.list">[number];
+type ClientScriptDetail = NonNullable<QueryResult<"clientScripts.get">>;
+type ScriptChanges =
+  | Pick<ClientScriptDetail, "name" | "description" | "enabled">
+  | Pick<ClientScriptDetail, "code">;
 
 const DEFAULT_SCRIPT = `const { client } = await import('sortsys-client');
 const { requireConfirmation } = await import('sortsys-popups');
@@ -109,8 +103,7 @@ export default function ClientScriptsPage() {
         includeDisabled: true,
       });
       if (err) throw err;
-      const rows = (data ?? []) as ClientScriptSummary[];
-      setScripts(rows);
+      setScripts(data ?? []);
       if (selectId !== undefined) {
         setSelectedId(selectId);
       }
@@ -157,12 +150,11 @@ export default function ClientScriptsPage() {
         throw new Error(uiText("Skript nicht gefunden."));
       }
 
-      const script = data as ClientScriptDetail;
-      setLoadedScript(script);
-      setName(script.name);
-      setDescription(script.description ?? "");
-      setEnabled(script.enabled);
-      setCode(script.code);
+      setLoadedScript(data);
+      setName(data.name);
+      setDescription(data.description ?? "");
+      setEnabled(data.enabled);
+      setCode(data.code);
     } catch (err) {
       if (request === detailRequest.current) {
         setError(
@@ -232,13 +224,11 @@ export default function ClientScriptsPage() {
           if (!data)
             throw new Error(uiText("Skript konnte nicht erstellt werden."));
 
-          const script = data as ClientScriptDetail;
           hide();
           notifications.success({
             title: uiText("Skript erstellt", "Script created"),
           });
-          await loadScripts(script.id);
-          await loadScript(script.id);
+          await loadScripts(data.id);
           setEditMode(canManage);
         } catch (err) {
           setError(
@@ -258,85 +248,59 @@ export default function ClientScriptsPage() {
     });
   }
 
-  async function saveMetadata() {
-    if (!canManage || !selectedId) return;
-    const trimmedName = name.trim();
-    if (!trimmedName) {
+  async function saveScript(changes: ScriptChanges) {
+    if (!canManage || !selectedId || isSaving || loadedScript?.id !== selectedId) {
+      return;
+    }
+
+    if ("name" in changes && !changes.name) {
       setError("Name fehlt.");
       return;
     }
 
+    const request = detailRequest.current;
     setIsSaving(true);
     setError(null);
     try {
-      const [data, err] = await client.mutate("clientScripts.update", {
+      const [script, err] = await client.mutate("clientScripts.update", {
         id: selectedId,
-        data: {
-          name: trimmedName,
-          description: description.trim() || null,
-          enabled,
-        },
+        data: changes,
       });
       if (err) throw err;
-      if (!data)
+      if (!script)
         throw new Error(uiText("Skript konnte nicht gespeichert werden."));
 
-      const script = data as ClientScriptDetail;
       notifications.success({
         title: uiText("Skript gespeichert", "Script saved"),
       });
-      setLoadedScript((current) =>
-        current?.id === script.id
-          ? {
-              ...current,
-              name: script.name,
-              description: script.description,
-              enabled: script.enabled,
-              modifiedAt: script.modifiedAt,
-            }
-          : script,
-      );
-      setName(script.name);
-      setDescription(script.description ?? "");
-      setEnabled(script.enabled);
-      await loadScripts(script.id);
-    } catch (err) {
-      setError(
-        (err as Error)?.message ||
-          uiText("Skript konnte nicht gespeichert werden."),
-      );
-    } finally {
-      setIsSaving(false);
-    }
-  }
 
-  async function saveCode() {
-    if (!canManage || !selectedId) return;
+      if (request === detailRequest.current) {
+        // Update only the submitted baseline. A newer draft stays editable.
+        let savedFields: ScriptChanges;
+        if ("code" in changes) {
+          savedFields = { code: script.code };
+          setCode((current) => current === changes.code ? script.code : current);
+        } else {
+          savedFields = {
+            name: script.name,
+            description: script.description,
+            enabled: script.enabled,
+          };
+          setName((current) => current === name ? script.name : current);
+          setDescription((current) =>
+            current === description ? (script.description ?? "") : current,
+          );
+          setEnabled((current) => current === enabled ? script.enabled : current);
+        }
 
-    setIsSaving(true);
-    setError(null);
-    try {
-      const [data, err] = await client.mutate("clientScripts.update", {
-        id: selectedId,
-        data: {
-          code,
-        },
-      });
-      if (err) throw err;
-      if (!data)
-        throw new Error(uiText("Skript konnte nicht gespeichert werden."));
+        setLoadedScript((current) =>
+          current?.id === script.id
+            ? { ...current, ...savedFields, modifiedAt: script.modifiedAt }
+            : current,
+        );
+      }
 
-      const script = data as ClientScriptDetail;
-      notifications.success({
-        title: uiText("Skript gespeichert", "Script saved"),
-      });
-      setLoadedScript((current) =>
-        current?.id === script.id
-          ? { ...current, code: script.code, modifiedAt: script.modifiedAt }
-          : script,
-      );
-      setCode(script.code);
-      await loadScripts(script.id);
+      await loadScripts();
     } catch (err) {
       setError(
         (err as Error)?.message ||
@@ -355,7 +319,7 @@ export default function ClientScriptsPage() {
       e.stopPropagation();
       if (!isCodeDirty || isLoading || isSaving || !selectedId || !canManage)
         return;
-      void saveCode();
+      void saveScript({ code });
     },
     { disableTextInputs: false },
   );
@@ -472,7 +436,7 @@ export default function ClientScriptsPage() {
                 renderIcon={Icons.Accept}
                 loading={isSaving}
                 disabled={!isCodeDirty || isLoading || !selectedId}
-                onClick={saveCode}
+                onClick={() => saveScript({ code })}
               >
                 {uiText("Speichern")}
               </MyButton>
@@ -599,7 +563,13 @@ export default function ClientScriptsPage() {
                     renderIcon={Icons.Accept}
                     loading={isSaving}
                     disabled={!isMetadataDirty || isLoading}
-                    onClick={saveMetadata}
+                    onClick={() =>
+                      saveScript({
+                        name: name.trim(),
+                        description: description.trim() || null,
+                        enabled,
+                      })
+                    }
                   >
                     {uiText("Speichern")}
                   </MyButton>

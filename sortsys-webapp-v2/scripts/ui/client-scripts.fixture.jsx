@@ -21,6 +21,8 @@ export async function showClientScripts(
     theme = "light",
     actions,
     holdDetail = false,
+    twoScripts = false,
+    code = "const fixturePreview = true;",
   } = {},
 ) {
   document.documentElement.classList.toggle("dark", theme === "dark");
@@ -30,18 +32,18 @@ export async function showClientScripts(
     [CLIENT_SCRIPT_COLLECTION],
     () => actions ?? ["read", "create", "update", "delete"],
   );
-  if (!empty) {
-    await tenant.seed(CLIENT_SCRIPT_COLLECTION, "client-script:7", {
+  async function seedScript(id, name) {
+    await tenant.seed(CLIENT_SCRIPT_COLLECTION, `client-script:${id}`, {
       format: "sortsys-client-script-v1",
       row: {
         format: "sortsys-row-v2",
         schema: businessSchema.fingerprint,
         table: "client_scripts",
         values: {
-          id: "7",
-          name: "Fixture script",
+          id,
+          name,
           description: "Synthetic preview only",
-          code: "const fixturePreview = true;",
+          code,
           enabled: true,
           created_by_user_id: "1",
           modified_by_user_id: "1",
@@ -51,6 +53,10 @@ export async function showClientScripts(
       },
     });
   }
+
+  if (!empty) await seedScript("7", "Fixture script");
+  if (twoScripts) await seedScript("8", "Second script");
+
   const controller = new AbortController();
   const access = createContentAccess(tenant.client, () => controller.signal);
   const business = createBusinessClient(tenant.client);
@@ -64,7 +70,17 @@ export async function showClientScripts(
     if (path === "clientScripts.get" && holdDetail) await pending;
     return business.query(path, input, options);
   };
-  client.mutate = business.mutate;
+  let updateGate;
+  client.mutate = async (path, input, options) => {
+    if (path === "clientScripts.update" && updateGate) {
+      const gate = updateGate;
+      gate.started = true;
+      await gate.pending;
+      updateGate = undefined;
+    }
+
+    return business.mutate(path, input, options);
+  };
   client.streamQuery = business.streamQuery;
   client.invalidate = business.invalidate;
   const sessionClient = {
@@ -89,17 +105,33 @@ export async function showClientScripts(
       }),
   };
   window.cryptoFixture.releaseScriptDetail = () => release();
+  window.cryptoFixture.holdScriptUpdate = () => {
+    let releaseUpdate;
+    const pendingUpdate = new Promise((resolve) => {
+      releaseUpdate = resolve;
+    });
+    updateGate = { pending: pendingUpdate, release: releaseUpdate, started: false };
+  };
+  window.cryptoFixture.scriptUpdatePending = () => updateGate?.started === true;
+  window.cryptoFixture.releaseScriptUpdate = () => updateGate.release();
   window.cryptoFixture.clientScriptRequests = () => requests;
   window.cryptoFixture.clientScriptWireCalls = () => tenant.calls;
-  window.cryptoFixture.inspectScriptTypes = async (
-    source,
-    completionOffset,
-  ) => {
+
+  async function scriptEditorModel() {
     const monaco = await import("monaco-editor");
     const model = monaco.editor
       .getModels()
       .find((model) => model.uri.path.startsWith("/sortsys/client-script-"));
     if (!model) throw new Error("The real script editor must be open");
+    return { monaco, model };
+  }
+
+  window.cryptoFixture.setScriptDraft = async (source) => {
+    const { model } = await scriptEditorModel();
+    model.setValue(source);
+  };
+  window.cryptoFixture.inspectScriptTypes = async (source, completionOffset) => {
+    const { monaco, model } = await scriptEditorModel();
     model.setValue(source);
     const getWorker = await monaco.typescript.getJavaScriptWorker();
     const worker = await getWorker(model.uri);

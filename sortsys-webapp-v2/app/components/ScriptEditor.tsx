@@ -1,50 +1,18 @@
 import { uiText } from "~/lib/i18n";
 import { useEffect, useRef } from "react";
 import { useTheme } from "~/hooks/useTheme";
+import {
+  escapeRegExp,
+  scriptModuleExports,
+  scriptModuleNames,
+} from "~/lib/scriptModules";
 
 let scriptTypeLibsLoaded = false;
 let scriptImportCompletionsLoaded = false;
 
-const SCRIPT_IMPORT_MODULES = [
-  'sortsys-client',
-  'sortsys-popups',
-  'sortsys-modal-forms',
-  'sortsys-log',
-  'sortsys-utils',
-] as const;
-
-const SCRIPT_IMPORT_EXPORTS = [
-  { symbol: 'client', moduleName: 'sortsys-client' },
-  { symbol: 'requireConfirmation', moduleName: 'sortsys-popups' },
-  { symbol: 'requireDangerConfirmation', moduleName: 'sortsys-popups' },
-  { symbol: 'showModalForm', moduleName: 'sortsys-modal-forms' },
-  { symbol: 'log', moduleName: 'sortsys-log' },
-  { symbol: 'escapeHtml', moduleName: 'sortsys-utils' },
-  { symbol: 'urlEncode', moduleName: 'sortsys-utils' },
-  { symbol: 'urlDecode', moduleName: 'sortsys-utils' },
-  { symbol: 'toBase64', moduleName: 'sortsys-utils' },
-  { symbol: 'fromBase64', moduleName: 'sortsys-utils' },
-  { symbol: 'toBase64Url', moduleName: 'sortsys-utils' },
-  { symbol: 'fromBase64Url', moduleName: 'sortsys-utils' },
-  { symbol: 'utf8Decode', moduleName: 'sortsys-utils' },
-  { symbol: 'utf8Encode', moduleName: 'sortsys-utils' },
-  { symbol: 'sum', moduleName: 'sortsys-utils' },
-  { symbol: 'mean', moduleName: 'sortsys-utils' },
-  { symbol: 'median', moduleName: 'sortsys-utils' },
-  { symbol: 'min', moduleName: 'sortsys-utils' },
-  { symbol: 'max', moduleName: 'sortsys-utils' },
-  { symbol: 'clamp', moduleName: 'sortsys-utils' },
-  { symbol: 'round', moduleName: 'sortsys-utils' },
-  { symbol: 'unique', moduleName: 'sortsys-utils' },
-  { symbol: 'chunk', moduleName: 'sortsys-utils' },
-  { symbol: 'range', moduleName: 'sortsys-utils' },
-  { symbol: 'isBlank', moduleName: 'sortsys-utils' },
-  { symbol: 'sleep', moduleName: 'sortsys-utils' },
-] as const;
-
-function escapeRegExp(value: string) {
-  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
+const SCRIPT_IMPORT_EXPORTS = Object.entries(scriptModuleExports).flatMap(
+  ([moduleName, symbols]) => symbols.map((symbol) => ({ symbol, moduleName })),
+);
 
 function importedNamesFrom(source: string) {
   return source
@@ -293,7 +261,7 @@ export function ScriptEditor(props: {
                 : new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column);
 
               return {
-                suggestions: SCRIPT_IMPORT_MODULES.map(moduleName => ({
+                suggestions: scriptModuleNames.map(moduleName => ({
                   label: moduleName,
                   kind: monaco.languages.CompletionItemKind.Module,
                   detail: 'Client-Skript-Modul',
