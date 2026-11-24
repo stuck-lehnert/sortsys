@@ -5,7 +5,7 @@ import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { NotFound } from "./_404";
 import { MyHeader } from "~/components/MyHeader";
-import { customerName, formatAddress } from "~/lib/format";
+import { customerName } from "~/lib/format";
 import { MyDropdown } from "~/components/MyDropdown";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -16,8 +16,10 @@ import {
 } from "~/modals/customers";
 import { MyDivider } from "~/components/MyDivider";
 import { AttrList } from "~/components/AttrList";
-import { MyLink } from "~/components/MyLink";
-import { addressUrl } from "~/lib/utils";
+import {
+  AddressAttribute,
+  ContactDetailsList,
+} from "~/components/ContactDetailsList";
 import { useTitle } from "~/hooks/useTitle";
 import { useShortcut } from "~/hooks/useShortcut";
 import { MyExpandable } from "~/components/MyExpandable";
@@ -92,38 +94,10 @@ export default function CustomerDetailPage() {
           />
         )}
         <AttrList.Attr name={uiText("Name")} value={customer.name} />
-        {!!customer.address && (
-          <AttrList.Attr
-            name={uiText("Anschrift", "Address")}
-            value={
-              <MyLink to={addressUrl(customer.address)} target="_blank">
-                {formatAddress(customer.address)}
-              </MyLink>
-            }
-          />
-        )}
+        {customer.address && <AddressAttribute address={customer.address} />}
       </AttrList>
 
-      <AttrList>
-        {customer.emailAddresses.map(({ email, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? uiText(`E-Mail ${i + 1}`, `Email ${i + 1}`)}
-              value={<MyLink to={`mailto:${email}`}>{email}</MyLink>}
-            />
-          );
-        })}
-        {customer.phoneNumbers.map(({ number, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? uiText(`Telefon ${i + 1}`, `Phone ${i + 1}`)}
-              value={<MyLink to={`tel:${number}`}>{number}</MyLink>}
-            />
-          );
-        })}
-      </AttrList>
+      <ContactDetailsList details={customer} />
 
       <MyDivider />
 

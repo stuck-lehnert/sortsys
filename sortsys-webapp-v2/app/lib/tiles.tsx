@@ -2,13 +2,16 @@ import { uiText } from "~/lib/i18n";
 import { Heading, Tag, Tile } from "@sortsys/react-components";
 import { AttrList } from "~/components/AttrList";
 import { Awaited } from "~/components/Awaited";
+import {
+  AddressAttribute,
+  ContactDetailsList,
+} from "~/components/ContactDetailsList";
 import { MyLink } from "~/components/MyLink";
 import { trackingToolReference } from "~/components/trackingToolReference";
 import { client } from "~/lib/client";
 import {
   contactName,
   customerName,
-  formatAddress,
   formatCurrency,
   formatDate,
   productTitle,
@@ -19,7 +22,6 @@ import {
   userFullName,
 } from "~/lib/format";
 import { nowrap } from "~/lib/primitives";
-import { addressUrl } from "~/lib/utils";
 import {
   dayInIsoWeek,
   isoWeekLabel,
@@ -338,14 +340,7 @@ export function ProjectTile({
 
       <AttrList>
         {!!project.address && !omit.includes("address") && (
-          <AttrList.Attr
-            name="Anschrift"
-            value={
-              <MyLink to={addressUrl(project.address)} target="_blank">
-                {formatAddress(project.address)}
-              </MyLink>
-            }
-          />
+          <AddressAttribute address={project.address} />
         )}
 
         {!!project.customerId && !omit.includes("customer") && (
@@ -455,8 +450,6 @@ export function CustomerTile({
   customer: Customer;
   omit?: "address"[];
 }) {
-  omit ??= [];
-
   return (
     <Tile key={customer.id} className="w-full">
       <Heading level={5} noMargin>
@@ -468,36 +461,10 @@ export function CustomerTile({
         </MyLink>
       </Heading>
 
-      <AttrList>
-        {!!customer.address && !omit.includes("address") && (
-          <AttrList.Attr
-            name="Anschrift"
-            value={
-              <MyLink to={addressUrl(customer.address)} target="_blank">
-                {formatAddress(customer.address)}
-              </MyLink>
-            }
-          />
-        )}
-        {customer.emailAddresses.map(({ email, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? `E-Mail ${i + 1}`}
-              value={<MyLink to={`mailto:${email}`}>{email}</MyLink>}
-            />
-          );
-        })}
-        {customer.phoneNumbers.map(({ number, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? `Telefon ${i + 1}`}
-              value={<MyLink to={`tel:${number}`}>{number}</MyLink>}
-            />
-          );
-        })}
-      </AttrList>
+      <ContactDetailsList
+        details={customer}
+        address={omit?.includes("address") ? null : customer.address}
+      />
     </Tile>
   );
 }
@@ -518,39 +485,11 @@ export function ContactTile({
         </MyLink>
       </Heading>
 
-      <AttrList>
+      <ContactDetailsList details={contact} address={contact.address}>
         {!!contact.label && (
           <AttrList.Attr name="Rolle" value={contact.label} />
         )}
-        {!!contact.address && (
-          <AttrList.Attr
-            name="Anschrift"
-            value={
-              <MyLink to={addressUrl(contact.address)} target="_blank">
-                {formatAddress(contact.address)}
-              </MyLink>
-            }
-          />
-        )}
-        {contact.emailAddresses.map(({ email, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? `E-Mail ${i + 1}`}
-              value={<MyLink to={`mailto:${email}`}>{email}</MyLink>}
-            />
-          );
-        })}
-        {contact.phoneNumbers.map(({ number, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? `Telefon ${i + 1}`}
-              value={<MyLink to={`tel:${number}`}>{number}</MyLink>}
-            />
-          );
-        })}
-      </AttrList>
+      </ContactDetailsList>
     </Tile>
   );
 }

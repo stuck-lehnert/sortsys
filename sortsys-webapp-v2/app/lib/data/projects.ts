@@ -7,10 +7,9 @@ import {
 import { buildPrefixSearch } from "../search/prefixQuery";
 import {
   addressId,
-  wireAddress,
-  compareAddresses,
   CONTACT_COLLECTION,
   partialAddressRecord,
+  readLinkedContacts,
   type createProtectedAddressBook,
 } from "./addressBook";
 import type { DuckDriver } from "./database";
@@ -250,35 +249,27 @@ export function createProtectedProjects(
         return wireProject((await read(data.id as string)).value);
       }
       if (path === "projects.contacts.list") {
-        const data = record(input, ["projectId"]),
-          selected = request(data.projectId as string);
-        const result = await runtime.read(
-          [selected, contactRequest],
-          (view) => {
-            const project = document(view, selected).value,
-              labels = new Map(
-                project.contacts.map((row) => [
-                  publicId(row.values.contact_id),
-                  row.values.label as string | null,
-                ]),
-              );
-            return view
-              .documents(contactRequest)
-              .filter(
-                (contact) =>
-                  contact.value.row &&
-                  labels.has(publicId(contact.value.row.values.id)),
-              )
-              .map((document) => {
-                const contact = wireAddress(document.value);
-                if ("name" in contact) throw new InvalidProtectedData();
-                return { ...contact, label: labels.get(contact.id)! };
-              })
-              .sort(compareAddresses);
-          },
+        const { projectId } = record(input, ["projectId"]);
+        const id = projectId as string;
+        const selected = request(id);
+        const current = await read(id);
+        const labels = new Map(
+          current.value.contacts.map((row) => [
+            publicId(row.values.contact_id),
+            row.values.label as string | null,
+          ]),
+        );
+        const contacts = await readLinkedContacts(
+          runtime,
+          selected,
+          current.head.sequence,
+          [...labels.keys()],
         );
         live();
-        return result;
+        return contacts.map((contact) => ({
+          ...contact,
+          label: labels.get(contact.id)!,
+        }));
       }
       const forContact = path === "contacts.projects.list",
         data = forContact

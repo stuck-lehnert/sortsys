@@ -1,10 +1,16 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { buildPrefixSearch, createPrefixMatcher } from "../search/prefixQuery";
+import { ProtectedWriteConflict } from "./atomicWrites";
 import type { DuckDriver } from "./database";
 import { acquireDataRuntime } from "./runtime/session";
 import { defineDataModel } from "./runtime/model";
-import type { DataCommand, DataRequest, DataView } from "./runtime/runtime";
+import type {
+  DataCommand,
+  DataRequest,
+  DataRuntime,
+  DataView,
+} from "./runtime/runtime";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { businessSchema } from "./schema";
 import { newProductRowId, publicId } from "./products";
@@ -308,6 +314,47 @@ const request = (kind: Kind): DataRequest<AddressPayload> => ({
 });
 const customerRequest = request("customers"),
   contactRequest = request("contacts");
+
+function addressObjects(kind: Kind, ids: readonly unknown[]): DataRequest<AddressPayload> {
+  const selected = request(kind);
+  return {
+    ...selected,
+    ids: ids.map((id) => selected.area.prefix + publicId(addressId(id))),
+  };
+}
+
+function selectedAddress(view: DataView, selection: DataRequest<AddressPayload>) {
+  const address = view.documents(selection)[0]?.value;
+  if (!address?.row) throw new InvalidProtectedData();
+  return { ...address, row: address.row };
+}
+
+export function readLinkedContacts(
+  runtime: DataRuntime,
+  parent: DataRequest,
+  sequence: string,
+  ids: readonly string[],
+): Promise<Contact[]> {
+  const selected = addressObjects("contacts", ids);
+
+  return runtime.read([parent, selected], (view) => {
+    // The contact selection belongs to the verified parent head. A changed
+    // customer or project cannot use the links chosen by the first read.
+    if (view.head(parent).sequence !== sequence)
+      throw new ProtectedWriteConflict();
+
+    const contacts: Contact[] = [];
+    for (const { value } of view.documents(selected)) {
+      if (!value.row) continue;
+
+      const contact = wire(value);
+      if ("name" in contact) throw new InvalidProtectedData();
+      contacts.push(contact);
+    }
+    return contacts.sort(compare);
+  });
+}
+
 const addressSearch = {
   customers: Symbol("customer search"),
   contacts: Symbol("contact search"),
@@ -487,38 +534,40 @@ export function createProtectedAddressBook(
     async query(path: string, input: unknown, limit?: number): Promise<unknown> {
       lease.live();
       if (!ADDRESS_QUERIES.has(path)) throw new InvalidProtectedData();
-      if (
-        path === "customers.contacts.list" ||
-        path === "contacts.customers.list"
-      ) {
-        const fromCustomer = path.startsWith("customers."),
-          data = record(input, [fromCustomer ? "customerId" : "contactId"]),
-          id = data[fromCustomer ? "customerId" : "contactId"];
-        addressId(id);
+      if (path === "customers.contacts.list") {
+        const { customerId } = record(input, ["customerId"]);
+        const selected = addressObjects("customers", [customerId]);
+        const current = await runtime.read([selected], (view) => ({
+          sequence: view.head(selected).sequence,
+          ids: selectedAddress(view, selected).links.map((link) =>
+            publicId(link.values.contact_id),
+          ),
+        }));
+        lease.live();
+
+        const result = await readLinkedContacts(
+          runtime,
+          selected,
+          current.sequence,
+          current.ids,
+        );
+        lease.live();
+        return result;
+      }
+
+      if (path === "contacts.customers.list") {
+        const { contactId } = record(input, ["contactId"]);
+        const selected = addressObjects("contacts", [contactId]);
         const result = await runtime.read(
-          [customerRequest, contactRequest],
+          [selected, customerRequest],
           (view) => {
-            const customers = payloads(view, "customers"),
-              contacts = payloads(view, "contacts");
-            if (fromCustomer) {
-              const customer = find(customers, id),
-                ids = new Set(
-                  customer.links.map((link) => link.values.contact_id),
-                );
-              return contacts
-                .filter(
-                  (contact) => contact.row && ids.has(contact.row.values.id),
-                )
-                .map(wire)
-                .sort(compare);
-            }
-            const contact = find(contacts, id);
-            return customers
+            const contact = selectedAddress(view, selected);
+            return payloads(view, "customers")
               .filter(
                 (customer) =>
                   customer.row &&
                   customer.links.some(
-                    (link) => link.values.contact_id === contact.row!.values.id,
+                    (link) => link.values.contact_id === contact.row.values.id,
                   ),
               )
               .map(wire)
@@ -528,16 +577,25 @@ export function createProtectedAddressBook(
         lease.live();
         return result;
       }
-      const kind = path.startsWith("customers.") ? "customers" : "contacts",
-        list = path.endsWith(".list"),
-        data = list ? partial(input ?? {}, ["search"]) : record(input, ["id"]);
-      if (list && data.search != null && typeof data.search !== "string")
+      const kind = path.startsWith("customers.") ? "customers" : "contacts";
+      if (path.endsWith(".get")) {
+        const { id } = record(input, ["id"]);
+        const selected = addressObjects(kind, [id]);
+        const result = await runtime.read([selected], (view) =>
+          wire(selectedAddress(view, selected)),
+        );
+        lease.live();
+        return result;
+      }
+
+      const data = partial(input ?? {}, ["search"]);
+      if (data.search != null && typeof data.search !== "string")
         throw new InvalidProtectedData();
+
       const selected = [request(kind)];
       const result = await runtime.read(
         selected,
         (view) => {
-          if (!list) return wire(find(payloads(view, kind), data.id));
           const search = view.derive(addressSearch[kind], selected, () =>
             buildPrefixSearch(
               payloads(view, kind)
@@ -570,8 +628,6 @@ export function createProtectedAddressBook(
 }
 
 export {
-  wire as wireAddress,
-  compare as compareAddresses,
   partial as partialAddressRecord,
   address as normalizeAddress,
   string as addressText,

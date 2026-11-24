@@ -1,6 +1,18 @@
 import { expect, test } from "bun:test";
-import { row } from "./rowCodec.test.mjs";
-import { addressChanges, addressId, createAddressMatcher, addressPayload } from "./addressBook";
+import { lockCryptoSession } from "../crypto/session";
+import {
+  addressChanges,
+  addressId,
+  addressPayload,
+  CONTACT_COLLECTION,
+  createAddressMatcher,
+  createProtectedAddressBook,
+  CUSTOMER_COLLECTION,
+} from "./addressBook";
+import { row } from "./testing/businessRow.mjs";
+import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
+import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 function customer() { return { format: "sortsys-address-v1", kind: "customers", row: row("customers", {
   id: "100", name: "Bauherr", phone_numbers: "[]", email_addresses: "[]",
@@ -38,3 +50,87 @@ test("local address search matches actual address and channel values, never JSON
   for (const search of ["createdAt", "phoneNumbers", "2026", "Durchwahl", "Hamburg"])
     expect(createAddressMatcher(search)(value)).toBe(false);
 });
+
+function objectReads(calls) {
+  return calls.flatMap(({ path, input }) => {
+    if (path === "zerotrust.objects.get") return [input.id];
+    if (path === "zerotrust.objects.getMany") return input.ids;
+    return [];
+  });
+}
+
+function fullPages(calls) {
+  const selections = calls.flatMap(({ path, input }) => {
+    if (path === "zerotrust.objects.list") return [input];
+    if (path === "zerotrust.objects.pages") return input.selections;
+    if (path.startsWith("zerotrust.access.")) return input.pages?.selections ?? [];
+    return [];
+  });
+
+  return selections.filter((page) => !page.headOnly);
+}
+
+test("address details and forward links open only the selected objects", async () => {
+  const customerArea = CUSTOMER_COLLECTION;
+  const contactArea = CONTACT_COLLECTION;
+  const { client, seed, calls } = await protectedTenant(
+    [customerArea, contactArea],
+    () => ["read"],
+  );
+  const store = createProtectedAddressBook(client, new AbortController().signal, duckDriver);
+
+  const contact = {
+    format: "sortsys-address-v1",
+    kind: "contacts",
+    row: row("contacts", {
+      id: "101",
+      last_name: "Muster",
+      phone_numbers: '[{"number":"+49 12345","name":null}]',
+      email_addresses: '[{"email":"office@example.test","name":"Büro"}]',
+    }),
+    links: [],
+  };
+
+  try {
+    await seed(customerArea, "customer:34", customer());
+    await seed(contactArea, "contact:35", contact);
+    await seed(contactArea, "contact:36", { ...contact, row: null });
+
+    expect(await store.query("customers.get", { id: "34" })).toMatchObject({
+      id: "34",
+      name: "Bauherr",
+    });
+    expect(await store.query("contacts.get", { id: "35" })).toMatchObject({
+      id: "35",
+      lastName: "Muster",
+      phoneNumbers: [{ number: "+49 12345", name: null }],
+      emailAddresses: [{ email: "office@example.test", name: "Büro" }],
+    });
+    for (const id of ["36", "37", "035"]) {
+      await expect(store.query("contacts.get", { id })).rejects.toThrow();
+    }
+
+    expect(fullPages(calls)).toEqual([]);
+    expect(objectReads(calls)).toEqual([
+      "customer:34",
+      "contact:35",
+      "contact:36",
+      "contact:37",
+    ]);
+
+    await store.refresh();
+    const linkStart = calls.length;
+    expect(await store.query("customers.contacts.list", { customerId: "34" }))
+      .toMatchObject([{ id: "35", lastName: "Muster" }]);
+
+    const linkCalls = calls.slice(linkStart);
+    expect(new Set(objectReads(linkCalls))).toEqual(new Set(["customer:34", "contact:35"]));
+    expect(fullPages(linkCalls)).toEqual([]);
+
+    expect(await store.query("contacts.customers.list", { contactId: "35" }))
+      .toMatchObject([{ id: "34", name: "Bauherr" }]);
+  } finally {
+    store.close();
+    lockCryptoSession();
+  }
+}, fixtureTimeout(30_000));

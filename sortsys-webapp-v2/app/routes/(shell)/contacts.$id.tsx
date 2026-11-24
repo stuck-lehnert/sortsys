@@ -5,7 +5,7 @@ import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { NotFound } from "./_404";
 import { MyHeader } from "~/components/MyHeader";
-import { contactName, formatAddress } from "~/lib/format";
+import { contactName } from "~/lib/format";
 import { MyDivider } from "~/components/MyDivider";
 import { MyExpandable } from "~/components/MyExpandable";
 import { ContactTile, CustomerTile, ProjectTile } from "~/lib/tiles";
@@ -14,14 +14,16 @@ import { Icons } from "~/lib/icons";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { AttrList } from "~/components/AttrList";
-import { MyLink } from "~/components/MyLink";
+import {
+  AddressAttribute,
+  ContactDetailsList,
+} from "~/components/ContactDetailsList";
 import { useTitle } from "~/hooks/useTitle";
 import { useShortcut } from "~/hooks/useShortcut";
 import {
   showDeleteContactModal,
   showModifyContactModal,
 } from "~/modals/contacts";
-import { addressUrl } from "~/lib/utils";
 import { Remarks } from "~/components/Remarks";
 import { MyCallout } from "~/components/MyCallout";
 
@@ -98,38 +100,10 @@ export default function ContactDetailPage() {
             value={contact.lastName}
           />
         )}
-        {!!contact.address && (
-          <AttrList.Attr
-            name={uiText("Anschrift", "Address")}
-            value={
-              <MyLink to={addressUrl(contact.address)} target="_blank">
-                {formatAddress(contact.address)}
-              </MyLink>
-            }
-          />
-        )}
+        {contact.address && <AddressAttribute address={contact.address} />}
       </AttrList>
 
-      <AttrList>
-        {contact.emailAddresses.map(({ email, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? uiText(`E-Mail ${i + 1}`, `Email ${i + 1}`)}
-              value={<MyLink to={`mailto:${email}`}>{email}</MyLink>}
-            />
-          );
-        })}
-        {contact.phoneNumbers.map(({ number, name }, i) => {
-          return (
-            <AttrList.Attr
-              key={i}
-              name={name ?? uiText(`Telefon ${i + 1}`, `Phone ${i + 1}`)}
-              value={<MyLink to={`tel:${number}`}>{number}</MyLink>}
-            />
-          );
-        })}
-      </AttrList>
+      <ContactDetailsList details={contact} />
 
       <MyDivider />
 
