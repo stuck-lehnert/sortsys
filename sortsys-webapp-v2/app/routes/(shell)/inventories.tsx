@@ -21,8 +21,8 @@ import { Icons } from "~/lib/icons";
 import { renderStructuredPdf, type PdfTableSection } from "~/lib/pdf";
 import { SmallTile } from "~/lib/tiles";
 import { deliverBlob, type BlobTarget } from "~/lib/utils";
-import { openExcelExport } from "~/lib/officeExports";
-import { exportToExcel } from "~/lib/xlsx";
+import { prepareExcelExport } from "~/lib/officeExports";
+import { createTableWorkbook } from "~/lib/xlsx";
 import type { Route } from "./+types";
 
 const DEFAULT_INVENTORY_DAYS = 30;
@@ -133,6 +133,7 @@ export default function InventoryOverviewPage() {
   }
 
   async function exportInventoryOverviewToExcel() {
+    const openExcel = prepareExcelExport(modals);
     const rows = [
       ...(inventoriedTools ?? []).map((tool: any) => [
         uiText('Inventiert'),
@@ -152,17 +153,16 @@ export default function InventoryOverviewPage() {
       ]),
     ];
 
-    const bytes = await exportToExcel({
+    const workbook = await createTableWorkbook({
       sheetName: uiText("Inventurübersicht"),
       columns: ['Bereich', uiText('Nummer'), uiText('Werkzeug'), uiText('Letzter Verantwortlicher'), 'Status', uiText('Letzte Inventur')],
       rows,
     });
 
-    const blob = new Blob([bytes] as any, {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-
-    await openExcelExport(modals, blob, uiText(`Inventuruebersicht-${days}Tage.xlsx`, `Inventory-overview-${days}-days.xlsx`));
+    await openExcel(workbook, uiText(
+      `Inventuruebersicht-${days}Tage.xlsx`,
+      `Inventory-overview-${days}-days.xlsx`,
+    ));
   }
 
   async function exportInventoryOverviewToPdf(target: BlobTarget = 'open') {

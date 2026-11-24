@@ -27,7 +27,8 @@ import {
 } from "~/lib/tiles";
 import { focusReportHours, isDefaultReportDay } from "~/lib/reportForm";
 import { deliverBlob, generateId, parseFloatCustom } from "~/lib/utils";
-import { openExcelExport } from "~/lib/officeExports";
+import { prepareExcelExport } from "~/lib/officeExports";
+import { addUniqueWorksheet } from "~/lib/workbookSections";
 import type { DailyProjectReport, Project, User } from "~/type-helpers";
 
 async function hoursForProject<T extends { costPerHour?: number | null }>(
@@ -91,37 +92,6 @@ function isoWeekNumber(date: Date) {
       (value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000),
     )
   );
-}
-
-function sanitizeWorksheetName(value: string) {
-  const cleaned = value.replace(/[:\\/?*\[\]]/g, " ").trim();
-  return (cleaned || "Sheet").slice(0, 31);
-}
-
-function addUniqueWorksheet(
-  workbook: any,
-  baseName: string,
-  usedNames: Set<string>,
-) {
-  let candidate = sanitizeWorksheetName(baseName);
-  if (!usedNames.has(candidate)) {
-    usedNames.add(candidate);
-    return workbook.addWorksheet(candidate);
-  }
-
-  let index = 2;
-  while (true) {
-    const suffix = ` (${index})`;
-    const truncated = sanitizeWorksheetName(
-      candidate.slice(0, Math.max(1, 31 - suffix.length)) + suffix,
-    );
-    if (!usedNames.has(truncated)) {
-      usedNames.add(truncated);
-      return workbook.addWorksheet(truncated);
-    }
-
-    index += 1;
-  }
 }
 
 function formatWeeklyPresence(value: number) {
@@ -1021,6 +991,7 @@ export function showExportWeeklyDailyProjectReportsModal(
       </>
     ),
     onSubmit: async ({ hide, context }) => {
+      const openExcel = prepareExcelExport(modals);
       const hideHours = !!context.getValues().hideHours;
       const [reports, reportsErr] = await client.query(
         "projects.dailyReports.list",
@@ -1332,11 +1303,10 @@ export function showExportWeeklyDailyProjectReportsModal(
       wb.creator = "exceljs";
       wb.created = new Date();
 
-      const usedWorksheetNames = new Set<string>();
 
       weeklyExports.forEach((weeklyExport, weekIndex) => {
         const worksheetName = `KW ${weeklyExport.weekNumber} ${dailyReportDayKey(weeklyExport.weekStart)}`;
-        const ws = addUniqueWorksheet(wb, worksheetName, usedWorksheetNames);
+        const ws = addUniqueWorksheet(wb, worksheetName);
 
         const headerLines = [
           uiText(`Projekt: ${project.title}`, `Project: ${project.title}`),
@@ -1457,14 +1427,8 @@ export function showExportWeeklyDailyProjectReportsModal(
         ];
       });
 
-      const bytes = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
-      const blob = new Blob([bytes] as any, {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-
-      await openExcelExport(
-        modals,
-        blob,
+      await openExcel(
+        wb,
         uiText(
           `Bauwochenberichte-${safeTitle}.xlsx`,
           `Weekly-construction-reports-${safeTitle}.xlsx`,

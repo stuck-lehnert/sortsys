@@ -3,8 +3,8 @@ import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { formatDate } from "~/lib/format";
 import { renderStructuredPdf, type PdfTableAlign } from "~/lib/pdf";
 import { deliverBlob } from "~/lib/utils";
-import { openExcelExport } from "~/lib/officeExports";
-import { exportToExcel } from "~/lib/xlsx";
+import { prepareExcelExport } from "~/lib/officeExports";
+import { createTableWorkbook } from "~/lib/xlsx";
 
 export type TableExportFormat = 'excel' | 'pdf';
 export type TableExportCell = string | number | boolean | Date | null | undefined;
@@ -51,17 +51,15 @@ export async function exportTable<RowT>(options: TableExportOptions<RowT>) {
   const fileBase = normalizeFileName(options.fileName);
 
   if (options.format === 'excel') {
-    const bytes = await exportToExcel({
+    const openExcel = prepareExcelExport(options.modals);
+    const workbook = await createTableWorkbook({
       sheetName: options.title,
       columns: headers,
       rows: rawRows,
       numberFormats: options.columns.map(column => column.excelNumberFormat),
     });
 
-    const blob = new Blob([bytes] as any, {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-    await openExcelExport(options.modals, blob, `${fileBase}.xlsx`);
+    await openExcel(workbook, `${fileBase}.xlsx`);
     return;
   }
 

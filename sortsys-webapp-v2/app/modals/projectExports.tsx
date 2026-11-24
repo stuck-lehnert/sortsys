@@ -7,7 +7,8 @@ import { formatDate, formatNumber, productTitle, regieProductTitle, userFullName
 import { renderStructuredPdfBatch } from "~/lib/pdf";
 import { buildRegieReportPdfDocument } from "~/lib/regieReportPdf";
 import { deliverBlob, upmatchUnit } from "~/lib/utils";
-import { openExcelExport } from "~/lib/officeExports";
+import { prepareExcelExport } from "~/lib/officeExports";
+import { addUniqueWorksheet } from "~/lib/workbookSections";
 import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES, WEEKDAY_SHORT_NAMES, weekdayIndexInIsoWeek } from "~/lib/week";
 import type { Project } from "~/type-helpers";
 
@@ -59,36 +60,11 @@ function sanitizeFilePart(value: string) {
   return fallback || "export";
 }
 
-function sanitizeWorksheetName(value: string) {
-  const cleaned = value.replace(/[:\\/?*\[\]]/g, " ").trim();
-  return (cleaned || "Sheet").slice(0, 31);
-}
-
 function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
   const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
   const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
   if (normalizedDisplayUnit === normalizedBaseUnit) return "-";
   return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ""}`;
-}
-
-function addUniqueWorksheet(workbook: any, baseName: string, usedNames: Set<string>) {
-  let candidate = sanitizeWorksheetName(baseName);
-  if (!usedNames.has(candidate)) {
-    usedNames.add(candidate);
-    return workbook.addWorksheet(candidate);
-  }
-
-  let index = 2;
-  while (true) {
-    const suffix = ` (${index})`;
-    const truncated = sanitizeWorksheetName(candidate.slice(0, Math.max(1, 31 - suffix.length)) + suffix);
-    if (!usedNames.has(truncated)) {
-      usedNames.add(truncated);
-      return workbook.addWorksheet(truncated);
-    }
-
-    index += 1;
-  }
 }
 
 export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInterface, project: Project) {
@@ -123,6 +99,7 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
       }} />
     </>,
     onSubmit: async ({ context, hide }) => {
+      const openExcel = prepareExcelExport(modals);
       const values = context.getValues();
 
       const fromDate = parseDateInput(values.fromDate, uiText("Von"));
@@ -326,15 +303,10 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
         { width: 30 },
       ];
 
-      const bytes = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
-      const blob = new Blob([bytes] as any, {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-
       const safeTitle = sanitizeFilePart(project.title);
       const fromPart = toDateInputValue(fromDate).replace(/[^0-9]/g, "");
       const toPart = toDateInputValue(toDateInclusive).replace(/[^0-9]/g, "");
-      await openExcelExport(modals, blob, uiText(`Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`, `Delivery-notes-period-${safeTitle}-${fromPart}-${toPart}.xlsx`));
+      await openExcel(wb, uiText(`Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`, `Delivery-notes-period-${safeTitle}-${fromPart}-${toPart}.xlsx`));
 
       hide();
     },
@@ -359,6 +331,7 @@ export function showExportProjectRegieReportsModal(
         : <p className="light">{uiText("Es werden alle Regieberichte des Projekts exportiert. Jeder Bericht wird in einem eigenen Tabellenblatt mit Stundenmatrix je Mitarbeiter und Wochentag abgelegt.")}</p>}
     </>,
     onSubmit: async ({ hide }) => {
+      const openExcel = prepareExcelExport(modals);
       const [reports, reportsErr] = await client.query("regieReports.list", {
         projectId: project.id,
         limit: 10000,
@@ -430,7 +403,6 @@ export function showExportProjectRegieReportsModal(
 
       const DECIMAL_NUM_FMT = "#,##0.00";
       const DECIMAL_ZERO_DASH_NUM_FMT = "#,##0.00;-#,##0.00;-";
-      const usedWorksheetNames = new Set<string>();
 
       reportList.forEach((report, index) => {
         const weekStart = startOfIsoWeek(new Date(report.day));
@@ -440,7 +412,6 @@ export function showExportProjectRegieReportsModal(
         const ws = addUniqueWorksheet(
           wb,
           `Regie #${report.autoId} ${weekLabel}`,
-          usedWorksheetNames,
         );
 
         ws.getCell(1, 1).value = uiText(`Regiebericht #${report.autoId}`, `Time-and-material report #${report.autoId}`);
@@ -592,13 +563,8 @@ export function showExportProjectRegieReportsModal(
         ];
       });
 
-      const bytes = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
-      const blob = new Blob([bytes] as any, {
-        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      });
-
       const safeTitle = sanitizeFilePart(project.title);
-      await openExcelExport(modals, blob, uiText(`Regieberichte-${safeTitle}.xlsx`, `Time-and-material-reports-${safeTitle}.xlsx`));
+      await openExcel(wb, uiText(`Regieberichte-${safeTitle}.xlsx`, `Time-and-material-reports-${safeTitle}.xlsx`));
 
       hide();
     },

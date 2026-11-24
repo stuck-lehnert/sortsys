@@ -31,7 +31,7 @@ import {
   showModifyRegieReportModal,
 } from "~/modals/regieReports";
 import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
-import { openExcelExport } from "~/lib/officeExports";
+import { prepareExcelExport } from "~/lib/officeExports";
 import {
   dayInIsoWeek,
   isoWeekLabel,
@@ -214,6 +214,7 @@ export default function RegieReportDetailPage() {
                 renderIcon: Icons.Excel,
                 hideIf: !sessionInfo.canDo("view:regieReports"),
                 onClick: async () => {
+                  const openExcel = prepareExcelExport(modals);
                   const ExcelJS = await import("exceljs");
 
                   const DECIMAL_NUM_FMT = "#,##0.00";
@@ -483,20 +484,12 @@ export default function RegieReportDetailPage() {
                     { width: 14 },
                   ];
 
-                  const bytes =
-                    (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
-
-                  const blob = new Blob([bytes] as any, {
-                    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                  });
-
                   const safeSuffix = `${report.autoId}`.replace(
                     /[^\w\-]+/g,
                     "-",
                   );
-                  await openExcelExport(
-                    modals,
-                    blob,
+                  await openExcel(
+                    wb,
                     uiText(
                       `Regiebericht-${safeSuffix}.xlsx`,
                       `Time-and-material report-${safeSuffix}.xlsx`,

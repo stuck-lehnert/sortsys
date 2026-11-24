@@ -35,7 +35,7 @@ import {
   showModifyDeliveryNoteModal,
 } from "~/modals/deliveryNotes";
 import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
-import { openExcelExport } from "~/lib/officeExports";
+import { prepareExcelExport } from "~/lib/officeExports";
 
 function formatProductAmount(amount: number, unit: string) {
   const normalizedUnit = `${unit ?? ''}`.trim();
@@ -239,6 +239,7 @@ export default function DeliveryNoteDetailPage() {
     const currentNote = note;
     if (!currentNote) return;
 
+    const openExcel = prepareExcelExport(modals);
     const ExcelJS = await import('exceljs');
 
     const CURRENCY_NUM_FMT = '#,##0.00 [$€-407]';
@@ -397,12 +398,7 @@ export default function DeliveryNoteDetailPage() {
       { width: 24 },
     ];
 
-    const bytes = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
-    const blob = new Blob([bytes] as any, {
-      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-    });
-
-    await openExcelExport(modals, blob, uiText(`Lieferschein-${currentNote.autoId}.xlsx`, `Delivery note-${currentNote.autoId}.xlsx`));
+    await openExcel(wb, uiText(`Lieferschein-${currentNote.autoId}.xlsx`, `Delivery note-${currentNote.autoId}.xlsx`));
   }
 
   return (

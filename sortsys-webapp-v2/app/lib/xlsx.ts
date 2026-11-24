@@ -1,24 +1,20 @@
-/**
- * Creates an XLSX workbook (single sheet + single table) and returns it as a Buffer/Uint8Array.
- *
- * Notes on return type:
- * - In Node, ExcelJS returns a Buffer from writeBuffer().
- * - In the browser, ExcelJS typically returns a Uint8Array (or ArrayBuffer-like).
- */
+import type { Workbook } from "exceljs";
+import { sanitizeWorksheetName } from "./workbookSections";
+
 export const EXCEL_CURRENCY_NUM_FMT = '#,##0.00 [$€-407]';
 export const EXCEL_PERCENT_NUM_FMT = '0.00%';
 // Dots must be quoted: an unquoted dot is a locale-sensitive decimal separator
 // and is therefore rendered as a comma in German spreadsheet applications.
 export const EXCEL_DATE_NUM_FMT = 'dd"."mm"."yyyy';
 
-export async function exportToExcel(
+export async function createTableWorkbook(
     { sheetName, ...data }: {
         columns: string[];
         rows: any[][];
         sheetName: string;
         numberFormats?: Array<string | undefined>;
     },
-): Promise<Uint8Array> {
+): Promise<Workbook> {
     const ExcelJS = await import('exceljs');
 
     if (!data || !Array.isArray(data.columns) || !Array.isArray(data.rows)) {
@@ -31,9 +27,7 @@ export async function exportToExcel(
         throw new Error(`numberFormats has length ${data.numberFormats.length}, expected ${data.columns.length} to match columns`);
     }
 
-    // Worksheet name: max 31 chars, cannot contain : \ / ? * [ ]
-    const sanitizedSheetName =
-        sheetName.replace(/[:\\/?*\[\]]/g, " ").trim().slice(0, 31) || "Sheet1";
+    const sanitizedSheetName = sanitizeWorksheetName(sheetName, "Sheet1");
 
     // Table name: no spaces, start with letter/_\, and restricted characters
     const sanitizedTableName = sheetName
@@ -131,8 +125,12 @@ export async function exportToExcel(
         return { width: Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, maxLen + 2)) };
     });
 
-    // Return workbook as buffer-like
-    // ExcelJS typings are permissive; runtime returns Buffer (Node) or Uint8Array (browser)
-    const out = (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
-    return out;
+    return wb;
+}
+
+export async function workbookBlob(workbook: Workbook): Promise<Blob> {
+    const bytes = await workbook.xlsx.writeBuffer();
+    return new Blob([bytes], {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
 }

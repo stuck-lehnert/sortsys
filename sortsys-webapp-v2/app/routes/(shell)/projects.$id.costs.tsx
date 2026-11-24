@@ -39,7 +39,7 @@ import {
   type BlobTarget,
   upmatchUnit,
 } from "~/lib/utils";
-import { openExcelExport } from "~/lib/officeExports";
+import { prepareExcelExport } from "~/lib/officeExports";
 import { EXCEL_DATE_NUM_FMT } from "~/lib/xlsx";
 import {
   showDeleteProjectFinancialEntryModal,
@@ -1276,6 +1276,7 @@ export default function ProjectDetailCosts() {
           onClick={async () => {
             if (!costs) return;
 
+            const openExcel = prepareExcelExport(modals);
             const ExcelJS = await import("exceljs");
 
             const CURRENCY_NUM_FMT = "#,##0.00 [$€-407]";
@@ -1909,15 +1910,9 @@ export default function ProjectDetailCosts() {
               { width: 14 },
             ];
 
-            const bytes =
-              (await wb.xlsx.writeBuffer()) as unknown as Uint8Array;
-            const blob = new Blob([bytes] as any, {
-              type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            });
             const safeTitle = project.title.replace(/[^\w\-]+/g, "-");
-            await openExcelExport(
-              modals,
-              blob,
+            await openExcel(
+              wb,
               uiText(
                 `Projektkosten-${safeTitle}.xlsx`,
                 `Project-costs-${safeTitle}.xlsx`,

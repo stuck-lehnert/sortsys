@@ -1,4 +1,5 @@
 import { Loading, Modal } from "@sortsys/react-components";
+import type { Workbook } from "exceljs";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
@@ -8,6 +9,7 @@ import { openCryptPad } from "~/lib/cryptpadBridge";
 import { Icons } from "~/lib/icons";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { downloadBlob } from "~/lib/utils";
+import { workbookBlob } from "~/lib/xlsx";
 
 type ExportOfficeSession = { origin: string; document: Blob; context: AbortSignal };
 
@@ -80,15 +82,39 @@ function showExportError(modals: MyModalsInterface) {
   });
 }
 
-export async function openExcelExport(modals: MyModalsInterface, blob: Blob, fileName: string) {
+export function prepareExcelExport(modals: MyModalsInterface) {
   const context = projectFiles.context();
-  try {
-    context.throwIfAborted();
-    const [config, error] = await client.query("zerotrust.editors.config", undefined, { strategy: "network-only" });
-    context.throwIfAborted();
-    if (context !== projectFiles.context()) return;
-    if (error || !config?.officeOrigin) throw new Error("Private editor unavailable");
-    const session = { origin: config.officeOrigin, document: blob, context };
-    modals.show(({ visible, hide }) => <ExportOfficeModal fileName={fileName} hide={hide} session={session} visible={visible} />);
-  } catch { if (!context.aborted && context === projectFiles.context()) showExportError(modals); }
+  const live = () => !context.aborted && context === projectFiles.context();
+
+  return async (workbook: Workbook, fileName: string) => {
+    if (!live()) return;
+
+    const document = await workbookBlob(workbook);
+    if (!live()) return;
+
+    try {
+      const [config, error] = await client.query(
+        "zerotrust.editors.config",
+        undefined,
+        { strategy: "network-only" },
+      );
+      if (!live()) return;
+
+      if (error || !config?.officeOrigin) {
+        throw new Error("Private editor unavailable");
+      }
+
+      const session = { origin: config.officeOrigin, document, context };
+      modals.show(({ visible, hide }) => (
+        <ExportOfficeModal
+          fileName={fileName}
+          hide={hide}
+          session={session}
+          visible={visible}
+        />
+      ));
+    } catch {
+      if (live()) showExportError(modals);
+    }
+  };
 }

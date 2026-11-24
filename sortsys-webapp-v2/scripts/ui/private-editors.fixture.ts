@@ -5,7 +5,8 @@ import { I18nProvider } from "../../app/lib/i18n";
 import { Observable } from "rxjs";
 import { ProtectedOfficeEditor } from "../../app/components/ProtectedOfficeEditor";
 import { client, gaebDocuments, projectFiles } from "../../app/lib/client";
-import { openExcelExport } from "../../app/lib/officeExports";
+import { prepareExcelExport } from "../../app/lib/officeExports";
+import { createTableWorkbook } from "../../app/lib/xlsx";
 import type { MyModalsInterface } from "../../app/hooks/useMyModals";
 import {
   browserGaebXml,
@@ -399,7 +400,7 @@ Object.assign(window, {
     close: () => bridge?.close(),
     export: (format: Parameters<NonNullable<typeof bridge>["export"]>[0]) =>
       bridge!.export(format),
-    async exportExcel(editorOrigin: string) {
+    async exportExcel(editorOrigin: string, resetDuringWrite = false) {
       bridge?.close();
       iframe.remove();
       const queries: string[] = [];
@@ -446,11 +447,22 @@ Object.assign(window, {
         exportQueries: queries,
         resetExportContext: () => client.clearCache(),
       });
-      await openExcelExport(
-        modals,
-        new Blob(["private generated workbook"]),
-        "Projekt.xlsx",
-      );
+      const openExcel = prepareExcelExport(modals);
+      const workbook = await createTableWorkbook({
+        sheetName: "Projekt",
+        columns: ["Position"],
+        rows: [["private generated workbook"]],
+      });
+      if (resetDuringWrite) {
+        const write = workbook.xlsx.writeBuffer.bind(workbook.xlsx);
+        workbook.xlsx.writeBuffer = async () => {
+          const bytes = await write();
+          client.clearCache();
+          return bytes;
+        };
+      }
+
+      await openExcel(workbook, "Projekt.xlsx");
     },
     protected(
       editorOrigin: string,

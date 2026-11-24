@@ -759,7 +759,9 @@ before(async () => {
   server = await createFixtureServer();
   editor = await serveEditor();
   attacker = await serveEditor();
-  browser = await chromium.launch();
+  browser = await chromium.launch({
+    executablePath: process.env.SORTSYS_E2E_CHROMIUM,
+  });
 });
 after(async () => {
   await browser?.close();
@@ -1117,8 +1119,8 @@ test("the normal Excel export opens local bytes, downloads the browser conversio
     await frame.evaluate(() => window.boot());
     await frame.waitForFunction(() => window.state.start !== null);
     assert.equal(
-      await frame.evaluate(() => window.state.start.document),
-      "private generated workbook",
+      await frame.evaluate(() => window.state.start.document.slice(0, 4)),
+      "PK\x03\x04",
     );
     assert.equal(
       await frame.evaluate(() => window.state.start.application),
@@ -1151,6 +1153,24 @@ test("the normal Excel export opens local bytes, downloads the browser conversio
     await page.evaluate(() => window.resetExportContext());
     await locate().waitFor({ state: "detached" });
     assert.equal(frame.isDetached(), true);
+  } finally {
+    await context.close();
+  }
+});
+
+test("an Excel export prepared before account reset does not open an editor", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  try {
+    await page.goto(`${server.origin}/private-editors.html`);
+    await page.waitForFunction(() => window.privateEditorFixture);
+    await page.evaluate(
+      (origin) => window.privateEditorFixture.exportExcel(origin, true),
+      editor.origin,
+    );
+
+    assert.deepEqual(await page.evaluate(() => window.exportQueries), []);
+    assert.equal(await page.locator('iframe[title="Excel-Export"],iframe[title="Excel export"]').count(), 0);
   } finally {
     await context.close();
   }
