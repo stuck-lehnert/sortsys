@@ -1,5 +1,6 @@
 import { uiText } from "~/lib/i18n";
 import {
+  formatBaseQuantity,
   formatDate,
   formatNumber,
   regieProductTitle,
@@ -41,17 +42,6 @@ function productLabel(productsById: ProductLookup, productId: string) {
 function formatWeeklyWorkHour(value: number) {
   const numeric = Number(value ?? 0);
   return numeric === 0 ? "-" : formatPdfNumber(numeric);
-}
-
-function formatBaseQuantity(
-  baseQuantity: number,
-  baseUnit: string,
-  displayUnit: string,
-) {
-  const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
-  const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
-  if (normalizedDisplayUnit === normalizedBaseUnit) return "-";
-  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ""}`;
 }
 
 export function buildRegieReportPdfDocument(props: {

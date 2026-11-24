@@ -114,25 +114,61 @@ export function formatDate(
   return new Date(date).toLocaleDateString(currentLocaleTag(), options);
 }
 
-export function formatNumber(num: number): string {
-  return num.toLocaleString(currentLocaleTag(), {
-    minimumFractionDigits: 2,
-    maximumFractionDigits: 4,
-  });
+function localizedNumberFormatter(options: Intl.NumberFormatOptions) {
+  const formatters = new Map<string, Intl.NumberFormat>();
+
+  return (value: number) => {
+    const locale = currentLocaleTag();
+    let formatter = formatters.get(locale);
+
+    if (!formatter) {
+      formatter = new Intl.NumberFormat(locale, options);
+      formatters.set(locale, formatter);
+    }
+
+    return formatter.format(value);
+  };
 }
 
-export function formatCurrency(num: number): string {
-  return num.toLocaleString(currentLocaleTag(), {
-    style: "currency",
-    currency: "EUR",
-  });
+export const formatNumber = localizedNumberFormatter({
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 4,
+});
+
+export function formatProductAmount(
+  amount: number,
+  unit: string | null | undefined,
+): string {
+  const normalizedUnit = `${unit ?? ""}`.trim();
+  const quantity = formatNumber(amount);
+
+  return normalizedUnit ? `${quantity} ${normalizedUnit}` : quantity;
 }
+
+export function formatBaseQuantity(
+  quantity: number,
+  baseUnit: string | null | undefined,
+  displayUnit: string | null | undefined,
+): string {
+  const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
+  const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
+  if (normalizedBaseUnit === normalizedDisplayUnit) return "-";
+
+  return formatProductAmount(quantity, normalizedBaseUnit);
+}
+
+export const formatCurrency = localizedNumberFormatter({
+  style: "currency",
+  currency: "EUR",
+});
+
+const formatPercentageValue = localizedNumberFormatter({
+  minimumFractionDigits: 1,
+  maximumFractionDigits: 1,
+});
 
 export function formatPercent(num: number): string {
-  return `${num.toLocaleString(currentLocaleTag(), {
-    minimumFractionDigits: 1,
-    maximumFractionDigits: 1,
-  })}%`;
+  return `${formatPercentageValue(num)}%`;
 }
 
 const fileSizeUnits = ["KB", "MB", "GB", "TB"];

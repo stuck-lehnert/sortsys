@@ -17,8 +17,9 @@ import { MyHeader } from "~/components/MyHeader";
 import { AttrList } from "~/components/AttrList";
 import { Awaited } from "~/components/Awaited";
 import { MyCallout } from "~/components/MyCallout";
-import { MyLink } from "~/components/MyLink";
 import { formatDate, formatNumber, userFullName } from "~/lib/format";
+import { readExportReferences } from "~/lib/exportReferences";
+import { memberLink, projectLink } from "~/lib/recordLinks";
 import { MyDivider } from "~/components/MyDivider";
 import { useTitle } from "~/hooks/useTitle";
 import { MyTable } from "~/components/MyTable";
@@ -39,7 +40,28 @@ import {
   showDeleteDailyProjectReportModal,
   showModifyDailyProjectReportModal,
 } from "~/modals/dailyProjectReport";
+import type { DailyProjectReport } from "~/type-helpers";
 import { of } from "rxjs";
+
+function describeWeather(weather: DailyProjectReport["weather"]) {
+  const rows: [label: string, value: string][] = [];
+  if (!weather) return rows;
+
+  if (weather.summary) rows.push([uiText("Beschreibung"), weather.summary]);
+
+  const measurements = [
+    ["Temperatur", weather.temperatureC, "°C"],
+    ["Niederschlag", weather.precipitationMm, "mm"],
+    ["Wind", weather.windKph, "km/h"],
+  ] as const;
+  for (const [label, value, unit] of measurements) {
+    if (typeof value === "number") {
+      rows.push([label, `${formatNumber(value)} ${unit}`]);
+    }
+  }
+
+  return rows;
+}
 
 export default function DailyProjectReportDetailPage() {
   const { id, day } = useParams();
@@ -94,22 +116,11 @@ export default function DailyProjectReportDetailPage() {
         { strategy: "cache-first" },
       );
 
-      const userIds = [
-        ...new Set(
-          currentReport.workHours.map((entry) => entry.userId).filter(Boolean),
-        ),
-      ] as string[];
-      const userEntries = await Promise.all(
-        userIds.map(async (userId) => {
-          const [user] = await client.query(
-            "users.get",
-            { id: userId },
-            { strategy: "cache-first" },
-          );
-          return [userId, user ?? null] as const;
-        }),
+      const userMap = await readExportReferences(
+        client,
+        "users.get",
+        currentReport.workHours.map((entry) => entry.userId),
       );
-      const userMap = new Map(userEntries);
 
       const sortedWorkHours = [...currentReport.workHours].sort(
         (left, right) => {
@@ -183,44 +194,16 @@ export default function DailyProjectReportDetailPage() {
         });
       }
 
-      if (
-        currentReport.weather &&
-        Object.values(currentReport.weather).some(
-          (value) => value != null && value !== "",
-        )
-      ) {
-        const weatherRows: string[][] = [];
-        if (currentReport.weather.summary)
-          weatherRows.push([
-            uiText("Beschreibung"),
-            currentReport.weather.summary,
-          ]);
-        if (typeof currentReport.weather.temperatureC === "number")
-          weatherRows.push([
-            "Temperatur",
-            `${formatNumber(currentReport.weather.temperatureC)} °C`,
-          ]);
-        if (typeof currentReport.weather.precipitationMm === "number")
-          weatherRows.push([
-            "Niederschlag",
-            `${formatNumber(currentReport.weather.precipitationMm)} mm`,
-          ]);
-        if (typeof currentReport.weather.windKph === "number")
-          weatherRows.push([
-            "Wind",
-            `${formatNumber(currentReport.weather.windKph)} km/h`,
-          ]);
-
-        if (weatherRows.length > 0) {
-          sections.push({
-            title: uiText("Wetter"),
-            columns: ["Feld", uiText("Wert")],
-            rows: weatherRows,
-            withHeader: false,
-            align: ["left", "left"],
-            columnWidths: ["1fr", "2fr"],
-          });
-        }
+      const weatherRows = describeWeather(currentReport.weather);
+      if (weatherRows.length > 0) {
+        sections.push({
+          title: uiText("Wetter"),
+          columns: ["Feld", uiText("Wert")],
+          rows: weatherRows,
+          withHeader: false,
+          align: ["left", "left"],
+          columnWidths: ["1fr", "2fr"],
+        });
       }
 
       const photoImages = (currentReport.photos ?? [])
@@ -415,8 +398,7 @@ export default function DailyProjectReportDetailPage() {
   if (err) return <NotFound reason="resourceNotFound" />;
   if (!report) return;
 
-  const hasWeather =
-    !!report.weather && !!Object.values(report.weather).find((v) => !!v);
+  const weatherRows = describeWeather(report.weather);
   const photos = report.photos ?? [];
 
   return (
@@ -495,23 +477,7 @@ export default function DailyProjectReportDetailPage() {
       <AttrList>
         <AttrList.Attr
           name={uiText("Projekt")}
-          value={
-            <Awaited
-              promise={async () => {
-                const [project] = await client.query(
-                  "projects.get",
-                  { id: report.projectId },
-                  { strategy: "cache-first" },
-                );
-                if (!project) return "Unbekannt";
-                return (
-                  <MyLink to={`/projects/${project.id}`}>
-                    {project.title}
-                  </MyLink>
-                );
-              }}
-            />
-          }
+          value={<Awaited promise={() => projectLink(report.projectId)} />}
         />
 
         <AttrList.Attr name="Tag" value={formatDate(report.day)} />
@@ -528,23 +494,7 @@ export default function DailyProjectReportDetailPage() {
         {!!report.createdByUserId && (
           <AttrList.Attr
             name={uiText("Erstellt von")}
-            value={
-              <Awaited
-                promise={async () => {
-                  const [user] = await client.query(
-                    "users.get",
-                    { id: report.createdByUserId! },
-                    { strategy: "cache-first" },
-                  );
-                  if (!user) return "Unbekannt";
-                  return (
-                    <MyLink to={`/users/${user.id}`}>
-                      {userFullName(user)}
-                    </MyLink>
-                  );
-                }}
-              />
-            }
+            value={<Awaited promise={() => memberLink(report.createdByUserId)} />}
           />
         )}
       </AttrList>
@@ -559,20 +509,7 @@ export default function DailyProjectReportDetailPage() {
             columns={[
               {
                 label: uiText("Mitarbeiter"),
-                render: async (row) => {
-                  if (!row.userId) return "Unbekannt";
-                  const [user] = await client.query(
-                    "users.get",
-                    { id: row.userId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!user) return "Unbekannt";
-                  return (
-                    <MyLink to={`/users/${user.id}`}>
-                      {userFullName(user)}
-                    </MyLink>
-                  );
-                },
+                render: (row) => memberLink(row.userId),
               },
               {
                 label: uiText("Stunden"),
@@ -586,33 +523,12 @@ export default function DailyProjectReportDetailPage() {
         </MyExpandable>
       )}
 
-      {!!report.weather && hasWeather && (
+      {weatherRows.length > 0 && (
         <MyExpandable title={uiText("Wetter")} initiallyExpanded>
           <AttrList>
-            {!!report.weather.summary && (
-              <AttrList.Attr
-                name={uiText("Beschreibung")}
-                value={report.weather.summary}
-              />
-            )}
-            {typeof report.weather.temperatureC === "number" && (
-              <AttrList.Attr
-                name="Temperatur"
-                value={`${formatNumber(report.weather.temperatureC)} °C`}
-              />
-            )}
-            {typeof report.weather.precipitationMm === "number" && (
-              <AttrList.Attr
-                name="Niederschlag"
-                value={`${formatNumber(report.weather.precipitationMm)} mm`}
-              />
-            )}
-            {typeof report.weather.windKph === "number" && (
-              <AttrList.Attr
-                name="Wind"
-                value={`${formatNumber(report.weather.windKph)} km/h`}
-              />
-            )}
+            {weatherRows.map(([label, value]) => (
+              <AttrList.Attr key={label} name={label} value={value} />
+            ))}
           </AttrList>
         </MyExpandable>
       )}

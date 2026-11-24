@@ -3,45 +3,27 @@ import { MyForm } from "~/components/MyForm";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
-import { formatDate, formatNumber, productTitle, regieProductTitle, userFullName } from "~/lib/format";
+import { parseDateInputValue, toDateInputValue } from "~/lib/calendarDate";
+import { formatDate, productTitle } from "~/lib/format";
 import { renderStructuredPdfBatch } from "~/lib/pdf";
 import { buildRegieReportPdfDocument } from "~/lib/regieReportPdf";
-import { deliverBlob, upmatchUnit } from "~/lib/utils";
+import { appendRegieMaterials, appendRegieWorkHours } from "~/lib/regieWorkbook";
+import { deliverBlob } from "~/lib/utils";
 import { prepareExcelExport } from "~/lib/officeExports";
-import { addUniqueWorksheet } from "~/lib/workbookSections";
-import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES, WEEKDAY_SHORT_NAMES, weekdayIndexInIsoWeek } from "~/lib/week";
+import { addUniqueWorksheet, workbookSections } from "~/lib/workbookSections";
+import { readExportReferences } from "~/lib/exportReferences";
+import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES } from "~/lib/week";
 import type { Project } from "~/type-helpers";
-
-function pad2(value: number) {
-  return `${value}`.padStart(2, "0");
-}
-
-function toDateInputValue(date: Date) {
-  return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
-}
 
 function parseDateInput(value: unknown, fieldLabel: string) {
   const text = `${value ?? ""}`.trim();
   if (!text) throw new Error(`${fieldLabel} fehlt`);
 
-  const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-  if (!match) throw new Error(uiText(`${fieldLabel} ist ungültig`, `${fieldLabel} is invalid`));
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const parsed = new Date(year, month - 1, day);
-
-  if (
-    isNaN(parsed.getTime())
-    || parsed.getFullYear() !== year
-    || parsed.getMonth() !== month - 1
-    || parsed.getDate() !== day
-  ) {
+  const parsed = parseDateInputValue(text);
+  if (!parsed) {
     throw new Error(uiText(`${fieldLabel} ist ungültig`, `${fieldLabel} is invalid`));
   }
 
-  parsed.setHours(0, 0, 0, 0);
   return parsed;
 }
 
@@ -58,13 +40,6 @@ function formatDateTime(value: Date) {
 function sanitizeFilePart(value: string) {
   const fallback = value.trim().replace(/\s+/g, "-").replace(/[^a-zA-Z0-9_-]/g, "");
   return fallback || "export";
-}
-
-function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
-  const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
-  const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
-  if (normalizedDisplayUnit === normalizedBaseUnit) return "-";
-  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ""}`;
 }
 
 export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInterface, project: Project) {
@@ -146,14 +121,13 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
         return { note, costs };
       }));
 
-      const productIds = [...new Set(noteDetails
-        .flatMap(entry => entry.costs.records)
-        .map(record => record.productId))];
-      const productEntries = await Promise.all(productIds.map(async (productId) => {
-        const [product] = await client.query("products.get", { id: productId }, { strategy: "cache-first" });
-        return [productId, product ?? null] as const;
-      }));
-      const productsById = new Map(productEntries);
+      const productsById = await readExportReferences(
+        client,
+        "products.get",
+        noteDetails.flatMap(({ costs }) =>
+          costs.records.map((record) => record.productId),
+        ),
+      );
 
       const ExcelJS = await import("exceljs");
       const wb = new ExcelJS.Workbook();
@@ -306,7 +280,10 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
       const safeTitle = sanitizeFilePart(project.title);
       const fromPart = toDateInputValue(fromDate).replace(/[^0-9]/g, "");
       const toPart = toDateInputValue(toDateInclusive).replace(/[^0-9]/g, "");
-      await openExcel(wb, uiText(`Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`, `Delivery-notes-period-${safeTitle}-${fromPart}-${toPart}.xlsx`));
+      await openExcel(wb, uiText(
+        `Lieferscheine-Zeitraum-${safeTitle}-${fromPart}-${toPart}.xlsx`,
+        `Delivery-notes-period-${safeTitle}-${fromPart}-${toPart}.xlsx`,
+      ));
 
       hide();
     },
@@ -351,31 +328,22 @@ export function showExportProjectRegieReportsModal(
         throw new Error(uiText("Fur dieses Projekt sind keine Regieberichte vorhanden"));
       }
 
-      const productIds = [...new Set(
-        reportList
-          .flatMap(report => report.products)
-          .map(entry => entry.productId),
-      )];
-      const userIds = [...new Set(
-        reportList
-          .flatMap(report => report.workHours)
-          .map(entry => entry.userId)
-          .filter(Boolean),
-      )] as string[];
-
-      const [productEntries, userEntries] = await Promise.all([
-        Promise.all(productIds.map(async (productId) => {
-          const [product] = await client.query("products.get", { id: productId }, { strategy: "cache-first" });
-          return [productId, product ?? null] as const;
-        })),
-        Promise.all(userIds.map(async (userId) => {
-          const [user] = await client.query("users.get", { id: userId }, { strategy: "cache-first" });
-          return [userId, user ?? null] as const;
-        })),
+      const [productsById, usersById] = await Promise.all([
+        readExportReferences(
+          client,
+          "products.get",
+          reportList.flatMap((report) =>
+            report.products.map((entry) => entry.productId),
+          ),
+        ),
+        readExportReferences(
+          client,
+          "users.get",
+          reportList.flatMap((report) =>
+            report.workHours.map((entry) => entry.userId),
+          ),
+        ),
       ]);
-
-      const productsById = new Map(productEntries);
-      const usersById = new Map(userEntries);
 
       if (format === 'pdf') {
         const documents = reportList.map((report) => {
@@ -401,8 +369,6 @@ export function showExportProjectRegieReportsModal(
       wb.creator = "exceljs";
       wb.created = new Date();
 
-      const DECIMAL_NUM_FMT = "#,##0.00";
-      const DECIMAL_ZERO_DASH_NUM_FMT = "#,##0.00;-#,##0.00;-";
 
       reportList.forEach((report, index) => {
         const weekStart = startOfIsoWeek(new Date(report.day));
@@ -442,129 +408,29 @@ export function showExportProjectRegieReportsModal(
           cursor = summaryEnd + 2;
         }
 
-        const addSectionTitle = (title: string) => {
-          ws.getCell(cursor, 1).value = title;
-          ws.getCell(cursor, 1).font = { bold: true, size: 12 };
-          cursor += 2;
-        };
-
-        const addTable = (name: string, columns: string[], rows: Array<Array<string | number | Date | null>>) => {
-          if (!rows.length) return null;
-
-          ws.addTable({
-            name,
-            ref: ws.getCell(cursor, 1).address,
-            headerRow: true,
-            totalsRow: false,
-            style: { theme: "TableStyleLight1", showRowStripes: true },
-            columns: columns.map(column => ({ name: column })),
-            rows,
-          });
-
-          const firstDataRow = cursor + 1;
-          const rowCount = rows.length;
-          cursor += rowCount + 2;
-
-          return { firstDataRow, rowCount };
-        };
-
-        const hoursByUser = new Map<string, { name: string; values: number[] }>();
-        report.workHours.forEach(entry => {
-          const dayIndex = weekdayIndexInIsoWeek(new Date(entry.day), weekStart);
-          if (dayIndex < 0 || dayIndex >= WEEKDAY_NAMES.length) return;
-
-          const key = entry.userId ?? '__unknown__';
-          const user = entry.userId ? usersById.get(entry.userId) : null;
-          const name = user ? userFullName(user) : 'Unbekannt';
-          const current = hoursByUser.get(key) ?? {
-            name,
-            values: Array.from({ length: WEEKDAY_NAMES.length }, () => 0),
-          };
-
-          current.values[dayIndex] += Number(entry.hours ?? 0);
-          hoursByUser.set(key, current);
+        const sections = workbookSections(ws, cursor, {
+          heading: { size: 12 },
         });
-
-        const workHoursRows = Array.from(hoursByUser.values())
-          .sort((left, right) => left.name.localeCompare(right.name, 'de', { sensitivity: 'base' }))
-          .map(row => [row.name, ...row.values] as Array<string | number | Date | null>);
-        let workHoursTable: { firstDataRow: number; rowCount: number; } | null = null;
-        if (workHoursRows.length) {
-          addSectionTitle(uiText("Arbeitszeit je Mitarbeiter und Tag"));
-          workHoursTable = addTable(
-            `RegieWorkHours_${index + 1}`,
-            ["Mitarbeiter", ...WEEKDAY_SHORT_NAMES],
-            workHoursRows,
-          );
-        }
-        if (workHoursTable) {
-          for (let i = 0; i < workHoursTable.rowCount; i++) {
-            const row = workHoursTable.firstDataRow + i;
-            for (let col = 2; col <= 1 + WEEKDAY_SHORT_NAMES.length; col++) {
-              ws.getCell(row, col).numFmt = DECIMAL_ZERO_DASH_NUM_FMT;
-            }
-          }
-        }
-
-        const productsRows = report.products.map(entry => {
-          const product = productsById.get(entry.productId);
-          const baseQuantity = Number(entry.quantity ?? 0);
-          const [amount, unit] = product ? upmatchUnit(product, baseQuantity) : [baseQuantity, ""];
-          const baseUnit = product?.baseUnit ?? "";
-          return [
-            product ? regieProductTitle(product) : "Unbekannt",
-            `${formatNumber(amount)}${unit ? ` ${unit}` : ""}`,
-            formatBaseQuantity(baseQuantity, baseUnit, unit),
-          ] as Array<string | number | Date | null>;
+        appendRegieWorkHours(
+          ws,
+          sections,
+          report,
+          weekStart,
+          usersById,
+          `RegieWorkHours_${index + 1}`,
+        );
+        appendRegieMaterials(ws, sections, report, productsById, {
+          includeComment: true,
+          productTableName: `RegieProducts_${index + 1}`,
+          specialTableName: `RegieSpecial_${index + 1}`,
         });
-        if (productsRows.length) {
-          addSectionTitle("Produkte");
-          addTable(
-            `RegieProducts_${index + 1}`,
-            ["Bezeichnung", "Menge", "Basismenge"],
-            productsRows,
-          );
-        }
-
-        const specialRows = report.specialRecords.map(entry => {
-          return [
-            entry.name,
-            Number(entry.amount ?? 0),
-            entry.unit,
-            entry.comment ?? "",
-          ] as Array<string | number | Date | null>;
-        });
-        let specialTable: { firstDataRow: number; rowCount: number; } | null = null;
-        if (specialRows.length) {
-          addSectionTitle("Sonderposten");
-          specialTable = addTable(
-            `RegieSpecial_${index + 1}`,
-            ["Bezeichnung", "Menge", "Einheit", uiText("Kommentar")],
-            specialRows,
-          );
-        }
-        if (specialTable) {
-          for (let i = 0; i < specialTable.rowCount; i++) {
-            const row = specialTable.firstDataRow + i;
-            ws.getCell(row, 2).numFmt = DECIMAL_NUM_FMT;
-          }
-        }
-
-        ws.columns = [
-          { width: 30 },
-          { width: 11 },
-          { width: 11 },
-          { width: 11 },
-          { width: 11 },
-          { width: 11 },
-          { width: 11 },
-          { width: 11 },
-          { width: 14 },
-        ];
       });
 
       const safeTitle = sanitizeFilePart(project.title);
-      await openExcel(wb, uiText(`Regieberichte-${safeTitle}.xlsx`, `Time-and-material-reports-${safeTitle}.xlsx`));
+      await openExcel(wb, uiText(
+        `Regieberichte-${safeTitle}.xlsx`,
+        `Time-and-material-reports-${safeTitle}.xlsx`,
+      ));
 
       hide();
     },
