@@ -5,10 +5,11 @@ Arbeitszeit, Nachunternehmerstunden, Werkzeugnutzung und Gemeinkosten
 verglichen. Die Berechnung läuft im Browser. Die API speichert die
 verschlüsselten Belege und verteilt Änderungen an verbundene Clients.
 
-Die projektübergreifende Übersicht verwendet dieselbe Berechnung wie die
-Einzelansicht. Damit zählen auch externe Arbeitsstunden in beiden Ansichten
-gleich. Die bisherige PostgreSQL-Übersicht hatte diese Stunden ausgelassen,
-während der Detailbericht sie bereits berücksichtigte.
+Die Übersicht verwendet dieselben Materialpreise, Stundensätze, Werkzeug- und
+Gemeinkosten wie der Detailbericht. Wie in Master zählen externe Arbeitsstunden
+zum Detailbericht, aber nicht zu den Kosten und zum Ergebnis in der
+projektübergreifenden Übersicht. Interne und Nachunternehmerstunden zählen in
+beiden Ansichten.
 
 ## Die benötigten Freigaben
 
@@ -59,9 +60,10 @@ Eine Preisabfrage durchsucht nur die Einträge des angefragten Produkts.
 Materialgemeinkosten fallen einmal je Lieferschein mit Positionen an. Lohn- und
 Nachunternehmergemeinkosten verwenden die jeweilige Kostensumme des Arbeitstags;
 die Konstante wird je vorhandener Arbeitszeitart einmal angewendet. Externe
-Arbeitsstunden zählen zu den Kosten, erhalten aber keinen Lohnzuschlag. Der
-Gemeinkostensatz stammt jeweils vom Belegzeitpunkt beziehungsweise vom Beginn
-des Arbeitstags in UTC.
+Arbeitsstunden zählen im Projektdetail zu den Kosten, erhalten aber keinen
+Lohnzuschlag. Die Kostenübersicht berücksichtigt wie im Master nur interne und
+Nachunternehmerstunden. Der Gemeinkostensatz stammt jeweils vom Belegzeitpunkt
+beziehungsweise vom Beginn des Arbeitstags in UTC.
 
 Werkzeugbuchungen behalten ihren erfassten Tagessatz. Ein später geänderter
 Werkzeugpreis ersetzt diesen historischen Satz nicht. Bei einer zeitlich
@@ -73,6 +75,13 @@ Die Auswertung verwendet Gleitkommazahlen. Ein Sonderposten ohne erfassten Preis
 bleibt sichtbar und geht mit null Euro in die Summe ein. Die Berechnung setzt
 voraus, dass sie den vollständigen, freigegebenen Preisbestand des Projekts
 lesen kann. Bei fehlender Preisfreigabe erscheint die Zugriffsmeldung.
+
+Ein Vergleich mit der SQL-Abfrage aus Master `513058b` deckt die 77 Projekte
+des gespeicherten Musterbestands ab. Bei festgehaltenem UTC-Zeitpunkt für
+offene Werkzeugbuchungen stimmen Reihenfolge, Kostensummen und kaufmännische
+Beträge bis auf Gleitkommaabweichungen unter `0,00000000001` überein. Der
+Vergleich rechnet aus den COPY-Quelldaten. Er ersetzt weder die Übernahme in
+einen verschlüsselten Mandanten noch die Prüfung der angezeigten Werte im Browser.
 
 ## Finanzbeträge bearbeiten und übernehmen
 

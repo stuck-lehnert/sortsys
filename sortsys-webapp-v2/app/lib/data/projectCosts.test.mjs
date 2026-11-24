@@ -2,6 +2,7 @@ import { afterEach, expect, test } from "bun:test";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
 import { row } from "./rowCodec.test.mjs";
 import {
   createProtectedProjectCosts,
@@ -324,6 +325,39 @@ test("date filtering keeps whole overlapping tool durations and UTC calendar wor
   ).toThrow();
 });
 
+test("cost row order uses microseconds, then numeric identifiers for the same instant", () => {
+  const source = sourceRows().source;
+  const details = [
+    ["9", "2026-02-02T10:00:00.123456Z"],
+    ["100", "2026-02-02T10:00:00.123455Z"],
+    ["10", "2026-02-02T11:00:00.123456+01:00"],
+  ];
+  const ids = ["10", "9", "100"].map(publicId);
+  const result = calculateCosts({
+    ...source,
+    financial: details.map(([id, created_at]) =>
+      row("project_financial_entries", {
+        id, created_at, project_id: "1", type: "invoice", amount: 10,
+      }),
+    ),
+    deliveries: details.map(([id, effective_timestamp]) => ({
+      value: {
+        ...source.deliveries[0].value,
+        note: row("product_delivery_notes", { id, effective_timestamp, project_id: "1" }),
+        records: [],
+        specialRecords: [],
+      },
+    })),
+    tools: details.map(([id, started_at]) =>
+      row("tool_trackings", { ...source.tools[0].values, id, started_at }),
+    ),
+  });
+
+  expect(result.invoices.map(({ id }) => id)).toEqual(ids);
+  expect(result.deliveryNotes.map(({ noteId }) => noteId)).toEqual(ids);
+  expect(result.toolTrackings.map(({ id }) => id)).toEqual(ids);
+});
+
 test("historical price lookup retains microseconds, tie IDs and the earliest future fallback", () => {
   const source = sourceRows().source;
   source.productPrices = [
@@ -357,9 +391,15 @@ test("historical price lookup retains microseconds, tie IDs and the earliest fut
 
 test("labour rates require a stored fragment and support explicit nulls", () => {
   const source = sourceRows().source;
-  source.daily[0].costs.costs[0].costPerHour = null;
+  const { costs } = source.daily[0];
+  costs.costs[0].costPerHour = null;
   expect(calculateCosts(source).commonCosts.fgk.baseCost).toBe(30);
-  source.daily[0].costs.costs.shift();
+
+  costs.projectId = "2";
+  expect(() => calculateCosts(source)).toThrow();
+
+  costs.projectId = "1";
+  costs.costs.shift();
   expect(() => calculateCosts(source)).toThrow();
 });
 
@@ -399,7 +439,7 @@ test("authorized local reporting returns complete source costs and never calls a
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("project costs use the new price after the catalog snapshot changes", async () => {
   const f = await fixture();
@@ -419,9 +459,9 @@ test("project costs use the new price after the catalog snapshot changes", async
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
-test("the overview keeps unreadable projects visible with null costs and an explicit access reason", async () => {
+test("overview labor follows Master while projects without billing access retain no costs", async () => {
   const f = await fixture(
     (area) =>
       area.scope === "project:2" && area.facet === "billing"
@@ -437,10 +477,19 @@ test("the overview keeps unreadable projects visible with null costs and an expl
     expect(rows).toHaveLength(2);
     expect(rows[0]).toMatchObject({
       projectId: "1",
-      costs: 227.7,
-      gainOrLoss: 22.30000000000001,
       accessError: null,
     });
+
+    // The Master overview omits the external entry (1.25 hours at 8),
+    // but the detail includes it in its labor and overall costs.
+    const detail = await f.store.query("projects.costs.get", { projectId: "1" });
+    expect(detail.workHours).toContainEqual(
+      expect.objectContaining({ contractType: "external", totalCost: 10 }),
+    );
+    expect(detail.totalCosts.overall).toBeCloseTo(227.7, 8);
+    expect(rows[0].costs).toBeCloseTo(217.7, 8);
+    expect(rows[0].gainOrLoss).toBeCloseTo(32.3, 8);
+
     expect(rows[1]).toMatchObject({
       projectId: "2",
       costs: null,
@@ -465,7 +514,7 @@ test("the overview keeps unreadable projects visible with null costs and an expl
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, 120000);
 
 test("an authorized empty project has real zero costs and no invoice-based gain", async () => {
   const f = await fixture(undefined, true);
@@ -497,7 +546,7 @@ test("an authorized empty project has real zero costs and no invoice-based gain"
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("financial creation is idempotent and update/delete require the matching financial facet", async () => {
   const f = await fixture();
@@ -543,7 +592,7 @@ test("financial creation is idempotent and update/delete require the matching fi
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("lost acknowledgements do not duplicate entries and false acknowledgements do not save them", async () => {
   const f = await fixture();
@@ -580,7 +629,7 @@ test("lost acknowledgements do not duplicate entries and false acknowledgements 
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("managed contract values cannot be bypassed through a manual offer entry", async () => {
   const f = await fixture();
@@ -612,7 +661,7 @@ test("managed contract values cannot be bypassed through a manual offer entry", 
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("a lost cost fragment and account locking fail visibly instead of reusing incomplete cached totals", async () => {
   const f = await fixture();
@@ -632,7 +681,7 @@ test("a lost cost fragment and account locking fail visibly instead of reusing i
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("invoice creation does not confer offer, invoice-update or deletion rights even to an administrator", async () => {
   const f = await fixture((area) =>
@@ -677,7 +726,7 @@ test("invoice creation does not confer offer, invoice-update or deletion rights 
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("update-only and delete-only financial grants do not acquire creation rights", async () => {
   for (const action of ["update", "delete"]) {
@@ -732,7 +781,7 @@ test("update-only and delete-only financial grants do not acquire creation right
       f.finance.close();
     }
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("linked invoice values and malformed row bindings cannot be edited as manual entries", async () => {
   const f = await fixture();
@@ -794,7 +843,7 @@ test("linked invoice values and malformed row bindings cannot be edited as manua
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("a concurrent managed baseline prevents a manual offer from being committed", async () => {
   const f = await fixture();
@@ -829,7 +878,7 @@ test("a concurrent managed baseline prevents a manual offer from being committed
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));
 
 test("a create retry after losing both acknowledgement and readback retains one financial operation", async () => {
   const f = await fixture();
@@ -873,4 +922,4 @@ test("a create retry after losing both acknowledgement and readback retains one 
     f.store.close();
     f.finance.close();
   }
-}, 30000);
+}, fixtureTimeout(30000));

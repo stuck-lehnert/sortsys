@@ -543,15 +543,24 @@ export function createProtectedProjectCosts(
             undefined,
             now,
           );
+
+          // Like the Master overview, count only internal and subcontractor
+          // labor here. The detail includes external labor in workHours.
+          const { fgk, mgk, ngk } = cost.commonCosts;
+          const costs =
+            mgk.baseCost +
+            mgk.overheadCost +
+            (fgk.baseCost + ngk.baseCost) +
+            (fgk.overheadCost + ngk.overheadCost) +
+            cost.totalCosts.toolTrackings;
           const hasInvoices = cost.invoices.length > 0;
-          const gain = hasInvoices
-            ? cost.totalCosts.invoices - cost.totalCosts.overall
-            : null;
-          if (gain !== null && !Number.isFinite(gain))
+          const gain = hasInvoices ? cost.totalCosts.invoices - costs : null;
+          if (!Number.isFinite(costs) || (gain !== null && !Number.isFinite(gain)))
             throw new InvalidProtectedData();
+
           return {
             ...metadata,
-            costs: cost.totalCosts.overall,
+            costs,
             offersTotal: cost.totalCosts.offers,
             invoicesTotal: cost.totalCosts.invoices,
             hasInvoices,

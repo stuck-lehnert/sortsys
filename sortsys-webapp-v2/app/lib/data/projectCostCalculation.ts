@@ -47,7 +47,17 @@ export function toolUsageInPeriod(
   now: bigint,
 ): boolean {
   const start = timestampMicros(values.started_at as string);
-  const end = values.ended_at === null ? now : timestampMicros(values.ended_at as string);
+  return toolUsageOverlaps(values, start, period, now);
+}
+
+function toolUsageOverlaps(
+  values: BusinessFields["values"],
+  start: bigint,
+  period: CostPeriod,
+  now: bigint,
+) {
+  const end =
+    values.ended_at === null ? now : timestampMicros(values.ended_at as string);
   return (
     (period.from === null || end >= period.from) &&
     (period.to === null || start <= period.to)
@@ -60,19 +70,27 @@ function compareIdDescending(left: string, right: string): number {
   if (a < b) return 1;
   return 0;
 }
-function compareRows(
-  left: BusinessRow,
-  right: BusinessRow,
-  timestamp: string,
-): number {
-  const first = timestampMicros(left.values[timestamp] as string);
-  const second = timestampMicros(right.values[timestamp] as string);
-  if (first > second) return -1;
-  if (first < second) return 1;
-  return compareIdDescending(
-    left.values.id as string,
-    right.values.id as string,
-  );
+function orderedCostRows<T>(
+  source: readonly T[],
+  row: (value: T) => BusinessRow,
+  field: string,
+  include: (instant: bigint, values: BusinessRow["values"]) => boolean,
+): T[] {
+  const selected: { value: T; instant: bigint; id: bigint }[] = [];
+  for (const value of source) {
+    const { values } = row(value);
+    const instant = timestampMicros(values[field] as string);
+    if (include(instant, values)) {
+      selected.push({ value, instant, id: BigInt(values.id as string) });
+    }
+  }
+
+  selected.sort((a, b) => {
+    if (a.instant !== b.instant) return a.instant > b.instant ? -1 : 1;
+    if (a.id !== b.id) return a.id > b.id ? -1 : 1;
+    return 0;
+  });
+  return selected.map(({ value }) => value);
 }
 function emptyBucket(): CostBucket {
   return { baseCost: 0, overheadCost: 0, totalCost: 0 };
@@ -113,12 +131,14 @@ export function calculateProjectCosts(
   now = new Date(),
 ): ProjectCosts {
   const nowMicros = timestampMicros(timestampInstant(now));
+  const insidePeriod = (instant: bigint) => inPeriod(instant, period);
 
-  const financial = source.financial
-    .filter((row) =>
-      inPeriod(timestampMicros(row.values.created_at as string), period),
-    )
-    .sort((left, right) => compareRows(left, right, "created_at"));
+  const financial = orderedCostRows(
+    source.financial,
+    (row) => row,
+    "created_at",
+    insidePeriod,
+  );
   const offers = financial
     .filter((row) => row.values.type === "offer")
     .map(wireFinancialEntry);
@@ -136,16 +156,12 @@ export function calculateProjectCosts(
   const deliveryNotes: ProjectCosts["deliveryNotes"] = [];
   const specialRecords: ProjectCosts["specialRecords"] = [];
   const noteInstants = new Map<string, bigint>();
-  const deliveries = source.deliveries
-    .filter(({ value }) =>
-      inPeriod(
-        timestampMicros(value.note.values.effective_timestamp as string),
-        period,
-      ),
-    )
-    .sort((left, right) =>
-      compareRows(left.value.note, right.value.note, "effective_timestamp"),
-    );
+  const deliveries = orderedCostRows(
+    source.deliveries,
+    ({ value }) => value.note,
+    "effective_timestamp",
+    insidePeriod,
+  );
 
   for (const { value, prices } of deliveries) {
     const costs = calculateDeliveryCosts(value, prices, rates.productAt);
@@ -266,9 +282,12 @@ export function calculateProjectCosts(
     .filter((entry) => entry.wire.contractType === "subcontractor")
     .map((entry) => entry.wire);
 
-  const trackings = source.tools
-    .filter(({ values }) => toolUsageInPeriod(values, period, nowMicros))
-    .sort((left, right) => compareRows(left, right, "started_at"));
+  const trackings = orderedCostRows(
+    source.tools,
+    (row) => row,
+    "started_at",
+    (instant, values) => toolUsageOverlaps(values, instant, period, nowMicros),
+  );
   const toolTrackings = trackings.map(({ values }) => {
     const startedAt = new Date(values.started_at as string);
     const endedAt =
