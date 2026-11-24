@@ -23,7 +23,11 @@ import {
   wireCommercialInvoice,
 } from "./commercialData";
 import { copyCommercialRows } from "./commercialRows";
-import { copyProtectedCollection } from "./copyCollection";
+import {
+  copyProtectedCollection,
+  copyProtectedSingletons,
+  lazyCopyAttester,
+} from "./copyCollection";
 import type { BusinessDatabase } from "./database";
 import { createInvoiceNumbers } from "./invoiceNumbers";
 import {
@@ -34,7 +38,7 @@ import {
   type InvoiceNumberClaim,
 } from "./invoiceNumberData";
 import { publicId, readBusinessRows } from "./products";
-import { protectedCollection } from "./protectedObjects";
+import { protectedCollection, protectedCollections } from "./protectedObjects";
 import type { BusinessRow } from "./rowCodec";
 
 export type CommercialSource = { id: string; rows: BusinessRow[] };
@@ -86,21 +90,31 @@ export async function prepareBillingRegisters(
   }
   for (const register of registers.values()) {
     register.invoices.sort((left, right) => left.id.localeCompare(right.id));
-    for (const issued of [false, true]) {
-      const request = issued
-        ? issuedBillingRequest(register.contractCaseId)
-        : billingRequest(register.contractCaseId);
+  }
+  if (!registers.size) return;
+
+  const open = await protectedCollections(client, signal);
+  const attest = lazyCopyAttester(client, signal);
+
+  // Drafts and issued invoices share a domain. Finish and confirm each
+  // draft page before reading the updated heads for issued registers.
+  for (const issued of [false, true]) {
+    const requestFor = issued ? issuedBillingRequest : billingRequest;
+    const copies = [...registers.values()].map((register) => {
+      const { area, model } = requestFor(register.contractCaseId);
       const invoices = register.invoices.filter(
         (invoice) => ISSUED_STATUSES.includes(invoice.status) === issued,
       );
-      await copyProtectedCollection(
-        client,
-        request.area,
-        [{ id: request.area.prefix, value: { ...register, invoices } }],
-        (value, object) => request.model.decode(value, object, request.area),
-        signal,
-      );
-    }
+
+      return {
+        area,
+        row: { id: area.prefix, value: { ...register, invoices } },
+        validate: (value: unknown, object: string) =>
+          model.decode(value, object, area),
+        attest,
+      };
+    });
+    await copyProtectedSingletons(client, copies, signal, open);
   }
 }
 

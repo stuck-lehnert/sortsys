@@ -1,7 +1,7 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase } from "./database";
-import { copyProtectedCollection } from "./copyCollection";
+import { copyProtectedSingletons } from "./copyCollection";
 import { prepareOwnerCollections } from "./prepareCollections";
 import { publicId, readBusinessRows } from "./products";
 import {
@@ -31,20 +31,11 @@ export async function prepareProjectCommercial(
     )
   )
     throw new InvalidProtectedData();
-  await prepareOwnerCollections(
-    client,
-    subject,
-    projects.flatMap((project) =>
-      PROJECT_COMMERCIAL_FACETS.map((facet) =>
-        projectCommercialCollection(publicId(project.values.id), facet),
-      ),
-    ),
-    signal,
-  );
-  for (const project of projects)
-    for (const facet of PROJECT_COMMERCIAL_FACETS) {
-      const id = publicId(project.values.id),
-        area = projectCommercialCollection(id, facet),
+  const copies = projects.flatMap((project) => {
+    const id = publicId(project.values.id);
+
+    return PROJECT_COMMERCIAL_FACETS.map((facet) => {
+      const area = projectCommercialCollection(id, facet),
         object = `${area.prefix}register`,
         value = emptyProjectCommercial(id, facet);
       if (facet === "offer-prices") {
@@ -87,15 +78,22 @@ export async function prepareProjectCommercial(
                 : publicId(row.values.parent_case_id),
             scopeItemIds: JSON.parse(row.values.scope_item_ids as string),
           }));
-      await copyProtectedCollection(
-        client,
+      return {
         area,
-        [{ id: object, value }],
-        (input, actual) => {
+        row: { id: object, value },
+        validate(input: unknown, actual: string) {
           if (actual !== object) throw new InvalidProtectedData();
           return projectCommercialRegister(input, id, facet);
         },
-        signal,
-      );
-    }
+      };
+    });
+  });
+
+  await prepareOwnerCollections(
+    client,
+    subject,
+    copies.map(({ area }) => area),
+    signal,
+  );
+  await copyProtectedSingletons(client, copies, signal);
 }
