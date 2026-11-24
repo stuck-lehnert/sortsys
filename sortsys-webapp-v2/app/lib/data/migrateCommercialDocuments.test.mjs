@@ -3,7 +3,7 @@ import * as documentContent from "./commercialDocumentContent";
 import { prepareCommercialDocuments } from "./migrateCommercialDocuments";
 import { row } from "./testing/businessRow.mjs";
 
-test("archived GAEB documents share one inventory but retain exact bytes and case-local lifetimes", async () => {
+test("archived GAEB documents overlap across cases but retain exact bytes and case-local lifetimes", async () => {
   const xml = "\uFEFF<GAEB>\r\n</GAEB>";
   const phase = "82";
   const originals = new Map([
@@ -49,11 +49,13 @@ test("archived GAEB documents share one inventory but retain exact bytes and cas
   const saved = new Map();
   const opened = [];
   const published = [];
-  let active = null;
+  const active = new Set();
+  let peak = 0;
 
   function open(scope) {
-    expect(active).toBeNull();
-    active = scope;
+    expect(active.has(scope)).toBe(false);
+    active.add(scope);
+    peak = Math.max(peak, active.size);
     opened.push(scope);
 
     return {
@@ -71,8 +73,7 @@ test("archived GAEB documents share one inventory but retain exact bytes and cas
         return { complete: true, xml: saved.get(`${scope}/${head.id}`).xml };
       },
       close() {
-        expect(active).toBe(scope);
-        active = null;
+        expect(active.delete(scope)).toBe(true);
       },
     };
   }
@@ -90,11 +91,13 @@ test("archived GAEB documents share one inventory but retain exact bytes and cas
 
     await importDocuments();
     expect(opened).toEqual(["commercial:2", "commercial:3"]);
-    expect(active).toBeNull();
+    expect(peak).toBe(2);
+    expect(active.size).toBe(0);
     expect(shared).toHaveBeenCalledTimes(1);
     expect(shared).toHaveBeenCalledWith(client, signal, undefined);
     expect(single).not.toHaveBeenCalled();
-    expect(published.map(({ id, locked, readOnly }) => [id, locked, readOnly])).toEqual([
+    const states = published.map(({ id, locked, readOnly }) => [id, locked, readOnly]);
+    expect(states.sort(([a], [b]) => a.localeCompare(b))).toEqual([
       ["4", false, false],
       ["5", true, true],
     ]);
@@ -105,7 +108,7 @@ test("archived GAEB documents share one inventory but retain exact bytes and cas
 
     originals.set("offer.xml", new Blob([xml.replace("GAEB", "GAEa")]));
     await expect(importDocuments()).rejects.toThrow();
-    expect(active).toBeNull();
+    expect(active.size).toBe(0);
     expect(published).toHaveLength(2);
   } finally {
     single.mockRestore();

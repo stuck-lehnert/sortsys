@@ -182,6 +182,75 @@ test("large document parts group writes and reads and recover a lost batch ackno
   }
 });
 
+test("publishing a GAEB head refreshes its guarded areas with bounded parallel reads", async () => {
+  const facets = ["scope", "contract-quantities", "measurement", "offer-prices"];
+  const areas = facets.map((facet) => commercialCollection("a", facet));
+  const fixture = await protectedTenant([first, ...areas]);
+  const { query, mutate } = fixture.client;
+  const refreshed = [];
+  let committed;
+  let active = 0;
+  let peak = 0;
+
+  fixture.client.mutate = async (path, input) => {
+    const result = await mutate(path, input);
+    if (
+      path !== "zerotrust.objects.batch" ||
+      !input.documents?.length ||
+      result[1]
+    ) {
+      return result;
+    }
+
+    expect(input.heads.map(({ domain }) => domain).sort()).toEqual(
+      areas.map(({ domain }) => domain).sort(),
+    );
+    [committed] = input.documents;
+    return [null, new Error("Lost document acknowledgement")];
+  };
+  fixture.client.query = async (path, input) => {
+    if (path === "zerotrust.documents.get") {
+      return [structuredClone(committed ?? null), null];
+    }
+    if (!committed || path !== "zerotrust.objects.list") {
+      return query(path, input);
+    }
+
+    refreshed.push(input.domain);
+    active++;
+    peak = Math.max(peak, active);
+    try {
+      return await query(path, input);
+    } finally {
+      active--;
+    }
+  };
+
+  const store = await commercialDocumentStore(
+    fixture.client,
+    first.scope,
+    new AbortController().signal,
+  );
+  try {
+    const publication = await store.prepare(
+      "3",
+      {
+        layout: { description: "GAEB-Test" },
+        fragments: facets.slice(1).map((facet) => ({ facet })),
+      },
+      { locked: false, modifiedAt: "2026-11-20T00:00:00.000Z" },
+    );
+
+    await store.publish(publication);
+    expect(committed).toEqual(publication.head);
+    expect(refreshed.sort()).toEqual(areas.map(({ domain }) => domain).sort());
+    expect(peak).toBe(3);
+    expect(active).toBe(0);
+  } finally {
+    store.close();
+  }
+});
+
 test("document scopes share one verified inventory and keep independent lifetimes", async () => {
   const fixture = await protectedTenant([first, second]);
   const query = fixture.client.query;

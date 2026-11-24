@@ -56,6 +56,7 @@ const CHUNK = 256 * 1024;
 // Three twice-encoded chunks and a manifest fit in the ordinary 2 MiB RPC body.
 const WRITE_CHUNKS = 3;
 const READ_CHUNKS = 4;
+const PARALLEL_FACETS = 3;
 const MAX_BYTES = 128 * 1024 * 1024;
 const MAX_CACHED_PART_BYTES = 1024 * 1024;
 const MAX_CACHED_PARTS = 16;
@@ -739,16 +740,8 @@ function openDocumentStore(
         parts.set(facet, await stage(id, facet, value));
       }
       const known = DOCUMENT_FACETS.filter((facet) => facet !== "opaque");
-      for (let index = 0; index < known.length; index += 3) {
-        const results = await Promise.allSettled(
-          known.slice(index, index + 3).map(prepareFacet),
-        );
-        for (const result of results) {
-          if (result.status === "rejected") {
-            throw result.reason;
-          }
-        }
-      }
+      await mapConcurrent(known, PARALLEL_FACETS, prepareFacet);
+
       // Opaque content guards all nine heads, after other staging has stopped.
       await prepareFacet("opaque");
       const session = await required(
@@ -801,7 +794,8 @@ function openDocumentStore(
       };
     },
     async publish(publication: DocumentPublication) {
-      const guards = [...initialized].map((facet) => ({
+      const facets = [...initialized];
+      const guards = facets.map((facet) => ({
         domain: `${scope}:${facet}`,
         sequence: collection(facet).snapshot(),
       }));
@@ -809,9 +803,11 @@ function openDocumentStore(
         documents: [publication],
       });
       live();
-      for (const facet of initialized) {
+
+      await mapConcurrent(facets, PARALLEL_FACETS, async (facet) => {
         await collection(facet).read(`${scope}:${facet}:case`);
-      }
+      });
+      live();
     },
     async lock(
       previous: DocumentHead,
