@@ -18,10 +18,11 @@ import type { QueryResult } from "@sortsys/v2-client";
 import { createCursorHistory } from "@sortsys/zerotrust";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
+import { pickQuickActions, type ActionHistoryItem } from "~/lib/dashboardActions";
 import { formatDate } from "~/lib/format";
 import { visitLabel } from "~/lib/visitLabels";
 import { dailyReportDayKey } from "~/lib/tiles";
-import { useUserActions, type UserAction } from "~/lib/userActions";
+import { useUserActions } from "~/lib/userActions";
 import {
   useEffect,
   useId,
@@ -40,11 +41,6 @@ export function meta({}: Route.MetaArgs) {
   return [{ title: uiText("Dashboard") }];
 }
 
-type ActionHistoryItem = {
-  actionId: string;
-  usedAt: Date;
-};
-
 type VisitHistoryItem = {
   path: string;
   title: string | null;
@@ -59,37 +55,6 @@ type PinnedVisit = Pick<VisitHistoryItem, "path" | "title" | "visitedAt">;
 
 function normalizeLlmPath(path: string) {
   return path.replace(/^\/assistant(?=\/|[?#]|$)/, "/llm");
-}
-
-function pickQuickActions(
-  actions: UserAction[],
-  history: ActionHistoryItem[] | null | undefined,
-) {
-  const actionById = new Map(actions.map((action) => [action.id, action]));
-  const stats = new Map<string, { count: number; lastUsedAt: number }>();
-
-  (history ?? []).forEach((item) => {
-    const actionId =
-      item.actionId === "projects.create" ? "offers.create" : item.actionId;
-    if (!actionById.has(actionId)) return;
-    const previous = stats.get(actionId) ?? { count: 0, lastUsedAt: 0 };
-    stats.set(actionId, {
-      count: previous.count + 1,
-      lastUsedAt: Math.max(previous.lastUsedAt, item.usedAt.getTime()),
-    });
-  });
-
-  const ranked = [...stats.entries()]
-    .sort(
-      (a, b) => b[1].count - a[1].count || b[1].lastUsedAt - a[1].lastUsedAt,
-    )
-    .map(([id]) => actionById.get(id)!)
-    .slice(0, 6);
-
-  if (ranked.length >= 4) return ranked;
-
-  const fallback = actions.filter((action) => !ranked.includes(action));
-  return [...ranked, ...fallback].slice(0, 6);
 }
 
 function uniqueRecentVisits(visits: VisitHistoryItem[] | null | undefined) {
@@ -259,10 +224,10 @@ export default function DashboardPage() {
   );
 
   const quickActions = useMemo(() => {
-    if (actionHistory === null) return [];
+    if (actionHistory === null && !actionHistoryError) return [];
 
     return pickQuickActions(visibleActions, actionHistory);
-  }, [visibleActions, actionHistory]);
+  }, [visibleActions, actionHistory, actionHistoryError]);
 
   const recentVisits = useMemo(
     () => uniqueRecentVisits(visitHistory),
