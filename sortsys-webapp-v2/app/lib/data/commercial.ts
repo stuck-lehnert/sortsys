@@ -58,6 +58,7 @@ import {
   permitsDocumentSource,
 } from "./commercialDocumentRules";
 import { commercialDocumentUrl } from "./commercialDocumentUrl";
+import { COMMERCIAL_PAGE_LIMIT } from "./commercialPageRanges";
 import { includeRetainedDocuments } from "./commercialRegistrations";
 import { adoptionInput } from "./commercialAdoption";
 import {
@@ -2679,8 +2680,9 @@ export function createProtectedCommercial(
         if (limit < 1n) {
           limit = 1n;
         }
-        if (limit > 200n) {
-          limit = 200n;
+        const maximum = BigInt(COMMERCIAL_PAGE_LIMIT);
+        if (limit > maximum) {
+          limit = maximum;
         }
         // Only open native documents for cases on this page. Filtering and
         // ordering use metadata and do not require recalculating every case.

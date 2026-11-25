@@ -8,7 +8,9 @@ import { createFixtureServer } from "./browser-support.mjs";
 let browser, server;
 before(async () => {
   server = await createFixtureServer();
-  browser = await chromium.launch();
+  browser = await chromium.launch({
+    executablePath: process.env.SORTSYS_E2E_CHROMIUM,
+  });
 });
 after(async () => {
   await browser?.close();
@@ -2501,7 +2503,7 @@ test(
   },
 );
 
-test("commercial lists stream all loaded pages, accept query results and clear old account data", async () => {
+test("commercial lists extend one streamed window, accept query results and clear old account data", async () => {
   const { context, page } = await open();
   try {
     await page.evaluate(() => window.cryptoFixture.showCommercialCases());
@@ -2509,11 +2511,15 @@ test("commercial lists stream all loaded pages, accept query results and clear o
     await list.getByText("Vertrauliches Angebot 1", { exact: true }).waitFor();
     await list.getByRole("button", { name: "Mehr anzeigen" }).click();
     await list.getByText("Vertrauliches Angebot 55", { exact: true }).waitFor();
-    assert.equal(
-      (await page.evaluate(() => window.cryptoFixture.commercialState()))
-        .streams,
-      2,
+    const expanded = await page.evaluate(() =>
+      window.cryptoFixture.commercialState(),
     );
+    assert.equal(expanded.streams, 1);
+    assert.deepEqual(expanded.requests.slice(-2), [
+      { search: null, offset: "0", limit: "50" },
+      { search: null, offset: "0", limit: "100" },
+    ]);
+
     await page.evaluate(() =>
       window.cryptoFixture.changeCommercialCase("Gemeinsam geändertes Angebot"),
     );

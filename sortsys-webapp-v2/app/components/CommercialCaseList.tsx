@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { combineLatest, type Subscription } from "rxjs";
+import { useEffect, useRef, useState } from "react";
+import { combineLatest } from "rxjs";
 import type { QueryResult } from "@sortsys/v2-client";
 import { useProtectedDataContext } from "~/hooks/useProtectedDataContext";
 import { useMyModals } from "~/hooks/useMyModals";
@@ -19,10 +19,14 @@ import {
   statusLabel,
   type CommercialKind,
 } from "~/lib/commercial";
+import { commercialPageRanges } from "~/lib/data/commercialPageRanges";
 import { MyTable } from "~/components/MyTable";
 import { MyCallout } from "~/components/MyCallout";
 
 type OverviewRow = QueryResult<"commercial.cases.overview">[number];
+
+const PAGE_SIZE = 50;
+const SEARCH_DELAY_MS = 150;
 
 export function CommercialCaseList({
   projectId,
@@ -38,32 +42,90 @@ export function CommercialCaseList({
   const [revision, setRevision] = useState(0);
   const [search, setSearch] = useState("");
   const [status, setStatus] = useState("");
-  const filterKey = JSON.stringify([projectId, kind, search, status]);
+  const term = search.trim();
+  const lastRequestedTerm = useRef("");
+  const filterKey = JSON.stringify([projectId, kind, term, status]);
   const [pagination, setPagination] = useState({ filter: filterKey, pages: 1 });
   const count = pagination.filter === filterKey ? pagination.pages : 1;
-  const [state, setState] = useState<{ context: AbortSignal; filter: string; pages: number; rows: OverviewRow[]; more: boolean; error: string } | null>(null);
-  const current = state?.context === context && state.filter === filterKey && !context.aborted ? state : null;
-  const rows = current?.rows ?? [], more = current?.more ?? false, error = current?.error ?? "", busy = !current || current.pages !== count;
+  const [state, setState] = useState<{
+    context: AbortSignal;
+    filter: string;
+    pages: number;
+    rows: OverviewRow[];
+    more: boolean;
+    error: string;
+  } | null>(null);
+  const current =
+    state?.context === context && state.filter === filterKey && !context.aborted
+      ? state
+      : null;
+  const { rows = [], more = false, error = "" } = current ?? {};
+  const busy = !current || current.pages !== count;
+
   useEffect(() => {
-    let active = true, subscription: Subscription | undefined;
-    const timer = setTimeout(() => {
-      subscription = combineLatest(Array.from({ length: count }, (_, index) => client.streamQuery("commercial.cases.overview", {
-        projectId: projectId ?? null, kind: kind === "offer" && !projectId ? "sales" : (kind ?? null),
-        status: status || null, search: search.trim() || null, limit: 50n, offset: BigInt(index * 50),
-      }))).subscribe(pages => {
+    let active = true;
+
+    function subscribe() {
+      if (context.aborted) return;
+
+      lastRequestedTerm.current = term;
+
+      const ranges = commercialPageRanges(count * PAGE_SIZE);
+      const lastLimit = Number(ranges.at(-1)!.limit);
+      const reads = ranges.map((range) =>
+        client.streamQuery("commercial.cases.overview", {
+          projectId: projectId ?? null,
+          kind: kind === "offer" && !projectId ? "sales" : (kind ?? null),
+          status: status || null,
+          search: term || null,
+          ...range,
+        }),
+      );
+
+      return combineLatest(reads).subscribe((pages) => {
         if (!active || context.aborted) return;
+
         const error = pages.find(([, error]) => error)?.[1];
         const seen = new Set<string>();
-        const rows = error ? [] : pages.flatMap(([values]) => values ?? []).filter(row => {
-          if (seen.has(row.id)) return false; seen.add(row.id); return true;
+        const rows = error
+          ? []
+          : pages.flatMap(([values]) => values ?? []).filter((row) => {
+              if (seen.has(row.id)) return false;
+
+              seen.add(row.id);
+              return true;
+            });
+
+        setState({
+          context,
+          filter: filterKey,
+          pages: count,
+          rows,
+          more: !error && pages.at(-1)?.[0]?.length === lastLimit,
+          error: error ? commercialError(error) : "",
         });
-        setState({ context, filter: filterKey, pages: count, rows, more: !error && pages.at(-1)?.[0]?.length === 50, error: error ? commercialError(error) : "" });
       });
-    }, 150);
+    }
+
+    // Only typing benefits from debouncing. Opening the list and requesting
+    // more rows should start reading as soon as the component can subscribe.
+    let subscription: ReturnType<typeof subscribe>;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+
+    if (term === lastRequestedTerm.current) {
+      subscription = subscribe();
+    } else {
+      timer = setTimeout(() => {
+        subscription = subscribe();
+      }, SEARCH_DELAY_MS);
+    }
+
     return () => {
-      active = false; clearTimeout(timer); subscription?.unsubscribe();
+      active = false;
+      clearTimeout(timer);
+      subscription?.unsubscribe();
     };
-  }, [context, filterKey, count, refresh, revision]);
+  }, [context, projectId, kind, status, term, filterKey, count, refresh, revision]);
   return (
     <div
       className="flex min-w-0 flex-col gap-4"
