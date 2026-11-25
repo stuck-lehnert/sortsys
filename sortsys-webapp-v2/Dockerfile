@@ -36,7 +36,7 @@ COPY sortsys-webapp-v2/ ./
 RUN npm run build
 
 
-FROM nginx:1.30.6-alpine-slim
+FROM nginx:1.30.7-alpine-slim
 COPY --from=builder /app/sortsys-webapp-v2/build/client/ /usr/share/nginx/html/
 COPY sortsys-webapp-v2/nginx.conf.template /etc/nginx/templates/default.conf.template
 COPY sortsys-webapp-v2/nginx.conf /etc/nginx/nginx.conf
