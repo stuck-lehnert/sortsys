@@ -190,6 +190,8 @@ export async function copyProtectedCollection(
     const existing = await target.read(prefix);
     live();
     const done = matchingCopies(existing, expected, validate, partial);
+    if (done.size === expected.size) return;
+
     let packets: MutateInput<"zerotrust.objects.save">[] = [],
       size = 0;
     let attest: AttestCopy | undefined;

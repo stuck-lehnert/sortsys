@@ -3,7 +3,7 @@ import { createClient, type Client, type QueryResult } from "@sortsys/v2-client"
 import { acceptVaultWithKey, signIn, unlockedAccount } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
-import { prepareRegieReports } from "../app/lib/data/migrateRegieReports";
+import { prepareRegieReports } from "../app/lib/data/migrateProjectReports";
 import { required } from "../app/lib/data/protectedObjects";
 
 export async function testProtectedRegieReports(client: Client, source: BusinessDatabase, subject: string, driver: () => Promise<DuckDriver>, password: string,

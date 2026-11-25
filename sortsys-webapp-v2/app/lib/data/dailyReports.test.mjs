@@ -7,7 +7,7 @@ import { personnelCollection, personnelPart } from "./personnelData";
 import { fileCollection, fileObject, contentId } from "./projectFileData";
 import { createBusinessDatabase } from "./database";
 import { projectCompleteRows } from "./projection";
-import { prepareDailyReports } from "./migrateDailyReports";
+import { prepareDailyReports } from "./migrateProjectReports";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
@@ -415,6 +415,45 @@ test("a cost-only writer can change the rate without requiring or rewriting hour
     ).toEqual([f.cost.domain]);
   } finally {
     f.store.close();
+  }
+}, fixtureTimeout(20000));
+
+test("report import rejects a photo from another project before opening any destination collection", async () => {
+  const source = await createBusinessDatabase(await duckDriver());
+  const signal = new AbortController().signal;
+
+  try {
+    const { report } = reportFixture();
+    await projectCompleteRows(source, [
+      row("projects", { id: "2", title: "Fenstersanierung" }),
+      row("projects", { id: "7", title: "Anderes Projekt" }),
+      row("project_files", {
+        id: "10",
+        project_id: "7",
+        file_name: "Andere Baustelle.jpg",
+        mime_type: "image/jpeg",
+        kind: "image",
+        status: "uploaded",
+        thumbnail_status: "none",
+        text_extraction_status: "not_applicable",
+      }),
+      report,
+      row("daily_project_report_files", {
+        report_id: report.values.id,
+        project_file_id: "10",
+      }),
+    ]);
+
+    const client = new Proxy({}, {
+      get() {
+        throw new Error("Destination accessed before validation");
+      },
+    });
+
+    await expect(prepareDailyReports(client, source, "user:1", signal))
+      .rejects.toThrow(InvalidProtectedData);
+  } finally {
+    await source.close();
   }
 }, fixtureTimeout(20000));
 

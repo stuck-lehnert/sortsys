@@ -13,7 +13,7 @@ import { PRICE_COLLECTION, PRODUCT_COLLECTION, publicId } from "./products";
 import { personnelCollection, personnelPart } from "./personnelData";
 import { createBusinessDatabase } from "./database";
 import { projectCompleteRows } from "./projection";
-import { prepareRegieReports } from "./migrateRegieReports";
+import { prepareRegieReports } from "./migrateProjectReports";
 import { createBusinessClient } from "./businessClient";
 
 afterEach(() => lockCryptoSession());

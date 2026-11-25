@@ -17,7 +17,7 @@ import { prepareProjects } from "../app/lib/data/migrateProjects";
 import { prepareProjectCommercial } from "../app/lib/data/migrateProjectCommercial";
 import { prepareProjectFinance } from "../app/lib/data/migrateProjectFinance";
 import { prepareDeliveryNotes } from "../app/lib/data/migrateDeliveryNotes";
-import { prepareDailyReports } from "../app/lib/data/migrateDailyReports";
+import { prepareDailyReports } from "../app/lib/data/migrateProjectReports";
 import { prepareTools } from "../app/lib/data/migrateTools";
 import { required } from "../app/lib/data/protectedObjects";
 import { testImmutableFinance } from "./test-live-immutable-finance";

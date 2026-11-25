@@ -142,11 +142,9 @@ export async function adoptBackup(
           signal,
           opened.files,
         );
-        const { prepareDailyReports } =
-          await import("../data/migrateDailyReports");
+        const { prepareDailyReports, prepareRegieReports } =
+          await import("../data/migrateProjectReports");
         await prepareDailyReports(client, database, subject, signal);
-        const { prepareRegieReports } =
-          await import("../data/migrateRegieReports");
         await prepareRegieReports(client, database, subject, signal);
       },
     },
