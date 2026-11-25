@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { createClient } from "@sortsys/v2-client";
+import { createClient, type Client } from "@sortsys/v2-client";
 import { base64, randomSecret } from "@sortsys/zerotrust/sortsys";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import type { EncryptedChange } from "../app/lib/data/events";
@@ -189,14 +189,19 @@ async function required<T>(promise: Promise<[T | null, Error | null]>) {
   assert.notEqual(value, null);
   return value!;
 }
-try {
+async function signInOperator(client: Client) {
   const login = await required(
-    operator.mutate("admin.login", {
+    client.mutate("admin.login", {
       tenant: null,
       password: "Disposable-operator-password-2026!",
     }),
   );
-  operator.setToken(login.token);
+  client.setToken(login.token);
+}
+
+try {
+  await signInOperator(operator);
+
   const original = await tenantSetupRequest(tenant);
   const created = await required(
     operator.mutate("admin.tenants.create", original.request),
@@ -320,20 +325,22 @@ try {
     await initializeTenant(owner, new AbortController().signal, duckDriver);
     const { exerciseContentPreparation } =
       await import("./test-native-content-preparation");
-    const probeEndpoint = endpoints[0];
-    function operatorProbe() {
-      const probe = createClient(
-        probeEndpoint,
-        `restore-probe-${crypto.randomUUID()}`,
+    const operatorEndpoint = endpoints[0];
+
+    // Snapshot preparation can outlast a login in slow environments.
+    async function openOperator() {
+      const client = createClient(
+        operatorEndpoint,
+        `restore-operator-${crypto.randomUUID()}`,
       );
-      probe.setToken(login.token);
-      return probe;
+      await signInOperator(client);
+      return client;
     }
+
     await exerciseContentPreparation(
       owner,
       peer,
-      operator,
-      operatorProbe,
+      openOperator,
       tenant,
       dirname(outputPath),
       contentChanges,

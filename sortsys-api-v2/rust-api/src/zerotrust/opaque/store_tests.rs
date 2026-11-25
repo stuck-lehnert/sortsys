@@ -237,6 +237,18 @@ async fn browser_with_tenant(
     } else {
         Duration::from_secs(90)
     };
+    let deadline = if mode == "owner-content-preparation" {
+        let factor = std::env::var("SORTSYS_NATIVE_TEST_TIMEOUT_FACTOR")
+            .unwrap_or_else(|_| "1".into())
+            .parse::<u32>()
+            .ok()
+            .filter(|factor| (1..=24).contains(factor))
+            .expect("SORTSYS_NATIVE_TEST_TIMEOUT_FACTOR must be an integer from 1 to 24");
+        deadline * factor
+    } else {
+        deadline
+    };
+
     let result = tokio::time::timeout(deadline, command.status())
         .await
         .expect("browser auth test timed out")

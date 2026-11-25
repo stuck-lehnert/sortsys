@@ -1119,8 +1119,7 @@ export async function exerciseGaebCaseBatches(
 export async function exerciseContentPreparation(
   owner: Client,
   peer: ReturnType<typeof createBusinessClient>,
-  operator: Client,
-  operatorProbe: () => Client,
+  openOperator: () => Promise<Client>,
   tenant: string,
   directory: string,
   changes: readonly EncryptedChange[],
@@ -1205,7 +1204,7 @@ export async function exerciseContentPreparation(
   }
   const replay = await prepareGaebReplay(owner);
   const snapshot = await required(
-    operator.mutate("admin.storage.snapshots.create", {
+    (await openOperator()).mutate("admin.storage.snapshots.create", {
       tenant,
       operation: base64(randomSecret()),
     }),
@@ -1229,14 +1228,15 @@ export async function exerciseContentPreparation(
   await exerciseGaebBlockBatches(owner, peer, confirmation.caseId, transmissions);
   const foreignTenant = `${tenant}-other`;
   const foreign = await tenantSetupRequest(foreignTenant);
-  await required(operator.mutate("admin.tenants.create", foreign.request));
+  const foreignOperator = await openOperator();
+  await required(foreignOperator.mutate("admin.tenants.create", foreign.request));
   const otherSnapshot = await required(
-    operator.mutate("admin.storage.snapshots.create", {
+    foreignOperator.mutate("admin.storage.snapshots.create", {
       tenant: foreignTenant,
       operation: base64(randomSecret()),
     }),
   );
-  const [operatorInventory, inventoryDenied] = await operatorProbe().query(
+  const [operatorInventory, inventoryDenied] = await (await openOperator()).query(
     "zerotrust.content.snapshots",
     {},
     { strategy: "network-only" },
@@ -1283,7 +1283,7 @@ export async function exerciseContentPreparation(
 
   const operation = crypto.randomUUID();
   const input = { snapshotOperation: snapshot.id, operation };
-  const [, operatorError] = await operatorProbe().mutate(
+  const [, operatorError] = await (await openOperator()).mutate(
     "zerotrust.content.prepare",
     input,
   );
@@ -1512,7 +1512,7 @@ export async function exerciseContentPreparation(
     assert.ok(Date.now() < checkDeadline, "The hidden copy was not inspected");
     await new Promise((resolve) => setTimeout(resolve, 25));
   }
-  const [, denied] = await operatorProbe().mutate(
+  const [, denied] = await (await openOperator()).mutate(
     "zerotrust.content.activate",
     activate,
   );
@@ -1721,7 +1721,7 @@ export async function exerciseContentPreparation(
   );
 
   const snapshotAfterSwitch = await required(
-    operator.mutate("admin.storage.snapshots.create", {
+    (await openOperator()).mutate("admin.storage.snapshots.create", {
       tenant,
       operation: base64(randomSecret()),
     }),
@@ -1868,17 +1868,17 @@ export async function exerciseContentPreparation(
     );
     assert.equal(restoredInBrowser.title, originalTitle);
   }
-  await rejectCorruptPrintRestore(owner, () =>
-    inspectLatestTestSnapshot(peer, operator, tenant, previewSignal),
+  await rejectCorruptPrintRestore(owner, async () =>
+    inspectLatestTestSnapshot(peer, await openOperator(), tenant, previewSignal),
   );
-  await checkPlanningReview(tenant, owner, peer, operator);
-  await rejectSnapshotWithoutLockedCase(tenant, owner, peer, operator);
+  await checkPlanningReview(tenant, owner, peer, await openOperator());
+  await rejectSnapshotWithoutLockedCase(tenant, owner, peer, await openOperator());
   await booking.checkMemberAndReturn();
   await rejectRestoreWithoutBookingParents(
     tenant,
     owner,
     peer,
-    operator,
+    await openOperator(),
     project.id,
   );
   await booking.asMember(async (business, transport) => {
@@ -1913,6 +1913,13 @@ export async function exerciseContentPreparation(
     );
   });
   await invoice.settle();
-  await rejectInvoiceWithoutContract(tenant, owner, peer, operator);
-  await checkAttachmentReview(owner, peer, operator, tenant, project.id, photoId);
+  await rejectInvoiceWithoutContract(tenant, owner, peer, await openOperator());
+  await checkAttachmentReview(
+    owner,
+    peer,
+    await openOperator(),
+    tenant,
+    project.id,
+    photoId,
+  );
 }

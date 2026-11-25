@@ -48,15 +48,21 @@ async fn tenant_prepares_an_encrypted_snapshot_across_api_instances() {
     assert_ne!(first_api.endpoint, second_api.endpoint);
     let tenant = "content-preparation";
     let endpoints = [first_api.endpoint.clone(), second_api.endpoint.clone()];
-    tokio::join!(
-        browser_with_tenant(
-            "owner-content-preparation",
-            &root,
-            Some(&endpoints),
-            Some(tenant),
-        ),
-        inspect_prepared_copy(&root, tenant, &first, &second),
+    let browser = browser_with_tenant(
+        "owner-content-preparation",
+        &root,
+        Some(&endpoints),
+        Some(tenant),
     );
+    tokio::pin!(browser);
+
+    // The browser waits for this inspection before activating the view. Its
+    // fixture deadline bounds the hand-off and reports any earlier exit.
+    tokio::select! {
+        () = inspect_prepared_copy(&root, tenant, &first, &second) => browser.await,
+        () = &mut browser => panic!("Browser exited before the storage inspection"),
+    }
+
     first_api.stop().await;
     second_api.stop().await;
     let processes = serde_json::json!({
@@ -75,19 +81,16 @@ async fn inspect_prepared_copy(
     second: &CipherStore,
 ) {
     let path = root.join("content-preparation.json");
-    let report = tokio::time::timeout(std::time::Duration::from_secs(220), async {
-        loop {
-            match tokio::fs::read(&path).await {
-                Ok(bytes) => break serde_json::from_slice::<Value>(&bytes).unwrap(),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
-                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
-                }
-                Err(error) => panic!("Failed to read the test preparation: {error}"),
+    let report = loop {
+        match tokio::fs::read(&path).await {
+            Ok(bytes) => break serde_json::from_slice::<Value>(&bytes).unwrap(),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                tokio::time::sleep(Duration::from_millis(25)).await;
             }
+            Err(error) => panic!("Failed to read the test preparation: {error}"),
         }
-    })
-    .await
-    .expect("Browser must authorize the test content view");
+    };
+
     let project = report["project"].as_str().unwrap();
     let target = Target::Tenant {
         tenant: tenant.into(),
