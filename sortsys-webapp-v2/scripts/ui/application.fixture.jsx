@@ -266,6 +266,7 @@ export function ApplicationFixture() {
               <Route path="/projects/:id/regieReports" element={<ProjectDetailShell />}>
                 <Route index element={<ProjectRegieReportsPage />} />
               </Route>
+              <Route path="/projects/:id/costs" element={<ProjectDetailShell />} />
               <Route path="/offers" element={<OffersPage />} />
               <Route path="/offers/new" element={<NewOfferPage />} />
               <Route path="/gaeb/:caseId" element={<GaebPage />} />

@@ -11,7 +11,10 @@ import { appendRegieMaterials, appendRegieWorkHours } from "~/lib/regieWorkbook"
 import { deliverBlob } from "~/lib/utils";
 import { prepareExcelExport } from "~/lib/officeExports";
 import { addUniqueWorksheet, workbookSections } from "~/lib/workbookSections";
-import { readExportReferences } from "~/lib/exportReferences";
+import {
+  readDeliveryExportCosts,
+  readExportReferences,
+} from "~/lib/exportReferences";
 import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES } from "~/lib/week";
 import type { Project } from "~/type-helpers";
 
@@ -107,19 +110,31 @@ export function showExportProjectDeliveryNotesTimespanModal(modals: MyModalsInte
         });
 
       if (!filteredNotes.length) {
-        throw new Error(uiText("Im ausgewahlten Zeitraum sind keine Lieferscheine vorhanden"));
+        throw new Error(
+          uiText(
+            "Im ausgewählten Zeitraum sind keine Lieferscheine vorhanden",
+            "There are no delivery notes in the selected period",
+          ),
+        );
       }
 
-      const noteDetails = await Promise.all(filteredNotes.map(async (note) => {
-        const [costs, costsErr] = await client.query("deliveryNotes.costs.get", {
-          id: note.id,
-        }, { strategy: "cache-first" });
-
-        if (costsErr) throw costsErr;
-        if (!costs) throw new Error(uiText(`Kosten für Lieferschein #${note.autoId} konnten nicht geladen werden`, `Costs for delivery note #${note.autoId} could not be loaded`));
+      const costsByNote = await readDeliveryExportCosts(
+        client,
+        filteredNotes.map(({ id }) => id),
+      );
+      const noteDetails = filteredNotes.map((note) => {
+        const costs = costsByNote.get(note.id);
+        if (!costs) {
+          throw new Error(
+            uiText(
+              `Kosten für Lieferschein #${note.autoId} konnten nicht geladen werden`,
+              `Costs for delivery note #${note.autoId} could not be loaded`,
+            ),
+          );
+        }
 
         return { note, costs };
-      }));
+      });
 
       const productsById = await readExportReferences(
         client,

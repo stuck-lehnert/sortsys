@@ -14,7 +14,10 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
-import { readExportReferences } from "~/lib/exportReferences";
+import {
+  readDeliveryExportCosts,
+  readExportReferences,
+} from "~/lib/exportReferences";
 import { memberLink, productLink } from "~/lib/recordLinks";
 import { productQuantityColumns } from "~/lib/productQuantityColumns";
 import {
@@ -466,25 +469,19 @@ export default function ProjectDetailCosts() {
           return bucket;
         };
 
-        const noteCostEntries = await Promise.all(
-          (costs.deliveryNotes ?? []).map(async (note) => {
-            const [noteCosts, noteCostsErr] = await client.query(
-              "deliveryNotes.costs.get",
-              { id: note.noteId },
-              { strategy: "cache-first" },
-            );
-            if (noteCostsErr) throw noteCostsErr;
-            return { note, noteCosts };
-          }),
+        const deliveryNotes = costs.deliveryNotes ?? [];
+        const costsByNote = await readDeliveryExportCosts(
+          client,
+          deliveryNotes.map(({ noteId }) => noteId),
         );
 
-        noteCostEntries.forEach(({ note, noteCosts }) => {
+        deliveryNotes.forEach((note) => {
           const bucket = ensureWeeklyBucket(note.effectiveTimestamp);
           if (!bucket) return;
 
           bucket.deliveryNotes.push(note);
 
-          const records = ((noteCosts as any)?.records ?? []) as Array<any>;
+          const records = costsByNote.get(note.noteId)?.records ?? [];
           records.forEach((record) => {
             const productId = `${record?.productId ?? ""}`;
             if (!productId) return;

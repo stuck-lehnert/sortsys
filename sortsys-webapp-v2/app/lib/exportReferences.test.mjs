@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { readExportReferences } from "./exportReferences.ts";
+import { readDeliveryExportCosts, readExportReferences } from "./exportReferences.ts";
 
 test("exports use one cache-first query per distinct nonempty reference", async () => {
   const calls = [];
@@ -67,4 +67,45 @@ test("an export propagates a thrown query error", async () => {
   };
 
   await expect(readExportReferences(client, "tools.get", ["t"])).rejects.toThrow(error);
+});
+
+test("delivery export cost reads share the parallel limit and retain note order", async () => {
+  let active = 0;
+  let peak = 0;
+  const calls = [];
+  const client = {
+    async query(path, { id }, { strategy }) {
+      calls.push([path, id, strategy]);
+      active++;
+      peak = Math.max(peak, active);
+      await Promise.resolve();
+      active--;
+      return [id === "missing" ? null : { totalCost: Number(id) }, null];
+    },
+  };
+  const ids = ["3", "2", "1", "missing", "4", "5"];
+
+  const result = await readDeliveryExportCosts(client, [...ids, "3"]);
+
+  expect(peak).toBe(4);
+  expect(calls).toEqual(ids.map((id) => ["deliveryNotes.costs.get", id, "cache-first"]));
+  expect([...result]).toEqual([
+    ["3", { totalCost: 3 }],
+    ["2", { totalCost: 2 }],
+    ["1", { totalCost: 1 }],
+    ["missing", null],
+    ["4", { totalCost: 4 }],
+    ["5", { totalCost: 5 }],
+  ]);
+});
+
+test("a returned error reading delivery costs does not become a missing note", async () => {
+  const error = new Error("Keine Freigabe für Beschaffung");
+  const client = {
+    async query() {
+      return [null, error];
+    },
+  };
+
+  await expect(readDeliveryExportCosts(client, ["3"])).rejects.toThrow(error);
 });

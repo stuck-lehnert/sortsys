@@ -8218,6 +8218,49 @@ test("project regie reports read only the separately granted project scope", asy
   assert.deepEqual(reports.map(({ input }) => input), [{ projectId: "c" }]);
 });
 
+test("project cost actions hide the delivery export when there are no notes", async () => {
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("deliveryNotes.list", []);
+
+  await openApplication("/projects/c/costs");
+  await page.getByRole("button", { name: "Actions", exact: true }).click();
+  assert.equal(
+    await page.getByRole("menuitem", { name: "Delivery notes: Excel (period)" }).count(),
+    0,
+  );
+});
+
+test("delivery export reads costs only for the selected period and reports denied access", async () => {
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("deliveryNotes.list", [
+    { id: "d", autoId: "1", effectiveTimestamp: "2026-06-15T12:00:00.000Z" },
+  ]);
+  api.fail("deliveryNotes.costs.get", "No permission to read delivery costs");
+
+  await openApplication("/projects/c/costs");
+  await page.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delivery notes: Excel (period)" }).click();
+  const dialog = page.getByRole("dialog", { name: "Export delivery notes as Excel" });
+  const from = dialog.locator('input[name="fromDate"]');
+  const to = dialog.locator('input[name="toDate"]');
+  const submit = dialog.getByRole("button", { name: /^(Export|Exportieren)$/ });
+  const costReads = () => api.requests
+    .filter(({ path }) => path === "deliveryNotes.costs.get")
+    .map(({ input }) => input);
+
+  await from.fill("2026-05-01");
+  await to.fill("2026-05-31");
+  await submit.click();
+  await dialog.getByText("There are no delivery notes in the selected period").waitFor();
+  assert.deepEqual(costReads(), []);
+
+  await from.fill("2026-06-01");
+  await to.fill("2026-06-30");
+  await submit.click();
+  await dialog.getByText("No permission to read delivery costs").waitFor();
+  assert.deepEqual(costReads(), [{ id: "d" }]);
+});
+
 test("daily-report editing keeps zero weather values and clears an empty field", async () => {
   api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
   api.respond("projects.dailyReports.update", { projectId: "c" });
