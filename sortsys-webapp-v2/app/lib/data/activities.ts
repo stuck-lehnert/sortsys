@@ -1,4 +1,5 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
+import { createSerialQueue } from "@sortsys/zerotrust";
 import {
   encryptedObject,
   historyInstant,
@@ -221,7 +222,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
   let closed = false;
   let accessEpoch = 0;
   let cache: ActivityCache | null = null;
-  let pendingQuery: Promise<unknown> = Promise.resolve();
+  const queries = createSerialQueue();
   const assertActive = () => {
     signal.throwIfAborted();
     if (closed || unlockedAccount() !== account || !client.loggedIn()) {
@@ -827,7 +828,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       if (path !== "personalization.activity.list") {
         return Promise.reject(new InvalidProtectedData());
       }
-      const result = pendingQuery.then(async () => {
+      return queries.run(async () => {
         for (let attempt = 0; attempt < 3; attempt++) {
           try {
             return await query(input);
@@ -840,8 +841,6 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         }
         throw new InvalidProtectedData();
       });
-      pendingQuery = result.catch(() => undefined);
-      return result;
     },
   };
 }

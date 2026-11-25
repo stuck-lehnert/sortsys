@@ -1,3 +1,4 @@
+import { createSerialQueue } from "@sortsys/zerotrust";
 import schema from "~/generated/browser-schema.generated.json";
 import { installBusinessSchema } from "./schema";
 
@@ -110,16 +111,14 @@ export function arrowRows<T>(result: ArrowResult): T[] {
 }
 
 export class BusinessDatabase {
-  private pending: Promise<unknown> = Promise.resolve();
+  private readonly operations = createSerialQueue();
   private closed = false;
 
   constructor(private readonly driver: DuckDriver) {}
 
   private queue<T>(operation: () => Promise<T>): Promise<T> {
     if (this.closed) return Promise.reject(new Error("Database is closed"));
-    const result = this.pending.then(operation);
-    this.pending = result.catch(() => undefined);
-    return result;
+    return this.operations.run(operation);
   }
 
   private async run<T>(sql: string, parameters?: unknown[]): Promise<QueryResult<T>> {
@@ -165,7 +164,7 @@ export class BusinessDatabase {
   async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
-    await this.pending;
+    await this.operations.drained();
     await this.driver.close();
   }
 }

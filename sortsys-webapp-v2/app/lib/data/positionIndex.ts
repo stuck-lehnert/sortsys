@@ -1,3 +1,4 @@
+import { createSerialQueue } from "@sortsys/zerotrust";
 import {
   digest,
   bytes,
@@ -29,9 +30,9 @@ export function createPositionIndex(
   signal: AbortSignal,
 ) {
   const cache = new Map<string, Cached>();
-  let used = 0,
-    closed = false,
-    pending: Promise<unknown> = Promise.resolve();
+  const searches = createSerialQueue();
+  let used = 0;
+  let closed = false;
   let request = new AbortController();
   let state = {
     query: "",
@@ -70,7 +71,7 @@ export function createPositionIndex(
         live();
         current.throwIfAborted();
       };
-      const task = pending.then(async () => {
+      return searches.run(async () => {
         active();
         const data = record(input, ["query"]);
         if (typeof data.query !== "string" || [...data.query].length > 200)
@@ -185,8 +186,6 @@ export function createPositionIndex(
           indexing: state.cursor < all.length && state.found.size < 20,
         };
       });
-      pending = task.catch(() => undefined);
-      return task;
     },
   };
 }

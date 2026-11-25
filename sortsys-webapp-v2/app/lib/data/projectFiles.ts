@@ -4,6 +4,7 @@ import {
   type MutateInput,
   type QueryResult,
 } from "@sortsys/v2-client";
+import { createSerialQueue } from "@sortsys/zerotrust";
 import {
   encryptedObject,
   InvalidProtectedData,
@@ -130,7 +131,6 @@ export function createProtectedProjectFiles(
   }
   let stores = new Map<string, Store>();
   let closing: Promise<void> | undefined;
-  let pending = Promise.resolve();
   let validationDatabase: ReturnType<typeof createBusinessDatabase> | undefined;
   let searchController: AbortController | null = null;
   const documentSearch = createDocumentSearch();
@@ -144,16 +144,7 @@ export function createProtectedProjectFiles(
       throw new InvalidProtectedData();
     }
   };
-  const queue = <T>(work: () => Promise<T>) => {
-    const result = pending.then(async () => {
-      live();
-      const value = await work();
-      live();
-      return value;
-    });
-    pending = result.then(() => undefined, () => undefined);
-    return result;
-  };
+  const { run: queue } = createSerialQueue(live);
   function close() {
     if (closing) return closing;
     closing = closeValidationDatabase();
