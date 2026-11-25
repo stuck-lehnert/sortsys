@@ -22,9 +22,10 @@ import {
 export async function installPresentationClient() {
   // Hold delivery at the business boundary: encrypted streams can finish
   // decrypting independently even when their HTTP requests share a batch.
-  const heldStream = new URLSearchParams(window.location.search).get(
-    "holdStream",
-  );
+  const fixtureOptions = new URLSearchParams(window.location.search);
+  const heldStream = fixtureOptions.get("holdStream");
+  const readableProject = fixtureOptions.get("readProject");
+  const readableRegieReports = fixtureOptions.get("readRegieReports");
   let releaseStream;
   const streamReleased = new Promise((resolve) => {
     releaseStream = resolve;
@@ -119,7 +120,13 @@ export async function installPresentationClient() {
       return {
         subject: `user:${session.user.id}`,
         role,
-        can: () => administrator,
+        can: (scope, facet, action) =>
+          administrator ||
+          (facet === "master-data" &&
+            action === "read" &&
+            ((readableProject !== null && scope === `project:${readableProject}`) ||
+              (readableRegieReports !== null &&
+                scope === `project:${readableRegieReports}:regie-reports`))),
         canCreate: () => administrator,
         canAny: () => administrator,
         canManagePermissions: () => administrator,

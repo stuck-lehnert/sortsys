@@ -1,4 +1,5 @@
 import { uiText } from "~/lib/i18n";
+import { Loading } from "@sortsys/react-components";
 import { Outlet, useLocation, useNavigate, useParams } from "react-router";
 import { from } from "rxjs";
 import { MyCallout } from "~/components/MyCallout";
@@ -13,6 +14,7 @@ import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { useTitle } from "~/hooks/useTitle";
 import { client } from "~/lib/client";
+import { projectModuleArea } from "~/lib/data/projectScope";
 import { formatAddress, formatDate } from "~/lib/format";
 import { visitLabel } from "~/lib/visitLabels";
 import { Icons } from "~/lib/icons";
@@ -33,6 +35,14 @@ import { NotFound } from "./_404";
 export default function ProjectDetailShell() {
   const { id } = useParams();
 
+  return id ? (
+    <ProjectDetail key={id} id={id} />
+  ) : (
+    <NotFound reason="resourceNotFound" />
+  );
+}
+
+function ProjectDetail({ id }: { id: string }) {
   const sessionInfo = useSessionInfo();
   const modals = useMyModals();
   const supportsProjectFiles = sessionInfo.supportsProjectFiles();
@@ -53,10 +63,16 @@ export default function ProjectDetailShell() {
   const canReadFiles =
     supportsProjectFiles &&
     sessionInfo.canAccess(`project:${id}`, "attachment", "read");
+  const regieReportsArea = canReadProject
+    ? projectModuleArea(id, "regie-reports", "master-data")
+    : null;
+  const canReadRegieReports =
+    regieReportsArea !== null &&
+    sessionInfo.canAccess(regieReportsArea.scope, regieReportsArea.facet, "read");
 
   const [project, err] = useClientStream(
     () =>
-      canReadProject && id
+      canReadProject
         ? client.streamQuery("projects.get", { id })
         : from([[null, null] as [null, null]]),
     [id, canReadProject],
@@ -64,23 +80,16 @@ export default function ProjectDetailShell() {
   const [deliveryNotes] = useClientStream(
     () =>
       canReadProject && isCostsTab && sessionInfo.canDo("view:deliveryNotes")
-        ? client.streamQuery("deliveryNotes.list", { projectId: id! })
+        ? client.streamQuery("deliveryNotes.list", { projectId: id })
         : from([[null, null] as [null, null]]),
     [id, canReadProject, isCostsTab, sessionInfo.canDo("view:deliveryNotes")],
   );
-  const [regieReports] = useClientStream(
+  const [regieReports, regieReportsError] = useClientStream(
     () =>
-      canReadProject &&
-      isRegieReportsTab &&
-      sessionInfo.canDo("view:regieReports")
-        ? client.streamQuery("regieReports.list", { projectId: id! })
+      canReadRegieReports && isRegieReportsTab
+        ? client.streamQuery("regieReports.list", { projectId: id })
         : from([[null, null] as [null, null]]),
-    [
-      id,
-      canReadProject,
-      isRegieReportsTab,
-      sessionInfo.canDo("view:regieReports"),
-    ],
+    [id, canReadRegieReports, isRegieReportsTab],
   );
 
   useTitle(
@@ -100,7 +109,7 @@ export default function ProjectDetailShell() {
   });
 
   if (sessionInfo.contentAccessState() === "loading") return null;
-  if (!canReadProject && isFilesTab && canReadFiles && id) {
+  if (!canReadProject && isFilesTab && canReadFiles) {
     return (
       <>
         <MyHeader title={uiText("Projektanhänge", "Project attachments")} />
@@ -110,10 +119,24 @@ export default function ProjectDetailShell() {
       </>
     );
   }
-  if (!canReadProject || err || (isFilesTab && !canReadFiles)) {
+  if (
+    !canReadProject ||
+    err ||
+    (isFilesTab && !canReadFiles) ||
+    (isRegieReportsTab && !canReadRegieReports)
+  ) {
     return <NotFound reason="resourceNotFound" />;
   }
-  if (!project) return;
+  if (!project) {
+    return (
+      <div className="flex min-h-40 items-center justify-center">
+        <Loading
+          active
+          description={uiText("Projekt wird geladen …", "Loading project…")}
+        />
+      </div>
+    );
+  }
 
   const tabs = [
     {
@@ -142,7 +165,7 @@ export default function ProjectDetailShell() {
     {
       path: `/projects/${id}/regieReports`,
       label: uiText("Regieberichte"),
-      hideIf: !sessionInfo.canDo("view:regieReports"),
+      hideIf: !canReadRegieReports,
     },
     {
       path: `/projects/${id}/dailyReports`,
@@ -153,8 +176,8 @@ export default function ProjectDetailShell() {
 
   const archivedAt =
     (project as any).archivedAt ?? (project as any).archivedSince ?? null;
-  const hasDeliveryNotes = (deliveryNotes?.length ?? 0) > 0;
   const hasRegieReports = (regieReports?.length ?? 0) > 0;
+  const hasDeliveryNotes = (deliveryNotes?.length ?? 0) > 0;
 
   return (
     <>
@@ -268,9 +291,7 @@ export default function ProjectDetailShell() {
                 label: uiText("Regieberichte PDF"),
                 renderIcon: Icons.Download,
                 hideIf:
-                  !isRegieReportsTab ||
-                  !sessionInfo.canDo("view:regieReports") ||
-                  !hasRegieReports,
+                  !isRegieReportsTab || !canReadRegieReports || !hasRegieReports,
                 onClick: () =>
                   showExportProjectRegieReportsModal(modals, project, "pdf"),
               },
@@ -278,9 +299,7 @@ export default function ProjectDetailShell() {
                 label: uiText("Regieberichte Excel"),
                 renderIcon: Icons.Excel,
                 hideIf:
-                  !isRegieReportsTab ||
-                  !sessionInfo.canDo("view:regieReports") ||
-                  !hasRegieReports,
+                  !isRegieReportsTab || !canReadRegieReports || !hasRegieReports,
                 onClick: () =>
                   showExportProjectRegieReportsModal(modals, project, "excel"),
               },
@@ -349,7 +368,7 @@ export default function ProjectDetailShell() {
       )}
 
       <TabbedOutlet scope="project.content" tabs={tabs}>
-        <Outlet context={{ project }} />
+        <Outlet context={{ project, regieReports, regieReportsError }} />
       </TabbedOutlet>
     </>
   );

@@ -54,6 +54,8 @@ import OrganizationSettingsPage from "../../app/routes/(shell)/settings.organiza
 import AdminPage from "../../app/routes/(shell)/admin";
 import DeploymentsPage from "../../app/routes/(shell)/deployments";
 import ProjectFilesPage from "../../app/routes/(shell)/projects.$id.files";
+import ProjectRegieReportsPage from "../../app/routes/(shell)/projects.$id.regieReports";
+import ProjectDetailShell from "../../app/routes/(shell)/projects.$id.shell";
 
 import OffersPage from "../../app/routes/(shell)/offers.index";
 import NewOfferPage from "../../app/routes/(shell)/offers.new";
@@ -260,6 +262,9 @@ export function ApplicationFixture() {
               <Route path="/projects/:id" element={<ProjectFixture />}>
                 <Route path="files/:fileId?" element={<ProjectFilesPage />} />
                 <Route path="contract" element={<ContractPage />} />
+              </Route>
+              <Route path="/projects/:id/regieReports" element={<ProjectDetailShell />}>
+                <Route index element={<ProjectRegieReportsPage />} />
               </Route>
               <Route path="/offers" element={<OffersPage />} />
               <Route path="/offers/new" element={<NewOfferPage />} />

@@ -8173,6 +8173,51 @@ test("regie-report additions focus employees, products and special item names", 
   }
 });
 
+test("project regie reports distinguish a pending or failed load from an empty list", async () => {
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.hold("projects.get");
+  api.fail("regieReports.list", "Synthetic project report load failure");
+
+  try {
+    await openApplication("/projects/c/regieReports?holdStream=regieReports.list");
+    await page.getByText("Loading project…", { exact: true }).waitFor();
+  } finally {
+    api.release("projects.get");
+  }
+
+  await page.getByRole("heading", { name: "Baustelle Nord" }).waitFor();
+  await page.getByText("Loading entries …", { exact: true }).waitFor();
+  await page.evaluate(() => window.__sortsysReleasePresentationStream());
+  await page
+    .getByRole("alert")
+    .filter({ hasText: "Entries could not be loaded." })
+    .waitFor();
+
+  api.recover("regieReports.list");
+  api.respond("regieReports.list", []);
+  await openApplication("/projects/c/regieReports");
+  await page.getByText("No entries available.", { exact: true }).waitFor();
+});
+
+test("project regie reports read only the separately granted project scope", async () => {
+  api.setRoles([]);
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("regieReports.list", []);
+
+  await openApplication(
+    "/projects/c/regieReports?readProject=c&readRegieReports=d",
+  );
+  await page.getByRole("heading", { name: "404", exact: true }).waitFor();
+  assert.equal(api.requests.filter(({ path }) => path === "regieReports.list").length, 0);
+
+  await openApplication(
+    "/projects/c/regieReports?readProject=c&readRegieReports=c",
+  );
+  await page.getByText("No entries available.", { exact: true }).waitFor();
+  const reports = api.requests.filter(({ path }) => path === "regieReports.list");
+  assert.deepEqual(reports.map(({ input }) => input), [{ projectId: "c" }]);
+});
+
 test("daily-report editing keeps zero weather values and clears an empty field", async () => {
   api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
   api.respond("projects.dailyReports.update", { projectId: "c" });
