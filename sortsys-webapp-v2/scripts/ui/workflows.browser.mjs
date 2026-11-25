@@ -4338,6 +4338,41 @@ await log("Document encoding verified");`;
     .waitFor();
 });
 
+test("locking the account stops a running client script worker", async () => {
+  const code = `
+const { log } = await import("sortsys-log");
+const { sleep } = await import("sortsys-utils");
+await log("Script is waiting");
+await sleep(90_000);
+await log("Script resumed");`;
+
+  await page.goto(`${server.origin}/crypto.html`);
+  await page.waitForFunction(() => window.cryptoFixture);
+  await page.evaluate(
+    (source) => window.cryptoFixture.showClientScripts({ locale: "en", code: source }),
+    code,
+  );
+  await page.getByRole("button", { name: /Fixture script/ }).click({ timeout: 25_000 });
+  const run = page.getByRole("button", { name: /^(Run|Ausführen)$/ });
+  const scriptWorker = page.waitForEvent("worker", {
+    predicate: (worker) => worker.url().startsWith("blob:"),
+  });
+  await run.click();
+  const worker = await scriptWorker;
+  const console = page.getByRole("log", { name: "Script console" });
+  await console.getByText("Script is waiting", { exact: true }).waitFor();
+  assert.equal(await run.isDisabled(), true);
+
+  await Promise.all([
+    once(worker, "close", { signal: AbortSignal.timeout(10_000) }),
+    page.evaluate(() => window.cryptoFixture.lockScriptAccount()),
+  ]);
+  await page.getByText("The requested page does not exist.", { exact: true })
+    .waitFor();
+  await console.waitFor({ state: "hidden" });
+  assert.equal(await console.getByText("Script resumed", { exact: true }).count(), 0);
+});
+
 for (const permission of ["create", "delete"]) {
   test(`client scripts expose ${permission} without granting code updates`, async () => {
     await page.goto(`${server.origin}/crypto.html`);

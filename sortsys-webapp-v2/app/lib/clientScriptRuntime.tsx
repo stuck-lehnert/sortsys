@@ -7,6 +7,7 @@ import { useMyModals, type MyModalsInterface } from "~/hooks/useMyModals";
 import { client } from "~/lib/client";
 import { Icons } from "~/lib/icons";
 import { sanitizeHtml } from "~/lib/sanitizeHtml";
+import { listenCryptoSession, unlockedAccount } from "./crypto/session";
 import {
   scriptModuleImportPattern,
   scriptModuleNames,
@@ -759,6 +760,17 @@ async function handleClientRequest(
 }
 
 export function runClientScript(modals: MyModalsInterface, code: string, onLog?: (values: unknown[]) => void): Promise<ScriptRunResult> {
+  const account = unlockedAccount();
+  const stoppedMessage = uiText(
+    'Skript beendet: Die Sitzung ist nicht mehr aktiv.',
+    'Script stopped: The session is no longer active.',
+  );
+  const cancelled = (): ScriptRunResult => ({
+    ok: false,
+    error: { name: 'AbortError', message: stoppedMessage },
+  });
+  if (!account || !client.loggedIn()) return Promise.resolve(cancelled());
+
   assertAllowedImports(code);
 
   const bridgeSources = createBridgeModuleSources();
@@ -777,8 +789,17 @@ export function runClientScript(modals: MyModalsInterface, code: string, onLog?:
   let nextCallbackId = 1;
   let active = true;
 
+  const inactiveError = () => new Error(uiText(
+    'Das Skript ist nicht mehr aktiv.',
+    'The script is no longer running.',
+  ));
   const cleanup = () => {
     active = false;
+    for (const pending of pendingCallbacks.values()) {
+      pending.reject(inactiveError());
+    }
+    pendingCallbacks.clear();
+
     for (const waiter of sleepWaiters) {
       window.clearTimeout(waiter.timeout);
       waiter.resolve();
@@ -791,6 +812,11 @@ export function runClientScript(modals: MyModalsInterface, code: string, onLog?:
   };
 
   const callCallback = (callbackId: string, args: unknown[]) => new Promise<unknown>((resolve, reject) => {
+    if (!active) {
+      reject(inactiveError());
+      return;
+    }
+
     const id = `main_cb_${nextCallbackId++}`;
     pendingCallbacks.set(id, { resolve, reject });
     worker.postMessage({ type: 'callback', id, callbackId, args });
@@ -820,17 +846,31 @@ export function runClientScript(modals: MyModalsInterface, code: string, onLog?:
 
   return new Promise<ScriptRunResult>((resolve) => {
     const timeout = window.setTimeout(() => {
-      cleanup();
-      resolve({ ok: false, error: { name: 'TimeoutError', message: uiText('Skript wurde nach 120 Sekunden beendet.') } });
+      finish({ ok: false, error: { name: 'TimeoutError', message: uiText('Skript wurde nach 120 Sekunden beendet.') } });
     }, SCRIPT_TIMEOUT_MS);
 
     const finish = (result: ScriptRunResult) => {
+      if (!active) return;
+
       window.clearTimeout(timeout);
+      stopAccount();
+      stopAuth();
       cleanup();
       resolve(result);
     };
+    const isCurrent = () => unlockedAccount() === account && client.loggedIn();
+    const stopAccount = listenCryptoSession(() => {
+      if (!isCurrent()) finish(cancelled());
+    });
+    const stopAuth = client.listenAuthState(() => finish(cancelled()));
 
     worker.onmessage = async (event) => {
+      if (!active) return;
+      if (!isCurrent()) {
+        finish(cancelled());
+        return;
+      }
+
       const message = event.data ?? {};
 
       if (message.type === 'done') {

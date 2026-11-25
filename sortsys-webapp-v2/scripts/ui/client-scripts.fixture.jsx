@@ -10,6 +10,7 @@ import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import { createBusinessClient } from "../../app/lib/data/businessClient";
 import { CLIENT_SCRIPT_COLLECTION } from "../../app/lib/data/clientScriptData";
 import { createContentAccess } from "../../app/lib/data/menuAccess";
+import { lockCryptoSession } from "../../app/lib/crypto/session";
 import { businessSchema } from "../../app/lib/data/schema";
 import { protectedTenant } from "../../app/lib/data/testing/protectedTenant.mjs";
 
@@ -60,6 +61,8 @@ export async function showClientScripts(
   const controller = new AbortController();
   const access = createContentAccess(tenant.client, () => controller.signal);
   const business = createBusinessClient(tenant.client);
+  client.loggedIn = business.loggedIn;
+  client.listenAuthState = business.listenAuthState;
   const requests = [];
   let release;
   const pending = new Promise((resolve) => {
@@ -116,6 +119,7 @@ export async function showClientScripts(
   window.cryptoFixture.releaseScriptUpdate = () => updateGate.release();
   window.cryptoFixture.clientScriptRequests = () => requests;
   window.cryptoFixture.clientScriptWireCalls = () => tenant.calls;
+  window.cryptoFixture.lockScriptAccount = lockCryptoSession;
 
   async function scriptEditorModel() {
     const monaco = await import("monaco-editor");
