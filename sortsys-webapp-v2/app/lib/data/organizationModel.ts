@@ -9,7 +9,7 @@ import { defineDataModel } from "./runtime/model";
 
 function organizationModel(kind: OrganizationKind) {
   return defineDataModel<OrganizationPayload>({
-    name: `organization-${kind}`,
+    name: `organization-${kind === "offerNumbering" ? "offer-numbering" : kind}`,
     decode: (value, object) => organizationPayload(value, object, kind),
     sources: () => [],
     tables: [],
@@ -18,6 +18,7 @@ function organizationModel(kind: OrganizationKind) {
 const models = {
   profile: organizationModel("profile"),
   numbering: organizationModel("numbering"),
+  offerNumbering: organizationModel("offerNumbering"),
 };
 
 /** A settings view owns one known document, not every object sharing its key. */

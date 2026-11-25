@@ -1,6 +1,6 @@
 import type { QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
-import { parseStartNumber } from "../invoiceNumbering";
+import { parseStartNumber, type OfferNumbering } from "../invoiceNumbering";
 import type { Collection } from "./protectedObjects";
 
 export const ORGANIZATION_COLLECTION: Collection = {
@@ -20,6 +20,18 @@ export const INVOICE_LEDGER_COLLECTION: Collection = {
   scope: "organization:invoicing",
   facet: "billing",
   prefix: "organization:invoicing:billing:",
+};
+export const OFFER_NUMBERING_COLLECTION: Collection = {
+  domain: "organization:offer-numbering:master-data",
+  scope: "organization:offer-numbering",
+  facet: "master-data",
+  prefix: "organization:offer-numbering:master-data:",
+};
+export const OFFER_LEDGER_COLLECTION: Collection = {
+  domain: "organization:offers:master-data",
+  scope: "organization:offers",
+  facet: "master-data",
+  prefix: "organization:offers:master-data:",
 };
 export const PRINT_COLLECTION: Collection = {
   domain: "organization:attachment",
@@ -43,6 +55,8 @@ export const ORGANIZATION_AREAS = [
   ORGANIZATION_COLLECTION,
   NUMBERING_COLLECTION,
   INVOICE_LEDGER_COLLECTION,
+  OFFER_NUMBERING_COLLECTION,
+  OFFER_LEDGER_COLLECTION,
   PRINT_COLLECTION,
   COMMON_COST_COLLECTION,
   CLIENT_SCRIPT_COLLECTION,
@@ -61,13 +75,14 @@ export const ORGANIZATION_MUTATIONS = new Set([
   "settings.organization.set",
   "settings.invoiceNumbering.set",
 ]);
-export type OrganizationKind = "profile" | "numbering";
 export type OrganizationProfile = QueryResult<"settings.organization.get">;
 export type Numbering = QueryResult<"settings.invoiceNumbering.get">;
 export type OrganizationValues = {
   profile: OrganizationProfile;
   numbering: Numbering;
+  offerNumbering: OfferNumbering;
 };
+export type OrganizationKind = keyof OrganizationValues;
 export type OrganizationEdit<K extends OrganizationKind> = {
   value: OrganizationValues[K];
   save(value: OrganizationValues[K]): Promise<void>;
@@ -75,13 +90,16 @@ export type OrganizationEdit<K extends OrganizationKind> = {
 export type OrganizationPayload = {
   format: "sortsys-organization-v1";
   kind: OrganizationKind;
-  value: OrganizationProfile | Numbering;
+  value: OrganizationValues[OrganizationKind];
 };
-export const organizationArea = (kind: OrganizationKind) =>
-  kind === "profile" ? ORGANIZATION_COLLECTION : NUMBERING_COLLECTION;
+const documents = {
+  profile: { area: ORGANIZATION_COLLECTION, name: "current" },
+  numbering: { area: NUMBERING_COLLECTION, name: "invoice-numbering" },
+  offerNumbering: { area: OFFER_NUMBERING_COLLECTION, name: "settings" },
+};
+export const organizationArea = (kind: OrganizationKind) => documents[kind].area;
 export const organizationObject = (kind: OrganizationKind) =>
-  organizationArea(kind).prefix +
-  (kind === "profile" ? "current" : "invoice-numbering");
+  organizationArea(kind).prefix + documents[kind].name;
 
 function text(
   value: unknown,
@@ -136,6 +154,25 @@ export function organizationNumbering(input: unknown): Numbering {
     throw new InvalidProtectedData();
   return { scheme: data.scheme as Numbering["scheme"], startNumber };
 }
+export function offerNumbering(input: unknown): OfferNumbering {
+  const { scheme, startNumber } = organizationNumbering(input);
+  if (scheme === "projectLocal" || scheme === "projectGlobal") {
+    throw new InvalidProtectedData();
+  }
+
+  return { scheme, startNumber };
+}
+
+export function organizationValue(kind: OrganizationKind, input: unknown, requireName = false) {
+  switch (kind) {
+    case "profile":
+      return organizationProfile(input, requireName);
+    case "numbering":
+      return organizationNumbering(input);
+    case "offerNumbering":
+      return offerNumbering(input);
+  }
+}
 export function organizationPayload(
   input: unknown,
   object: string,
@@ -151,9 +188,6 @@ export function organizationPayload(
   return {
     format: data.format,
     kind,
-    value:
-      kind === "profile"
-        ? organizationProfile(data.value)
-        : organizationNumbering(data.value),
+    value: organizationValue(kind, data.value),
   };
 }

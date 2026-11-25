@@ -1833,6 +1833,7 @@ export function createBusinessClient(
   const organizationActions = {
     profile: () => editOrganization("profile"),
     numbering: () => editOrganization("numbering"),
+    offerNumbering: () => editOrganization("offerNumbering"),
   };
   const contentContext = {
     context: () => editorController.signal,

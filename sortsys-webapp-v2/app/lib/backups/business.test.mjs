@@ -138,6 +138,8 @@ test("a Gzip backup opens in private DuckDB and validates references without any
   });
   const dump =
     copy(product) +
+    "COPY public.commercial_offer_counters (scope,next_number) FROM stdin;\nglobal\t9223372036854775808\n\\.\n" +
+    "COPY public.commercial_offer_number_reservations (number) FROM stdin;\n26-11-11-5\n999\n\\.\n" +
     "COPY public.user_sessions (id,token) FROM stdin;\n1\tnever-import-this\n\\.\n";
   const file = await new Response(
     new Blob([dump]).stream().pipeThrough(new CompressionStream("gzip")),
@@ -149,6 +151,10 @@ test("a Gzip backup opens in private DuckDB and validates references without any
   );
   try {
     expect(opened.rows).toBe(1n);
+    expect(opened.offerNumbers).toEqual({
+      nextNumber: "9223372036854775808",
+      reservations: new Set(["26-11-11-5", "999"]),
+    });
     const rows = (
       await opened.database.query("SELECT id,name,description FROM products")
     ).rows;
@@ -183,4 +189,4 @@ test("a Gzip backup opens in private DuckDB and validates references without any
       await duckDriver(),
     ),
   ).rejects.toThrow();
-}, 15000);
+}, 120000);

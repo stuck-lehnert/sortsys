@@ -2,17 +2,20 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { isWriteConflict, ProtectedWriteConflict } from "./atomicWrites";
 import { uiText } from "../i18n";
+import { DEFAULT_OFFER_NUMBERING } from "../invoiceNumbering";
 import { organizationRequest as request } from "./organizationModel";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DuckDriver } from "./database";
-import { required } from "./protectedObjects";
+import { provisionOwnedCollections } from "./prepareCollections";
+import { protectedCollections, required } from "./protectedObjects";
 import {
   ORGANIZATION_QUERIES,
   ORGANIZATION_MUTATIONS,
   organizationArea,
   organizationObject,
-  organizationProfile,
-  organizationNumbering,
+  organizationValue,
+  OFFER_LEDGER_COLLECTION,
+  OFFER_NUMBERING_COLLECTION,
   type OrganizationKind,
   type OrganizationEdit,
   type OrganizationValues,
@@ -43,6 +46,7 @@ export function createProtectedOrganization(
     );
     lease.live();
     if (!session.roles.includes(":admin")) throw new InvalidProtectedData();
+    return session;
   }
   const kind = (path: string): OrganizationKind =>
     path.startsWith("settings.organization.") ? "profile" : "numbering";
@@ -67,10 +71,7 @@ export function createProtectedOrganization(
     await admin();
     const selectedRequest = request(selected);
     const id = organizationObject(selected);
-    const value =
-      selected === "profile"
-        ? organizationProfile(input, true)
-        : organizationNumbering(input);
+    const value = organizationValue(selected, input, true);
     let signature: string | undefined;
     try {
       await runtime.transaction(
@@ -103,6 +104,34 @@ export function createProtectedOrganization(
       throw error;
     }
   }
+  // Existing tenants may not have either of the offer numbering areas yet.
+  async function ensureOfferNumbering(subject: string) {
+    const areas = [OFFER_NUMBERING_COLLECTION, OFFER_LEDGER_COLLECTION];
+    const collections = await protectedCollections(client, signal);
+    const present = collections.areas((domain) =>
+      areas.find((area) => area.domain === domain) ?? null,
+    );
+    if (present.length !== areas.length) {
+      await provisionOwnedCollections(client, subject, areas, signal);
+      runtime.revalidate();
+    }
+
+    const configuration = request("offerNumbering");
+    const initialized = await runtime.read([configuration], (view) =>
+      view.documents(configuration).length === 1,
+    );
+    if (initialized) return;
+
+    await runtime.transaction([configuration], (tx) => {
+      if (tx.documents(configuration).length) return;
+      tx.create(configuration, organizationObject("offerNumbering"), {
+        format: "sortsys-organization-v1",
+        kind: "offerNumbering",
+        value: DEFAULT_OFFER_NUMBERING,
+      });
+    }, { retries: 3 });
+  }
+
   return {
     async query(path: string, input: unknown) {
       lease.live();
@@ -124,9 +153,11 @@ export function createProtectedOrganization(
     async edit<K extends OrganizationKind>(
       selected: K,
     ): Promise<OrganizationEdit<K>> {
-      if (selected !== "profile" && selected !== "numbering")
-        throw new InvalidProtectedData();
-      await admin();
+      const session = await admin();
+      if (selected === "offerNumbering") {
+        await ensureOfferNumbering(`user:${session.user.id}`);
+      }
+
       const document = await load(selected, true);
       let basis = document.signature!;
       return {
@@ -142,7 +173,7 @@ export function createProtectedOrganization(
       lease.live();
       runtime.invalidate(
         new Set(
-          (["profile", "numbering"] as const)
+          (["profile", "numbering", "offerNumbering"] as const)
             .map((kind) => organizationArea(kind).domain)
             .filter((domain) => !domains || Object.hasOwn(domains, domain)),
         ),

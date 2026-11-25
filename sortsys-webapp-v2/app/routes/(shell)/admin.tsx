@@ -99,6 +99,7 @@ function OrganizationAdministration() {
     { id: "security", label: uiText("Datenschutz", "Data protection") },
     { id: "backups", label: uiText("Sicherungen", "Backups") },
     { id: "invoices", label: uiText("Rechnungsnummern", "Invoice numbers") },
+    { id: "offer-numbers", label: uiText("Angebotsnummern", "Offer numbers") },
     {
       id: "templates",
       label: uiText("Dokumentvorlagen", "Document templates"),
@@ -255,6 +256,15 @@ function OrganizationAdministration() {
           className={selected === "invoices" ? "pt-4" : "hidden"}
         >
           <InvoiceNumberingForm />
+        </HeroTabs.Panel>
+        <HeroTabs.Panel
+          id="offer-numbers"
+          shouldForceMount
+          className={selected === "offer-numbers" ? "pt-4" : "hidden"}
+        >
+          {(selected === "offer-numbers" || visited.has("offer-numbers")) && (
+            <InvoiceNumberingForm forOffers />
+          )}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="templates"

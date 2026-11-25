@@ -37,6 +37,7 @@ import {
   type PreparedWrites,
   ProtectedWriteConflict,
 } from "./atomicWrites";
+import { openOfferNumbers } from "./offerNumbers";
 import {
   commercialDocumentStore,
   commercialDocumentStores,
@@ -111,7 +112,7 @@ import { listenDataChanges } from "./runtime/changes";
 import { commercialRow as row } from "./commercialRows";
 import { commercialRequest, workflowReceiptRequest } from "./commercialModel";
 import { acquireDataRuntime } from "./runtime/session";
-import type { DataRequest, DataView } from "./runtime/runtime";
+import type { DataRequest, DataView, PreparedData } from "./runtime/runtime";
 import {
   caseGuards,
   type CasePart,
@@ -156,6 +157,7 @@ export function createProtectedCommercial(
 ) {
   const lease = acquireDataRuntime(client, signal, driver);
   const { runtime, live } = lease;
+  const offerNumbers = openOfferNumbers(runtime, live);
   const calculatedAmounts = new Map<string, string | null>();
   const visibilityStamps = new WeakMap<ReadonlySet<string>, Promise<string>>();
   const billing = createCommercialBilling(client, runtime, signal, processor, {
@@ -3071,6 +3073,11 @@ export function createProtectedCommercial(
         );
       }
       splitCommercialRows(id, values);
+      const issuedAt = new Date(now);
+      let numberPlan = kind === "offer" || kind === "alternative"
+        ? await offerNumbers.plan(id, issuedAt)
+        : undefined;
+
       await createResourceAreas(
         client,
         COMMERCIAL_FACETS.map((facet) => commercialCollection(id, facet)),
@@ -3086,11 +3093,32 @@ export function createProtectedCommercial(
         if (isInvoice(kind)) {
           additional.push(await billing.prepareEntry(parentId!, values, true));
         }
-        await persistCases(
-          [{ snapshot: basis, values, facets: [...COMMERCIAL_FACETS] }],
-          [...guards, ...additional.flatMap((part) => part.guards)],
-          additional.flatMap((part) => part.groups),
-        );
+        const caseGuards = [...guards, ...additional.flatMap((part) => part.guards)];
+        const groups = additional.flatMap((part) => part.groups);
+
+        for (let attempt = 0; ; attempt++) {
+          let reservation: PreparedData<void> | undefined;
+          try {
+            if (numberPlan) {
+              reservation = await numberPlan.prepare();
+              values[0]!.values.reference = numberPlan.number;
+            }
+
+            await persistCases(
+              [{ snapshot: basis, values, facets: [...COMMERCIAL_FACETS] }],
+              [...caseGuards, ...(reservation?.guards ?? [])],
+              [...groups, ...(reservation?.groups ?? [])],
+            );
+            break;
+          } catch (error) {
+            if (!numberPlan || attempt >= 4 || !isWriteConflict(error)) throw error;
+            runtime.revalidate();
+          } finally {
+            reservation?.close();
+          }
+
+          numberPlan = await offerNumbers.plan(id, issuedAt);
+        }
       } finally {
         for (const part of additional) part.close();
       }

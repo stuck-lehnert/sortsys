@@ -21,6 +21,13 @@ const excludedTables = new Set([
   "development_seed_manifests",
 ]);
 const excludedUserColumns = new Set(["password", "totp_uri"]);
+const OFFER_COUNTERS = "commercial_offer_counters";
+const OFFER_RESERVATIONS = "commercial_offer_number_reservations";
+
+export type ArchivedOfferNumbers = {
+  nextNumber: string | null;
+  reservations: ReadonlySet<string>;
+};
 
 /** These are local source tables, never accounts in the new installation.
  * Password hashes, sessions and old authorization assignments are not imported. */
@@ -40,7 +47,7 @@ function sourceTable(schema: string, table: string): boolean {
   ) {
     return false;
   }
-  if (!tables.has(table)) {
+  if (!tables.has(table) && table !== OFFER_COUNTERS && table !== OFFER_RESERVATIONS) {
     throw new InvalidPostgresBackup(
       uiText(
         "Die Sicherung enthält eine unbekannte Geschäftstabelle.",
@@ -49,6 +56,39 @@ function sourceTable(schema: string, table: string): boolean {
     );
   }
   return true;
+}
+
+/** Current master adds these tables after the legacy projection's schema.
+ * Read them from the signed archive without changing existing row codecs. */
+function collectOfferNumber(
+  source: PostgresBackupRow,
+  target: { nextNumber: string | null; reservations: Set<string> },
+): boolean {
+  if (source.table === OFFER_COUNTERS) {
+    const scope = source.values[source.columns.indexOf("scope")];
+    const next = source.values[source.columns.indexOf("next_number")];
+    if (
+      source.columns.length !== 2 || scope !== "global" ||
+      typeof next !== "string" || !/^[1-9]\d{0,18}$/.test(next) ||
+      BigInt(next) > 9223372036854775808n || target.nextNumber !== null
+    ) throw new InvalidPostgresBackup();
+
+    target.nextNumber = next;
+    return true;
+  }
+
+  if (source.table === OFFER_RESERVATIONS) {
+    const [number] = source.values;
+    if (
+      source.columns.length !== 1 || source.columns[0] !== "number" ||
+      typeof number !== "string" || target.reservations.has(number)
+    ) throw new InvalidPostgresBackup();
+
+    target.reservations.add(number);
+    return true;
+  }
+
+  return false;
 }
 
 /** PostgreSQL array text is its own encoding, after COPY escaping has been
@@ -194,6 +234,10 @@ export async function openPostgresBackup(
   driver?: DuckDriver,
 ) {
   const database = await createBusinessDatabase(driver);
+  const offerNumbers: { nextNumber: string | null; reservations: Set<string> } = {
+    nextNumber: null,
+    reservations: new Set(),
+  };
   let sourceError: unknown;
   try {
     async function* rows() {
@@ -202,7 +246,8 @@ export async function openPostgresBackup(
           signal,
           acceptTable: sourceTable,
         })) {
-          yield backupBusinessRow(source);
+          if (!collectOfferNumber(source, offerNumbers))
+            yield backupBusinessRow(source);
         }
       } catch (error) {
         sourceError = error;
@@ -217,7 +262,7 @@ export async function openPostgresBackup(
           "The backup contains no business data.",
         ),
       );
-    return { database, rows: count };
+    return { database, rows: count, offerNumbers: offerNumbers satisfies ArchivedOfferNumbers };
   } catch (error) {
     await database.close();
     if (sourceError instanceof InvalidPostgresBackup) throw sourceError;

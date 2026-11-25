@@ -11,10 +11,14 @@ import {
   memberAreaAccesses,
 } from "~/lib/crypto/permissions";
 import { COMMON_COST_COLLECTION } from "~/lib/data/commonCostData";
-import { invoiceNumberAccessChanges } from "~/lib/crypto/invoiceAccess";
+import {
+  invoiceNumberAccessChanges,
+  offerNumberAccessChanges,
+} from "~/lib/crypto/invoiceAccess";
 import {
   CLIENT_SCRIPT_COLLECTION,
   INVOICE_LEDGER_COLLECTION,
+  OFFER_LEDGER_COLLECTION,
 } from "~/lib/data/organizationData";
 import { uiText } from "~/lib/i18n";
 import { AccessLevelSelect } from "./AccessLevelSelect";
@@ -32,6 +36,7 @@ export function OrganizationAccess(props: OrganizationAccessProps) {
     <>
       <OrganizationAreaAccess {...props} kind="overhead" />
       <OrganizationAreaAccess {...props} kind="numbering" />
+      <OrganizationAreaAccess {...props} kind="offerNumbering" />
       <OrganizationAreaAccess {...props} kind="scripts" />
     </>
   );
@@ -42,7 +47,7 @@ function OrganizationAreaAccess({
   disabled = false,
   onBusyChange,
   kind,
-}: OrganizationAccessProps & { kind: "overhead" | "numbering" | "scripts" }) {
+}: OrganizationAccessProps & { kind: "overhead" | "numbering" | "offerNumbering" | "scripts" }) {
   const settings = {
     overhead: {
       area: COMMON_COST_COLLECTION,
@@ -82,6 +87,13 @@ function OrganizationAreaAccess({
         "Script access could not be updated.",
       ),
       save: uiText("Skriptfreigabe speichern", "Save script access"),
+    },
+    offerNumbering: {
+      area: OFFER_LEDGER_COLLECTION,
+      title: uiText("Angebotsnummernfreigabe", "Offer numbering access"),
+      label: uiText("Mandantenweite Angebotsnummern", "Organization-wide offer numbers"),
+      error: uiText("Die Angebotsnummernfreigabe konnte nicht aktualisiert werden.", "Offer numbering access could not be updated."),
+      save: uiText("Angebotsnummernfreigabe speichern", "Save offer numbering access"),
     },
   }[kind];
   const { area } = settings;
@@ -127,7 +139,10 @@ function OrganizationAreaAccess({
       const changes =
         kind === "numbering"
           ? invoiceNumberAccessChanges(draft)
-          : [{ area, patch: draft.patch }];
+          : kind === "offerNumbering"
+            ? offerNumberAccessChanges(draft)
+            : [{ area, patch: draft.patch }];
+
       await changeAreaActionAccesses(client, user, changes, controller.signal);
       controller.signal.throwIfAborted();
       setVersion((previous) => previous + 1);
@@ -166,7 +181,9 @@ function OrganizationAreaAccess({
       {loaded && (
         <AccessLevelSelect
           label={settings.label}
-          allowManagement
+          allowManagement={kind !== "offerNumbering"}
+          individual={kind === "offerNumbering"}
+          actions={kind === "offerNumbering" ? ["read", "create", "update"] : undefined}
           value={draft.value}
           disabled={busy || disabled}
           onChange={(value, actions) =>

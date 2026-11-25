@@ -153,6 +153,10 @@ export async function adoptBackup(
     {
       id: "commercial",
       async run() {
+        const { prepareArchivedOfferNumbers } =
+          await import("../data/migrateOfferNumbers");
+        await prepareArchivedOfferNumbers(client, database, opened.offerNumbers, signal);
+
         const { prepareCommercialCases } =
           await import("../data/migrateCommercial");
         await prepareCommercialCases(client, database, subject, signal);

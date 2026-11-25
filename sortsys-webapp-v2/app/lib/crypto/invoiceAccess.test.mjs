@@ -3,10 +3,13 @@ import { accessDraft, editAccessDraft } from "./accessProfiles";
 import {
   invoiceActionAccess,
   invoiceNumberAccessChanges,
+  offerNumberAccessChanges,
 } from "./invoiceAccess";
 import {
   INVOICE_LEDGER_COLLECTION,
   NUMBERING_COLLECTION,
+  OFFER_LEDGER_COLLECTION,
+  OFFER_NUMBERING_COLLECTION,
 } from "../data/organizationData";
 
 test("invoice numbering access adds configuration reading without touching configuration editing", () => {
@@ -26,6 +29,22 @@ test("revoking numbering access leaves independently granted configuration right
   const changed = editAccessDraft(accessDraft("read"), "none", ["read"]);
   expect(invoiceNumberAccessChanges(changed)).toEqual([
     { area: INVOICE_LEDGER_COLLECTION, patch: { read: false } },
+  ]);
+});
+
+test("offer issuance grants only ledger read/create/update and configuration read", () => {
+  const actions = ["read", "create", "update"];
+  const initial = accessDraft("none");
+  const granted = editAccessDraft(initial, { actions }, actions);
+  expect(offerNumberAccessChanges(granted)).toEqual([
+    { area: OFFER_LEDGER_COLLECTION, patch: { read: true, create: true, update: true } },
+    { area: OFFER_NUMBERING_COLLECTION, patch: { read: true } },
+  ]);
+
+  const revoked = editAccessDraft(accessDraft(granted.value), "none", actions);
+  expect(offerNumberAccessChanges(revoked)).toEqual([
+    { area: OFFER_LEDGER_COLLECTION, patch: { read: false, create: false, update: false } },
+    { area: OFFER_NUMBERING_COLLECTION, patch: { read: false } },
   ]);
 });
 

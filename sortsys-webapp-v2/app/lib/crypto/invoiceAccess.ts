@@ -5,6 +5,8 @@ import type { AreaActionChange } from "./permissions";
 import {
   INVOICE_LEDGER_COLLECTION,
   NUMBERING_COLLECTION,
+  OFFER_LEDGER_COLLECTION,
+  OFFER_NUMBERING_COLLECTION,
 } from "../data/organizationData";
 
 type BillingCase = {
@@ -61,5 +63,20 @@ export function invoiceNumberAccessChanges(
   if (hasAccess(draft.value, "read")) {
     changes.push({ area: NUMBERING_COLLECTION, patch: { read: true } });
   }
+  return changes;
+}
+
+/** Keep configuration reading in step with explicit offer ledger changes.
+ * A change to issue rights never grants configuration write access. */
+export function offerNumberAccessChanges(draft: AccessDraft): AreaActionChange[] {
+  const changes: AreaActionChange[] = [
+    { area: OFFER_LEDGER_COLLECTION, patch: draft.patch },
+  ];
+  const read = hasAccess(draft.value, "read");
+
+  if (read || draft.patch.read === false) {
+    changes.push({ area: OFFER_NUMBERING_COLLECTION, patch: { read } });
+  }
+
   return changes;
 }

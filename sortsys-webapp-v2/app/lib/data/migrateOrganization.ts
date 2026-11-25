@@ -13,6 +13,7 @@ import {
 import type { BusinessRow } from "./rowCodec";
 import {
   ORGANIZATION_AREAS,
+  offerNumbering,
   organizationArea,
   organizationObject,
   organizationPayload,
@@ -66,9 +67,18 @@ export function organizationSource(
       ? JSON.parse(numberingRow.values.name as string)
       : { scheme: "sequential", startNumber: "1" },
   );
+  const offerNumberingRow = settings.find(
+    (row) => row.values.key === "organization.offerNumbering",
+  );
+  const offers = offerNumbering(
+    offerNumberingRow?.values.name != null
+      ? JSON.parse(offerNumberingRow.values.name as string)
+      : { scheme: "sequential", startNumber: "1" },
+  );
   return [
     { format: "sortsys-organization-v1", kind: "profile", value: profile },
     { format: "sortsys-organization-v1", kind: "numbering", value: numbering },
+    { format: "sortsys-organization-v1", kind: "offerNumbering", value: offers },
   ];
 }
 export async function prepareOrganization(

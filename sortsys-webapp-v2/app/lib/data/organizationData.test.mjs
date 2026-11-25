@@ -142,8 +142,19 @@ test("organization conversion uses the archived contact record and legacy defaul
       },
     },
     { scheme: "sequential", startNumber: "1" },
+    { scheme: "sequential", startNumber: "1" },
   ]);
   expect(JSON.stringify(source)).toBe(before);
+  const offers = {
+    values: {
+      key: "organization.offerNumbering",
+      name: '{"scheme":"dateCompact","startNumber":"9223372036854775807"}',
+    },
+  };
+  expect(organizationSource([source, offers])[2].value).toEqual({
+    scheme: "dateCompact",
+    startNumber: "9223372036854775807",
+  });
   const numbering = {
     values: { key: "organization.invoiceNumbering", name: null },
   };

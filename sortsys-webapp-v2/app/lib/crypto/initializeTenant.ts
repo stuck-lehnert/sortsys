@@ -28,6 +28,7 @@ import { trustedHistory, unlockedAccount } from "./session";
 import { readInitializationSource } from "./initializationSource";
 import { uiText } from "../i18n";
 import { initialOwnerCollections } from "./initializationAreas";
+import { DEFAULT_OFFER_NUMBERING } from "../invoiceNumbering";
 
 type Completion = MutateInput<"zerotrust.setup.complete">;
 type Status = QueryResult<"zerotrust.status">;
@@ -36,6 +37,7 @@ function initialRecords() {
   const organization = [
     ["profile", { companyName: null, address: null }],
     ["numbering", { scheme: "sequential", startNumber: "1" }],
+    ["offerNumbering", DEFAULT_OFFER_NUMBERING],
   ] as const;
   return [
     ...organization.map(([kind, value]) => ({
