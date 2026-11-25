@@ -2,7 +2,11 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { existingAggregateRows } from "./aggregateRows";
-import { ProtectedWriteConflict, commitProtectedWrites } from "./atomicWrites";
+import {
+  checkExpectedRevision,
+  commitProtectedWrites,
+  ProtectedWriteConflict,
+} from "./atomicWrites";
 import type { DuckDriver } from "./database";
 import {
   calendarDay,
@@ -31,9 +35,8 @@ import { PROJECT_MODEL, projectCollection } from "./projectData";
 import { newProductRowId, publicId } from "./products";
 import { readableAreas } from "./readableAreas";
 import { required } from "./protectedObjects";
-import { decodeBusinessRow } from "./rowCodec";
 import { reportPage } from "./reportPage";
-import { businessSchema } from "./schema";
+import { createBusinessRow } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataRequest, DataView } from "./runtime/runtime";
@@ -73,13 +76,7 @@ const fileRequest = (project: string) => ({
     prefix: `${fileCollection(project).prefix}file:`,
   },
 });
-const row = (table: string, values: Record<string, unknown>) =>
-  decodeBusinessRow({
-    format: "sortsys-row-v2",
-    schema: businessSchema.fingerprint,
-    table,
-    values,
-  });
+
 function find(
   view: DataView,
   selected: DataRequest<DailyPayload>,
@@ -91,13 +88,6 @@ function find(
   if (found.length !== 1) throw new InvalidProtectedData();
   return found[0]!;
 }
-function expectedRevision(input: unknown, current: string | undefined): void {
-  if (input === undefined) return;
-  if (typeof input !== "string" || !/^(0|[1-9]\d{0,18})$/.test(input))
-    throw new InvalidProtectedData();
-  if (input !== (current ?? "0")) throw new ProtectedWriteConflict();
-}
-
 export function createProtectedDailyReports(
   client: Client,
   signal: AbortSignal,
@@ -378,7 +368,7 @@ export function createProtectedDailyReports(
           const current = creating ? null : find(tx, selected, day);
           if (baseline)
             tx.expect(selected, baseline.id, { signature: baseline.signature });
-          expectedRevision(data.expectedRevision, current?.revision);
+          checkExpectedRevision(data.expectedRevision, current?.revision);
           if (
             creating &&
             tx
@@ -423,20 +413,24 @@ export function createProtectedDailyReports(
                     )
                       ? tx.row("users", { id: addressId(change.userId) })
                       : null;
-                  const line = row("daily_project_report_work_hours", {
-                    id: samePerson ? before!.values.id : newProductRowId(),
-                    report_id: addressId(id),
-                    user_id:
-                      change.userId === null ? null : addressId(change.userId),
-                    hours: change.hours,
-                    cost_per_hour: null,
-                    contract_type:
-                      change.contractType ??
-                      (samePerson
-                        ? before?.values.contract_type
-                        : person?.require("contract_type")) ??
-                      "external",
-                  });
+                  const line = createBusinessRow(
+                    "daily_project_report_work_hours",
+                    {
+                      id: samePerson ? before!.values.id : newProductRowId(),
+                      report_id: addressId(id),
+                      user_id:
+                        change.userId === null ? null : addressId(change.userId),
+                      hours: change.hours,
+                      cost_per_hour: null,
+                      contract_type:
+                        change.contractType ??
+                        (samePerson
+                          ? before?.values.contract_type
+                          : person?.require("contract_type")) ??
+                        "external",
+                    },
+                  );
+
                   if (
                     change.costPerHour !== undefined &&
                     (!creating || change.costPerHour !== null)
@@ -465,7 +459,7 @@ export function createProtectedDailyReports(
               if (!photos.some((row) => row.values.project_file_id === fileId))
                 photos = [
                   ...photos,
-                  row("daily_project_report_files", {
+                  createBusinessRow("daily_project_report_files", {
                     report_id: addressId(id),
                     project_file_id: fileId,
                     created_at: now,
@@ -482,7 +476,7 @@ export function createProtectedDailyReports(
           value = dailyPayload(
             {
               format: "sortsys-daily-report-v1",
-              report: row(
+              report: createBusinessRow(
                 "daily_project_reports",
                 old
                   ? {
@@ -520,7 +514,7 @@ export function createProtectedDailyReports(
               old = tx
                 .documents(money)
                 .find((document) => document.id === costObject);
-            expectedRevision(data.expectedCostRevision, old?.revision);
+            checkExpectedRevision(data.expectedCostRevision, old?.revision);
             const costs = new Map(
               old?.value.costs.map((cost) => [cost.id, cost.costPerHour]),
             );

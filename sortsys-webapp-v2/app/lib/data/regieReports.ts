@@ -2,8 +2,11 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { existingAggregateRows } from "./aggregateRows";
-import { commitProtectedWrites, ProtectedWriteConflict } from "./atomicWrites";
-import { reportPage } from "./reportPage";
+import {
+  checkExpectedRevision,
+  commitProtectedWrites,
+  ProtectedWriteConflict,
+} from "./atomicWrites";
 import type { DuckDriver } from "./database";
 import { historicalPriceIndex } from "./historicalPrices";
 import { personnelRequest } from "./personnelData";
@@ -30,25 +33,13 @@ import {
   type RegieHours,
   type RegiePayload,
 } from "./regieReportData";
-import { decodeBusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { reportPage } from "./reportPage";
+import { createBusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataRequest, DataView } from "./runtime/runtime";
 
 const productRequest = { model: PRODUCT_MODEL, area: PRODUCT_COLLECTION };
-const row = (table: string, values: Record<string, unknown>) =>
-  decodeBusinessRow({
-    format: "sortsys-row-v2",
-    schema: businessSchema.fingerprint,
-    table,
-    values,
-  });
-function expected(input: unknown, revision: string | undefined): void {
-  if (input === undefined) return;
-  if (typeof input !== "string" || !/^(0|[1-9]\d{0,18})$/.test(input))
-    throw new InvalidProtectedData();
-  if (input !== (revision ?? "0")) throw new ProtectedWriteConflict();
-}
+
 function sameCreation(
   value: RegiePayload,
   hours: RegieHours | undefined,
@@ -105,6 +96,7 @@ type Selection = {
   hours: DataRequest<RegieHours>[];
   all: DataRequest[];
 };
+
 function reportOrder(
   a: { day: string; numericId: bigint },
   b: { day: string; numericId: bigint },
@@ -430,7 +422,7 @@ export function createProtectedRegieReports(
               signature: baseline.document.signature,
             });
           }
-          expected(outer.expectedRevision, current?.revision);
+          checkExpectedRevision(outer.expectedRevision, current?.revision);
           if (
             project &&
             !tx.documents(project).some((document) => document.value.project)
@@ -472,7 +464,7 @@ export function createProtectedRegieReports(
                   const previous = change.id
                     ? oldProducts.get(change.id)
                     : undefined;
-                  return row("regie_report_products", {
+                  return createBusinessRow("regie_report_products", {
                     id: previous?.values.id ?? newProductRowId(),
                     report_id: rawId,
                     product_id: addressId(change.productId),
@@ -490,7 +482,7 @@ export function createProtectedRegieReports(
                   const previous = change.id
                     ? oldSpecials.get(change.id)
                     : undefined;
-                  return row("regie_report_special_records", {
+                  return createBusinessRow("regie_report_special_records", {
                     id: previous?.values.id ?? newProductRowId(),
                     report_id: rawId,
                     name: change.name,
@@ -504,7 +496,7 @@ export function createProtectedRegieReports(
                 });
           const value: RegiePayload = {
             format: "sortsys-regie-report-v1",
-            report: row(
+            report: createBusinessRow(
               "regie_reports",
               currentValue
                 ? {
@@ -534,7 +526,10 @@ export function createProtectedRegieReports(
               currentHours = tx
                 .documents(hoursSelected)
                 .find((document) => document.id === hourObject);
-            expected(outer.expectedHoursRevision, currentHours?.revision);
+            checkExpectedRevision(
+              outer.expectedHoursRevision,
+              currentHours?.revision,
+            );
             if (baseline?.hour)
               tx.expect(hoursSelected, baseline.hour.id, {
                 signature: baseline.hour.signature,
@@ -550,7 +545,7 @@ export function createProtectedRegieReports(
                 const previous = change.id
                   ? oldHours.get(change.id)
                   : undefined;
-                return row("regie_report_work_hours", {
+                return createBusinessRow("regie_report_work_hours", {
                   id: previous?.values.id ?? newProductRowId(),
                   report_id: rawId,
                   user_id:

@@ -20,8 +20,7 @@ import {
 import { newProductRowId } from "./products";
 import { required } from "./protectedObjects";
 import { readableAreas } from "./readableAreas";
-import { decodeBusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 import { uiText } from "../i18n";
 
@@ -78,19 +77,14 @@ export function createProtectedProjectFinance(
           data.operationId == null
             ? newProductRowId()
             : addressId(data.operationId);
-        const row = decodeBusinessRow({
-          format: "sortsys-row-v2",
-          schema: businessSchema.fingerprint,
-          table: "project_financial_entries",
-          values: {
-            id,
-            project_id: addressId(projectId),
-            type,
-            ...value,
-            created_by_user_id: actor,
-            created_at: now,
-            commercial_case_id: null,
-          },
+        const row = createBusinessRow("project_financial_entries", {
+          id,
+          project_id: addressId(projectId),
+          type,
+          ...value,
+          created_by_user_id: actor,
+          created_at: now,
+          commercial_case_id: null,
         });
         const object = financialObject(row);
         const register = {

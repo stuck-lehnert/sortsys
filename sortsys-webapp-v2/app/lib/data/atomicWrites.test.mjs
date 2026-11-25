@@ -1,12 +1,38 @@
 import { expect, test } from "bun:test";
 import { createClient } from "@sortsys/v2-client";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import superjson from "superjson";
 import {
+  checkExpectedRevision,
   commitProtectedWrites,
   mergePreparedWrites,
   ProtectedWriteConflict,
 } from "./atomicWrites";
 import { ramCache } from "./ramCache";
+
+test("optional object revisions distinguish missing, malformed and stale expectations", () => {
+  expect(() => checkExpectedRevision(undefined, "10")).not.toThrow();
+  expect(() => checkExpectedRevision("0", undefined)).not.toThrow();
+  expect(() => checkExpectedRevision("10", "10")).not.toThrow();
+
+  const largestRevision = "9223372036854775807";
+  expect(() =>
+    checkExpectedRevision(largestRevision, largestRevision),
+  ).not.toThrow();
+
+  for (const input of [null, 10, "010", "-1", "10000000000000000000"]) {
+    expect(() => checkExpectedRevision(input, "10")).toThrow(
+      InvalidProtectedData,
+    );
+  }
+
+  expect(() => checkExpectedRevision("9", "10")).toThrow(
+    ProtectedWriteConflict,
+  );
+  expect(() => checkExpectedRevision("1", undefined)).toThrow(
+    ProtectedWriteConflict,
+  );
+});
 
 function deferred() {
   let resolve;

@@ -57,6 +57,19 @@ export class ProtectedWriteConflict extends Error {
   }
 }
 
+export function checkExpectedRevision(
+  input: unknown,
+  current: string | undefined,
+): void {
+  if (input === undefined) return;
+
+  if (typeof input !== "string" || !/^(0|[1-9]\d{0,18})$/.test(input)) {
+    throw new InvalidProtectedData();
+  }
+
+  if (input !== (current ?? "0")) throw new ProtectedWriteConflict();
+}
+
 /** Independently prepared changes may write disjoint objects in the same
  * domain. They can share one commit only when they read the same domain head.
  * Verification still checks every original group after publication. */

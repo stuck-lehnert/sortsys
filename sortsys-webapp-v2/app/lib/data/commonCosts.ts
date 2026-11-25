@@ -17,8 +17,7 @@ import {
 import { addressId } from "./addressBook";
 import { newProductRowId } from "./products";
 import { required } from "./protectedObjects";
-import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow, type BusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 import { timestampMicros } from "./timestamps";
 
@@ -138,20 +137,15 @@ export function createProtectedCommonCosts(
             } else {
               transaction.require(request, "create");
               const id = newIds[index]!;
-              const row = decodeBusinessRow({
-                format: "sortsys-row-v2",
-                schema: businessSchema.fingerprint,
-                table: "global_common_cost_entries",
-                values: {
-                  id,
-                  type: value.type,
-                  effective_at: value.effectiveAt,
-                  relative_factor: value.relativeFactor,
-                  constant: value.constant,
-                  created_by_user_id: actor,
-                  created_at: now,
-                  modified_at: now,
-                },
+              const row = createBusinessRow("global_common_cost_entries", {
+                id,
+                type: value.type,
+                effective_at: value.effectiveAt,
+                relative_factor: value.relativeFactor,
+                constant: value.constant,
+                created_by_user_id: actor,
+                created_at: now,
+                modified_at: now,
               });
               const payload: CommonCostPayload = {
                 format: "sortsys-common-costs-v1",
