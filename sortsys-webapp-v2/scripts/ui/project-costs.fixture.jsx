@@ -59,7 +59,10 @@ export function showCostOverview(root) {
   );
 }
 
-export async function showCostDetail(root, { pending = false } = {}) {
+export async function showCostDetail(
+  root,
+  { pending = false, labor = false } = {},
+) {
   const tenant = await protectedTenant(
     [projectCollection("1"), financialCollection("1", "invoice")],
     () => ["read"],
@@ -82,11 +85,85 @@ export async function showCostDetail(root, { pending = false } = {}) {
         );
       }),
   };
+  const day = new Date("2026-02-02T12:00:00Z");
+  const emptyBucket = { baseCost: 0, overheadCost: 0, totalCost: 0 };
+  const costs = {
+    offers: [],
+    invoices: [],
+    deliveryNotes: [],
+    products: [],
+    specialRecords: [],
+    toolTrackings: [],
+    workHours: [
+      {
+        id: "1",
+        userId: "2",
+        day,
+        hours: 2,
+        costPerHour: 50,
+        totalCost: 100,
+        contractType: "internal",
+      },
+    ],
+    subcontractorWorkHours: [
+      {
+        id: "2",
+        userId: "3",
+        day,
+        hours: 3,
+        costPerHour: 60,
+        totalCost: 180,
+        contractType: "subcontractor",
+      },
+    ],
+    commonCosts: {
+      fgk: { ...emptyBucket, baseCost: 100, totalCost: 100 },
+      mgk: emptyBucket,
+      ngk: { ...emptyBucket, baseCost: 180, totalCost: 180 },
+      overallOverhead: 0,
+    },
+    totalCosts: {
+      offers: 0,
+      invoices: 0,
+      deliveryNotes: 0,
+      products: 0,
+      specialRecords: 0,
+      toolTrackings: 0,
+      workHours: 100,
+      subcontractorWorkHours: 180,
+      overall: 280,
+    },
+  };
+
+  if (labor) {
+    const users = new Map([
+      ["2", { id: "2", firstName: "Eva", lastName: "Beispiel" }],
+      ["3", { id: "3", firstName: "Nina", lastName: "Extern" }],
+    ]);
+    client.query = async (path, input) => {
+      if (path === "users.get") return [users.get(input.id) ?? null, null];
+
+      if (
+        path === "projects.costs.get" &&
+        input.projectId === "1" &&
+        input.from instanceof Date &&
+        input.to instanceof Date &&
+        input.from <= day &&
+        day <= input.to
+      ) {
+        return [costs, null];
+      }
+
+      throw new Error(`Unexpected project-cost lookup: ${path}`);
+    };
+  }
+
   client.streamQuery = (path) =>
     new Observable((subscriber) => {
       if (path !== "projects.costs.get")
         throw new Error(`Unexpected project-cost detail query: ${path}`);
-      if (!pending)
+      if (labor) subscriber.next([costs, null]);
+      else if (!pending)
         subscriber.next([
           null,
           new Error(

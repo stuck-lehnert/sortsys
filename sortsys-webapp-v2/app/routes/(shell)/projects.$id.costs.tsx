@@ -14,11 +14,16 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { client } from "~/lib/client";
+import { readExportReferences } from "~/lib/exportReferences";
+import { memberLink, productLink } from "~/lib/recordLinks";
+import { productQuantityColumns } from "~/lib/productQuantityColumns";
 import {
+  formatBaseQuantity,
   formatCurrency,
   formatDate,
   formatNumber,
   formatPercent,
+  formatProductAmount,
   gainOrLossColor,
   productTitle,
   toolTitle,
@@ -31,7 +36,12 @@ import {
   formatPdfNumber,
   type PdfTableSection,
 } from "~/lib/pdf";
-import { buildWeeklyProjectCostsPdfDocument } from "~/lib/projectCostsPdf";
+import {
+  buildWeeklyProjectCostsPdfDocument,
+  formatCurrencyOrDash,
+  hasNumberData,
+  workCostPdfSections,
+} from "~/lib/projectCostsPdf";
 import {
   deliverBlob,
   endOfDay,
@@ -40,6 +50,8 @@ import {
   upmatchUnit,
 } from "~/lib/utils";
 import { prepareExcelExport } from "~/lib/officeExports";
+import { workbookSections, type TableMeta } from "~/lib/workbookSections";
+import { isoWeekLabel, startOfIsoWeek } from "~/lib/week";
 import { EXCEL_DATE_NUM_FMT } from "~/lib/xlsx";
 import {
   showDeleteProjectFinancialEntryModal,
@@ -48,55 +60,9 @@ import {
 } from "~/modals/projects";
 import type { Project } from "~/type-helpers";
 
-function startOfIsoWeek(date: Date) {
-  const result = new Date(date);
-  result.setHours(0, 0, 0, 0);
-  const dayOfWeek = (result.getDay() + 6) % 7;
-  result.setDate(result.getDate() - dayOfWeek);
-  return result;
-}
-
-function getIsoWeekInfo(date: Date) {
-  const value = new Date(date);
-  value.setHours(0, 0, 0, 0);
-
-  const day = (value.getDay() + 6) % 7;
-  value.setDate(value.getDate() + 3 - day);
-
-  const isoYear = value.getFullYear();
-
-  const firstThursday = new Date(isoYear, 0, 4);
-  const firstDay = (firstThursday.getDay() + 6) % 7;
-  firstThursday.setDate(firstThursday.getDate() + 3 - firstDay);
-
-  const weekNumber =
-    1 +
-    Math.round(
-      (value.getTime() - firstThursday.getTime()) / (7 * 24 * 60 * 60 * 1000),
-    );
-
-  return {
-    weekNumber,
-    isoYear,
-  };
-}
-
-function isoWeekLabel(date: Date) {
-  const info = getIsoWeekInfo(date);
-  return `KW ${info.weekNumber}/${info.isoYear}`;
-}
-
 const MISSING_INVOICE_NOTICE = uiText(
   "Gewinn/Verlust kann nicht berechnet werden, da Rechnungssummen fehlen.",
 );
-
-function hasNumberData(value: number | null | undefined) {
-  return Math.abs(Number(value ?? 0)) > 0.000001;
-}
-
-function formatCurrencyOrDash(value: number | null | undefined) {
-  return hasNumberData(value) ? formatCurrency(Number(value ?? 0)) : "-";
-}
 
 function formatGainOrLossPercentage(value: number, invoicesTotal: number) {
   if (!hasNumberData(invoicesTotal)) return null;
@@ -120,22 +86,6 @@ function GainOrLossText({
       {formatGainOrLossText(value, invoicesTotal)}
     </span>
   );
-}
-
-function formatProductAmount(amount: number, unit: string) {
-  const normalizedUnit = `${unit ?? ""}`.trim();
-  return `${formatNumber(amount)}${normalizedUnit ? ` ${normalizedUnit}` : ""}`;
-}
-
-function formatBaseQuantity(
-  baseQuantity: number,
-  baseUnit: string,
-  displayUnit: string,
-) {
-  const normalizedBaseUnit = `${baseUnit ?? ""}`.trim();
-  const normalizedDisplayUnit = `${displayUnit ?? ""}`.trim();
-  if (normalizedDisplayUnit === normalizedBaseUnit) return "-";
-  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ""}`;
 }
 
 export default function ProjectDetailCosts() {
@@ -226,6 +176,51 @@ export default function ProjectDetailCosts() {
       ),
   );
 
+  type WorkHour =
+    (typeof regularWorkHours | typeof subcontractorWorkHours)[number];
+  const workHourColumns: MyTableColumn<WorkHour>[] = [
+    {
+      label: uiText("Benutzer"),
+      render: (row) => memberLink(row.userId),
+    },
+    {
+      label: uiText("Tag"),
+      render: (row) => formatDate(row.day),
+      sortKey: (row) => row.day.getTime(),
+    },
+    {
+      label: uiText("Stunden"),
+      render: (row) => formatNumber(row.hours),
+      sortKey: (row) => row.hours,
+    },
+    {
+      label: uiText("Kosten"),
+      render: (row) => !!row.totalCost && formatCurrency(row.totalCost),
+      sortKey: (row) => row.totalCost,
+    },
+  ];
+
+  const readCostReferences = () =>
+    Promise.all([
+      readExportReferences(
+        client,
+        "products.get",
+        (costs.products ?? []).map((entry) => entry.productId),
+      ),
+      readExportReferences(
+        client,
+        "tools.get",
+        (costs.toolTrackings ?? []).map((entry) => entry.toolId),
+      ),
+      readExportReferences(
+        client,
+        "users.get",
+        [...regularWorkHours, ...subcontractorWorkHours].map(
+          (entry) => entry.userId,
+        ),
+      ),
+    ]);
+
   async function exportCostsToPdf(
     mode: "overall" | "weekly" = "overall",
     target: BlobTarget = "open",
@@ -237,59 +232,16 @@ export default function ProjectDetailCosts() {
     setIsPdfExporting(true);
 
     try {
-      const toolNameMap = new Map<string, string>();
-      const userNameMap = new Map<string, string>();
-
-      const productIds = [
-        ...new Set((costs.products ?? []).map((entry) => entry.productId)),
-      ];
-      const toolIds = [
-        ...new Set((costs.toolTrackings ?? []).map((entry) => entry.toolId)),
-      ];
-      const userIds = [
-        ...new Set(
-          [...regularWorkHours, ...subcontractorWorkHours]
-            .map((entry) => entry.userId)
-            .filter(Boolean),
-        ),
-      ] as string[];
-
-      const [productEntries] = await Promise.all([
-        Promise.all(
-          productIds.map(async (id) => {
-            const [product] = await client.query(
-              "products.get",
-              { id },
-              { strategy: "cache-first" },
-            );
-            return [id, product ?? null] as const;
-          }),
-        ),
-        Promise.all(
-          toolIds.map(async (id) => {
-            const [tool] = await client.query(
-              "tools.get",
-              { id },
-              { strategy: "cache-first" },
-            );
-            toolNameMap.set(
-              id,
-              tool ? `${tool.customId} ${toolTitle(tool)}` : id,
-            );
-          }),
-        ),
-        Promise.all(
-          userIds.map(async (id) => {
-            const [user] = await client.query(
-              "users.get",
-              { id },
-              { strategy: "cache-first" },
-            );
-            userNameMap.set(id, user ? userFullName(user) : id);
-          }),
-        ),
-      ]);
-      const productMap = new Map(productEntries);
+      const [productMap, toolsById, usersById] = await readCostReferences();
+      const toolNameMap = new Map(
+        Array.from(toolsById, ([id, tool]) => [
+          id,
+          tool ? `${tool.customId} ${toolTitle(tool)}` : id,
+        ]),
+      );
+      const userNameMap = new Map(
+        Array.from(usersById, ([id, user]) => [id, user ? userFullName(user) : id]),
+      );
 
       const sections: PdfTableSection[] = [];
 
@@ -791,61 +743,13 @@ export default function ProjectDetailCosts() {
             });
           }
 
-          const weeklyWorkHourRows = [...(entry.workHourEntries ?? [])]
-            .sort((left, right) => left.day.getTime() - right.day.getTime())
-            .map((workHourEntry) => [
-              formatDate(workHourEntry.day, "short"),
-              workHourEntry.userId
-                ? (userNameMap.get(workHourEntry.userId) ??
-                  workHourEntry.userId)
-                : "Unbekannt",
-              formatPdfNumber(workHourEntry.hours),
-              formatCurrencyOrDash(workHourEntry.totalCost),
-            ]);
-
-          if (weeklyWorkHourRows.length > 0) {
-            weeklySections.push({
-              title: uiText("Arbeitszeit"),
-              columns: [
-                "Tag",
-                "Mitarbeiter",
-                uiText("Stunden"),
-                uiText("Kosten"),
-              ],
-              rows: weeklyWorkHourRows,
-              align: ["left", "left", "right", "right"],
-              columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
-            });
-          }
-
-          const weeklySubcontractorWorkHourRows = [
-            ...(entry.subcontractorWorkHourEntries ?? []),
-          ]
-            .sort((left, right) => left.day.getTime() - right.day.getTime())
-            .map((workHourEntry) => [
-              formatDate(workHourEntry.day, "short"),
-              workHourEntry.userId
-                ? (userNameMap.get(workHourEntry.userId) ??
-                  workHourEntry.userId)
-                : "Unbekannt",
-              formatPdfNumber(workHourEntry.hours),
-              formatCurrencyOrDash(workHourEntry.totalCost),
-            ]);
-
-          if (weeklySubcontractorWorkHourRows.length > 0) {
-            weeklySections.push({
-              title: uiText("Nachunternehmer-Arbeitszeit"),
-              columns: [
-                "Tag",
-                "Mitarbeiter",
-                uiText("Stunden"),
-                uiText("Kosten"),
-              ],
-              rows: weeklySubcontractorWorkHourRows,
-              align: ["left", "left", "right", "right"],
-              columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
-            });
-          }
+          weeklySections.push(
+            ...workCostPdfSections(
+              entry.workHourEntries ?? [],
+              entry.subcontractorWorkHourEntries ?? [],
+              userNameMap,
+            ),
+          );
 
           const weeklyDeliveryRows = [...(entry.deliveryNotes ?? [])]
             .sort((left, right) => {
@@ -1047,51 +951,9 @@ export default function ProjectDetailCosts() {
         ];
       });
 
-      const sortedWorkHours = [...regularWorkHours].sort(
-        (left, right) => left.day.getTime() - right.day.getTime(),
+      sections.push(
+        ...workCostPdfSections(regularWorkHours, subcontractorWorkHours, userNameMap),
       );
-
-      const workHourRows = sortedWorkHours.map((entry) => [
-        formatDate(entry.day, "short"),
-        entry.userId
-          ? (userNameMap.get(entry.userId) ?? entry.userId)
-          : "Unbekannt",
-        formatPdfNumber(entry.hours),
-        formatCurrencyOrDash(entry.totalCost),
-      ]);
-      if (workHourRows.length > 0) {
-        sections.push({
-          title: uiText("Arbeitszeit"),
-          columns: ["Tag", "Mitarbeiter", uiText("Stunden"), uiText("Kosten")],
-          rows: workHourRows,
-          align: ["left", "left", "right", "right"],
-          columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
-        });
-      }
-
-      const sortedSubcontractorWorkHours = [...subcontractorWorkHours].sort(
-        (left, right) => left.day.getTime() - right.day.getTime(),
-      );
-
-      const subcontractorWorkHourRows = sortedSubcontractorWorkHours.map(
-        (entry) => [
-          formatDate(entry.day, "short"),
-          entry.userId
-            ? (userNameMap.get(entry.userId) ?? entry.userId)
-            : "Unbekannt",
-          formatPdfNumber(entry.hours),
-          formatCurrencyOrDash(entry.totalCost),
-        ],
-      );
-      if (subcontractorWorkHourRows.length > 0) {
-        sections.push({
-          title: uiText("Nachunternehmer-Arbeitszeit"),
-          columns: ["Tag", "Mitarbeiter", uiText("Stunden"), uiText("Kosten")],
-          rows: subcontractorWorkHourRows,
-          align: ["left", "left", "right", "right"],
-          columnWidths: ["0.9fr", "1.7fr", "0.7fr", "0.9fr"],
-        });
-      }
 
       const deliveryRows = (costs.deliveryNotes ?? []).map((entry) => [
         entry.effectiveTimestamp
@@ -1297,12 +1159,6 @@ export default function ProjectDetailCosts() {
             const cellRef = (row: number, column: number) =>
               `${toColumnName(column)}${row}`;
 
-            type TableMeta = {
-              rowCount: number;
-              firstDataRow: number;
-              lastDataRow: number;
-            };
-
             const sumFormula = (table: TableMeta | null, column: number) => {
               if (!table || table.rowCount === 0) return "0";
               return `SUM(${cellRef(table.firstDataRow, column)}:${cellRef(table.lastDataRow, column)})`;
@@ -1311,54 +1167,7 @@ export default function ProjectDetailCosts() {
             const toNumber = (value: number | null | undefined) =>
               value == null ? null : Number(value);
 
-            const productIds = [
-              ...new Set(costs.products.map((record) => record.productId)),
-            ];
-            const productEntries = await Promise.all(
-              productIds.map(async (productId) => {
-                const [product] = await client.query(
-                  "products.get",
-                  { id: productId },
-                  { strategy: "cache-first" },
-                );
-                return [productId, product ?? null] as const;
-              }),
-            );
-            const productMap = new Map(productEntries);
-
-            const toolIds = [
-              ...new Set(costs.toolTrackings.map((record) => record.toolId)),
-            ];
-            const toolEntries = await Promise.all(
-              toolIds.map(async (toolId) => {
-                const [tool] = await client.query(
-                  "tools.get",
-                  { id: toolId },
-                  { strategy: "cache-first" },
-                );
-                return [toolId, tool ?? null] as const;
-              }),
-            );
-            const toolMap = new Map(toolEntries);
-
-            const userIds = [
-              ...new Set(
-                [...regularWorkHours, ...subcontractorWorkHours]
-                  .map((record) => record.userId)
-                  .filter(Boolean),
-              ),
-            ] as string[];
-            const userEntries = await Promise.all(
-              userIds.map(async (userId) => {
-                const [user] = await client.query(
-                  "users.get",
-                  { id: userId },
-                  { strategy: "cache-first" },
-                );
-                return [userId, user ?? null] as const;
-              }),
-            );
-            const userMap = new Map(userEntries);
+            const [productMap, toolMap, userMap] = await readCostReferences();
 
             const wb = new ExcelJS.Workbook();
             wb.creator = "exceljs";
@@ -1372,44 +1181,7 @@ export default function ProjectDetailCosts() {
             ws.mergeCells(1, 1, 1, 6);
             ws.mergeCells(2, 1, 2, 6);
 
-            let cursor = 4;
-
-            const addSectionTitle = (label: string) => {
-              ws.getCell(cursor, 1).value = label;
-              ws.getCell(cursor, 1).font = { bold: true, size: 14 };
-              ws.getRow(cursor + 1).height = 4;
-              cursor += 2;
-            };
-
-            const addTable = (
-              columns: string[],
-              rows: Array<Array<string | number | Date | null>>,
-            ): TableMeta | null => {
-              if (!rows.length) {
-                return null;
-              }
-
-              const startRow = cursor;
-
-              ws.addTable({
-                name: `Table_${cursor}_${columns.length}`,
-                ref: ws.getCell(cursor, 1).address,
-                headerRow: true,
-                totalsRow: false,
-                style: { theme: "TableStyleLight1", showRowStripes: true },
-                columns: columns.map((name) => ({ name })),
-                rows,
-              });
-
-              const rowCount = rows.length;
-              cursor += rows.length + 2;
-
-              return {
-                rowCount,
-                firstDataRow: startRow + 1,
-                lastDataRow: startRow + rowCount,
-              };
-            };
+            const { addSectionTitle, addTable } = workbookSections(ws, 4);
 
             addSectionTitle("Gesamtkosten");
             const totalsTable = addTable(
@@ -1632,9 +1404,12 @@ export default function ProjectDetailCosts() {
                 return left.day.getTime() - right.day.getTime();
               });
 
-            const workHourRows = sortWorkHoursForExport(regularWorkHours).map(
-              (record) => {
+            function addWorkHourTable(title: string, records: WorkHour[]) {
+              if (!records.length) return null;
+
+              const rows = sortWorkHoursForExport(records).map((record) => {
                 const user = record.userId ? userMap.get(record.userId) : null;
+
                 return [
                   user ? userFullName(user) : "Unbekannt",
                   record.day ? startOfDay(record.day) : null,
@@ -1642,79 +1417,46 @@ export default function ProjectDetailCosts() {
                   toNumber(record.costPerHour),
                   toNumber(record.totalCost),
                 ] as Array<string | number | Date | null>;
-              },
+              });
+
+              addSectionTitle(title);
+              const table = addTable(
+                [
+                  "Mitarbeiter",
+                  "Tag",
+                  uiText("Stunden"),
+                  "pro Stunde",
+                  uiText("Kosten"),
+                ],
+                rows,
+              );
+              if (!table) return null;
+
+              for (let i = 0; i < table.rowCount; i++) {
+                const row = table.firstDataRow + i;
+
+                ws.getCell(row, 2).numFmt = EXCEL_DATE_NUM_FMT;
+                ws.getCell(row, 3).numFmt = DECIMAL_NUM_FMT;
+                ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
+
+                const totalCell = ws.getCell(row, 5);
+                totalCell.value = {
+                  formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 3)}*${cellRef(row, 4)})`,
+                };
+                totalCell.numFmt = CURRENCY_NUM_FMT;
+              }
+
+              return table;
+            }
+
+            const workHoursTable = addWorkHourTable(
+              uiText("Arbeitszeit"),
+              regularWorkHours,
             );
-            let workHoursTable: TableMeta | null = null;
-            if (workHourRows.length) {
-              addSectionTitle(uiText("Arbeitszeit"));
-              workHoursTable = addTable(
-                [
-                  "Mitarbeiter",
-                  "Tag",
-                  uiText("Stunden"),
-                  "pro Stunde",
-                  uiText("Kosten"),
-                ],
-                workHourRows,
-              );
-            }
-            if (workHoursTable) {
-              for (let i = 0; i < workHoursTable.rowCount; i++) {
-                const row = workHoursTable.firstDataRow + i;
-
-                ws.getCell(row, 2).numFmt = EXCEL_DATE_NUM_FMT;
-                ws.getCell(row, 3).numFmt = DECIMAL_NUM_FMT;
-                ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
-
-                const totalCell = ws.getCell(row, 5);
-                totalCell.value = {
-                  formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 3)}*${cellRef(row, 4)})`,
-                };
-                totalCell.numFmt = CURRENCY_NUM_FMT;
-              }
-            }
-
-            const subcontractorWorkHourRows = sortWorkHoursForExport(
+            const subcontractorWorkHoursTable = addWorkHourTable(
+              uiText("Nachunternehmer-Arbeitszeit"),
               subcontractorWorkHours,
-            ).map((record) => {
-              const user = record.userId ? userMap.get(record.userId) : null;
-              return [
-                user ? userFullName(user) : "Unbekannt",
-                record.day ? startOfDay(record.day) : null,
-                Number(record.hours ?? 0),
-                toNumber(record.costPerHour),
-                toNumber(record.totalCost),
-              ] as Array<string | number | Date | null>;
-            });
-            let subcontractorWorkHoursTable: TableMeta | null = null;
-            if (subcontractorWorkHourRows.length) {
-              addSectionTitle(uiText("Nachunternehmer-Arbeitszeit"));
-              subcontractorWorkHoursTable = addTable(
-                [
-                  "Mitarbeiter",
-                  "Tag",
-                  uiText("Stunden"),
-                  "pro Stunde",
-                  uiText("Kosten"),
-                ],
-                subcontractorWorkHourRows,
-              );
-            }
-            if (subcontractorWorkHoursTable) {
-              for (let i = 0; i < subcontractorWorkHoursTable.rowCount; i++) {
-                const row = subcontractorWorkHoursTable.firstDataRow + i;
-
-                ws.getCell(row, 2).numFmt = EXCEL_DATE_NUM_FMT;
-                ws.getCell(row, 3).numFmt = DECIMAL_NUM_FMT;
-                ws.getCell(row, 4).numFmt = CURRENCY_NUM_FMT;
-
-                const totalCell = ws.getCell(row, 5);
-                totalCell.value = {
-                  formula: `IF(${cellRef(row, 4)}="",0,${cellRef(row, 3)}*${cellRef(row, 4)})`,
-                };
-                totalCell.numFmt = CURRENCY_NUM_FMT;
-              }
-            }
+            );
 
             const deliveryNoteRows = costs.deliveryNotes.map(
               (record) =>
@@ -1886,8 +1628,7 @@ export default function ProjectDetailCosts() {
                 }
               }
             } else {
-              addSectionTitle("Hinweis");
-              const row = cursor;
+              const row = addSectionTitle("Hinweis");
               ws.mergeCells(row, 1, row, 6);
               ws.getCell(row, 1).value = MISSING_INVOICE_NOTICE;
               ws.getCell(row, 1).font = {
@@ -1898,7 +1639,6 @@ export default function ProjectDetailCosts() {
                 wrapText: true,
                 vertical: "top",
               };
-              cursor += 2;
             }
 
             ws.columns = [
@@ -2002,50 +1742,9 @@ export default function ProjectDetailCosts() {
               columns={[
                 {
                   label: uiText("Bezeichnung"),
-                  render: async (row) => {
-                    const [product] = await client.query(
-                      "products.get",
-                      { id: row.productId },
-                      { strategy: "cache-first" },
-                    );
-                    if (!product) return "Unbekannt";
-                    return (
-                      <MyLink to={`/products/${product.id}`}>
-                        {productTitle(product)}
-                      </MyLink>
-                    );
-                  },
+                  render: (row) => productLink(row.productId),
                 },
-                {
-                  label: uiText("Menge"),
-                  render: async (row) => {
-                    const [product] = await client.query(
-                      "products.get",
-                      { id: row.productId },
-                      { strategy: "cache-first" },
-                    );
-                    if (!product) return `${formatNumber(row.quantity)} ???`;
-                    const [amount, unit] = upmatchUnit(product, row.quantity);
-                    return formatProductAmount(amount, unit);
-                  },
-                },
-                {
-                  label: uiText("Basismenge"),
-                  render: async (row) => {
-                    const [product] = await client.query(
-                      "products.get",
-                      { id: row.productId },
-                      { strategy: "cache-first" },
-                    );
-                    if (!product) return formatNumber(row.quantity);
-                    const [, unit] = upmatchUnit(product, row.quantity);
-                    return formatBaseQuantity(
-                      Number(row.quantity ?? 0),
-                      product.baseUnit ?? "",
-                      unit,
-                    );
-                  },
-                },
+                ...productQuantityColumns(client),
                 {
                   label: uiText("mittlerer EP"),
                   render: async (row) => {
@@ -2204,41 +1903,7 @@ export default function ProjectDetailCosts() {
             <MyTable
               className="th-25rem"
               rows={regularWorkHours}
-              columns={[
-                {
-                  label: uiText("Benutzer"),
-                  render: async (row) => {
-                    if (!row.userId) return "Unbekannt";
-                    const [user] = await client.query(
-                      "users.get",
-                      { id: row.userId },
-                      { strategy: "cache-first" },
-                    );
-                    if (!user) return "Unbekannt";
-                    return (
-                      <MyLink to={`/users/${user.id}`}>
-                        {userFullName(user)}
-                      </MyLink>
-                    );
-                  },
-                },
-                {
-                  label: uiText("Tag"),
-                  render: (row) => formatDate(row.day),
-                  sortKey: (row) => row.day.getTime(),
-                },
-                {
-                  label: uiText("Stunden"),
-                  render: (row) => formatNumber(row.hours),
-                  sortKey: (row) => row.hours,
-                },
-                {
-                  label: uiText("Kosten"),
-                  render: (row) =>
-                    !!row.totalCost && formatCurrency(row.totalCost),
-                  sortKey: (row) => row.totalCost,
-                },
-              ]}
+              columns={workHourColumns}
               loadMore={{}}
               autoConvertSmallViewport
             />
@@ -2255,41 +1920,7 @@ export default function ProjectDetailCosts() {
             <MyTable
               className="th-25rem"
               rows={subcontractorWorkHours}
-              columns={[
-                {
-                  label: uiText("Benutzer"),
-                  render: async (row) => {
-                    if (!row.userId) return "Unbekannt";
-                    const [user] = await client.query(
-                      "users.get",
-                      { id: row.userId },
-                      { strategy: "cache-first" },
-                    );
-                    if (!user) return "Unbekannt";
-                    return (
-                      <MyLink to={`/users/${user.id}`}>
-                        {userFullName(user)}
-                      </MyLink>
-                    );
-                  },
-                },
-                {
-                  label: uiText("Tag"),
-                  render: (row) => formatDate(row.day),
-                  sortKey: (row) => row.day.getTime(),
-                },
-                {
-                  label: uiText("Stunden"),
-                  render: (row) => formatNumber(row.hours),
-                  sortKey: (row) => row.hours,
-                },
-                {
-                  label: uiText("Kosten"),
-                  render: (row) =>
-                    !!row.totalCost && formatCurrency(row.totalCost),
-                  sortKey: (row) => row.totalCost,
-                },
-              ]}
+              columns={workHourColumns}
               loadMore={{}}
               autoConvertSmallViewport
             />

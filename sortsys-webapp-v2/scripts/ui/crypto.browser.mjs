@@ -4904,6 +4904,92 @@ test("project-cost detail indicates a pending response instead of an empty view"
   }
 });
 
+test("project-cost detail shows both labor groups with their member links and costs", async () => {
+  const { context, page } = await open();
+  try {
+    await page.evaluate(() =>
+      window.cryptoFixture.showCostDetail({ labor: true }),
+    );
+
+    for (const entry of [
+      {
+        group: /^Arbeitszeit \(/,
+        name: "Eva Beispiel",
+        user: "2",
+        cost: /100,00\s*€/,
+      },
+      {
+        group: /^Nachunternehmer-Arbeitszeit \(/,
+        name: "Nina Extern",
+        user: "3",
+        cost: /180,00\s*€/,
+      },
+    ]) {
+      await page.getByRole("button", { name: entry.group }).click();
+      const row = page.getByRole("row", { name: new RegExp(entry.name) });
+      const link = row.getByRole("link", { name: entry.name, exact: true });
+
+      await link.waitFor();
+      assert.equal(await link.getAttribute("href"), `/users/${entry.user}`);
+      await row.getByText(entry.cost).waitFor();
+    }
+  } finally {
+    await context.close();
+  }
+});
+
+test("project-cost detail exports local PDFs for the total and weekly views", async () => {
+  const { context, page, external } = await open();
+  try {
+    await page.evaluate(async () => {
+      window.projectCostPdfExports = [];
+      const createObjectURL = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = (value) => {
+        const url = createObjectURL(value);
+        if (value instanceof Blob && value.type === "application/pdf") {
+          window.projectCostPdfExports.push({ blob: value, url });
+        }
+        return url;
+      };
+
+      await window.cryptoFixture.showCostDetail({ labor: true });
+    });
+
+    const labels = ["PDF", "PDF (wochenweise)"];
+    for (const [index, label] of labels.entries()) {
+      await page.getByRole("button", { name: label, exact: true }).click();
+      const error = page.getByText(/^PDF-Export fehlgeschlagen:/);
+      try {
+        await Promise.race([
+          page.waitForFunction(
+            (count) => window.projectCostPdfExports.length === count,
+            index + 1,
+            { timeout: 30_000 },
+          ),
+          error.waitFor({ timeout: 30_000 }).then(async () => {
+            assert.fail(`${label}: ${await error.textContent()}`);
+          }),
+        ]);
+      } catch (cause) {
+        throw new Error(`Kein PDF für „${label}“ erzeugt: ${cause.message}`, {
+          cause,
+        });
+      }
+
+      const exported = await page.evaluate(async (index) => {
+        const { blob, url } = window.projectCostPdfExports[index];
+        return { url, header: await blob.slice(0, 5).text() };
+      }, index);
+      assert.match(exported.url, /^blob:/);
+      assert.equal(exported.header, "%PDF-");
+    }
+
+    assert.deepEqual(external, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("the user permission dialog edits cryptographic access for its selected member", async () => {
   const { context, page, external } = await open();
   try {

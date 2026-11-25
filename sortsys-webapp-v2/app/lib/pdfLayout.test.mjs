@@ -43,12 +43,35 @@ const {
 } = await import("./pdf.ts");
 const { buildRegieReportPdfDocument } = await import("./regieReportPdf.ts");
 const { buildTablePdfDocument } = await import("./pdfTableExport.ts");
-const { buildWeeklyProjectCostsPdfDocument } =
+const { buildWeeklyProjectCostsPdfDocument, workCostPdfSections } =
   await import("./projectCostsPdf.ts");
 const { pdfFixtures, weeklyProjectCostsFixture } =
   await import("../../scripts/pdf-fixtures.mjs");
 
 const date = new Date("2026-10-03T12:00:00Z");
+
+test("project cost PDF work rows keep the worker groups and chronological order", () => {
+  const early = new Date("2026-10-02T12:00:00Z");
+  const regular = [
+    { day: date, userId: "known", hours: 2, totalCost: 100 },
+    { day: early, userId: "hidden", hours: 1, totalCost: null },
+  ];
+  const contractor = [{ day: date, userId: null, hours: 3, totalCost: 0 }];
+  const names = new Map([["known", "Alex Beispiel"]]);
+
+  const [employees, subcontractors] = workCostPdfSections(regular, contractor, names);
+
+  expect(employees.rows.map((row) => row[1])).toEqual(["hidden", "Alex Beispiel"]);
+  expect(employees.rows[0].slice(2)).toEqual(["1", "-"]);
+  expect(employees.rows[1][3]).not.toBe("-");
+  expect(subcontractors.rows[0].slice(1)).toEqual(["Unbekannt", "3", "-"]);
+  expect(subcontractors.columns).toEqual(employees.columns);
+  expect(subcontractors.title).not.toBe(employees.title);
+  expect(regular.map(({ userId }) => userId)).toEqual(["known", "hidden"]);
+  expect(workCostPdfSections([], contractor, names)).toEqual([subcontractors]);
+  expect(workCostPdfSections([], [], names)).toEqual([]);
+});
+
 const letter = (form) => ({
   title: `Dokument ${form}`,
   reportLabel: "Brief",
