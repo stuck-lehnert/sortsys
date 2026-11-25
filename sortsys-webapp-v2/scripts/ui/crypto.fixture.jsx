@@ -177,6 +177,10 @@ window.cryptoFixture = {
     const { showLogo } = await import("./logo.fixture.jsx");
     await showLogo(root, options);
   },
+  async showOfferNumbering() {
+    const { showOfferNumbering } = await import("./offer-numbering.fixture.jsx");
+    await showOfferNumbering(root);
+  },
   async showAccountLanguage(options) {
     const { showAccountLanguage } =
       await import("./account-language.fixture.jsx");
