@@ -112,6 +112,7 @@ export type CaseEvent = {
     status: string;
     createdAt: string;
     actor: string;
+    actorId?: Id;
 };
 
 export type CaseLinks = {

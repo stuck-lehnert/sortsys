@@ -103,6 +103,9 @@ pub struct CaseEvent {
     pub status: String,
     pub created_at: DateTime<Utc>,
     pub actor: String,
+    #[ts(optional)]
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub actor_id: Option<Id>,
 }
 #[derive(Deserialize, TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

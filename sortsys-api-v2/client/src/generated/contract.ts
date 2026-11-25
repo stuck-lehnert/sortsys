@@ -30,7 +30,7 @@ export type AuthorityCertificate = { tenant: string, generation: string, recover
 
 export type AuthorityHistory = { certificate: AuthorityCertificate, transition: JsonValue | null, };
 
-export type CaseEvent = { id: Id, action: string, previousStatus: string | null, status: string, createdAt: string, actor: string, };
+export type CaseEvent = { id: Id, action: string, previousStatus: string | null, status: string, createdAt: string, actor: string, actorId?: Id, };
 
 export type CaseLinks = { standaloneOffer: boolean, parentCase: string | null, documents: Array<DocumentLink>, signature: string, };
 

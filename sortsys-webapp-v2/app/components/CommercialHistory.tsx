@@ -1,7 +1,9 @@
 import RecentlyViewed from "@carbon/icons-react/es/RecentlyViewed";
-import type { ReactNode } from "react";
+import { useEffect, type ReactNode } from "react";
 import { EditorIconButton } from "@sortsys/gaeb";
 import { Modal } from "@sortsys/react-components";
+import { useProtectedState } from "~/hooks/useProtectedState";
+import { client } from "~/lib/client";
 import {
   purposeLabel,
   statusLabel,
@@ -78,6 +80,36 @@ export function CommercialHistory({
   children?: ReactNode;
   summary?: ReactNode;
 }) {
+  const [labels, setLabels, context] = useProtectedState<{
+    events: CommercialDetail["events"];
+    names: ReadonlyMap<string, string>;
+  } | undefined>(undefined);
+
+  useEffect(() => {
+    setLabels(undefined);
+    if (!open) return;
+
+    const ids = events.flatMap(({ actor, actorId }) =>
+      !actor && actorId ? [actorId] : [],
+    );
+    if (!ids.length) return;
+
+    const controller = new AbortController();
+    const signal = AbortSignal.any([context, controller.signal]);
+    void import("~/lib/data/personnelNames")
+      .then(({ loadPersonnelNames }) => loadPersonnelNames(client, ids, signal))
+      .then((names) => {
+        if (!signal.aborted) setLabels({ events, names });
+      })
+      .catch(() => {
+        // Unavailable names must not hide readable events.
+      });
+
+    return () => controller.abort();
+  }, [context, events, open, setLabels]);
+
+  const names = labels?.events === events ? labels.names : undefined;
+
   return (
     <Modal
       open={open}
@@ -89,15 +121,19 @@ export function CommercialHistory({
       {summary}
       {open && (
         <ol className="space-y-2 text-sm">
-          {events.map((event) => (
-            <li key={event.id} className="flex flex-wrap gap-x-3">
-              <time className="text-muted">
-                {formatDate(new Date(event.createdAt), "long")}
-              </time>
-              <span>{eventLabel(event)}</span>
-              {event.actor && <span className="text-muted">{event.actor}</span>}
-            </li>
-          ))}
+          {events.map((event) => {
+            const name = event.actor || (event.actorId && names?.get(event.actorId));
+
+            return (
+              <li key={event.id} className="flex flex-wrap gap-x-3">
+                <time className="text-muted">
+                  {formatDate(new Date(event.createdAt), "long")}
+                </time>
+                <span>{eventLabel(event)}</span>
+                {name && <span className="text-muted">{name}</span>}
+              </li>
+            );
+          })}
         </ol>
       )}
       {children}

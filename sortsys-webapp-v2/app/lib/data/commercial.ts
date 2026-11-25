@@ -2817,6 +2817,9 @@ export function createProtectedCommercial(
           status: row.values.status as string,
           createdAt: row.values.created_at as string,
           actor: "",
+          actorId: row.values.created_by_user_id == null
+            ? undefined
+            : publicId(row.values.created_by_user_id),
         }))
         .sort(
           (a, b) =>
