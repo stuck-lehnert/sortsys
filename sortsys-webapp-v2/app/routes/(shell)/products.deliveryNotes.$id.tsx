@@ -9,13 +9,15 @@ import { MyHeader } from "~/components/MyHeader";
 import { AttrList } from "~/components/AttrList";
 import { Awaited } from "~/components/Awaited";
 import { MyCallout } from "~/components/MyCallout";
-import { MyLink } from "~/components/MyLink";
+import { memberLink, productLink, projectLink } from "~/lib/recordLinks";
+import { productQuantityColumns } from "~/lib/productQuantityColumns";
 import {
+  formatBaseQuantity,
   formatCurrency,
   formatDate,
   formatNumber,
+  formatProductAmount,
   productTitle,
-  userFullName,
 } from "~/lib/format";
 import { MyDivider } from "~/components/MyDivider";
 import { useTitle } from "~/hooks/useTitle";
@@ -36,18 +38,7 @@ import {
 } from "~/modals/deliveryNotes";
 import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
 import { prepareExcelExport } from "~/lib/officeExports";
-
-function formatProductAmount(amount: number, unit: string) {
-  const normalizedUnit = `${unit ?? ''}`.trim();
-  return `${formatNumber(amount)}${normalizedUnit ? ` ${normalizedUnit}` : ''}`;
-}
-
-function formatBaseQuantity(baseQuantity: number, baseUnit: string, displayUnit: string) {
-  const normalizedBaseUnit = `${baseUnit ?? ''}`.trim();
-  const normalizedDisplayUnit = `${displayUnit ?? ''}`.trim();
-  if (normalizedDisplayUnit === normalizedBaseUnit) return '-';
-  return `${formatNumber(baseQuantity)}${normalizedBaseUnit ? ` ${normalizedBaseUnit}` : ''}`;
-}
+import { workbookSections } from "~/lib/workbookSections";
 
 function quantityInUnit(product: any, baseQuantity: number, unit: string | null | undefined): [number, string] {
   if (!unit) return upmatchUnit(product, baseQuantity);
@@ -279,40 +270,9 @@ export default function DeliveryNoteDetailPage() {
       cursor += 3;
     }
 
-    const addSectionTitle = (label: string) => {
-      ws.getCell(cursor, 1).value = label;
-      ws.getCell(cursor, 1).font = { bold: true, size: 14 };
-      ws.getRow(cursor + 1).height = 4;
-      cursor += 2;
-    };
-
-    const addTable = (
-      columns: string[],
-      rows: Array<Array<string | number | Date | null>>,
-    ) => {
-      if (!rows.length) {
-        return null as null | { firstDataRow: number; rowCount: number; };
-      }
-
-      const startRow = cursor;
-      ws.addTable({
-        name: `DeliveryNote_${cursor}_${columns.length}`,
-        ref: ws.getCell(cursor, 1).address,
-        headerRow: true,
-        totalsRow: false,
-        style: { theme: 'TableStyleLight1', showRowStripes: true },
-        columns: columns.map(name => ({ name })),
-        rows,
-      });
-
-      const rowCount = rows.length;
-      cursor += rowCount + 2;
-
-      return {
-        firstDataRow: startRow + 1,
-        rowCount,
-      };
-    };
+    const { addSectionTitle, addTable } = workbookSections(ws, cursor, {
+      tablePrefix: "DeliveryNote",
+    });
 
     const productRows = currentNote.records.map(record => {
       const product = productMap.get(record.productId);
@@ -398,7 +358,10 @@ export default function DeliveryNoteDetailPage() {
       { width: 24 },
     ];
 
-    await openExcel(wb, uiText(`Lieferschein-${currentNote.autoId}.xlsx`, `Delivery note-${currentNote.autoId}.xlsx`));
+    await openExcel(wb, uiText(
+      `Lieferschein-${currentNote.autoId}.xlsx`,
+      `Delivery note-${currentNote.autoId}.xlsx`,
+    ));
   }
 
   return (
@@ -452,23 +415,7 @@ export default function DeliveryNoteDetailPage() {
       <AttrList>
         <AttrList.Attr
           name={uiText("Projekt")}
-          value={
-            <Awaited
-              promise={async () => {
-                const [project] = await client.query(
-                  "projects.get",
-                  { id: note.projectId },
-                  { strategy: "cache-first" },
-                );
-                if (!project) return "Unbekannt";
-                return (
-                  <MyLink to={`/projects/${project.id}`}>
-                    {project.title}
-                  </MyLink>
-                );
-              }}
-            />
-          }
+          value={<Awaited promise={() => projectLink(note.projectId)} />}
         />
 
         {!!note.comment && (
@@ -481,23 +428,7 @@ export default function DeliveryNoteDetailPage() {
         {!!note.createdByUserId && (
           <AttrList.Attr
             name={uiText("Erstellt von")}
-            value={
-              <Awaited
-                promise={async () => {
-                  const [user] = await client.query(
-                    "users.get",
-                    { id: note.createdByUserId! },
-                    { strategy: "cache-first" },
-                  );
-                  if (!user) return "Unbekannt";
-                  return (
-                    <MyLink to={`/users/${user.id}`}>
-                      {userFullName(user)}
-                    </MyLink>
-                  );
-                }}
-              />
-            }
+            value={<Awaited promise={() => memberLink(note.createdByUserId)} />}
           />
         )}
 
@@ -520,58 +451,11 @@ export default function DeliveryNoteDetailPage() {
             columns={[
               {
                 label: uiText("Bezeichnung"),
-                render: async (row) => {
-                  const [product] = await client.query(
-                    "products.get",
-                    { id: row.productId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!product) return "Unbekannt";
-                  return (
-                    <MyLink to={`/products/${product.id}`}>
-                      {productTitle(product)}
-                    </MyLink>
-                  );
-                },
+                render: (row) => productLink(row.productId),
               },
-              {
-                label: uiText("Menge"),
-                render: async (row) => {
-                  const [product] = await client.query(
-                    "products.get",
-                    { id: row.productId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!product) return `${formatNumber(row.quantity)} ???`;
-                  const [amount, unit] = quantityInUnit(
-                    product,
-                    row.quantity,
-                    (row as any).unit,
-                  );
-                  return formatProductAmount(amount, unit);
-                },
-              },
-              {
-                label: uiText("Basismenge"),
-                render: async (row) => {
-                  const [product] = await client.query(
-                    "products.get",
-                    { id: row.productId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!product) return formatNumber(row.quantity);
-                  const [, unit] = quantityInUnit(
-                    product,
-                    row.quantity,
-                    (row as any).unit,
-                  );
-                  return formatBaseQuantity(
-                    Number(row.quantity ?? 0),
-                    product.baseUnit ?? "",
-                    unit,
-                  );
-                },
-              },
+              ...productQuantityColumns(client, (product, row) =>
+                quantityInUnit(product, row.quantity, row.unit),
+              ),
               {
                 label: uiText("mittlerer EP"),
                 render: async (row) => {

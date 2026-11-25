@@ -4,6 +4,7 @@ import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDivider } from "~/components/MyDivider";
 import { MyForm } from "~/components/MyForm";
+import { ProductRecordFields } from "~/components/ProductRecordFields";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useCreateEntityAction } from "~/hooks/useCreateEntityAction";
@@ -16,9 +17,8 @@ import {
   scannedDeliveryRequestId,
   type DeliveryNotePrefill,
 } from "~/lib/data/deliveryScanPrefill";
-import { productTitle } from "~/lib/format";
 import { Icons } from "~/lib/icons";
-import { SmallProductTile, SmallProjectTile } from "~/lib/tiles";
+import { SmallProjectTile } from "~/lib/tiles";
 import { generateId, parseFloatCustom, upmatchUnit } from "~/lib/utils";
 import type { DeliveryNote, Product } from "~/type-helpers";
 
@@ -64,9 +64,9 @@ export function showCreateDeliveryNoteModal(
       const forceUpdate = useForceUpdate();
       const projectId = context.field("project")?.getValue()?.[0]?.id;
       const pricing = projectId ? deliveryCollection(projectId, true) : null;
-      const canSeePrices = pricing &&
+      const canSeePrices = !!pricing &&
         session.canAccess(pricing.scope, pricing.facet, "read");
-      const canWritePrices = pricing &&
+      const canWritePrices = !!pricing &&
         session.canAccess(pricing.scope, pricing.facet, "create");
 
       return (
@@ -131,85 +131,19 @@ export function showCreateDeliveryNoteModal(
           </p>
 
           {recordIds.map((id) => {
-            const prefix = "record:" + id + ":";
-            const currentProduct = () =>
-              (context.field(prefix + "product")?.getValue()?.[0] ??
-                null) as Product | null;
+            const prefix = `record:${id}:`;
 
             return (
               <Fragment key={id}>
-                <MyForm.MultiSelect
-                  name={prefix + "product"}
-                  labelText={uiText("Produkt")}
-                  focusOnMount={autoFocusFieldName === prefix + "product"}
-                  minSelectedItems={1}
-                  maxSelectedItems={1}
-                  getOptions={async ({ query }) => {
-                    const [data, error] = await client.query("products.list", {
-                      search: query,
-                    });
-                    if (error) throw error;
-
-                    return data ?? [];
-                  }}
-                  renderItem={({ item }) =>
-                    item.customId + " " + productTitle(item)
+                <ProductRecordFields
+                  prefix={prefix}
+                  focusProduct={autoFocusFieldName === `${prefix}product`}
+                  createProduct={createEntityAction.product}
+                  onProductChange={forceUpdate}
+                  onRemove={() =>
+                    setRecordIds((ids) => ids.filter((current) => current !== id))
                   }
-                  renderTile={(item) => <SmallProductTile data={item} noLink />}
-                  createAction={createEntityAction.product}
-                  onValueChange={forceUpdate}
                 />
-
-                <div className="flex gap-2 items-end">
-                  <div className="grow flex gap-2">
-                    <div className="min-w-0 basis-1/2 flex-1">
-                      <MyForm.Input
-                        required
-                        name={prefix + "amount"}
-                        labelText={uiText("Anzahl")}
-                        type="number"
-                        rules={[MyForm.Input.rules.num]}
-                      />
-                    </div>
-
-                    <div className="min-w-0 basis-1/2 flex-1">
-                      <MyForm.Select
-                        name={prefix + "unit"}
-                        labelText={uiText("Einheit")}
-                        getOptions={() => {
-                          const product = currentProduct();
-                          if (!product) return [];
-
-                          return [
-                            product.baseUnit,
-                            ...Object.keys(product.otherUnits),
-                          ].map((unit) => ({ id: unit }));
-                        }}
-                        getOptionsDeps={[currentProduct()?.id]}
-                        buildOption={({ id: unit }) => ({
-                          text: unit,
-                          value: unit,
-                        })}
-                        suffix={
-                          <MyButton
-                            kind="ghost"
-                            size="sm"
-                            className="ss-input-suffix-btn"
-                            title={uiText("Eintrag entfernen")}
-                            aria-label={uiText("Eintrag entfernen")}
-                            onClick={() =>
-                              setRecordIds((ids) =>
-                                ids.filter((currentId) => currentId !== id),
-                              )
-                            }
-                          >
-                            <Icons.Delete />
-                          </MyButton>
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
 
                 <MyForm.Input
                   name={prefix + "comment"}
@@ -265,52 +199,18 @@ export function showCreateDeliveryNoteModal(
 
             return (
               <Fragment key={id}>
-                <div className="flex gap-2 items-end">
-                  <div className="grow flex flex-col gap-2">
-                    <MyForm.Input
-                      required
-                      name={prefix + "name"}
-                      suffix={<RemoveSpecialRecord onRemove={() => setSpecialRecordIds(ids => ids.filter(current => current !== id))} />}
-                      labelText={uiText("Bezeichnung")}
-                      focusOnMount={autoFocusFieldName === prefix + "name"}
-                    />
-
-                    <div className="flex gap-2">
-                      <div className="min-w-0 basis-1/3 flex-1">
-                        <MyForm.Input
-                          required
-                          name={prefix + "amount"}
-                          labelText={uiText("Menge")}
-                          type="number"
-                          rules={[MyForm.Input.rules.num]}
-                        />
-                      </div>
-
-                      <div className="min-w-0 basis-1/3 flex-1">
-                        <MyForm.Input
-                          required
-                          name={prefix + "unit"}
-                          labelText={uiText("Einheit")}
-                        />
-                      </div>
-
-                      <div className={canSeePrices ? "min-w-0 basis-1/3 flex-1" : "hidden"}>
-                        <MyForm.Input
-                          name={prefix + "pricePerUnit"}
-                          labelText={uiText("Preis pro Einheit")}
-                          disabled={!canWritePrices}
-                          type="number"
-                          rules={[MyForm.Input.rules.num]}
-                        />
-                      </div>
-                    </div>
-
-                    <MyForm.Input
-                      name={prefix + "comment"}
-                      labelText={uiText("Positionskommentar", "Line comment")}
-                    />
-                  </div>
-                </div>
+                <DeliverySpecialRecordFields
+                  prefix={prefix}
+                  canSeePrices={canSeePrices}
+                  canWritePrices={canWritePrices}
+                  focusOnMount={autoFocusFieldName === prefix + "name"}
+                  includeComment
+                  onRemove={() =>
+                    setSpecialRecordIds((ids) =>
+                      ids.filter((current) => current !== id),
+                    )
+                  }
+                />
 
                 <NotifyLoaded
                   onLoad={() => {
@@ -551,80 +451,19 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
           </p>
 
           {recordIds.map((id) => {
-            const currentProduct = () => {
-              return (context?.field(`record:${id}:product`)?.getValue()?.[0] ??
-                null) as Product | null;
-            };
+            const prefix = `record:${id}:`;
 
             return (
               <Fragment key={id}>
-                <MyForm.MultiSelect
-                  name={`record:${id}:product`}
-                  labelText={uiText("Produkt")}
-                  focusOnMount={autoFocusFieldName === `record:${id}:product`}
-                  minSelectedItems={1}
-                  maxSelectedItems={1}
-                  getOptions={async ({ query }) => {
-                    const [data, err] = await client.query("products.list", {
-                      search: query,
-                    });
-                    if (err) throw err;
-                    return data ?? [];
-                  }}
-                  renderItem={({ item }) =>
-                    `${item.customId} ${productTitle(item)}`
+                <ProductRecordFields
+                  prefix={prefix}
+                  focusProduct={autoFocusFieldName === `${prefix}product`}
+                  createProduct={createEntityAction.product}
+                  onProductChange={forceUpdate}
+                  onRemove={() =>
+                    setRecordIds((ids) => ids.filter((current) => current !== id))
                   }
-                  renderTile={(item) => <SmallProductTile data={item} noLink />}
-                  createAction={createEntityAction.product}
-                  onValueChange={forceUpdate}
                 />
-
-                <div key={id} className="flex gap-2 items-end">
-                  <div className="grow flex gap-2">
-                    <div className="min-w-0 basis-1/2 flex-1">
-                      <MyForm.Input
-                        required
-                        name={`record:${id}:amount`}
-                        labelText={uiText("Anzahl")}
-                        type="number"
-                        rules={[MyForm.Input.rules.num]}
-                      />
-                    </div>
-
-                    <div className="min-w-0 basis-1/2 flex-1">
-                      <MyForm.Select
-                        name={`record:${id}:unit`}
-                        labelText={uiText("Einheit")}
-                        getOptions={() => {
-                          const _product = currentProduct();
-                          if (!_product) return [];
-                          return [
-                            _product.baseUnit,
-                            ...Object.keys(_product.otherUnits),
-                          ].map((e) => ({ id: e }));
-                        }}
-                        getOptionsDeps={[currentProduct()?.id]}
-                        buildOption={({ id }) => ({ text: id, value: id })}
-                        suffix={
-                          <MyButton
-                            kind="ghost"
-                            size="sm"
-                            className="ss-input-suffix-btn"
-                            title={uiText("Eintrag entfernen")}
-                            aria-label={uiText("Eintrag entfernen")}
-                            onClick={() => {
-                              setRecordIds((ids) =>
-                                ids.filter((_id) => _id !== id),
-                              );
-                            }}
-                          >
-                            <Icons.Delete />
-                          </MyButton>
-                        }
-                      />
-                    </div>
-                  </div>
-                </div>
 
                 <NotifyLoaded
                   onLoad={() => {
@@ -680,53 +519,21 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
           </p>
 
           {specialRecordIds.map((id) => {
+            const prefix = `specialRecord:${id}:`;
+
             return (
               <Fragment key={id}>
-                <div className="flex gap-2 items-end">
-                  <div className="grow flex flex-col gap-2">
-                    <div>
-                      <MyForm.Input
-                        required
-                        name={`specialRecord:${id}:name`}
-                      suffix={<RemoveSpecialRecord onRemove={() => setSpecialRecordIds(ids => ids.filter(current => current !== id))} />}
-                        labelText={uiText("Bezeichnung")}
-                        focusOnMount={
-                          autoFocusFieldName === `specialRecord:${id}:name`
-                        }
-                      />
-                    </div>
-
-                    <div className="flex gap-2">
-                      <div className="min-w-0 basis-1/3 flex-1">
-                        <MyForm.Input
-                          required
-                          name={`specialRecord:${id}:amount`}
-                          labelText={uiText("Menge")}
-                          type="number"
-                          rules={[MyForm.Input.rules.num]}
-                        />
-                      </div>
-
-                      <div className="min-w-0 basis-1/3 flex-1">
-                        <MyForm.Input
-                          required
-                          name={`specialRecord:${id}:unit`}
-                          labelText={uiText("Einheit")}
-                        />
-                      </div>
-
-                      <div className={canSeePrices ? "min-w-0 basis-1/3 flex-1" : "hidden"}>
-                        <MyForm.Input
-                          name={`specialRecord:${id}:pricePerUnit`}
-                          labelText={uiText("Preis pro Einheit")}
-                          disabled={!canWritePrices}
-                          type="number"
-                          rules={[MyForm.Input.rules.num]}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                <DeliverySpecialRecordFields
+                  prefix={prefix}
+                  canSeePrices={canSeePrices}
+                  canWritePrices={canWritePrices}
+                  focusOnMount={autoFocusFieldName === prefix + "name"}
+                  onRemove={() =>
+                    setSpecialRecordIds((ids) =>
+                      ids.filter((current) => current !== id),
+                    )
+                  }
+                />
 
                 <NotifyLoaded
                   onLoad={() => {
@@ -734,11 +541,10 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                     if (!initial) return;
 
                     context.setValues({
-                      [`specialRecord:${id}:name`]: initial.name,
-                      [`specialRecord:${id}:unit`]: initial.unit,
-                      [`specialRecord:${id}:amount`]: initial.amount,
-                      [`specialRecord:${id}:pricePerUnit`]:
-                        initial.pricePerUnit ?? "",
+                      [prefix + "name"]: initial.name,
+                      [prefix + "unit"]: initial.unit,
+                      [prefix + "amount"]: initial.amount,
+                      [prefix + "pricePerUnit"]: initial.pricePerUnit ?? "",
                     });
                   }}
                 />
@@ -962,6 +768,78 @@ export function showDeleteDeliveryNoteModal(modals: MyModalsInterface, note: Del
   });
 }
 
-function RemoveSpecialRecord({ onRemove }: { onRemove: () => void }) {
-  return <MyButton kind="ghost" size="sm" className="ss-input-suffix-btn" title={uiText("Sonderposten entfernen")} aria-label={uiText("Sonderposten entfernen")} onClick={onRemove}><Icons.Delete /></MyButton>;
+function DeliverySpecialRecordFields({
+  prefix,
+  canSeePrices,
+  canWritePrices,
+  focusOnMount,
+  includeComment = false,
+  onRemove,
+}: {
+  prefix: string;
+  canSeePrices: boolean;
+  canWritePrices: boolean;
+  focusOnMount: boolean;
+  includeComment?: boolean;
+  onRemove: () => void;
+}) {
+  const removeLabel = uiText("Sonderposten entfernen");
+
+  return (
+    <div className="flex flex-col gap-2">
+      <MyForm.Input
+        required
+        name={prefix + "name"}
+        labelText={uiText("Bezeichnung")}
+        focusOnMount={focusOnMount}
+        suffix={
+          <MyButton
+            kind="ghost"
+            size="sm"
+            className="ss-input-suffix-btn"
+            title={removeLabel}
+            aria-label={removeLabel}
+            onClick={onRemove}
+          >
+            <Icons.Delete />
+          </MyButton>
+        }
+      />
+
+      <div className="flex gap-2">
+        <div className="min-w-0 basis-1/3 flex-1">
+          <MyForm.Input
+            required
+            name={prefix + "amount"}
+            labelText={uiText("Menge")}
+            type="number"
+            rules={[MyForm.Input.rules.num]}
+          />
+        </div>
+        <div className="min-w-0 basis-1/3 flex-1">
+          <MyForm.Input
+            required
+            name={prefix + "unit"}
+            labelText={uiText("Einheit")}
+          />
+        </div>
+        <div className={canSeePrices ? "min-w-0 basis-1/3 flex-1" : "hidden"}>
+          <MyForm.Input
+            name={prefix + "pricePerUnit"}
+            labelText={uiText("Preis pro Einheit")}
+            disabled={!canWritePrices}
+            type="number"
+            rules={[MyForm.Input.rules.num]}
+          />
+        </div>
+      </div>
+
+      {includeComment && (
+        <MyForm.Input
+          name={prefix + "comment"}
+          labelText={uiText("Positionskommentar", "Line comment")}
+        />
+      )}
+    </div>
+  );
 }

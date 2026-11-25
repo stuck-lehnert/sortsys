@@ -8117,6 +8117,38 @@ test("added delivery-note products and special items focus the new field without
     await amount.evaluate((node) => node === document.activeElement),
     true,
   );
+  await dialog
+    .getByRole("textbox", { name: "Line comment", exact: true })
+    .and(dialog.locator('input[name^="specialRecord:"]'))
+    .waitFor();
+});
+
+test("editing a delivery note adds and removes special items without losing other entries", async () => {
+  api.respond("projects.get", { id: "c", title: "Fixture project" });
+  await openApplication("/fixtures/forms", "en");
+  await page.getByRole("button", { name: "Edit delivery note", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  await dialog.getByRole("button", { name: "Special items", exact: true }).click();
+
+  const names = dialog.getByRole("textbox", { name: /^Name/ });
+  const name = names.last();
+  await page.waitForFunction(
+    (node) => node === document.activeElement,
+    await name.elementHandle(),
+  );
+  await dialog.getByRole("textbox", { name: /^Unit/ }).last().waitFor();
+  await name.fill("Existing special item");
+
+  await dialog.getByRole("button", { name: "Special items", exact: true }).click();
+  assert.equal(await names.count(), 2);
+  await dialog.getByRole("button", { name: "Remove special item", exact: true }).last().click();
+
+  assert.equal(await names.count(), 1);
+  assert.equal(await names.first().inputValue(), "Existing special item");
+  assert.equal(
+    await dialog.getByRole("textbox", { name: "Line comment", exact: true }).count(),
+    0,
+  );
 });
 
 test("regie-report additions focus employees, products and special item names", async () => {
