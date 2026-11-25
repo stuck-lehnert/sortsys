@@ -114,6 +114,10 @@ await viteBuild({
         replacement: join(repository, "sortsys-gaeb/src/styles.css"),
       },
       {
+        find: /^@sortsys\/gaeb\/print$/,
+        replacement: join(repository, "sortsys-gaeb/src/core/print.ts"),
+      },
+      {
         find: /^@sortsys\/gaeb$/,
         replacement: join(repository, "sortsys-gaeb/src/index.ts"),
       },

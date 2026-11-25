@@ -6,6 +6,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./print": "./src/core/print.ts",
     "./styles.css": "./src/styles.css"
   },
   "scripts": {

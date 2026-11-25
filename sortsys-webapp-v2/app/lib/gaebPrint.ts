@@ -1,8 +1,5 @@
 import {
-  buildGaebTypst,
   gaebEmbeddedImageFiles,
-  compileTypst,
-  downloadPdf,
   createGaebXml,
   deriveGaebDocument,
   GaebDocument,
@@ -173,6 +170,9 @@ export async function renderGaebPdf(
 ) {
   const assets = await prepareTemplateAssets(context.template.assets, signal);
   try {
+    const { buildGaebTypst, compileTypst } = await import("@sortsys/gaeb/print");
+    assets.context.throwIfAborted();
+
     const sender = organizationSender(context.organization);
     const code = buildGaebTypst(xml, fileName, locale, referenceXml, {
       template: source ?? context.template.source ?? undefined,
@@ -196,17 +196,36 @@ export async function exportGaebPdf(
   xml: string,
   fileName: string,
   locale: GaebLocale,
-  referenceXml?: string,
-  documentContext: { projectTitle?: string; documentKind?: string } = {},
+  referenceXml: string | undefined,
+  {
+    projectTitle,
+    documentKind,
+    signal,
+    assertCurrent,
+  }: {
+    projectTitle?: string;
+    documentKind?: string;
+    signal: AbortSignal;
+    assertCurrent: () => void;
+  },
 ) {
-  const context = await loadPrintContext();
-  downloadPdf(
-    await renderGaebPdf(xml, fileName, locale, referenceXml, undefined, {
-      ...context,
-      ...documentContext,
-    }),
+  const [{ downloadPdf }, context] = await Promise.all([
+    import("@sortsys/gaeb/print"),
+    loadPrintContext(),
+  ]);
+  assertCurrent();
+
+  const bytes = await renderGaebPdf(
+    xml,
     fileName,
+    locale,
+    referenceXml,
+    undefined,
+    { ...context, projectTitle, documentKind },
+    signal,
   );
+  assertCurrent();
+  downloadPdf(bytes, fileName);
 }
 export function previewOffer(
   context: Awaited<ReturnType<typeof loadPrintContext>>,

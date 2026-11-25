@@ -57,6 +57,25 @@ test("a quantity writer edits and prints the actual modal while its unit price r
   }
 });
 
+test("a GAEB print waiting for its template is abandoned after an editor context reset", async () => {
+  const context = await browser.newContext({ acceptDownloads: true });
+  const page = await context.newPage();
+  const downloads = [];
+  page.on("download", (file) => downloads.push(file.suggestedFilename()));
+
+  try {
+    await page.goto(`${server.origin}/private-editors.html`);
+    await page.waitForFunction(() => window.privateEditorFixture);
+    assert.equal(
+      await page.evaluate(() => window.privateEditorFixture.gaebPrintReset()),
+      true,
+    );
+    assert.deepEqual(downloads, []);
+  } finally {
+    await context.close();
+  }
+});
+
 test("an unfinished X84 can be calculated and saved one position at a time in the actual modal", async () => {
   const context = await browser.newContext({ acceptDownloads: true });
   const page = await context.newPage();

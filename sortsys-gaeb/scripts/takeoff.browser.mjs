@@ -473,7 +473,8 @@ test(
     const page = await browser.newPage();
     await page.goto(base + "/scripts/takeoff.fixture.html");
     const result = await page.evaluate(async () => {
-      const { buildGaebTypst, compileTypst } = await import("/editor.js");
+      const { buildGaebTypst, compileTypst } = await import("/print.js");
+
       const source = buildGaebTypst(
         window.__takeoffXml,
         "m.x31",
@@ -542,8 +543,10 @@ test("measurement title and construction project remain separate through editing
   await input.press("Tab");
   await saved(page);
   const result = await page.evaluate(async () => {
-    const { GaebDocument, buildGaebTypst, validateGaebInBrowser } =
+    const { GaebDocument, validateGaebInBrowser } =
       await import("/editor.js");
+    const { buildGaebTypst } = await import("/print.js");
+
     const doc = new GaebDocument(window.__takeoffXml, "m.x31");
     const checked = await validateGaebInBrowser(doc.source, doc.identity);
     const source = buildGaebTypst(
@@ -873,12 +876,9 @@ test("measurement headings insert between approaches, remain tabbable, print wit
   await input.press("Tab");
   await saved(page);
   const result = await page.evaluate(async () => {
-    const {
-      GaebDocument,
-      validateGaebInBrowser,
-      buildGaebTypst,
-      compileTypst,
-    } = await import("/editor.js");
+    const { GaebDocument, validateGaebInBrowser } = await import("/editor.js");
+    const { buildGaebTypst, compileTypst } = await import("/print.js");
+
     const doc = new GaebDocument(window.__takeoffXml, "m.x31"),
       state = doc.takeoff(doc.items[0]);
     const typst = buildGaebTypst(
@@ -933,8 +933,9 @@ test("printed seed measurements show compact opening markers and a single readab
   await page.goto(base);
   const result = await page.evaluate(
     async ({ xml, reference }) => {
-      const { GaebDocument, buildGaebTypst, compileTypst } =
-        await import("/editor.js");
+      const { GaebDocument } = await import("/editor.js");
+      const { buildGaebTypst, compileTypst } = await import("/print.js");
+
       const doc = new GaebDocument(xml, "Aufmaß.x31");
       const source = buildGaebTypst(xml, doc.fileName, "de", reference);
       const english = buildGaebTypst(xml, doc.fileName, "en", reference);

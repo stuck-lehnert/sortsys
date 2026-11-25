@@ -729,12 +729,14 @@ export default function GaebFileModal({
       onViewPreferencesChange={view.change}
       onPrint={async (xml, reference) => {
         const { exportGaebPdf } = await import("~/lib/gaebPrint");
+        assertCurrent();
+
         await exportGaebPdf(
           xml,
           session.fileName,
           locale === "de" ? "de" : "en",
           reference,
-          { projectTitle, documentKind },
+          { projectTitle, documentKind, signal: context, assertCurrent },
         );
       }}
       toolbarActions={toolbarActions}

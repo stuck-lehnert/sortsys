@@ -141,9 +141,9 @@ test(
           GaebDocument,
           createGaebXml,
           DEFAULT_GAEB_TEMPLATE,
-          buildGaebTypst,
-          compileTypst,
         } = await import("/editor.js");
+        const { buildGaebTypst, compileTypst } = await import("/print.js");
+
         let doc = new GaebDocument(
           createGaebXml("86", "PDF print"),
           "print.x86",
@@ -5131,8 +5131,9 @@ test("document designation stays out of printed documents while the actual proje
       deriveGaebDocument,
       createInvoiceXml,
       validateGaebInBrowser,
-      buildGaebTypst,
     } = await import("/editor.js");
+    const { buildGaebTypst } = await import("/print.js");
+
     let doc = new GaebDocument(
       createGaebXml("86", "Intern nur November"),
       "order.x86",
@@ -5259,8 +5260,9 @@ test(
     await page.waitForFunction(() => window.__nativeImageDraws > 0);
     assert.equal(await page.evaluate(() => window.__longText), false);
     const result = await page.evaluate(async (xml) => {
-      const { gaebEmbeddedImageFiles, buildGaebTypst, compileTypst } =
-        await import("/editor.js");
+      const { gaebEmbeddedImageFiles } = await import("/editor.js");
+      const { buildGaebTypst, compileTypst } = await import("/print.js");
+
       const files = gaebEmbeddedImageFiles(xml),
         code = buildGaebTypst(xml, "image.x83", "de");
       const pdf = await compileTypst(code, files);

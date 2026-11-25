@@ -66,6 +66,43 @@ Object.assign(window, {
         await import("./gaeb-publication.fixture.jsx");
       await mountFinancialPublicationModal(options);
     },
+    async gaebPrintReset() {
+      const { exportGaebPdf } = await import("../../app/lib/gaebPrint");
+      const context = projectFiles.editorContext();
+      const requested = Promise.withResolvers<void>();
+      const reply = Promise.withResolvers<void>();
+
+      client.query = (async (path) => {
+        if (path === "settings.documentTemplate.get") {
+          requested.resolve();
+          await reply.promise;
+          return [{ source: null, revision: "0", assets: [] }, null];
+        }
+        if (path === "settings.organization.get") {
+          return [{ companyName: "Lehnert Musterbau GmbH" }, null];
+        }
+        throw new Error(`Unexpected print query: ${path}`);
+      }) as typeof client.query;
+
+      const print = exportGaebPdf(
+        createGaebXml("84", "Vertrauliche Fassade"),
+        "Privat.x84",
+        "de",
+        undefined,
+        { signal: context, assertCurrent: () => context.throwIfAborted() },
+      ).then(
+        () => false,
+        (error) => context.aborted && error === context.reason,
+      );
+
+      await requested.promise;
+      try {
+        await client.clearCache();
+      } finally {
+        reply.resolve();
+      }
+      return print;
+    },
     async contractAdoption() {
       iframe.remove();
       const { CommercialAdoptForm } =

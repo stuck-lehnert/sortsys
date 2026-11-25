@@ -10,6 +10,7 @@ export default defineConfig({
         editor: fileURLToPath(new URL("src/index.ts", import.meta.url)),
         ...(process.env.SORTSYS_BROWSER_FIXTURES === "1"
           ? {
+              print: fileURLToPath(new URL("src/core/print.ts", import.meta.url)),
               takeoff: fileURLToPath(
                 new URL("scripts/takeoff.fixture.html", import.meta.url),
               ),

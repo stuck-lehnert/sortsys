@@ -76,12 +76,7 @@ export {
   type GaebViewPreferences,
 } from "./core/viewPreferences";
 
-export {
-  buildGaebTypst,
-  compileTypst,
-  DEFAULT_GAEB_TEMPLATE,
-  downloadPdf,
-} from "./core/print";
+export { DEFAULT_GAEB_TEMPLATE } from "./core/printTemplate";
 
 export {
   type BillingOptions,

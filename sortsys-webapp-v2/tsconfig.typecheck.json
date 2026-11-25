@@ -6,6 +6,7 @@
       "@sortsys/zerotrust/sortsys": ["../sortsys-zerotrust/src/sortsys.ts"],
       "@sortsys/zerotrust/worker": ["../sortsys-zerotrust/src/opaqueWorker.ts"],
       "@sortsys/gaeb": ["../sortsys-gaeb/src/index.ts"],
+      "@sortsys/gaeb/print": ["../sortsys-gaeb/src/core/print.ts"],
       "~/*": ["./app/*"],
       "@sortsys/dwgviewer": ["../sortsys-dwgviewer/src/index.ts"],
       "@sortsys/dwgviewer/styles.css": ["../sortsys-dwgviewer/src/styles.css"],
