@@ -1,11 +1,4 @@
-import { TimestampEvidenceButton } from "./TimestampEvidenceButton";
-import {
-  lazy,
-  Suspense,
-  useState,
-  type ReactNode,
-  type RefObject,
-} from "react";
+import { useState, type ReactNode, type RefObject } from "react";
 import { Button, Checkbox, Loading, Modal } from "@sortsys/react-components";
 import { EditorIconButton, type compareGaebPositions } from "@sortsys/gaeb";
 import Calculator from "@carbon/icons-react/es/Calculator";
@@ -16,26 +9,24 @@ import DocumentExport from "@carbon/icons-react/es/DocumentExport";
 import DocumentSigned from "@carbon/icons-react/es/DocumentSigned";
 import DocumentTasks from "@carbon/icons-react/es/DocumentTasks";
 import Download from "@carbon/icons-react/es/Download";
-import RecentlyViewed from "@carbon/icons-react/es/RecentlyViewed";
 import Edit from "@carbon/icons-react/es/Edit";
 import Checkmark from "@carbon/icons-react/es/Checkmark";
 import Close from "@carbon/icons-react/es/Close";
 import { useCommercialDialogFrame } from "./CommercialDialogFrame";
+import { CommercialDocumentEditor } from "./CommercialDocumentEditor";
+import { CommercialHistory, CommercialHistoryActions } from "./CommercialHistory";
 import { MyCallout } from "./MyCallout";
 import { MyTable } from "./MyTable";
 import type { GaebWorkspaceHandle } from "./GaebFileModal";
 import { uiText } from "~/lib/i18n";
-import { formatDate } from "~/lib/format";
 import {
   editableDocument,
   money,
   purposeLabel,
-  statusLabel,
   type CommercialDetail,
   type CommercialDocument,
 } from "~/lib/commercial";
 
-const GaebWorkspace = lazy(() => import("./GaebFileModal"));
 type Actions = {
   startPricing: () => void;
   createAlternative: () => void;
@@ -138,6 +129,9 @@ export function CommercialOfferDialog({
   );
   const toolbar = (
     <>
+      <span className="min-w-0 break-all text-sm">
+        {uiText("Angebotsnummer", "Offer number")}: <code>{current.reference}</code>
+      </span>
       {canManage &&
         current.kind !== "alternative" &&
         (offer || inquiry) &&
@@ -319,67 +313,38 @@ export function CommercialOfferDialog({
           onClick={actions.withdraw}
         />
       )}
-      {active?.readOnly && (
-        <TimestampEvidenceButton
-          ribbon
-          entries={[
-            {
-              scope: `commercial:${current.id}`,
-              object: active.id,
-              revision: active.version.toString(),
-              title: purposeLabel(active, current.kind),
-            },
-          ]}
-        />
-      )}
-      <EditorIconButton
-        showLabel
-        icon={RecentlyViewed}
-        label={uiText("Vorgangsverlauf", "Workflow history")}
-        onClick={() => setHistoryOpen(true)}
+      <CommercialHistoryActions
+        current={current}
+        active={active}
+        onHistory={() => setHistoryOpen(true)}
       />
     </>
   );
   return (
     <>
       {active ? (
-        <Suspense
-          fallback={
-            <Loading
-              className="commercial-editor-loading"
-              active
-              description={uiText("Editor wird geöffnet …", "Opening editor …")}
-            />
+        <CommercialDocumentEditor
+          current={current}
+          active={active}
+          dialogTitle={
+            current.kind === "alternative"
+              ? uiText("Nebenangebot", "Alternative offer")
+              : current.kind === "variation"
+                ? uiText("Nachtragsangebot", "Variation offer")
+                : uiText("Angebot", "Offer")
           }
-        >
-          <GaebWorkspace
-            key={active.id}
-            caseId={current.id}
-            documentId={active.id}
-            fileName={active.fileName}
-            dialogTitle={
-              current.kind === "alternative"
-                ? uiText("Nebenangebot", "Alternative offer")
-                : current.kind === "variation"
-                  ? uiText("Nachtragsangebot", "Variation offer")
-                  : uiText("Angebot", "Offer")
-            }
-            editable={
-              editableDocument(current, active) &&
-              !(sourceStale && active.purpose === "offer")
-            }
-            workspaceRef={workspace}
-            onClose={onClose}
-            onDocumentSettled={onDocumentSettled}
-            onSaved={onSaved}
-            documentTitle={current.title}
-            projectTitle={current.projectTitle ?? undefined}
-            documentKind={current.kind}
-            onCaseChange={onCaseChange}
-            toolbarActions={toolbar}
-            workflowNotice={notice}
-          />
-        </Suspense>
+          editable={
+            editableDocument(current, active) &&
+            !(sourceStale && active.purpose === "offer")
+          }
+          workspaceRef={workspace}
+          onClose={onClose}
+          onDocumentSettled={onDocumentSettled}
+          onSaved={onSaved}
+          onCaseChange={onCaseChange}
+          toolbarActions={toolbar}
+          workflowNotice={notice}
+        />
       ) : frame ? (
         <>
           {busy ? (
@@ -492,32 +457,17 @@ export function CommercialOfferDialog({
           </p>
         )}
       </Modal>
-      <Modal
+      <CommercialHistory
         open={historyOpen}
-        passiveModal
-        modalHeading={uiText("Vorgangsverlauf", "Workflow history")}
-        onRequestClose={() => setHistoryOpen(false)}
-        closeButtonLabel={uiText("Schließen", "Close")}
+        onClose={() => setHistoryOpen(false)}
+        events={detail.events}
+        summary={
+          <p className="mb-4 text-sm">
+            {current.reference} · {current.customerName} ·{" "}
+            {money(current.netAmount, current.currency)}
+          </p>
+        }
       >
-        <p className="mb-4 text-sm">
-          {current.reference} · {current.customerName} ·{" "}
-          {money(current.netAmount, current.currency)}
-        </p>
-        <ol className="space-y-2 text-sm">
-          {detail.events.map((event) => (
-            <li key={event.id}>
-              <time>{formatDate(new Date(event.createdAt), "long")}</time> ·{" "}
-              {event.action === "created"
-                ? uiText("Angelegt", "Created")
-                : event.action === "document_created"
-                  ? uiText("Dokument angelegt", "Document created")
-                  : event.action === "project_created"
-                    ? uiText("Projekt angelegt", "Project created")
-                    : statusLabel(event.status)}{" "}
-              · {event.actor}
-            </li>
-          ))}
-        </ol>
         {earlierScopes.length > 0 && (
           <details className="mt-4">
             <summary className="cursor-pointer py-2 text-sm">
@@ -543,7 +493,7 @@ export function CommercialOfferDialog({
             </ul>
           </details>
         )}
-      </Modal>
+      </CommercialHistory>
       {children}
     </>
   );

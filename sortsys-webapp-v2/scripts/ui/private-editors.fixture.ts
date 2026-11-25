@@ -120,7 +120,7 @@ Object.assign(window, {
         ),
       );
     },
-    async commercialDownload() {
+    async commercialDownload(kind: "offer" | "subcontract" = "offer") {
       iframe.remove();
       const [
         { default: CommercialWorkspace },
@@ -145,7 +145,7 @@ Object.assign(window, {
           id: "1",
           title: "Vertrauliches Angebot",
           reference: "ANG-TEST",
-          kind: "offer",
+          kind,
           status: "draft",
           currency: "EUR",
           netAmount: "0.00",
@@ -182,7 +182,15 @@ Object.assign(window, {
             modifiedAt: stamp,
           },
         ],
-        events: [],
+        events: [
+          {
+            id: "3",
+            action: "document_created",
+            status: "draft",
+            actor: "Ada Muster",
+            createdAt: stamp,
+          },
+        ],
         invoice: null,
         canManage: true,
       };

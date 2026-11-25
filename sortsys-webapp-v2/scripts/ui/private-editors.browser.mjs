@@ -620,6 +620,54 @@ test("the actual adoption form prepares native and legacy contracts entirely in 
     await context.close();
   }
 });
+for (const kind of ["offer", "subcontract"]) {
+  test(`the ${kind} editor displays its workflow history without replacing the document`, async () => {
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    try {
+      await page.goto(`${server.origin}/private-editors.html`);
+      await page.waitForFunction(() => window.privateEditorFixture);
+      await page.evaluate(
+        (value) => window.privateEditorFixture.commercialDownload(value),
+        kind,
+      );
+
+      const ribbon = page.getByRole("button", {
+        name: "Vorgangsverlauf",
+        exact: true,
+      });
+      const canvas = page.locator("canvas").first();
+      await canvas.waitFor({ state: "visible" });
+      const canvasBeforeHistory = await canvas.elementHandle();
+
+      const number = page.getByText("Angebotsnummer:", { exact: false });
+      if (kind === "offer") {
+        assert.match(await number.textContent(), /ANG-TEST/);
+      } else {
+        assert.equal(await number.count(), 0);
+      }
+
+      await ribbon.click();
+      const history = page.getByRole("dialog", { name: "Vorgangsverlauf" });
+      await history.getByText("Dokumentstand angelegt", { exact: true }).waitFor();
+      assert.equal(
+        await history.getByText("Ada Muster", { exact: true }).count(),
+        1,
+      );
+
+      await history.getByRole("button", { name: "Schließen", exact: true }).click();
+      await history.waitFor({ state: "hidden" });
+      assert.equal(
+        await canvasBeforeHistory.evaluate((element) => element.isConnected),
+        true,
+      );
+      await ribbon.waitFor();
+    } finally {
+      await context.close();
+    }
+  });
+}
+
 test("the commercial ribbon downloads private native XML locally and blocks a late download after access reset", async () => {
   const context = await browser.newContext({ acceptDownloads: true }),
     page = await context.newPage(),

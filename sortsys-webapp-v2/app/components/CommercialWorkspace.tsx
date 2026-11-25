@@ -1,4 +1,5 @@
-import { TimestampEvidenceButton } from "./TimestampEvidenceButton";
+import { CommercialDocumentEditor } from "./CommercialDocumentEditor";
+import { CommercialHistory, CommercialHistoryActions } from "./CommercialHistory";
 import { useMyModals } from "~/hooks/useMyModals";
 import { showCommercialWorkspace } from "~/modals/commercial";
 import Document from "@carbon/icons-react/es/Document";
@@ -8,10 +9,7 @@ import Edit from "@carbon/icons-react/es/Edit";
 import Upload from "@carbon/icons-react/es/Upload";
 import Download from "@carbon/icons-react/es/Download";
 import Compare from "@carbon/icons-react/es/Compare";
-import RecentlyViewed from "@carbon/icons-react/es/RecentlyViewed";
 import {
-  lazy,
-  Suspense,
   useCallback,
   useImperativeHandle,
   useLayoutEffect,
@@ -59,14 +57,11 @@ import {
   money,
   purposeLabel,
   readGaebFile,
-  statusLabel,
   storeCommercialDocument,
   type CommercialDetail,
   type CommercialDocument,
 } from "~/lib/commercial";
-import { formatDate } from "~/lib/format";
 import { downloadBlob } from "~/lib/utils";
-const GaebWorkspace = lazy(() => import("~/components/GaebFileModal"));
 
 export type CommercialWorkspaceHandle = { requestClose: () => void };
 export default function CommercialWorkspace({
@@ -914,46 +909,11 @@ export default function CommercialWorkspace({
           </>
         )}
       </Modal>
-      <Modal
+      <CommercialHistory
         open={historyOpen}
-        passiveModal
-        modalHeading={uiText("Vorgangsverlauf", "Workflow history")}
-        onRequestClose={() => setHistoryOpen(false)}
-        closeButtonLabel={uiText("Schließen", "Close")}
-      >
-        <ol className="space-y-2 text-sm">
-          {detail.events.map((event) => (
-            <li key={event.id} className="flex flex-wrap gap-x-3">
-              <time className="text-muted">
-                {formatDate(new Date(event.createdAt), "long")}
-              </time>
-              <span>
-                {event.action === "project_created"
-                  ? uiText("Projekt angelegt", "Project created")
-                  : event.action === "existing_contract"
-                    ? uiText(
-                        "Bestandsauftrag übernommen",
-                        "Existing contract adopted",
-                      )
-                    : event.action === "created"
-                      ? uiText("Vorgang angelegt", "Workflow created")
-                      : event.action === "document_created"
-                        ? uiText(
-                            "Dokumentstand angelegt",
-                            "Document revision created",
-                          )
-                        : event.action === "confirmation_finalized"
-                          ? uiText(
-                              "Bestätigung abgeschlossen",
-                              "Confirmation finalized",
-                            )
-                          : statusLabel(event.status)}
-              </span>
-              <span className="text-muted">{event.actor}</span>
-            </li>
-          ))}
-        </ol>
-      </Modal>
+        onClose={() => setHistoryOpen(false)}
+        events={detail.events}
+      />
     </>
   );
   if (["offer", "variation", "alternative"].includes(current.kind)) {
@@ -1264,24 +1224,10 @@ export default function CommercialWorkspace({
           onClick={() => void download(active)}
         />
       )}
-      {active?.readOnly && (
-        <TimestampEvidenceButton
-          ribbon
-          entries={[
-            {
-              scope: `commercial:${current.id}`,
-              object: active.id,
-              revision: active.version.toString(),
-              title: purposeLabel(active, current.kind),
-            },
-          ]}
-        />
-      )}
-      <EditorIconButton
-        showLabel
-        icon={RecentlyViewed}
-        label={uiText("Vorgangsverlauf", "Workflow history")}
-        onClick={() => setHistoryOpen(true)}
+      <CommercialHistoryActions
+        current={current}
+        active={active}
+        onHistory={() => setHistoryOpen(true)}
       />
     </>
   );
@@ -1296,35 +1242,20 @@ export default function CommercialWorkspace({
   if (active)
     return (
       <>
-        <Suspense
-          fallback={
-            <Loading
-              className="commercial-editor-loading"
-              active
-              description={uiText("Editor wird geöffnet …", "Opening editor …")}
-            />
-          }
-        >
-          <GaebWorkspace
-            key={active.id}
-            caseId={current.id}
-            documentId={active.id}
-            fileName={active.fileName}
-            dialogTitle={purposeLabel(active, current.kind)}
-            documentTitle={current.title}
-            projectTitle={current.projectTitle ?? undefined}
-            documentKind={current.kind}
-            editable={editableDocument(current, active)}
-            workspaceRef={workspace}
-            onClose={() => {
-              if (!busy) onClose();
-            }}
-            onSaved={documentSaved}
-            onCaseChange={setDetail}
-            toolbarActions={toolbar}
-            workflowNotice={notice}
-          />
-        </Suspense>
+        <CommercialDocumentEditor
+          current={current}
+          active={active}
+          dialogTitle={purposeLabel(active, current.kind)}
+          editable={editableDocument(current, active)}
+          workspaceRef={workspace}
+          onClose={() => {
+            if (!busy) onClose();
+          }}
+          onSaved={documentSaved}
+          onCaseChange={setDetail}
+          toolbarActions={toolbar}
+          workflowNotice={notice}
+        />
         {workflowDialogs}
       </>
     );
