@@ -3,12 +3,13 @@ import { lockCryptoSession } from "../crypto/session";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
 import { row } from "./rowCodec.test.mjs";
 import { regieFixture } from "./regieReportData.test.mjs";
 import { regieCollection } from "./regieReportData";
 import { createProtectedRegieReports } from "./regieReports";
 import { projectCollection } from "./projectData";
-import { PRICE_COLLECTION, PRODUCT_COLLECTION } from "./products";
+import { PRICE_COLLECTION, PRODUCT_COLLECTION, publicId } from "./products";
 import { personnelCollection, personnelPart } from "./personnelData";
 import { createBusinessDatabase } from "./database";
 import { projectCompleteRows } from "./projection";
@@ -140,7 +141,7 @@ test("regie material edits neither read nor replace hidden hours or prices", asy
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("hour-only writers preserve material and publish protected time changes with a guard", async () => {
   const f = await fixture({ material: ["read"] });
   try {
@@ -175,7 +176,7 @@ test("hour-only writers preserve material and publish protected time changes wit
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("date and hour changes are atomic, validate the week and survive a lost acknowledgement", async () => {
   const f = await fixture();
   try {
@@ -225,7 +226,7 @@ test("date and hour changes are atomic, validate the week and survive a lost ack
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("regie creation validates encrypted references, filters dates and keeps project-relative numbering", async () => {
   const f = await fixture();
   try {
@@ -266,7 +267,7 @@ test("regie creation validates encrypted references, filters dates and keeps pro
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("material costs open only authorized price records and retain exact historic amounts", async () => {
   const f = await fixture();
   try {
@@ -278,7 +279,7 @@ test("material costs open only authorized price records and retain exact histori
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("a concurrent material change prevents publication of dependent working time", async () => {
   const f = await fixture();
   try {
@@ -303,7 +304,7 @@ test("a concurrent material change prevents publication of dependent working tim
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("a creation retry after losing both acknowledgement and readback keeps one stable report ID", async () => {
   const f = await fixture(),
@@ -354,7 +355,7 @@ test("a creation retry after losing both acknowledgement and readback keeps one 
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("regie conversion is repeatable and never places working times under the quantity key", async () => {
   const area = regieCollection("2"),
     hours = regieCollection("2", true),
@@ -401,7 +402,7 @@ test("regie conversion is repeatable and never places working times under the qu
   } finally {
     await db.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("normal business-client calls and subscriptions never send a plaintext regie procedure", async () => {
   const f = await fixture(),
     client = createBusinessClient(f.client, { productDriver: duckDriver }),
@@ -439,7 +440,7 @@ test("normal business-client calls and subscriptions never send a plaintext regi
     client.dispose();
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("deleting a regie report uses only its read/delete grant and retains hidden working times and prices", async () => {
   const f = await fixture({
@@ -476,4 +477,38 @@ test("deleting a regie report uses only its read/delete grant and retains hidden
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
+
+test("date filters and pages preserve project numbering and numeric ID order", async () => {
+  const f = await fixture();
+  const day = "2026-08-31";
+  try {
+    for (const rowId of ["31", "32"]) {
+      const report = row("regie_reports", { id: rowId, project_id: "2", day });
+      const objectId = f.area.prefix + publicId(report.values.id);
+      await f.seed(f.area, objectId, {
+        ...f.source.value,
+        report,
+        products: [],
+        specials: [],
+      });
+    }
+
+    const input = { projectId: "2", dayFrom: day, dayTo: day, limit: 1 };
+    const list = (offset) =>
+      f.store.query("regieReports.list", { ...input, offset });
+    const first = await list(0);
+    const second = await list(1);
+
+    expect(first).toHaveLength(1);
+    expect(second).toHaveLength(1);
+    expect(first[0]).toMatchObject({ id: publicId("32"), autoId: 3 });
+    expect(second[0]).toMatchObject({ id: publicId("31"), autoId: 2 });
+    expect(first[0]).toEqual(
+      await f.store.query("regieReports.get", { id: publicId("32") }),
+    );
+    expect(await list(2)).toEqual([]);
+  } finally {
+    f.store.close();
+  }
+}, fixtureTimeout(20000));

@@ -3,7 +3,7 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { existingAggregateRows } from "./aggregateRows";
 import { commitProtectedWrites, ProtectedWriteConflict } from "./atomicWrites";
-import { calendarDay } from "./calendarDays";
+import { reportPage } from "./reportPage";
 import type { DuckDriver } from "./database";
 import { historicalPriceIndex } from "./historicalPrices";
 import { personnelRequest } from "./personnelData";
@@ -105,13 +105,24 @@ type Selection = {
   hours: DataRequest<RegieHours>[];
   all: DataRequest[];
 };
+function reportOrder(
+  a: { day: string; numericId: bigint },
+  b: { day: string; numericId: bigint },
+) {
+  if (a.day !== b.day) return a.day < b.day ? -1 : 1;
+  if (a.numericId === b.numericId) return 0;
+  return a.numericId < b.numericId ? -1 : 1;
+}
+
 function reports(view: DataView, selection: Selection) {
   const values = [];
+  const hoursByScope = new Map(
+    selection.hours.map((request) => [request.area.scope, request]),
+  );
+
   for (const selected of selection.reports) {
-    const projectId = regieDomain(selected.area.domain)!.projectId,
-      hourRequest = selection.hours.find(
-        (item) => item.area.scope === selected.area.scope,
-      );
+    const projectId = regieDomain(selected.area.domain)!.projectId;
+    const hourRequest = hoursByScope.get(selected.area.scope);
     const times = new Map(
       hourRequest
         ? view
@@ -119,39 +130,46 @@ function reports(view: DataView, selection: Selection) {
             .map((document) => [document.value.reportId, document])
         : [],
     );
-    const rows = view
-      .documents(selected)
-      .filter((document) => document.value.report);
-    rows.sort(
-      (a, b) =>
-        (a.value.report!.values.day as string).localeCompare(
-          b.value.report!.values.day as string,
-        ) ||
-        (BigInt(a.value.report!.values.id as string) <
-        BigInt(b.value.report!.values.id as string)
-          ? -1
-          : 1),
-    );
-    for (const [index, document] of rows.entries()) {
-      const id = publicId(document.value.report!.values.id),
-        hour = times.get(id);
-      values.push({
-        selected,
-        document,
-        hourRequest,
-        hour,
-        projectId,
-        wire: {
-          ...wireRegie(document.value, hour?.value, index + 1),
-          revision: document.revision,
-          workHoursAvailable: !!hourRequest,
-          ...(hourRequest ? { hoursRevision: hour?.revision ?? "0" } : {}),
+    const rows = view.documents(selected).flatMap((document) => {
+      const report = document.value.report;
+      if (!report) return [];
+
+      return [
+        {
+          document,
+          id: publicId(report.values.id),
+          numericId: BigInt(report.values.id as string),
+          day: report.values.day as string,
         },
+      ];
+    });
+
+    // Number the full project before applying the list's date filter or page.
+    rows.sort(reportOrder);
+    for (const [index, row] of rows.entries()) {
+      values.push({
+        ...row,
+        projectId,
+        autoId: index + 1,
+        hour: times.get(row.id),
+        workHoursAvailable: !!hourRequest,
       });
     }
   }
   return values;
 }
+
+function wireSelectedReport(row: ReturnType<typeof reports>[number]) {
+  return {
+    ...wireRegie(row.document.value, row.hour?.value, row.autoId),
+    revision: row.document.revision,
+    workHoursAvailable: row.workHoursAvailable,
+    ...(row.workHoursAvailable
+      ? { hoursRevision: row.hour?.revision ?? "0" }
+      : {}),
+  };
+}
+
 export function createProtectedRegieReports(
   client: Client,
   signal: AbortSignal,
@@ -196,53 +214,54 @@ export function createProtectedRegieReports(
         );
       if (!listing) addressId(data.id);
       if (data.projectId != null) addressId(data.projectId);
-      const from = data.dayFrom == null ? null : calendarDay(data.dayFrom),
-        to = data.dayTo == null ? null : calendarDay(data.dayTo),
-        limit = data.limit ?? 1000,
-        offset = data.offset ?? 0;
-      if (
-        typeof limit !== "number" ||
-        !Number.isSafeInteger(limit) ||
-        limit < 1 ||
-        typeof offset !== "number" ||
-        !Number.isSafeInteger(offset) ||
-        offset < 0
-      )
-        throw new InvalidProtectedData();
+
+      const { start, end, first, last } = reportPage(
+        data.dayFrom,
+        data.dayTo,
+        data.limit,
+        data.offset,
+      );
       const selected = await selection(
         data.projectId == null ? undefined : (data.projectId as string),
       );
-      const all = await runtime.read(selected.all, (view) =>
-        reports(view, selected),
-      );
+
+      if (listing) {
+        const page = await runtime.read(selected.all, (view) =>
+          reports(view, selected)
+            .filter(
+              (item) =>
+                (start === null || item.day >= start) &&
+                (end === null || item.day <= end),
+            )
+            .sort((a, b) => reportOrder(b, a))
+            .slice(first, last)
+            .map(wireSelectedReport),
+        );
+        live();
+        return page;
+      }
+
+      const current = await runtime.read(selected.all, (view) => {
+        const report = reports(view, selected).find((item) => item.id === data.id);
+
+        if (!report) throw new InvalidProtectedData();
+        return wireSelectedReport(report);
+      });
       live();
-      if (listing)
-        return all
-          .map((item) => item.wire)
-          .filter(
-            (item) =>
-              (from === null || calendarDay(item.day) >= from) &&
-              (to === null || calendarDay(item.day) <= to),
-          )
-          .sort(
-            (a, b) =>
-              b.day.getTime() - a.day.getTime() ||
-              (addressId(a.id) > addressId(b.id) ? -1 : 1),
-          )
-          .slice(offset, offset + limit);
-      const current = all.find((item) => item.wire.id === data.id);
-      if (!current) throw new InvalidProtectedData();
-      if (path === "regieReports.get") return current.wire;
-      if (!current.wire.products.length)
-        return regieMaterialCosts(current.wire);
+      if (path === "regieReports.get") return current;
+      if (!current.products.length) return regieMaterialCosts(current);
+
       const result = await runtime.read(
         [...selected.all, priceRequest],
         (view) => {
           const report = reports(view, selected).find(
-            (item) => item.wire.id === data.id,
+            (item) => item.id === data.id,
           );
           if (!report) throw new InvalidProtectedData();
-          return regieMaterialCosts(report.wire, historicalPriceIndex(view));
+          return regieMaterialCosts(
+            wireSelectedReport(report),
+            historicalPriceIndex(view),
+          );
         },
       );
       live();
@@ -295,7 +314,7 @@ export function createProtectedRegieReports(
       const baseline = creating
         ? null
         : await runtime.read(available.all, (view) =>
-            reports(view, available).find((item) => item.wire.id === outer.id),
+            reports(view, available).find((item) => item.id === outer.id),
           );
       live();
       if (!creating && !baseline) throw new InvalidProtectedData();

@@ -32,6 +32,7 @@ import { newProductRowId, publicId } from "./products";
 import { readableAreas } from "./readableAreas";
 import { required } from "./protectedObjects";
 import { decodeBusinessRow } from "./rowCodec";
+import { reportPage } from "./reportPage";
 import { businessSchema } from "./schema";
 import { defineDataModel } from "./runtime/model";
 import { acquireDataRuntime } from "./runtime/session";
@@ -154,24 +155,56 @@ export function createProtectedDailyReports(
             : ["projectId", "day"],
         );
       if (!listing || data.projectId != null) addressId(data.projectId);
-      const from = data.from == null ? null : calendarDay(data.from),
-        to = data.to == null ? null : calendarDay(data.to),
-        day = listing ? null : calendarDay(data.day);
-      const limit = data.limit ?? 1000,
-        offset = data.offset ?? 0;
-      if (
-        typeof limit !== "number" ||
-        !Number.isSafeInteger(limit) ||
-        limit < 1 ||
-        typeof offset !== "number" ||
-        !Number.isSafeInteger(offset) ||
-        offset < 0
-      )
-        throw new InvalidProtectedData();
+
+      const { start, end, first, last } = reportPage(
+        data.from,
+        data.to,
+        data.limit,
+        data.offset,
+      );
+      const day = listing ? null : calendarDay(data.day);
       const selected = await requests(
         data.projectId == null ? undefined : (data.projectId as string),
       );
       const result = await runtime.read(selected.all, (view) => {
+        const matches = selected.reports.flatMap((item) =>
+          view.documents(item).flatMap((document) => {
+            const report = document.value.report;
+            if (!report) return [];
+
+            const date = report.values.day as string;
+            if (
+              (day && date !== day) ||
+              (start && date < start) ||
+              (end && date > end)
+            )
+              return [];
+
+            return [
+              {
+                document,
+                report,
+                date,
+                projectId: BigInt(report.values.project_id as string),
+                scope: item.area.scope,
+              },
+            ];
+          }),
+        );
+        if (!listing && matches.length !== 1) throw new InvalidProtectedData();
+
+        // Use the decoded UTC day and numeric project ID before building the
+        // response, so reports outside this page never allocate work-hour rows.
+        matches.sort((a, b) => {
+          if (a.date !== b.date) return a.date > b.date ? -1 : 1;
+
+          if (a.projectId === b.projectId) return 0;
+          return a.projectId < b.projectId ? -1 : 1;
+        });
+        const page = matches.slice(first, last);
+        if (!page.length) return [];
+
+        const costScopes = new Set(selected.costs.map(({ area }) => area.scope));
         const costs = new Map(
           selected.costs
             .flatMap((item) => view.documents(item))
@@ -187,50 +220,30 @@ export function createProtectedDailyReports(
             )
             .map((item) => [publicId(item.value.file!.values.id), item]),
         );
-        const values = selected.reports.flatMap((item) =>
-          view.documents(item).flatMap((document) => {
-            const payload = document.value,
-              report = payload.report;
-            if (
-              !report ||
-              (day && report.values.day !== day) ||
-              (from && (report.values.day as string) < from) ||
-              (to && (report.values.day as string) > to)
-            )
-              return [];
-            const cost = costs.get(publicId(report.values.id)),
-              money = selected.costs.find(
-                (cost) => cost.area.scope === item.area.scope,
-              );
-            return [
-              {
-                ...wireDailyReport(payload, cost?.value),
-                revision: document.revision,
-                ...(money ? { costRevision: cost?.revision ?? "0" } : {}),
-                photos: payload.photos.flatMap((photo) => {
-                  const file = files.get(
-                    publicId(photo.values.project_file_id),
-                  );
-                  return file &&
-                    file.value.file!.values.project_id ===
-                      report.values.project_id
-                    ? [wireFile(file.value, file.revision)]
-                    : [];
-                }),
-              },
-            ];
-          }),
-        );
-        values.sort(
-          (a, b) =>
-            b.day.getTime() - a.day.getTime() ||
-            (addressId(a.projectId) < addressId(b.projectId) ? -1 : 1),
-        );
-        if (!listing) {
-          if (values.length !== 1) throw new InvalidProtectedData();
-          return values[0]!;
-        }
-        return values.slice(offset, offset + limit);
+        const values = page.map(({ document, report, scope }) => {
+          const payload = document.value;
+          const cost = costs.get(publicId(report.values.id));
+
+          return {
+            ...wireDailyReport(payload, cost?.value),
+            revision: document.revision,
+            ...(costScopes.has(scope)
+              ? { costRevision: cost?.revision ?? "0" }
+              : {}),
+            photos: payload.photos.flatMap((photo) => {
+              const file = files.get(publicId(photo.values.project_file_id));
+              if (
+                !file ||
+                file.value.file?.values.project_id !== report.values.project_id
+              )
+                return [];
+
+              return [wireFile(file.value, file.revision)];
+            }),
+          };
+        });
+
+        return listing ? values : values[0]!;
       });
       live();
       return result;

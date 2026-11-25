@@ -11,6 +11,9 @@ import { prepareDailyReports } from "./migrateDailyReports";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
+import { publicId } from "./products";
 import { row } from "./rowCodec.test.mjs";
 import { reportFixture } from "./dailyReportData.test.mjs";
 import { createBusinessClient } from "./businessClient";
@@ -114,7 +117,7 @@ test("editing hours without cost access preserves encrypted costs and sends no b
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("hours and costs commit atomically despite a lost reply, and stale revisions never overwrite them", async () => {
   const f = await fixture();
   try {
@@ -175,7 +178,7 @@ test("hours and costs commit atomically despite a lost reply, and stale revision
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("new daily reports, day changes, deletion and date filtering use the protected runtime", async () => {
   const f = await fixture();
   try {
@@ -237,7 +240,7 @@ test("new daily reports, day changes, deletion and date filtering use the protec
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 test("a different worker gets a new line identity instead of inheriting another worker's hidden costs", async () => {
   const f = await fixture(false);
   try {
@@ -261,7 +264,7 @@ test("a different worker gets a new line identity instead of inheriting another 
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("photos use encrypted project metadata, reject foreign files and disappear after removal", async () => {
   const f = await fixture();
@@ -323,7 +326,7 @@ test("photos use encrypted project metadata, reject foreign files and disappear 
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("an independently committed head prevents partial publication of report and costs", async () => {
   const f = await fixture();
@@ -368,7 +371,7 @@ test("an independently committed head prevents partial publication of report and
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("a cost-only writer can change the rate without requiring or rewriting hour-editing rights", async () => {
   const f = await fixture(true, ["read"]);
@@ -413,7 +416,7 @@ test("a cost-only writer can change the rate without requiring or rewriting hour
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("bestands conversion is repeatable and splits costs before writing any encrypted object", async () => {
   const area = dailyCollection("2"),
@@ -460,7 +463,7 @@ test("bestands conversion is repeatable and splits costs before writing any encr
   } finally {
     await source.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("the normal business client routes daily-report reads, edits and live subscriptions through ciphertext storage", async () => {
   const f = await fixture(false),
@@ -512,7 +515,7 @@ test("the normal business client routes daily-report reads, edits and live subsc
     business.dispose();
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
 
 test("deleting a daily report needs no update or private-cost grant, including after a lost commit reply", async () => {
   const f = await fixture(false, ["read", "delete"]);
@@ -541,4 +544,50 @@ test("deleting a daily report needs no update or private-cost grant, including a
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20000));
+
+test("daily report pages filter by day and break ties by numeric project ID", async () => {
+  const areas = ["10", "2"].map((id) => dailyCollection(publicId(id)));
+  const f = await protectedTenant(areas);
+  const store = createProtectedDailyReports(
+    f.client,
+    new AbortController().signal,
+    duckDriver,
+  );
+
+  try {
+    for (const [projectId, id, day] of [
+      ["10", "18", "2026-08-25"],
+      ["2", "3", "2026-08-25"],
+      ["10", "19", "2026-08-26"],
+    ]) {
+      const area = dailyCollection(publicId(projectId));
+      await f.seed(area, area.prefix + publicId(id), {
+        format: "sortsys-daily-report-v1",
+        report: row("daily_project_reports", { id, project_id: projectId, day }),
+        hours: [],
+        photos: [],
+      });
+    }
+
+    const input = { to: "2026-08-25", limit: 1 };
+    const list = async (offset) =>
+      (await store.query("projects.dailyReports.list", { ...input, offset })).map(
+        ({ projectId }) => projectId,
+      );
+    expect(await list(0)).toEqual(["2"]);
+    expect(await list(1)).toEqual(["a"]);
+    expect(await list(2)).toEqual([]);
+
+    const callCount = f.calls.length;
+    await expect(
+      store.query("projects.dailyReports.list", { limit: 0 }),
+    ).rejects.toThrow(InvalidProtectedData);
+    await expect(
+      store.query("projects.dailyReports.list", { offset: 0.5 }),
+    ).rejects.toThrow(InvalidProtectedData);
+    expect(f.calls).toHaveLength(callCount);
+  } finally {
+    store.close();
+  }
+}, fixtureTimeout(20000));
