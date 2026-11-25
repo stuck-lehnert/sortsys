@@ -1,6 +1,10 @@
 import { currentLocaleTag, uiText, useI18n } from "~/lib/i18n";
 import type { Route } from "./+types/dashboard";
 import { Heading, Tile } from "@sortsys/react-components";
+import {
+  ActivityHistoryControls,
+  COLLAPSED_ACTIVITY_COUNT,
+} from "~/components/ActivityHistoryControls";
 import { MyHeader } from "~/components/MyHeader";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
@@ -11,11 +15,11 @@ import {
   activityTitle,
 } from "~/lib/activity";
 import type { QueryResult } from "@sortsys/v2-client";
+import { createCursorHistory } from "@sortsys/zerotrust";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { formatDate } from "~/lib/format";
 import { visitLabel } from "~/lib/visitLabels";
-import { createActivityHistory } from "~/lib/activityHistory";
 import { dailyReportDayKey } from "~/lib/tiles";
 import { useUserActions, type UserAction } from "~/lib/userActions";
 import {
@@ -49,7 +53,6 @@ type VisitHistoryItem = {
 
 type ActivityItem = QueryResult<"personalization.activity.list">[number];
 
-const COLLAPSED_ACTIVITY_COUNT = 6;
 const ACTIVITY_PAGE_SIZE = 25;
 
 type PinnedVisit = Pick<VisitHistoryItem, "path" | "title" | "visitedAt">;
@@ -238,7 +241,12 @@ export default function DashboardPage() {
   const activityId = useId();
   const activityRef = useRef<HTMLDivElement>(null);
   const activityHistory = useMemo(
-    () => createActivityHistory(activity ?? [], ACTIVITY_PAGE_SIZE),
+    () =>
+      createCursorHistory(
+        activity ?? [],
+        ACTIVITY_PAGE_SIZE,
+        (item) => `${item.resourceType}:${item.resourceId}`,
+      ),
     [activity, pinnedVisitsAccount],
   );
   const activityState = useSyncExternalStore(
@@ -721,54 +729,14 @@ export default function DashboardPage() {
             )}
           </p>
         )}
-        {!activityError &&
-          activityState.items.length > COLLAPSED_ACTIVITY_COUNT && (
-            <div
-              className={[
-                "entity-activity-actions flex flex-wrap items-center gap-2",
-                "border-t border-separator pt-3",
-              ].join(" ")}
-            >
-              {showAllActivity && !activityState.complete && (
-                <MyButton
-                  kind="secondary"
-                  size="sm"
-                  renderIcon={Icons.Plus}
-                  loading={activityState.loading}
-                  onClick={() => void loadOlderActivity()}
-                >
-                  {uiText("Ältere Aktivitäten laden", "Load older activities")}
-                </MyButton>
-              )}
-              <MyButton
-                kind="ghost"
-                size="sm"
-                renderIcon={Icons.AccordionExpanded}
-                className={
-                  showAllActivity
-                    ? "entity-activity-collapse [&_svg]:rotate-180"
-                    : undefined
-                }
-                aria-expanded={showAllActivity}
-                aria-controls={activityId}
-                onClick={toggleActivityDetails}
-              >
-                {showAllActivity
-                  ? uiText("Weniger anzeigen", "Show less")
-                  : uiText("Mehr anzeigen", "Show more")}
-              </MyButton>
-            </div>
-          )}
-        {showAllActivity && activityState.error && (
-          <div
-            className="entity-activity-error text-sm text-danger"
-            role="alert"
-          >
-            {uiText(
-              "Ältere Aktivitäten konnten nicht geladen werden.",
-              "Older activities could not be loaded.",
-            )}
-          </div>
+        {!activityError && (
+          <ActivityHistoryControls
+            history={activityState}
+            expanded={showAllActivity}
+            listId={activityId}
+            onToggle={toggleActivityDetails}
+            onLoadOlder={() => void loadOlderActivity()}
+          />
         )}
       </Tile>
     </>

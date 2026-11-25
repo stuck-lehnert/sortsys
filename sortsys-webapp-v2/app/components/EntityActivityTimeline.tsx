@@ -1,25 +1,30 @@
 import { currentLocaleTag, uiText, useI18n } from "~/lib/i18n";
 import type { QueryResult } from "@sortsys/v2-client";
+import { createCursorHistory } from "@sortsys/zerotrust";
 import {
   activityActionLabel,
   activityActorLabel,
   activityResourceLabel,
   activityTitle,
 } from "~/lib/activity";
+import {
+  ActivityHistoryControls,
+  COLLAPSED_ACTIVITY_COUNT,
+} from "~/components/ActivityHistoryControls";
 import { MyCallout } from "~/components/MyCallout";
-import { MyButton } from "~/components/MyButton";
 import { MyExpandable } from "~/components/MyExpandable";
 import { ActivityReference } from "~/components/ActivityReference";
 import { useClientStream } from "~/hooks/useClientStream";
+import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { client } from "~/lib/client";
 import { Icons, type Icon } from "~/lib/icons";
 import { dailyReportDayKey } from "~/lib/tiles";
-import { useEffect, useId, useRef, useState } from "react";
+import { useId, useMemo, useRef, useState, useSyncExternalStore } from "react";
 
 type ActivityItem = QueryResult<'personalization.activity.list'>[number];
 type ActivityResourceType = ActivityItem['resourceType'];
 
-const COLLAPSED_ACTIVITY_COUNT = 6;
+const ACTIVITY_PAGE_SIZE = 50;
 
 const RESOURCE_TABLES: Partial<Record<ActivityResourceType, string>> = {
   project: 'projects',
@@ -144,42 +149,49 @@ function ActivityTimelineRow({
   );
 }
 
-export function EntityActivityTimeline({
-  resourceType,
-  resourceId,
-  includeProjectContext,
-  limit = 50,
-}: {
+type TimelineProps = {
   resourceType: ActivityResourceType;
   resourceId: string;
   includeProjectContext?: boolean;
-  limit?: number;
-}) {
+};
+
+export function EntityActivityTimeline(props: TimelineProps) {
+  const { user, session } = useSessionInfo();
+  const { resourceType, resourceId, includeProjectContext = false } = props;
+  const scope = `${user.id}/${session.id}/${resourceType}/${resourceId}/${includeProjectContext}`;
+
+  return <ActivityTimeline key={scope} {...props} />;
+}
+
+function ActivityTimeline({
+  resourceType,
+  resourceId,
+  includeProjectContext = false,
+}: TimelineProps) {
   useI18n();
   const [showAll, setShowAll] = useState(false);
-  const [older, setOlder] = useState<ActivityItem[]>([]);
-  const [loadingOlder, setLoadingOlder] = useState(false);
-  const [historyComplete, setHistoryComplete] = useState(false);
-  const [historyError, setHistoryError] = useState<string | null>(null);
   const timelineId = useId();
   const timelineRef = useRef<HTMLDivElement>(null);
-  const historyKey = `${resourceType}:${resourceId}:${!!includeProjectContext}`;
-  const currentHistoryKey = useRef(historyKey);
-  currentHistoryKey.current = historyKey;
-  const [items, err] = useClientStream(() => client.streamQuery('personalization.activity.list', {
-    limit,
+  const query = {
+    limit: ACTIVITY_PAGE_SIZE,
     resourceType,
     resourceId,
-    includeProjectContext: !!includeProjectContext,
-  }), [resourceType, resourceId, includeProjectContext, limit]);
-
-  useEffect(() => {
-    setShowAll(false);
-    setOlder([]);
-    setHistoryComplete(false);
-    setLoadingOlder(false);
-    setHistoryError(null);
-  }, [resourceType, resourceId, includeProjectContext]);
+    includeProjectContext,
+  };
+  const [items, err] = useClientStream(
+    () => client.streamQuery("personalization.activity.list", query),
+    [resourceType, resourceId, includeProjectContext],
+  );
+  const history = useMemo(
+    () => createCursorHistory(items ?? [], ACTIVITY_PAGE_SIZE),
+    [items],
+  );
+  const activityState = useSyncExternalStore(
+    history.subscribe,
+    history.getSnapshot,
+    history.getSnapshot,
+  );
+  const allItems = activityState.items;
 
   if (err) {
     return (
@@ -189,50 +201,45 @@ export function EntityActivityTimeline({
     );
   }
 
-  const allItems = [...new Map([...(items ?? []), ...older].map(item => [item.id, item])).values()];
-  const visibleItems = showAll ? allItems : allItems.slice(0, COLLAPSED_ACTIVITY_COUNT);
-  const canLoadOlder = !historyComplete && (items?.length ?? 0) >= Math.min(limit, 50);
+  const visibleItems = showAll
+    ? allItems
+    : allItems.slice(0, COLLAPSED_ACTIVITY_COUNT);
+  const title = items
+    ? uiText(`Aktivität (${allItems.length})`, `Activity (${allItems.length})`)
+    : uiText("Aktivität", "Activity");
 
-  const toggleDetails = () => {
-    const scrollBack = showAll && (timelineRef.current?.getBoundingClientRect().top ?? 0) < 0;
-    setShowAll(value => !value);
-    if (scrollBack) requestAnimationFrame(() => timelineRef.current?.scrollIntoView({ block: 'start' }));
-  };
+  function toggleDetails() {
+    const timeline = timelineRef.current;
+    const scrollBack = showAll && timeline && timeline.getBoundingClientRect().top < 0;
 
-  const loadOlder = async () => {
-    const cursor = allItems.at(-1)?.id;
-    if (!cursor || loadingOlder) return;
-    const requestedHistory = historyKey;
-    setLoadingOlder(true);
-    setHistoryError(null);
+    setShowAll((value) => !value);
 
-    try {
-      const [page, error] = await client.query('personalization.activity.list', {
-        resourceType, resourceId, includeProjectContext: !!includeProjectContext, limit, cursor,
-      });
-      if (error) throw error;
-      if (!page) return;
-      if (currentHistoryKey.current !== requestedHistory) return;
-      setOlder(previous => [...previous, ...page]);
-      setHistoryComplete(page.length < Math.min(limit, 50));
-    } catch {
-      if (currentHistoryKey.current === requestedHistory) {
-        setHistoryError(uiText('Ältere Aktivitäten konnten nicht geladen werden.', 'Older activities could not be loaded.'));
-      }
-    } finally {
-      if (currentHistoryKey.current === requestedHistory) setLoadingOlder(false);
+    if (scrollBack) {
+      requestAnimationFrame(() => timeline.scrollIntoView({ block: "start" }));
     }
-  };
+  }
+
+  function loadOlder() {
+    return history.loadOlder(async (cursor) => {
+      const [page, error] = await client.query("personalization.activity.list", {
+        ...query,
+        cursor,
+      });
+      if (error || !page) {
+        throw error ?? new Error("Activity page is missing");
+      }
+
+      return page;
+    });
+  }
 
   return (
-    <MyExpandable
-      title={uiText(
-        `Aktivität (${allItems.length})`,
-        `Activity (${allItems.length})`,
-      )}
-      initiallyExpanded
-    >
-      {!items?.length ? (
+    <MyExpandable title={title} initiallyExpanded>
+      {!items ? (
+        <div className="light" role="status">
+          {uiText("Aktivitäten werden geladen …", "Loading activity …")}
+        </div>
+      ) : !items.length ? (
         <div className="light">{uiText("Noch keine Aktivität vorhanden.")}</div>
       ) : (
         <>
@@ -240,9 +247,7 @@ export function EntityActivityTimeline({
             id={timelineId}
             ref={timelineRef}
             role="list"
-            className={[
-              "entity-activity-timeline scroll-mt-24 divide-y divide-separator",
-            ].join(" ")}
+            className="entity-activity-timeline scroll-mt-24 divide-y divide-separator"
           >
             {visibleItems.map((item) => (
               <ActivityTimelineRow
@@ -253,51 +258,13 @@ export function EntityActivityTimeline({
               />
             ))}
           </div>
-          {allItems.length > COLLAPSED_ACTIVITY_COUNT && (
-            <div
-              className={[
-                "entity-activity-actions flex flex-wrap items-center gap-2",
-                "border-t border-separator pt-3",
-              ].join(" ")}
-            >
-              {showAll && canLoadOlder && (
-                <MyButton
-                  kind="secondary"
-                  size="sm"
-                  renderIcon={Icons.Plus}
-                  loading={loadingOlder}
-                  onClick={() => void loadOlder()}
-                >
-                  {uiText("Ältere Aktivitäten laden", "Load older activities")}
-                </MyButton>
-              )}
-              <MyButton
-                kind="ghost"
-                size="sm"
-                renderIcon={Icons.AccordionExpanded}
-                className={
-                  showAll
-                    ? "entity-activity-collapse [&_svg]:rotate-180"
-                    : undefined
-                }
-                aria-expanded={showAll}
-                aria-controls={timelineId}
-                onClick={toggleDetails}
-              >
-                {showAll
-                  ? uiText("Weniger anzeigen", "Show less")
-                  : uiText("Mehr anzeigen", "Show more")}
-              </MyButton>
-            </div>
-          )}
-          {showAll && historyError && (
-            <div
-              className="entity-activity-error text-sm text-danger"
-              role="alert"
-            >
-              {historyError}
-            </div>
-          )}
+          <ActivityHistoryControls
+            history={activityState}
+            expanded={showAll}
+            listId={timelineId}
+            onToggle={toggleDetails}
+            onLoadOlder={() => void loadOlder()}
+          />
         </>
       )}
     </MyExpandable>

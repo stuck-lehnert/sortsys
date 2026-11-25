@@ -8512,3 +8512,62 @@ test("tool transfer groups share links but only open requests can be decided", a
     assert.equal(await panel.getByRole("button", { name: /Annehmen|Ablehnen/ }).count(), 0);
   }
 });
+
+test("customer activity distinguishes loading, retries older pages and retains separate changes", async () => {
+  const title = "Fixture Customer";
+  const date = new Date("2026-10-27T08:00:00Z");
+  const activity = (number) => ({
+    id: `event-${number}`,
+    action: "updated",
+    resourceType: "customer",
+    resourceId: "b",
+    resourceTitle: title,
+    title,
+    description: `Change ${number}`,
+    entityTable: "customers",
+    changedColumns: [],
+    occurredAt: date,
+  });
+  const first = Array.from({ length: 50 }, (_, index) => activity(index + 1));
+  let olderAttempts = 0;
+  api.respond("personalization.activity.list", ({ cursor }) => {
+    if (!cursor) return first;
+
+    olderAttempts += 1;
+    if (olderAttempts === 1) throw new Error("Older page temporarily unavailable");
+
+    return [activity(50), activity(51)];
+  });
+
+  await openApplication("/customers/b?holdStream=personalization.activity.list");
+  await page.getByRole("heading", { name: title }).waitFor();
+  await page.getByText("Loading activity …", { exact: true }).waitFor();
+  assert.equal(
+    await page.getByText("No activity available yet.", { exact: true }).count(),
+    0,
+  );
+
+  await page.evaluate(() => window.__sortsysReleasePresentationStream());
+  const rows = page.locator(".entity-activity-timeline").getByRole("listitem");
+  await rows.filter({ hasText: "Change 6" }).waitFor();
+  assert.equal(await rows.count(), 6);
+  await page.getByRole("button", { name: "Show more", exact: true }).click();
+  await rows.getByText("Change 50", { exact: true }).waitFor();
+  assert.equal(await rows.count(), 50);
+
+  const loadOlder = page.getByRole("button", { name: "Load older activities" });
+  const error = page.getByText("Older activities could not be loaded.", { exact: true });
+  await loadOlder.click();
+  await error.waitFor();
+  assert.equal(await rows.count(), 50);
+
+  await loadOlder.click();
+  await rows.filter({ hasText: "Change 51" }).waitFor();
+  await error.waitFor({ state: "hidden" });
+  assert.equal(await rows.count(), 51);
+  assert.equal(await loadOlder.count(), 0);
+  const older = api.requests.filter(
+    ({ path, input }) => path === "personalization.activity.list" && input?.cursor,
+  );
+  assert.deepEqual(older.map(({ input }) => input.cursor), ["event-50", "event-50"]);
+});

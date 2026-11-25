@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { createActivityHistory } from "./activityHistory";
+import { createCursorHistory } from "@sortsys/zerotrust";
+
+function createActivityHistory(firstPage, pageSize) {
+  return createCursorHistory(
+    firstPage,
+    pageSize,
+    (entry) => `${entry.resourceType}:${entry.resourceId}`,
+  );
+}
 
 function item(id, resourceId = id, resourceType = "project") {
   return { id, resourceId, resourceType };
@@ -13,6 +21,18 @@ function deferred() {
 
   return { promise, resolve };
 }
+
+test("entity history keeps distinct events for the same resource and drops duplicate IDs", async () => {
+  const firstPage = [item("4", "a"), item("3", "a")];
+  const history = createCursorHistory(firstPage, 2);
+
+  await history.loadOlder(async (cursor) => {
+    expect(cursor).toBe("3");
+    return [item("3", "a"), item("2", "a")];
+  });
+
+  expect(history.getSnapshot().items).toEqual([...firstPage, item("2", "a")]);
+});
 
 describe("dashboard activity history", () => {
   test("keeps a stable snapshot and does not load past a short first page", async () => {
