@@ -219,13 +219,16 @@ export default function DashboardPage() {
   const [dragOverPinnedPath, setDragOverPinnedPath] = useState<string | null>(
     null,
   );
-  const [actionHistory] = useClientStream<
+  const [actionHistory, actionHistoryError] = useClientStream<
     ActionHistoryItem[] | null,
     any
   >(() => {
     return client.streamQuery("personalization.actions.list", { limit: 100 });
   }, []);
-  const [visitHistory] = useClientStream<VisitHistoryItem[] | null, any>(() => {
+  const [visitHistory, visitHistoryError] = useClientStream<
+    VisitHistoryItem[] | null,
+    any
+  >(() => {
     return client.streamQuery("personalization.visits.list", { limit: 30 });
   }, []);
   const [activity, activityError] = useClientStream<
@@ -256,6 +259,8 @@ export default function DashboardPage() {
   );
 
   const quickActions = useMemo(() => {
+    if (actionHistory === null) return [];
+
     return pickQuickActions(visibleActions, actionHistory);
   }, [visibleActions, actionHistory]);
 
@@ -263,6 +268,10 @@ export default function DashboardPage() {
     () => uniqueRecentVisits(visitHistory),
     [visitHistory, locale],
   );
+  const personalizationPending =
+    (actionHistory === null && !actionHistoryError) ||
+    (visitHistory === null && !visitHistoryError);
+
   const groupedActivity = useMemo(() => {
     const visible = showAllActivity
       ? activityState.items
@@ -503,7 +512,57 @@ export default function DashboardPage() {
         </Tile>
       )}
 
-      {actionHistory === null || visitHistory === null ? (
+      {(!!quickActions.length || !!recentVisits.length) && (
+        <div className="dashboard-personal-grid grid min-w-0 gap-4">
+          {!!quickActions.length && (
+            <Tile className="dashboard-quick-actions min-w-0 gap-1 p-2">
+              <Heading level={3} noMargin className="text-lg! leading-6!">
+                {uiText("Schnellaktionen")}
+              </Heading>
+              <div className="dashboard-action-grid flex min-w-0 flex-wrap gap-2">
+                {quickActions.map((action) => (
+                  <MyButton
+                    key={action.id}
+                    kind="tertiary"
+                    renderIcon={action.icon}
+                    className={[
+                      "dashboard-action-button h-auto min-h-11 min-w-0 max-w-full",
+                      "justify-start whitespace-normal break-words text-start",
+                    ].join(" ")}
+                    onClick={() => void runAction(action)}
+                  >
+                    {action.label}
+                  </MyButton>
+                ))}
+              </div>
+            </Tile>
+          )}
+
+          {!!recentVisits.length && (
+            <Tile className="dashboard-recent-visits min-w-0 gap-1 p-2">
+              <Heading level={3} noMargin className="text-lg! leading-6!">
+                {uiText("Zuletzt besucht")}
+              </Heading>
+              <div className="dashboard-visit-list flex min-w-0 flex-wrap gap-x-3 gap-y-1">
+                {recentVisits.map((visit) =>
+                  renderVisitRow(visit, isPinned(visit.path)),
+                )}
+              </div>
+            </Tile>
+          )}
+        </div>
+      )}
+
+      {(actionHistoryError || visitHistoryError) && (
+        <MyCallout icon={Icons.Info} color="amber">
+          {uiText(
+            "Der Dashboard-Verlauf konnte nicht vollständig geladen werden.",
+            "Some dashboard history could not be loaded.",
+          )}
+        </MyCallout>
+      )}
+
+      {personalizationPending && (
         <Tile
           className="dashboard-loading flex items-center gap-3 py-4 text-sm text-muted"
           role="status"
@@ -513,47 +572,6 @@ export default function DashboardPage() {
             {uiText("Dashboard wird geladen …", "Loading dashboard …")}
           </span>
         </Tile>
-      ) : (
-        (!!quickActions.length || !!recentVisits.length) && (
-          <div className="dashboard-personal-grid grid min-w-0 gap-4">
-            {!!quickActions.length && (
-              <Tile className="dashboard-quick-actions min-w-0 gap-1 p-2">
-                <Heading level={3} noMargin className="text-lg! leading-6!">
-                  {uiText("Schnellaktionen")}
-                </Heading>
-                <div className="dashboard-action-grid flex min-w-0 flex-wrap gap-2">
-                  {quickActions.map((action) => (
-                    <MyButton
-                      key={action.id}
-                      kind="tertiary"
-                      renderIcon={action.icon}
-                      className={[
-                        "dashboard-action-button h-auto min-h-11 min-w-0 max-w-full",
-                        "justify-start whitespace-normal break-words text-start",
-                      ].join(" ")}
-                      onClick={() => void runAction(action)}
-                    >
-                      {action.label}
-                    </MyButton>
-                  ))}
-                </div>
-              </Tile>
-            )}
-
-            {!!recentVisits.length && (
-              <Tile className="dashboard-recent-visits min-w-0 gap-1 p-2">
-                <Heading level={3} noMargin className="text-lg! leading-6!">
-                  {uiText("Zuletzt besucht")}
-                </Heading>
-                <div className="dashboard-visit-list flex min-w-0 flex-wrap gap-x-3 gap-y-1">
-                  {recentVisits.map((visit) =>
-                    renderVisitRow(visit, isPinned(visit.path)),
-                  )}
-                </div>
-              </Tile>
-            )}
-          </div>
-        )
       )}
 
       <Tile className="dashboard-activity min-w-0 space-y-4">

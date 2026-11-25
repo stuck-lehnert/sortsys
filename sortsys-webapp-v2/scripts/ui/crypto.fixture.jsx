@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Observable } from "rxjs";
+import { Observable, ReplaySubject } from "rxjs";
 import { createRoot } from "react-dom/client";
 import {
   ACTIONS,
@@ -311,7 +311,7 @@ window.cryptoFixture = {
       await import("./shared-activity.fixture.jsx");
     await showSharedActivity(root, options);
   },
-  async showDashboardHistory() {
+  async showDashboardHistory({ holdActions = false } = {}) {
     const [
       { client, dashboardPreferences },
       { MyModalsProvider },
@@ -352,16 +352,23 @@ window.cryptoFixture = {
     const app = createBusinessClient(f.client),
       controller = new AbortController(),
       access = createContentAccess(f.client, () => controller.signal);
+    const actions = holdActions ? new ReplaySubject(1) : null;
+
     Object.assign(dashboardPreferences, app.dashboard);
-    client.streamQuery = (path, input, options) =>
-      path === "personalization.activity.list" || path === "llm.status"
-        ? new Observable((subscriber) =>
-            subscriber.next([
-              path === "llm.status" ? { tenantEnabled: false } : [],
-              null,
-            ]),
-          )
-        : app.streamQuery(path, input, options);
+    client.streamQuery = (path, input, options) => {
+      if (actions && path === "personalization.actions.list") return actions;
+
+      if (path === "personalization.activity.list" || path === "llm.status") {
+        return new Observable((subscriber) =>
+          subscriber.next([
+            path === "llm.status" ? { tenantEnabled: false } : [],
+            null,
+          ]),
+        );
+      }
+
+      return app.streamQuery(path, input, options);
+    };
     const sessionClient = {
       loggedIn: () => true,
       streamQuery: () =>
@@ -409,6 +416,12 @@ window.cryptoFixture = {
     window.cryptoFixture.dashboardDiscard = (value) => {
       f.state.discardCommit = value;
     };
+    if (actions) {
+      window.cryptoFixture.failDashboardActions = () => {
+        actions.next([null, new Error("Test: action history unavailable")]);
+      };
+    }
+
     window.cryptoFixture.remountDashboard = async () => {
       root.render(<div />);
       await new Promise((resolve) => setTimeout(resolve, 0));

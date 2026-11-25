@@ -4648,6 +4648,32 @@ test("timestamp evidence for another request cannot appear under the requested t
   }
 });
 
+test("dashboard shows recent visits while actions load and keeps them on failure", async () => {
+  const { context, page } = await open();
+  try {
+    await page.evaluate(() =>
+      window.cryptoFixture.showDashboardHistory({ holdActions: true }),
+    );
+
+    const visits = page.locator(".dashboard-recent-visits");
+    const visit = visits.getByRole("link", { name: /Private Bauhalle/ });
+    const pending = page.getByText("Dashboard wird geladen …", { exact: true });
+    await visit.waitFor();
+    await pending.waitFor();
+
+    await page.evaluate(() => window.cryptoFixture.failDashboardActions());
+    await page
+      .getByText("Der Dashboard-Verlauf konnte nicht vollständig geladen werden.", {
+        exact: true,
+      })
+      .waitFor();
+    await pending.waitFor({ state: "hidden" });
+    assert.equal(await visit.isVisible(), true);
+  } finally {
+    await context.close();
+  }
+});
+
 test("dashboard pins migrate out of plaintext storage, keep keyboard order and survive a view remount through encrypted data", async () => {
   const { context, page, external } = await open();
   try {
