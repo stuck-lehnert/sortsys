@@ -165,12 +165,16 @@ fn publication_records(
     ])
 }
 
-fn preserves_numbering(envelope: &EncryptedObject) -> bool {
-    envelope.scope == "organization:invoicing"
-        && envelope.facet == Facet::Billing
-        && envelope
+pub(super) fn preserves_numbering(envelope: &EncryptedObject) -> bool {
+    match (envelope.scope.as_str(), envelope.facet) {
+        ("organization:invoicing", Facet::Billing) => envelope
             .object
-            .starts_with("organization:invoicing:billing:counter:")
+            .starts_with("organization:invoicing:billing:counter:"),
+        ("organization:offers", Facet::MasterData) => {
+            envelope.object == "organization:offers:master-data:counter:global"
+        }
+        _ => false,
+    }
 }
 
 fn preserves_issued_billing(envelope: &EncryptedObject) -> bool {
@@ -224,6 +228,26 @@ pub(in crate::zerotrust) async fn read(
 ) -> RpcResult<EncryptedObject> {
     let data = repository.ciphertext(reference).await?;
     decode_envelope(&data)
+}
+
+impl ObjectRecord {
+    pub(in crate::zerotrust) async fn read_envelope(
+        &self,
+        repository: &Repository,
+        tenant: &str,
+    ) -> RpcResult<EncryptedObject> {
+        let envelope = read(repository, &self.reference).await?;
+        if envelope.tenant != tenant
+            || envelope.object != self.object
+            || envelope.revision != self.revision
+            || envelope.is_tombstone() != self.tombstone
+            || format!("{}:{}", envelope.scope, envelope.facet.name()) != self.domain
+        {
+            return Err(invalid());
+        }
+
+        Ok(envelope)
+    }
 }
 
 pub(in crate::zerotrust) fn decode_envelope(data: &str) -> RpcResult<EncryptedObject> {
@@ -356,6 +380,9 @@ async fn apply_visibility(
     transaction: &mut Transaction,
     records: &mut [ObjectRecord],
 ) -> RpcResult<()> {
+    for index in super::super::commercial_links::hidden_objects(transaction, records).await? {
+        records[index].deleted = true;
+    }
     super::super::stock::metadata_apply_visibility(transaction, records).await?;
     super::super::delivery::metadata_apply_visibility(transaction, records).await
 }
@@ -834,6 +861,10 @@ async fn commit_batch_inner(
     let mut guarded_domains = shape.domains.clone();
     let rate_pins = super::tool_rate_sources::BookingRatePins::new(&input.objects)?;
     guarded_domains.extend(rate_pins.domains());
+    let mut writes_document = input
+        .documents
+        .as_ref()
+        .is_some_and(|heads| !heads.is_empty());
     let mut renamed_planning = BTreeSet::new();
     for packet in input
         .objects
@@ -845,6 +876,9 @@ async fn commit_batch_inner(
         renamed_planning.insert(planning);
     }
     for packet in &input.objects {
+        if !writes_document && packet.envelope.scope.starts_with("commercial:") {
+            writes_document = blob(&packet.envelope.object)?.is_some();
+        }
         if let Some(domain) = super::super::delivery::deletion_price_domain(packet)? {
             guarded_domains.insert(domain);
         }
@@ -893,12 +927,26 @@ async fn commit_batch_inner(
         }
     }
     context.transaction.prefetch_protected(retained).await?;
-    let booking_guards = input
+    let mut write_guards: Vec<_> = input
         .objects
         .iter()
-        .flat_map(super::super::resource_access::booking_write_keys)
+        .flat_map(|packet| {
+            super::super::resource_access::booking_write_keys(packet)
+                .into_iter()
+                .chain(super::super::commercial_links::publication_records(packet))
+        })
         .collect();
-    context.transaction.prefetch(booking_guards).await?;
+
+    if writes_document
+        || input
+            .objects
+            .iter()
+            .any(|packet| packet.envelope.scope.starts_with("commercial:"))
+    {
+        write_guards.push(super::super::commercial_links::retirement_fence_key());
+    }
+
+    context.transaction.prefetch(write_guards).await?;
     let checkpoints = super::super::live_checkpoints::persistence::prepare(
         &mut context,
         input.documents.as_deref().unwrap_or_default(),
@@ -1038,7 +1086,7 @@ async fn commit_batch_inner(
         {
             return Err(conflict());
         }
-        let written = save(
+        let (written, reference) = save(
             &mut context,
             area,
             packet,
@@ -1054,6 +1102,14 @@ async fn commit_batch_inner(
             &mut context.transaction,
             &context.security,
             packet,
+            written,
+        )
+        .await?;
+        super::super::commercial_links::save(
+            &mut context.transaction,
+            &context.security,
+            packet,
+            reference,
             written,
         )
         .await?;
@@ -1138,22 +1194,12 @@ async fn commit_batch_inner(
     }
     for domain in &changed_domains {
         let area = areas.get_mut(domain).ok_or_else(invalid)?;
-        area.sequence = revision(&area.sequence)?
-            .checked_add(1)
-            .ok_or_else(conflict)?
-            .to_string();
-        context
-            .transaction
-            .put(key("domains", domain), area)
-            .await?;
-        context.transaction.notify(
-            "object",
-            &serde_json::json!({
-                "domain": domain,
-                "sequence": area.content_sequence(content_number)?,
-                "staged": !visible_domains.contains(domain),
-            }),
-        )?;
+        area.advance_objects(
+            &mut context.transaction,
+            content_number,
+            !visible_domains.contains(domain),
+        )
+        .await?;
     }
     let heads = shape
         .domains
@@ -1184,7 +1230,7 @@ async fn save(
     publication: &str,
     preuploaded: bool,
     delivery_move: bool,
-) -> RpcResult<bool> {
+) -> RpcResult<(bool, String)> {
     let envelope = &input.envelope;
     envelope.verify(&context.security.signing_key)?;
     if let Some(origin) = &input.migration_origin {
@@ -1246,7 +1292,7 @@ async fn save(
     {
         return Err(forbidden());
     }
-    if let Some(blob) = blob {
+    if let Some(blob) = &blob {
         let owner = if blob.facet == "opaque" {
             "scope"
         } else {
@@ -1276,7 +1322,7 @@ async fn save(
             && record.revision == envelope.revision
             && record.reference == reference
         {
-            return Ok(false);
+            return Ok((false, reference));
         }
         if record.tombstone
             || record.domain != input.domain
@@ -1287,6 +1333,22 @@ async fn save(
     } else if envelope.revision != "1" {
         return Err(conflict());
     }
+
+    if let Some(blob) = blob {
+        super::super::commercial_links::check_document_publication(
+            &mut context.transaction,
+            blob.scope,
+            blob.id,
+        )
+        .await?;
+    } else {
+        super::super::commercial_links::check_scope_publication(
+            &mut context.transaction,
+            &envelope.scope,
+        )
+        .await?;
+    }
+
     super::super::bootstrap::check_archive_write(context, &envelope.scope, &envelope.revision)
         .await?;
     if context
@@ -1375,5 +1437,5 @@ async fn save(
     if let Some(record) = super::super::resource_access::booking_review_key(envelope) {
         context.transaction.put(record, &envelope.revision).await?;
     }
-    Ok(true)
+    Ok((true, record.reference))
 }

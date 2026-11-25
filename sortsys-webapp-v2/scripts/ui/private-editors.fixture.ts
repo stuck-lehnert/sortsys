@@ -193,6 +193,7 @@ Object.assign(window, {
         ],
         invoice: null,
         canManage: true,
+        canRetire: false,
       };
       client.loggedIn = () => true;
       client.query = (async (path) => {

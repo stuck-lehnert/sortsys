@@ -15,7 +15,7 @@ use sortsys_zerotrust::{
 use std::sync::Mutex;
 
 #[derive(Clone)]
-pub(super) struct ReadProbe {
+pub(in crate::zerotrust) struct ReadProbe {
     upstream: Arc<str>,
     client: reqwest::Client,
     reads: Arc<Mutex<Vec<Vec<RecordKey>>>>,
@@ -23,7 +23,7 @@ pub(super) struct ReadProbe {
 }
 
 impl ReadProbe {
-    pub(super) fn take_reads(&self) -> Vec<Vec<RecordKey>> {
+    pub(in crate::zerotrust) fn take_reads(&self) -> Vec<Vec<RecordKey>> {
         std::mem::take(&mut *self.reads.lock().unwrap())
     }
 
@@ -65,7 +65,9 @@ async fn forward_metadata(
     (status, response.bytes().await.unwrap()).into_response()
 }
 
-pub(super) async fn measured_store(config: &QuackConfig) -> (CipherStore, ReadProbe, ApiTask) {
+pub(in crate::zerotrust) async fn measured_store(
+    config: &QuackConfig,
+) -> (CipherStore, ReadProbe, ApiTask) {
     let probe = ReadProbe {
         upstream: config.control_url.clone(),
         client: reqwest::Client::new(),

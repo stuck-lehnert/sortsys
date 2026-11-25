@@ -81,6 +81,7 @@ struct Inspection {
     restored_document_scopes: Vec<String>,
     sealed_invoice_scopes: Vec<String>,
     unchecked_documents: u32,
+    check_commercial_relationships: bool,
 }
 
 #[derive(Clone, Deserialize, Serialize, TS)]
@@ -273,6 +274,9 @@ async fn inspect(
     } else {
         Vec::new()
     };
+    let check_commercial_relationships =
+        start && super::commercial_links::retirement_enabled(&mut context.transaction).await?;
+
     let mut documents = checks::RestoredDocuments::default();
     let pages = if let Some(pages) = input.pages {
         persistence::selected_pages(&mut context, pages).await?
@@ -291,6 +295,7 @@ async fn inspect(
         restored_document_scopes: documents.scopes,
         sealed_invoice_scopes: documents.invoices,
         unchecked_documents: documents.unchecked,
+        check_commercial_relationships,
     })
 }
 

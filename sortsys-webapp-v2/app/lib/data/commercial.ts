@@ -77,8 +77,10 @@ import {
   COMMERCIAL_FACETS,
   commercialCollection,
   commercialDomain,
+  isStandaloneOffer,
   type CommercialFacet,
 } from "./commercialAreas";
+import { mayRetireOffer } from "./commercialRetirement";
 import {
   COMMERCIAL_KINDS,
   COMMERCIAL_MUTATIONS,
@@ -2827,6 +2829,9 @@ export function createProtectedCommercial(
         events,
         invoice: wireCommercialInvoice(values),
         canManage: basis.parts.get("master-data")!.canUpdate,
+        canRetire:
+          isStandaloneOffer(current.kind, current.projectId) &&
+          mayRetireOffer(`commercial:${id}`, collections.explicitlyAllows),
       };
     },
     async mutate(path: string, input: unknown): Promise<unknown> {

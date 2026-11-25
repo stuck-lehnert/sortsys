@@ -250,6 +250,15 @@ pub(super) async fn list(
             if head.scope != input.scope || head.id != id || head.tenant != context.auth.tenant {
                 return Err(invalid());
             }
+            if !super::super::commercial_links::document_is_active(
+                &mut context.transaction,
+                &head.scope,
+                id,
+            )
+            .await?
+            {
+                continue;
+            }
             if first_publication_missing(&mut context.transaction, &head).await? {
                 documents.push(
                     open_registration(

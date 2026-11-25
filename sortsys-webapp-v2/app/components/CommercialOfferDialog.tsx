@@ -1,4 +1,4 @@
-import { useState, type ReactNode, type RefObject } from "react";
+import { useEffect, useState, type ReactNode, type RefObject } from "react";
 import { Button, Checkbox, Loading, Modal } from "@sortsys/react-components";
 import { EditorIconButton, type compareGaebPositions } from "@sortsys/gaeb";
 import Calculator from "@carbon/icons-react/es/Calculator";
@@ -12,12 +12,15 @@ import Download from "@carbon/icons-react/es/Download";
 import Edit from "@carbon/icons-react/es/Edit";
 import Checkmark from "@carbon/icons-react/es/Checkmark";
 import Close from "@carbon/icons-react/es/Close";
+import TrashCan from "@carbon/icons-react/es/TrashCan";
 import { useCommercialDialogFrame } from "./CommercialDialogFrame";
 import { CommercialDocumentEditor } from "./CommercialDocumentEditor";
 import { CommercialHistory, CommercialHistoryActions } from "./CommercialHistory";
 import { MyCallout } from "./MyCallout";
 import { MyTable } from "./MyTable";
 import type { GaebWorkspaceHandle } from "./GaebFileModal";
+import { useProtectedState } from "~/hooks/useProtectedState";
+import type { PreparedOfferRetirement } from "~/lib/data/commercialRetirement";
 import { uiText } from "~/lib/i18n";
 import {
   editableDocument,
@@ -43,6 +46,11 @@ type Actions = {
   finalizeConfirmation: () => void;
   createScope: () => void;
   download: (doc: CommercialDocument) => void;
+  retirement?: {
+    grant?: () => void;
+    prepare: () => Promise<PreparedOfferRetirement | undefined>;
+    submit: (proposal: PreparedOfferRetirement) => Promise<boolean>;
+  };
 };
 export function CommercialOfferDialog({
   detail,
@@ -81,7 +89,17 @@ export function CommercialOfferDialog({
   const frame = useCommercialDialogFrame();
   const [reviewOpen, setReviewOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const [retirement, setRetirement] = useProtectedState<PreparedOfferRetirement | undefined>(undefined);
   const current = detail.case;
+  const retirementActions = actions.retirement;
+  const canRetire = detail.canRetire && retirementActions !== undefined;
+
+  useEffect(() => {
+    if (retirement && (!canRetire || retirement.command.caseId !== current.id)) {
+      setRetirement(undefined);
+    }
+  }, [canRetire, current.id, retirement, setRetirement]);
+
   const inquiry = detail.documents
     .filter((doc) => doc.purpose === "inquiry")
     .at(-1);
@@ -318,10 +336,54 @@ export function CommercialOfferDialog({
         active={active}
         onHistory={() => setHistoryOpen(true)}
       />
+      {retirementActions && canRetire && (
+        <EditorIconButton
+          showLabel
+          icon={TrashCan}
+          label={uiText("Angebot löschen", "Delete offer")}
+          disabled={busy}
+          onClick={() => void retirementActions.prepare().then(setRetirement)}
+        />
+      )}
+      {!canRetire && retirementActions?.grant && (
+        <EditorIconButton
+          showLabel
+          icon={TrashCan}
+          label={uiText("Löschung für dieses Angebot freigeben", "Allow deletion of this offer")}
+          disabled={busy}
+          onClick={retirementActions.grant}
+        />
+      )}
     </>
   );
   return (
     <>
+      {canRetire && retirementActions && retirement?.command.caseId === current.id && (
+        <Modal
+          open
+          danger
+          modalHeading={uiText("Angebot löschen?", "Delete offer?")}
+          primaryButtonText={uiText("Angebot löschen", "Delete offer")}
+          secondaryButtonText={uiText("Abbrechen", "Cancel")}
+          primaryButtonDisabled={busy}
+          primaryButtonLoading={busy}
+          secondaryButtonDisabled={busy}
+          shouldSubmitOnEnter={false}
+          onRequestClose={() => {
+            if (!busy) setRetirement(undefined);
+          }}
+          onRequestSubmit={async () => {
+            if (await retirementActions.submit(retirement)) setRetirement(undefined);
+          }}
+        >
+          <p>{retirement.title}</p>
+          <p>{uiText(
+            "Das Angebot und seine Dokumente stehen danach nicht mehr zur Verfügung. Die Nummer bleibt belegt. Nicht gespeicherte Änderungen gehen verloren.",
+            "The offer and its documents will no longer be available. Its number remains reserved. Unsaved changes will be lost.",
+          )}</p>
+          {error && <p role="alert">{error}</p>}
+        </Modal>
+      )}
       {active ? (
         <CommercialDocumentEditor
           current={current}

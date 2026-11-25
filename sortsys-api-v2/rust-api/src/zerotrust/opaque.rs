@@ -27,6 +27,8 @@ use crate::{
 
 #[cfg(test)]
 mod store_tests;
+#[cfg(test)]
+pub(super) use store_tests::batching::measured_store;
 
 mod invited;
 mod owner;

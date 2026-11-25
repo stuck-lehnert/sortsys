@@ -31,6 +31,28 @@ impl DomainRecord {
             .ok_or_else(conflict)?;
         Ok(sequence.to_string())
     }
+
+    pub(in crate::zerotrust) async fn advance_objects(
+        &mut self,
+        transaction: &mut Transaction,
+        content_number: i64,
+        staged: bool,
+    ) -> RpcResult<()> {
+        self.sequence = revision(&self.sequence)?
+            .checked_add(1)
+            .ok_or_else(conflict)?
+            .to_string();
+
+        transaction.put(key("domains", &self.id), self).await?;
+        transaction.notify(
+            "object",
+            &serde_json::json!({
+                "domain": self.id,
+                "sequence": self.content_sequence(content_number)?,
+                "staged": staged,
+            }),
+        )
+    }
 }
 
 #[derive(Clone, Deserialize, Serialize)]

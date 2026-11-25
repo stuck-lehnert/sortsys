@@ -1,11 +1,12 @@
 //! Public dependencies that cross from the selected view to current controls.
 use super::super::{
     access::{MetadataContext, inherited_rules},
+    commercial_links,
     creation::{CreationOrigin, metadata_origins},
     crypto::{invalid, sized},
     documents::DocumentHead,
     object_shares::{RecipientAccess, verify_access},
-    objects::{conflict, invoice_case, metadata_object, metadata_read, packet_hash, registry},
+    objects::{conflict, invoice_case, metadata_object, registry},
     wire::{Action, EncryptedObject, Facet},
 };
 use crate::error::RpcResult;
@@ -77,16 +78,13 @@ async fn record(context: &mut MetadataContext, id: &str) -> RpcResult<EncryptedO
         .await?
         .filter(|record| !record.deleted)
         .ok_or_else(conflict)?;
-    let envelope = metadata_read(&context.repository, &record.reference).await?;
-    if envelope.tenant != context.auth.tenant
-        || envelope.object != id
-        || envelope.revision != record.revision
-        || envelope.is_tombstone() != record.tombstone
-        || format!("{}:{}", envelope.scope, envelope.facet.name()) != record.domain
-    {
+    if record.object != id {
         return Err(invalid());
     }
-    Ok(envelope)
+
+    record
+        .read_envelope(&context.repository, &context.auth.tenant)
+        .await
 }
 
 async fn signing_key(context: &mut MetadataContext, generation: &str) -> RpcResult<[u8; 32]> {
@@ -206,6 +204,7 @@ async fn responsible_bookings(context: &mut MetadataContext) -> RpcResult<()> {
 
 async fn closed_documents(
     context: &mut MetadataContext,
+    retirement_enabled: bool,
 ) -> RpcResult<BTreeMap<String, CaseDependencies>> {
     let mut restored = BTreeMap::<String, CaseDependencies>::new();
     let mut after = None;
@@ -214,6 +213,20 @@ async fn closed_documents(
             .transaction
             .scan::<DocumentHead>("documents", after)
             .await?;
+
+        if retirement_enabled {
+            let mut documents = Vec::with_capacity(page.records.len());
+            for row in &page.records {
+                let head = row.value.as_ref().ok_or_else(invalid)?;
+                if head.id != row.record.key || head.tenant != context.auth.tenant {
+                    return Err(invalid());
+                }
+                documents.push((head.scope.as_str(), head.id.as_str()));
+            }
+            commercial_links::check_restored_documents(&mut context.transaction, &documents)
+                .await?;
+        }
+
         for row in page.records {
             let head = row.value.ok_or_else(invalid)?;
             if !head.locked {
@@ -254,7 +267,7 @@ async fn closed_documents(
                     || !part.keys.iter().any(|key| {
                         key.facet == envelope.facet && key.generation == envelope.generation
                     })
-                    || packet_hash(envelope.frame()?, &envelope.signature)? != part.hash
+                    || envelope.packet_hash()? != part.hash
                 {
                     return Err(conflict());
                 }
@@ -270,7 +283,12 @@ async fn closed_documents(
 pub(super) async fn dependencies(
     context: &mut MetadataContext,
 ) -> RpcResult<BTreeMap<String, CaseDependencies>> {
+    let retirement_enabled = commercial_links::retirement_enabled(&mut context.transaction).await?;
+    if retirement_enabled {
+        commercial_links::verify_restored_locations(&mut context.transaction).await?;
+    }
+
     assignments(context).await?;
     responsible_bookings(context).await?;
-    closed_documents(context).await
+    closed_documents(context, retirement_enabled).await
 }

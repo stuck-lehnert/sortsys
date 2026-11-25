@@ -75,15 +75,20 @@ async fn inventory_page(
     Ok((context, domains, page.after))
 }
 
-/// Content revisions deliberately do not enter this identity. An autosave may
+struct SnapshotVersion {
+    identity: String,
+    content_epoch: String,
+}
+
+/// Individual object revisions do not enter this identity. An autosave may
 /// change an area's sequence while its public access inventory stays unchanged.
 /// Registration, rotation and grants that change the rotation state advance
-/// the root's catalogue version.
+/// the root's catalogue version. Activating restored content changes the epoch.
 async fn snapshot(
     context: &mut MetadataContext,
     include_domains: bool,
     selected: Option<&[String]>,
-) -> RpcResult<String> {
+) -> RpcResult<SnapshotVersion> {
     let root =
         super::super::setup::metadata_root(&mut context.transaction, &context.auth.tenant).await?;
     let mut roles = context.auth.roles.clone();
@@ -98,10 +103,9 @@ async fn snapshot(
             ))
             .await?
     };
-    let content = context
-        .transaction
-        .content_epoch()
-        .await?
+    let content_head = context.transaction.content_epoch().await?;
+    let content = content_head
+        .as_ref()
         .map(|head| head.fingerprint())
         .transpose()?;
     let identity = serde_json::to_string(&(
@@ -120,7 +124,10 @@ async fn snapshot(
         selected,
     ))
     .map_err(|_| invalid())?;
-    Ok(crate::control::fingerprint(&identity))
+    Ok(SnapshotVersion {
+        identity: crate::control::fingerprint(&identity),
+        content_epoch: content_head.map_or_else(|| "0".into(), |head| head.number),
+    })
 }
 
 /// Bind commands that depend on a complete inventory, including areas created
@@ -130,7 +137,7 @@ pub(in crate::zerotrust) async fn check_snapshot(
     expected: &str,
 ) -> RpcResult<()> {
     sized::<32>(expected)?;
-    if snapshot(context, true, None).await? != expected {
+    if snapshot(context, true, None).await?.identity != expected {
         return Err(conflict());
     }
     Ok(())
@@ -144,6 +151,7 @@ pub(super) async fn first(
     let pages = input.pages.take();
     let selected = input.selected_domains()?;
     let include_domains = input.include_domains.unwrap_or(true);
+    let include_content_epoch = input.include_content_epoch.unwrap_or(false);
     let requested_page_domains = if let Some(pages) = &pages {
         let fresh_selection = selected.is_some() && input.known.is_none();
         let known_inventory = selected.is_none() && input.known.is_some();
@@ -165,7 +173,7 @@ pub(super) async fn first(
         let mut context =
             metadata_context_for_domains(service, request, Some(&requested_page_domains)).await?;
         let snapshot = snapshot(&mut context, include_domains, selected).await?;
-        if known == &snapshot {
+        if known == &snapshot.identity {
             let pages = match pages {
                 Some(pages) => Some(persistence::selected_pages(&mut context, pages).await?),
                 None => None,
@@ -179,7 +187,8 @@ pub(super) async fn first(
                 policy: context.security.policy,
                 origins: Vec::new(),
                 domains: Vec::new(),
-                snapshot,
+                snapshot: snapshot.identity,
+                content_epoch: include_content_epoch.then_some(snapshot.content_epoch),
                 after: None,
                 unchanged: true,
                 pages,
@@ -225,7 +234,8 @@ pub(super) async fn first(
         policy: context.security.policy,
         origins: context.security.origins,
         domains,
-        snapshot,
+        snapshot: snapshot.identity,
+        content_epoch: include_content_epoch.then_some(snapshot.content_epoch),
         after,
         unchanged: false,
         pages,
@@ -254,7 +264,9 @@ pub(super) async fn next(
     identifier(&input.after)?;
     let (mut context, domains, after) =
         inventory_page(service, request, Some(input.after), input.include_domains).await?;
-    let snapshot = snapshot(&mut context, input.include_domains, None).await?;
+    let snapshot = snapshot(&mut context, input.include_domains, None)
+        .await?
+        .identity;
     if snapshot != input.snapshot {
         return Err(crate::control::conflict());
     }

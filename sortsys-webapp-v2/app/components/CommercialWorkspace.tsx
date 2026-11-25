@@ -45,6 +45,12 @@ import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useProtectedState } from "~/hooks/useProtectedState";
 import { client, gaebDocuments } from "~/lib/client";
 import { invoiceActionAccess } from "~/lib/crypto/invoiceAccess";
+import { isStandaloneOffer } from "~/lib/data/commercialAreas";
+import {
+  prepareOfferRetirement,
+  setOwnOfferRetirement,
+  submitOfferRetirement,
+} from "~/lib/data/commercialRetirement";
 import { newProductRowId, publicId } from "~/lib/data/products";
 import { uiText } from "~/lib/i18n";
 import {
@@ -250,21 +256,29 @@ export default function CommercialWorkspace({
       active = false;
     };
   }, [refresh]);
-  const run = async (
-    action: () => Promise<void>,
-    { refreshCase = true }: { refreshCase?: boolean } = {},
-  ) => {
+  const run = async <T,>(
+    action: () => Promise<T>,
+    { refreshCase = true, saveDocument = true }: {
+      refreshCase?: boolean;
+      saveDocument?: boolean;
+    } = {},
+  ): Promise<T | undefined> => {
     if (busy) return;
+
     setBusy(true);
     setError("");
     try {
-      if (workspace.current && !(await workspace.current.save()))
+      if (saveDocument && workspace.current && !(await workspace.current.save())) {
         throw new Error("save-failed");
-      await action();
+      }
+
+      const result = await action();
       if (refreshCase) {
         await client.invalidate("commercial.cases.get");
         await refresh();
       }
+
+      return result;
     } catch (error) {
       setError(commercialError(error));
     } finally {
@@ -938,6 +952,32 @@ export default function CommercialWorkspace({
           onReviewed: setReviewed,
         }}
         actions={{
+          retirement: isStandaloneOffer(current.kind, current.projectId)
+            ? {
+                grant: session.isAdmin()
+                  ? () => void run(
+                      () => setOwnOfferRetirement(client, current.id, true, context),
+                      { saveDocument: false },
+                    )
+                  : undefined,
+                prepare: () => run(
+                  () => prepareOfferRetirement(client, current.id, context),
+                  { refreshCase: false, saveDocument: false },
+                ),
+                submit: async (proposal) => {
+                  if (proposal.command.caseId !== current.id) return false;
+
+                  const removed = await run(async () => {
+                    await submitOfferRetirement(client, proposal);
+                    await client.invalidate("commercial.cases.get");
+                    onClose();
+                    return true;
+                  }, { refreshCase: false, saveDocument: false });
+
+                  return removed === true;
+                },
+              }
+            : undefined,
           startPricing: () => void deriveOffer(),
           createAlternative: () =>
             void run(async () => {

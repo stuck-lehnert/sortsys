@@ -114,6 +114,13 @@ export type CaseEvent = {
     actor: string;
 };
 
+export type CaseLinks = {
+    standaloneOffer: boolean;
+    parentCase: string | null;
+    documents: Array<DocumentLink>;
+    signature: string;
+};
+
 export type CatalogAction = "read" | "write";
 
 export type Change = {
@@ -193,6 +200,8 @@ export type CommercialCase = {
     createdAt: string;
     modifiedAt: string;
 };
+
+export type CommercialLinks = CaseLinks | FinancialLink | ProjectRegisterLinks;
 
 export type Completion = {
     tenant: string;
@@ -340,6 +349,11 @@ export type DocumentHead = {
     signature: string;
 };
 
+export type DocumentLink = {
+    id: string;
+    source: string | null;
+};
+
 export type DocumentPart = {
     facet: string;
     object: string;
@@ -440,6 +454,11 @@ export type ExistingRecoveryAccount = {
 };
 
 export type Facet = "scope" | "contract-quantities" | "measurement" | "offer-prices" | "calculation" | "procurement" | "billing" | "master-data" | "personnel" | "attachment";
+
+export type FinancialLink = {
+    financialCase: string | null;
+    signature: string;
+};
 
 export type HistoryOrigin = {
     source: string;
@@ -755,6 +774,11 @@ export type PriorInvoice = {
     vatRate: string;
 };
 
+export type ProjectRegisterLinks = {
+    projectCases: Array<string>;
+    signature: string;
+};
+
 export type ProposalDecision = "accept" | "decline" | "requestRevision";
 
 export type ProposalExecutionResult = {
@@ -840,6 +864,13 @@ export type RegistrationResponse = {
     attestationObject: string;
 };
 
+export type RelationshipProof = {
+    domain: string;
+    object: string;
+    reference: string;
+    links: CommercialLinks;
+};
+
 export type RelyingParty = {
     name: string;
     id: string;
@@ -898,6 +929,7 @@ export type SaveInput = {
     messageId: string;
     envelope: EncryptedObject<Facet>;
     references?: StockReferences;
+    commercialLinks?: CommercialLinks;
     migrationOrigin?: MigrationOrigin;
     resourceAccess?: ResourceAccessState;
     recipientKey?: RecipientKey;
@@ -1418,6 +1450,7 @@ export type QueryInputs = {
         domain?: string;
         domains?: Array<string>;
         includeDomains?: boolean;
+        includeContentEpoch?: boolean;
         pages?: ListBatchInput;
     };
     "zerotrust.content.inspect": {
@@ -1791,6 +1824,7 @@ export type QueryOutputs = {
         documents: Array<Document>;
         events: Array<CaseEvent>;
         canManage: boolean;
+        canRetire: boolean;
         invoice: InvoiceDetails | null;
     };
     "commercial.cases.headers": Array<{
@@ -2937,6 +2971,7 @@ export type QueryOutputs = {
         origins: Array<CreationOrigin>;
         domains: Array<DomainInfo>;
         snapshot: string;
+        contentEpoch?: string;
         after: string | null;
         unchanged: boolean;
         pages?: Array<ObjectPage>;
@@ -2948,6 +2983,7 @@ export type QueryOutputs = {
         restoredDocumentScopes: Array<string>;
         sealedInvoiceScopes: Array<string>;
         uncheckedDocuments: number;
+        checkCommercialRelationships: boolean;
     };
     "zerotrust.content.snapshots": {
         rows: Array<TenantSnapshot>;
@@ -4516,6 +4552,20 @@ export type MutationInputs = {
         grants: Array<KeyGrant>;
         domains: Array<DomainDefinition>;
     };
+    "zerotrust.commercial.removeOffer": {
+        tenant: string;
+        author: string;
+        authorityGeneration: string;
+        policyVersion: string;
+        contentEpoch: string;
+        caseId: string;
+        expectedReference: string;
+        signature: string;
+    };
+    "zerotrust.commercial.reviewRelationships": {
+        proofs: Array<RelationshipProof>;
+        prepared?: PreparedView;
+    };
     "zerotrust.content.activate": {
         operation: string;
         approval: ContentEpoch;
@@ -4688,6 +4738,7 @@ export type MutationInputs = {
         messageId: string;
         envelope: EncryptedObject<Facet>;
         references?: StockReferences;
+        commercialLinks?: CommercialLinks;
         migrationOrigin?: MigrationOrigin;
         resourceAccess?: ResourceAccessState;
         recipientKey?: RecipientKey;
@@ -5432,6 +5483,12 @@ export type MutationOutputs = {
         success: true;
     };
     "zerotrust.access.publish": {
+        success: true;
+    };
+    "zerotrust.commercial.removeOffer": {
+        success: true;
+    };
+    "zerotrust.commercial.reviewRelationships": {
         success: true;
     };
     "zerotrust.content.activate": {

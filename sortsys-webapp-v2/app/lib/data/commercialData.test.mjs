@@ -1,6 +1,9 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
+import { areaKey, bytes, encryptObject, frame, verify } from "@sortsys/zerotrust/sortsys";
 import { row } from "./rowCodec.test.mjs";
 import { COMMERCIAL_FACETS } from "./commercialAreas";
+import { prepareOfferRetirement } from "./commercialRetirement";
+import * as collections from "./protectedObjects";
 import { commercialAmountFacet, commercialCents, commercialFacetPayload, commercialMoney, joinCommercialFacets, splitCommercialRows, wireCommercialCase, wireCommercialInvoice } from "./commercialData";
 import {
   checkConfirmationSources,
@@ -14,6 +17,92 @@ function source(kind = "offer") {
 }
 function clone(parts) { return new Map([...parts].map(([facet, value]) => [facet, structuredClone(value)])); }
 const sorted = rows => rows.slice().sort((a, b) => a.table.localeCompare(b.table) || String(a.values.id).localeCompare(String(b.values.id)));
+
+test("offer retirement signs the epoch and reference, only with explicit delete grants", async () => {
+  const tenant = "retire-test";
+  const subject = "user:2";
+  const scope = "commercial:34";
+  const signingKey = await crypto.subtle.generateKey("Ed25519", true, [
+    "sign",
+    "verify",
+  ]);
+  const payload = splitCommercialRows("34", source()).get("master-data");
+  const envelope = await encryptObject(
+    {
+      tenant,
+      scope,
+      facet: "master-data",
+      object: `${scope}:master-data:case`,
+      generation: "1",
+      policyVersion: "3",
+      revision: "1",
+      author: subject,
+    },
+    bytes(JSON.stringify(payload)),
+    await areaKey(),
+    signingKey.privateKey,
+  );
+  const snapshot = {
+    account: { tenant, identity: { signingKey } },
+    subject,
+    authorityGeneration: "2",
+    contentEpoch: "4",
+    policy: {
+      tenant,
+      version: "3",
+      rules: COMMERCIAL_FACETS.map((facet) => ({
+        subject,
+        scope,
+        facet,
+        actions: ["delete"],
+        effect: "allow",
+      })),
+    },
+    object: { envelope, value: payload },
+    live() {},
+  };
+  const read = spyOn(collections, "protectedLivePacket")
+    .mockResolvedValue(snapshot);
+  const signal = new AbortController().signal;
+
+  try {
+    const { title, command } = await prepareOfferRetirement({}, "34", signal);
+    const canonical = JSON.stringify(envelope, Object.keys(envelope).sort());
+    const digest = await crypto.subtle.digest("SHA-256", bytes(canonical));
+    const reference = Buffer.from(digest).toString("hex");
+    const message = (epoch, hash) => frame("sortsys/commercial-retirement/v1", [
+      tenant,
+      subject,
+      "2",
+      "3",
+      epoch,
+      "34",
+      hash,
+    ]);
+
+    expect(title).toBe("Fenstersanierung");
+    expect(command.expectedReference).toBe(reference);
+    expect(command.contentEpoch).toBe("4");
+    await verify(signingKey.publicKey, command.signature, message("4", reference));
+    await expect(
+      verify(signingKey.publicKey, command.signature, message("5", reference)),
+    ).rejects.toThrow();
+    await expect(
+      verify(signingKey.publicKey, command.signature, message("4", "00".repeat(32))),
+    ).rejects.toThrow();
+
+    const linked = source();
+    linked[0].values.project_id = "64";
+    snapshot.object.value = splitCommercialRows("34", linked).get("master-data");
+    await expect(prepareOfferRetirement({}, "34", signal)).rejects.toThrow();
+
+    snapshot.object.value = payload;
+    snapshot.policy.rules.pop();
+    await expect(prepareOfferRetirement({}, "34", signal)).rejects.toThrow();
+  } finally {
+    read.mockRestore();
+  }
+});
 
 test("commercial headers, prices, notes, scope and source references round trip under independent facets", () => {
   const original = source(), parts = splitCommercialRows("34", original);

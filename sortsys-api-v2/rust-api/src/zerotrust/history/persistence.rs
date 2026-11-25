@@ -80,6 +80,16 @@ async fn change(
     if row.object.domain != area.id {
         return Err(invalid());
     }
+    if !super::super::commercial_links::hidden_objects(
+        &mut context.transaction,
+        std::slice::from_ref(&row.object),
+    )
+    .await?
+    .is_empty()
+    {
+        return Ok(None);
+    }
+
     let envelope = metadata_read(&context.repository, &row.object.reference).await?;
     metadata_check_read(
         &envelope,

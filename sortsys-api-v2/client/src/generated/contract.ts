@@ -32,6 +32,8 @@ export type AuthorityHistory = { certificate: AuthorityCertificate, transition: 
 
 export type CaseEvent = { id: Id, action: string, previousStatus: string | null, status: string, createdAt: string, actor: string, };
 
+export type CaseLinks = { standaloneOffer: boolean, parentCase: string | null, documents: Array<DocumentLink>, signature: string, };
+
 export type CatalogAction = "read" | "write";
 
 export type Change = { access: Access, sequence: string, orderId: string, publication: string, initialPublication: string, domain: string, envelope: EncryptedObject<Facet>, previous: EncryptedObject<Facet> | null, migrationOrigin: MigrationOrigin | null, deletion: JsonValue | null, references: JsonValue | null, occurredAt: Date, occurredMicros: string, };
@@ -45,6 +47,8 @@ export type ChatSummary = { id: Id, title: string, createdAt: Date, updatedAt: D
 export type Claim = { invitation: string, generation: string, user: string, revision: string, encryptionKey: string, signingKey: string, proof: string, confirmation: string, };
 
 export type CommercialCase = { id: Id, reference: string, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', title: string, existingContract: boolean, projectId: Id | null, projectTitle: string | null, parentCaseId: Id | null, customerId: Id | null, customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, validUntil: string | null, notes: string | null, scopeItemIds: JsonValue, selectedOfferDocumentId: Id | null, acceptedAt: string | null, createdAt: string, modifiedAt: string, };
+
+export type CommercialLinks = CaseLinks | FinancialLink | ProjectRegisterLinks;
 
 export type Completion = { tenant: string, generation: string, subject: string, policyVersion: string, domains: Array<string>, objects: Array<string>, signature: string, };
 
@@ -76,6 +80,8 @@ export type DocumentExcerpt = { text: string, highlights: Array<DocumentTextRang
 
 export type DocumentHead = { format: string, tenant: string, scope: string, id: string, version: string, previous: string, generation: string, policyVersion: string, author: string, modifiedMicros: string, readOnly: boolean, locked: boolean, parts: Array<DocumentPart>, signature: string, };
 
+export type DocumentLink = { id: string, source: string | null, };
+
 export type DocumentPart = { facet: string, object: string, hash: string, keys: Array<PartKey>, };
 
 export type DocumentTextRange = { start: number, end: number, };
@@ -101,6 +107,8 @@ export type Evidence = { target: Target, artifact: JsonValue, proofs: Array<stri
 export type ExistingRecoveryAccount = { subject: string, username: string, version: string, };
 
 export type Facet = "scope" | "contract-quantities" | "measurement" | "offer-prices" | "calculation" | "procurement" | "billing" | "master-data" | "personnel" | "attachment";
+
+export type FinancialLink = { financialCase: string | null, signature: string, };
 
 export type HistoryOrigin = { source: string, occurredMicros: string, };
 
@@ -190,6 +198,8 @@ export type PriceListScanResult = { supplier: string | null, documentNumber: str
 
 export type PriorInvoice = { id: Id, invoiceNumber: string, invoiceDate: string, netAmount: string, grossAmount: string, paidAmount: string, vatRate: string, };
 
+export type ProjectRegisterLinks = { projectCases: Array<string>, signature: string, };
+
 export type ProposalDecision = "accept" | "decline" | "requestRevision";
 
 export type ProposalExecutionResult = { path: string, output: JsonValue, };
@@ -216,6 +226,8 @@ export type RegistrationCredential = { id: string, rawId: string, type: "public-
 
 export type RegistrationResponse = { clientDataJSON: string, attestationObject: string, };
 
+export type RelationshipProof = { domain: string, object: string, reference: string, links: CommercialLinks, };
+
 export type RelyingParty = { name: string, id: string, };
 
 export type RequestOptions = { challenge: string, rpId: string, allowCredentials: Array<CredentialDescriptor>, timeout: number, userVerification: "required", };
@@ -230,7 +242,7 @@ export type Rule = { subject: string, scope: string, facet: Facet, actions: Arra
 
 export type RuleOrigin = "absence-default" | "organization-office" | "organization-procurement" | "project-overview" | "project-documentation" | "project-management";
 
-export type SaveInput = { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, toolRate?: ToolRateReference, };
+export type SaveInput = { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, commercialLinks?: CommercialLinks, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, toolRate?: ToolRateReference, };
 
 export type ScanDocumentType = "deliveryNote" | "priceList" | "invoice";
 
@@ -380,7 +392,7 @@ export type QueryInputs = {
   "users.supervisors.getDefault": void;
   "users.vacations.list": { from?: unknown; to?: unknown; userId?: undefined | null | string; includeDenied?: undefined | false | true; };
   "zerotrust.access.page": { snapshot: string, after: string, includeDomains: boolean, };
-  "zerotrust.access.snapshot": { known?: string, domain?: string, domains?: Array<string>, includeDomains?: boolean, pages?: ListBatchInput, };
+  "zerotrust.access.snapshot": { known?: string, domain?: string, domains?: Array<string>, includeDomains?: boolean, includeContentEpoch?: boolean, pages?: ListBatchInput, };
   "zerotrust.content.inspect": { operation: string, approval: ContentEpoch, pages?: ListBatchInput, start?: boolean, };
   "zerotrust.content.snapshots": { after?: string, };
   "zerotrust.creations.capability": { namespace: 'project'|'commercial'|'tool'|'tool-tracking', subject?: string, };
@@ -460,7 +472,7 @@ export type QueryOutputs = {
   "auth.sessionInfo": { user: { id: string; username: string; locale: "de" | "en"; }; session: { id: string; inetAddr: null | string; userAgent: null | string; createdAt: Date; expiresAt: Date; }; roles: (":admin" | ":llm" | "view:users" | "manage:users" | "delete:users" | "view:projects" | "manage:projects" | "delete:projects" | "view:projectDeployments" | "manage:projectDeployments" | "delete:projectDeployments" | "view:userVacations" | "manage:userVacations" | "delete:userVacations" | "view:tools" | "manage:tools" | "delete:tools" | "view:toolTrackings" | "manage:toolTrackings" | "delete:toolTrackings" | "view:toolInventories" | "manage:toolInventories" | "delete:toolInventories" | "view:products" | "manage:products" | "delete:products" | "view:deliveryNotes" | "manage:deliveryNotes" | "delete:deliveryNotes" | "view:productVendors" | "manage:productVendors" | "delete:productVendors" | "view:productPriceRecords" | "manage:productPriceRecords" | "delete:productPriceRecords" | "view:customers" | "manage:customers" | "delete:customers" | "view:contacts" | "manage:contacts" | "delete:contacts" | "view:dailyProjectReports" | "manage:dailyProjectReports" | "delete:dailyProjectReports" | "view:regieReports" | "manage:regieReports" | "delete:regieReports" | "view:clientScripts" | "manage:clientScripts" | "delete:clientScripts")[]; tenant: { companyName: null | string; objectStorageEnabled: boolean; }; };
   "clientScripts.get": null | { id: string; name: string; description: null | string; code: string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; };
   "clientScripts.list": { id: string; name: string; description: null | string; enabled: boolean; createdByUserId: null | string; modifiedByUserId: null | string; createdAt: Date; modifiedAt: Date; }[];
-  "commercial.cases.get": { case: CommercialCase, documents: Array<Document>, events: Array<CaseEvent>, canManage: boolean, invoice: InvoiceDetails | null, };
+  "commercial.cases.get": { case: CommercialCase, documents: Array<Document>, events: Array<CaseEvent>, canManage: boolean, canRetire: boolean, invoice: InvoiceDetails | null, };
   "commercial.cases.headers": Array<{ id: Id, reference: string, title: string, projectId: Id | null, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', }>;
   "commercial.cases.list": Array<{ id: Id, reference: string, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', title: string, existingContract: boolean, projectId: Id | null, projectTitle: string | null, parentCaseId: Id | null, customerId: Id | null, customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, validUntil: string | null, notes: string | null, scopeItemIds: JsonValue, selectedOfferDocumentId: Id | null, acceptedAt: string | null, createdAt: string, modifiedAt: string, }>;
   "commercial.cases.overview": Array<{ customerName: string | null, counterpartyName: string | null, currency: string, netAmount: string | null, id: Id, reference: string, title: string, projectId: Id | null, kind: 'offer'|'variation'|'alternative'|'subcontract'|'measurement'|'procurement'|'calculation'|'invoice'|'progress_invoice'|'final_invoice', status: 'draft'|'sent'|'accepted'|'rejected'|'cancelled'|'requested'|'awarded'|'confirmed'|'submitted'|'approved'|'partially_paid'|'paid', }>;
@@ -539,8 +551,8 @@ export type QueryOutputs = {
   "users.supervisors.getDefault": { userId: null | string; };
   "users.vacations.list": { id: string; revision?: undefined | string; userId: string; from: Date; to: Date; type: "vacation" | "other"; label: null | string; status: "denied" | "requested" | "approved"; note: null | string; denialReason: null | string; requestedByUserId: null | string; decidedByUserId: null | string; decidedAt: null | Date; createdAt: Date; modifiedAt: Date; canApprove: boolean; canDeny: boolean; canDelete: boolean; vacationUsage: { year: number; allowanceDays: null | number; approvedDays: number; requestedDays: number; remainingAfterApproval: null | number; }[]; }[];
   "zerotrust.access.page": { snapshot: string, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, after: string | null, };
-  "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, after: string | null, unchanged: boolean, pages?: Array<ObjectPage>, };
-  "zerotrust.content.inspect": { pages: Array<ObjectPage>, domains: Array<DomainInfo>, stamp: string, restoredDocumentScopes: Array<string>, sealedInvoiceScopes: Array<string>, uncheckedDocuments: number, };
+  "zerotrust.access.snapshot": { subject: string, username: string, history: TrustHistory, policy: SignedPolicy, origins: Array<CreationOrigin>, domains: Array<DomainInfo>, snapshot: string, contentEpoch?: string, after: string | null, unchanged: boolean, pages?: Array<ObjectPage>, };
+  "zerotrust.content.inspect": { pages: Array<ObjectPage>, domains: Array<DomainInfo>, stamp: string, restoredDocumentScopes: Array<string>, sealedInvoiceScopes: Array<string>, uncheckedDocuments: number, checkCommercialRelationships: boolean, };
   "zerotrust.content.snapshots": { rows: Array<TenantSnapshot>, after: string | null, };
   "zerotrust.creations.capability": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, } | null;
   "zerotrust.creations.list": Array<{ tenant: string, id: string, scope: string, facet: Facet, capability: CreationCapability, signature: string, parent?: CreationParent, assignee?: IdentityCertificate, access?: ResourceAccessState, returned?: ResourceCommand, }>;
@@ -764,6 +776,8 @@ export type MutationInputs = {
   "users.vacations.delete": { id: string; expectedRevision?: undefined | string; };
   "users.vacations.deny": { id: string; expectedRevision?: undefined | string; reason: string; };
   "zerotrust.access.publish": { policyVersion: string, grants: Array<KeyGrant>, domains: Array<DomainDefinition>, };
+  "zerotrust.commercial.removeOffer": { tenant: string, author: string, authorityGeneration: string, policyVersion: string, contentEpoch: string, caseId: string, expectedReference: string, signature: string, };
+  "zerotrust.commercial.reviewRelationships": { proofs: Array<RelationshipProof>, prepared?: PreparedView, };
   "zerotrust.content.activate": { operation: string, approval: ContentEpoch, policy: SignedPolicy, review: ContentReview, };
   "zerotrust.content.prepare": { snapshotOperation: string, operation: string, };
   "zerotrust.creations.grant": { tenant: string, id: string, generation: string, namespace: string, creator: IdentityCertificate, readers: Array<IdentityCertificate>, signature: string, };
@@ -790,7 +804,7 @@ export type MutationInputs = {
   "zerotrust.members.create": { tenant: string, generation: string, author: string, id: string, username: string, source?: InitialMemberState, proof: string, };
   "zerotrust.objects.batch": { objects: Array<SaveInput>, heads?: Array<DomainHead>, documents?: Array<DocumentHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
   "zerotrust.objects.commit": { parts: Array<string>, heads: Array<DomainHead>, liveCheckpoints?: Array<LiveCheckpoint>, member?: MemberChange, policy?: SignedPolicy, };
-  "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, toolRate?: ToolRateReference, };
+  "zerotrust.objects.save": { domain: string, messageId: string, envelope: EncryptedObject<Facet>, references?: StockReferences, commercialLinks?: CommercialLinks, migrationOrigin?: MigrationOrigin, resourceAccess?: ResourceAccessState, recipientKey?: RecipientKey, planningTitle?: Publication, toolRate?: ToolRateReference, };
   "zerotrust.objects.stage": { objects: Array<SaveInput>, };
   "zerotrust.policy.replace": { tenant: string, version: string, rules: Array<Rule>, suspended?: Array<string>, transaction?: PolicyTransaction, administration?: PolicyAdministration<SignedPolicy, Facet>, signature: string, };
   "zerotrust.recovery.account": { tenant: string, generation: string, nonce: string, proof: string, };
@@ -980,6 +994,8 @@ export type MutationOutputs = {
   "users.vacations.delete": { success: true; };
   "users.vacations.deny": { success: true; };
   "zerotrust.access.publish": { success: true, };
+  "zerotrust.commercial.removeOffer": { success: true, };
+  "zerotrust.commercial.reviewRelationships": { success: true, };
   "zerotrust.content.activate": { operation: string, content: string, policyVersion: string, policySignature: string, reviewSignature: string, };
   "zerotrust.content.prepare": { operation: string, snapshotOperation: string, snapshot: string, bytes: string, current: ContentEpoch | null, source: ContentEpoch | null, sourceAuthority: AuthorityCertificate, number: string, records: string, ciphertexts: string, };
   "zerotrust.creations.grant": { success: true, };
@@ -1355,6 +1371,8 @@ const mutationProcedures = new Set<string>([
   "users.vacations.delete",
   "users.vacations.deny",
   "zerotrust.access.publish",
+  "zerotrust.commercial.removeOffer",
+  "zerotrust.commercial.reviewRelationships",
   "zerotrust.content.activate",
   "zerotrust.content.prepare",
   "zerotrust.creations.grant",

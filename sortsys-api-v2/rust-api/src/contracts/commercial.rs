@@ -91,6 +91,7 @@ pub struct CaseDetail {
     pub documents: Vec<super::commercial_documents::Document>,
     pub events: Vec<CaseEvent>,
     pub can_manage: bool,
+    pub can_retire: bool,
     pub invoice: Option<super::commercial_billing::InvoiceDetails>,
 }
 #[derive(Serialize, TS)]

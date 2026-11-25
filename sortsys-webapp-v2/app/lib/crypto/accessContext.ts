@@ -9,6 +9,7 @@ import {
   creationOrigin,
   InvalidProtectedData,
   record,
+  revision,
   type Policy,
 } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
@@ -129,6 +130,7 @@ async function readAccessContext(
   );
   live();
   const expectedPages = !cache || input.unchanged ? requestedPages : undefined;
+  const expectsEpoch = options.includeContentEpoch === true;
   record(input, [
     "subject",
     "username",
@@ -139,6 +141,7 @@ async function readAccessContext(
     "snapshot",
     "after",
     "unchanged",
+    ...(expectsEpoch ? ["contentEpoch"] : []),
     ...(expectedPages ? ["pages"] : []),
   ]);
   if (input.subject !== account.vault.subject) throw new InvalidProtectedData();
@@ -161,6 +164,10 @@ async function readAccessContext(
       input.pages.length !== expectedPages.selections.length)
   )
     throw new InvalidProtectedData();
+  // Zero denotes the initialized tenant before its first content activation.
+  // The API pins the number to the same view as the inventory fingerprint.
+  if (expectsEpoch && input.contentEpoch !== "0") revision(input.contentEpoch);
+
   const history = await verifyAccountHistory(input.history, account);
   live();
   const identity = history.identityCertificate(input.subject);
@@ -281,6 +288,7 @@ async function readAccessContext(
     rootPolicy,
     rootPolicySignature,
     snapshot: input.snapshot,
+    contentEpoch: input.contentEpoch,
     permissions,
     domains,
     origins: origins.filter((origin) => origin !== null).map(creationOrigin),

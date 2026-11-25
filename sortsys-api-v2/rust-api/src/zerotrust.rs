@@ -4,6 +4,7 @@
 mod absences;
 mod access;
 mod bootstrap;
+mod commercial_links;
 mod content;
 mod creation;
 mod crypto;
@@ -49,6 +50,7 @@ pub(crate) fn register_native(
     let builder = initialization::register(builder, Arc::clone(&service));
     let builder = bootstrap::register(builder, Arc::clone(&service));
     let builder = content::register(builder, Arc::clone(&service));
+    let builder = commercial_links::register(builder, Arc::clone(&service));
     let builder = objects::register_metadata(builder, Arc::clone(&service));
     let builder = object_shares::register(builder, Arc::clone(&service));
     let builder = planning_titles::register(builder, Arc::clone(&service));
@@ -179,6 +181,7 @@ pub(crate) async fn verify_live_identity(
 pub fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureRegistryBuilder {
     let builder = bootstrap::register_contract(builder);
     let builder = content::register_contract(builder);
+    let builder = commercial_links::register_contract(builder);
     let builder = object_shares::register_contract(builder);
     let builder = planning_titles::register_contract(builder);
     let builder =

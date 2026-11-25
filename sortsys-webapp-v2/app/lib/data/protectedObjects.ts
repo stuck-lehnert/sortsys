@@ -47,6 +47,7 @@ import {
   type StockState,
 } from "./stockObjects";
 import { stockKind } from "@sortsys/zerotrust/sortsys";
+import { ciphertextReference } from "./ciphertextReference";
 import { checkDeliveryObjects } from "./deliveryRegistry";
 import { announceDataChanges } from "./runtime/changes";
 import { mapConcurrent } from "./runtime/concurrentReads";
@@ -133,23 +134,6 @@ export type OpenedObject = {
 
 type SelectedEnvelopes = QueryResult<"zerotrust.objects.getMany">;
 
-const ciphertextReferences = new WeakMap<EncryptedObject, Promise<string>>();
-
-function ciphertextReference(envelope: EncryptedObject): Promise<string> {
-  let known = ciphertextReferences.get(envelope);
-  if (!known) {
-    // The API hashes the sorted-key JSON representation of the signed envelope.
-    const canonical = JSON.stringify(envelope, Object.keys(envelope).sort());
-    known = crypto.subtle.digest("SHA-256", bytes(canonical)).then((result) =>
-      Array.from(new Uint8Array(result), (byte) =>
-        byte.toString(16).padStart(2, "0"),
-      ).join(""),
-    );
-    ciphertextReferences.set(envelope, known);
-  }
-  return known;
-}
-
 /** Only signed, explicitly bound domains may supply collection keys. Names and
  * query text never leave the browser. A complete page walk is published once. */
 export async function protectedCollection(
@@ -163,6 +147,52 @@ export async function protectedCollection(
     signal,
     await collectionContext(client, signal, collection.domain),
   );
+}
+
+/** Read a single object and its epoch from the same access snapshot. Never
+ * fall back to a page read from a later content view for a signed command. */
+export async function protectedLivePacket(
+  client: Client,
+  area: Collection,
+  signal: AbortSignal,
+) {
+  const request = { ...pageRequest(area), includeOpenings: false };
+  const context = await collectionContext(client, signal, [area.domain], undefined, {
+    pages: [request],
+    includeContentEpoch: true,
+  });
+  const page = context.pages.get(pageKey(request));
+  const domain = context.domains.find(({ id }) => id === area.domain);
+
+  if (
+    context.contentEpoch === undefined ||
+    !page ||
+    !domain ||
+    page.keyGeneration !== domain.generation ||
+    page.after !== null ||
+    !Array.isArray(page.objects) ||
+    page.objects.length !== 1
+  ) {
+    throw new InvalidProtectedData();
+  }
+
+  const collection = openCollection(client, area, signal, context);
+  try {
+    const object = await collection.open(page.objects[0], area.prefix);
+    context.live();
+
+    return {
+      object,
+      account: context.account,
+      subject: context.subject,
+      authorityGeneration: context.history.current.generation,
+      policy: context.rootPolicy,
+      contentEpoch: context.contentEpoch,
+      live: context.live,
+    };
+  } finally {
+    collection.close();
+  }
 }
 
 /** One verified policy/inventory snapshot for a bounded batch of collections.
@@ -316,6 +346,7 @@ export async function protectedReadView(
     areas: open.areas,
     readable: open.readable,
     prefetch: open.prefetch,
+    read: open.read,
     openCiphertext(area: Collection) {
       const collection = open(area);
       return {
@@ -324,14 +355,6 @@ export async function protectedReadView(
         can: collection.can,
         close: collection.close,
       };
-    },
-    async read(area: Collection, options?: { includeTombstones?: boolean }) {
-      const collection = open(area);
-      try {
-        return await collection.read(undefined, options);
-      } finally {
-        collection.close();
-      }
     },
   };
 }
@@ -349,7 +372,7 @@ async function bindCollections(
     signal,
     selectedDomains,
     source,
-    initialRequests,
+    { pages: initialRequests },
   );
   function live() {
     if (signal.aborted || unlockedAccount() !== context.account)
@@ -399,11 +422,21 @@ async function bindCollections(
       }
     });
   }
+  let explicitAccess: ReturnType<typeof compilePolicy> | undefined;
+  const open = (area: Collection) => openCollection(client, area, signal, context);
+
   return Object.assign(
-    (collection: Collection) =>
-      openCollection(client, collection, signal, context),
+    open,
     {
       prefetch,
+      async read(area: Collection, options?: { includeTombstones?: boolean }) {
+        const collection = open(area);
+        try {
+          return await collection.read(undefined, options);
+        } finally {
+          collection.close();
+        }
+      },
       areas(select: (domain: string) => Collection | null): Collection[] {
         live();
         const selected: Collection[] = [];
@@ -442,6 +475,11 @@ async function bindCollections(
       },
       hasArea,
       readable,
+      explicitlyAllows(...rule: Parameters<ReturnType<typeof compilePolicy>["allows"]>) {
+        live();
+        explicitAccess ??= compilePolicy(context.rootPolicy, [context.subject]);
+        return explicitAccess.allows(...rule);
+      },
     },
   );
 }
@@ -450,7 +488,10 @@ async function collectionContext(
   signal: AbortSignal,
   selection?: string | readonly string[],
   source?: PreparedPageSource,
-  initialRequests: QueryInput<"zerotrust.objects.list">[] = [],
+  request: {
+    pages?: QueryInput<"zerotrust.objects.list">[];
+    includeContentEpoch?: boolean;
+  } = {},
 ) {
   let options: QueryInput<"zerotrust.access.snapshot"> =
     source ? { includeDomains: false } : {};
@@ -459,7 +500,10 @@ async function collectionContext(
   } else if (selection !== undefined) {
     options = { domains: [...selection] };
   }
+  const initialRequests = request.pages ?? [];
   if (initialRequests.length) options.pages = { selections: initialRequests };
+  if (request.includeContentEpoch) options.includeContentEpoch = true;
+
   const {
     account,
     history,
@@ -468,6 +512,7 @@ async function collectionContext(
     permissions,
     domains: currentDomains,
     origins,
+    contentEpoch,
     pages: initialPages,
     live,
   } = await verifiedAccessContext(client, signal, options);
@@ -491,6 +536,9 @@ async function collectionContext(
     history,
     subject,
     permissions,
+    rootPolicy,
+    contentEpoch,
+    live,
     domains,
     origins,
     author,
@@ -1184,6 +1232,19 @@ function openCollection(
             account.identity.signingKey.privateKey,
           )
         : undefined;
+      const commercialScope =
+        collection.scope.startsWith("commercial:") ||
+        collection.scope.startsWith("project:");
+      let commercialLinks: MutateInput<"zerotrust.objects.save">["commercialLinks"];
+      if (!deleting && commercialScope) {
+        const { commercialLinksPacket } = await import("./commercialCaseLinks");
+        commercialLinks = await commercialLinksPacket(
+          envelope,
+          value,
+          account.identity.signingKey.privateKey,
+        );
+      }
+
       const resourceAccess = await toolResponsibilityPacket(
         origin,
         envelope,
@@ -1199,6 +1260,7 @@ function openCollection(
         messageId: `msg_${base64(randomSecret())}`,
         envelope,
         ...(references ? { references } : {}),
+        ...(commercialLinks ? { commercialLinks } : {}),
         ...(resourceAccess ? { resourceAccess } : {}),
         ...planning,
       };

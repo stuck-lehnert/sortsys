@@ -8,6 +8,10 @@ import type { Collection } from "./protectedObjects";
 export const COMMERCIAL_FACETS = CREATION_FACETS.commercial;
 export type CommercialFacet = (typeof COMMERCIAL_FACETS)[number];
 
+export function isStandaloneOffer(kind: unknown, projectId: unknown): boolean {
+  return (kind === "offer" || kind === "alternative") && projectId === null;
+}
+
 /** Offers exist before a project. Linking a case to a project must never
  * silently turn its master-data grant into a price or calculation grant. */
 export function commercialCollection(
@@ -25,6 +29,11 @@ export function commercialCollection(
     prefix: `${scope}:${facet}:`,
   };
 }
+export function commercialMasterArea(id: string): Collection {
+  const area = commercialCollection(id, "master-data");
+  return { ...area, prefix: `${area.prefix}case` };
+}
+
 export function commercialDomain(
   domain: string,
 ): { id: string; facet: CommercialFacet } | null {

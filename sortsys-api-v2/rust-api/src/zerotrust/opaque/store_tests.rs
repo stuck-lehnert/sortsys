@@ -16,7 +16,7 @@ use std::{
 };
 use tokio::{process::Command, task::JoinHandle};
 
-mod batching;
+pub(in crate::zerotrust) mod batching;
 mod billing_permissions;
 mod cold_restore;
 mod content_views;
@@ -26,7 +26,7 @@ mod processes;
 mod recovery_account;
 mod signing_identity;
 
-struct ApiTask(JoinHandle<()>);
+pub(in crate::zerotrust) struct ApiTask(JoinHandle<()>);
 impl Drop for ApiTask {
     fn drop(&mut self) {
         self.0.abort();

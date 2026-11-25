@@ -8,6 +8,7 @@ use super::{
     wire::{Action, EncryptedObject, Facet},
 };
 use crate::{
+    control::{Transaction, key},
     error::RpcResult,
     error::{forbidden, internal},
     ids::Id,
@@ -206,7 +207,7 @@ pub(super) fn verify_part_envelope(
             .keys
             .iter()
             .any(|key| key.facet.name() == owner && key.generation == envelope.generation)
-        || packet_hash(envelope.frame()?, &envelope.signature)? != part.hash
+        || envelope.packet_hash()? != part.hash
     {
         return Err(invalid());
     }
@@ -372,6 +373,30 @@ pub(super) fn register_contract(builder: ProcedureRegistryBuilder) -> ProcedureR
         )
 }
 
+pub(super) async fn visible_head(
+    transaction: &mut Transaction,
+    id: &str,
+) -> RpcResult<Option<DocumentHead>> {
+    let record = key("documents", id);
+    transaction
+        .prefetch(vec![
+            record.clone(),
+            super::commercial_links::retirement_fence_key(),
+        ])
+        .await?;
+    let Some(head) = transaction.read::<DocumentHead>(record).await? else {
+        return Ok(None);
+    };
+    if head.id != id {
+        return Err(invalid());
+    }
+    if !super::commercial_links::document_is_active(transaction, &head.scope, id).await? {
+        return Ok(None);
+    }
+
+    Ok(Some(head))
+}
+
 fn metadata_history_key(
     id: &str,
     version: &str,
@@ -442,10 +467,7 @@ pub(crate) fn register_metadata(
             async move {
                 checked_id(&input.id)?;
                 let mut request = super::access::MetadataRequest::open(&service, &ctx).await?;
-                let current: Option<DocumentHead> = request
-                    .transaction
-                    .read(crate::control::key("documents", &input.id))
-                    .await?;
+                let current = visible_head(&mut request.transaction, &input.id).await?;
                 let domains = current
                     .as_ref()
                     .map(|head| format!("{}:master-data", head.scope))
@@ -499,9 +521,7 @@ pub(crate) fn register_metadata(
                     let mut context =
                         super::access::metadata_context_for_domains(&service, &ctx, Some(&domains))
                             .await?;
-                    let current: DocumentHead = context
-                        .transaction
-                        .read(crate::control::key("documents", &input.id))
+                    let current = visible_head(&mut context.transaction, &input.id)
                         .await?
                         .ok_or_else(forbidden)?;
                     if current.scope != input.scope
@@ -583,6 +603,14 @@ pub(super) async fn metadata_commit(
     {
         return Err(forbidden());
     }
+
+    super::commercial_links::check_document_publication(
+        &mut context.transaction,
+        &head.scope,
+        &head.id,
+    )
+    .await?;
+
     if !metadata_changed
         && previous.as_ref().is_some_and(|old| {
             old.parts == head.parts && old.locked == head.locked && old.read_only == head.read_only

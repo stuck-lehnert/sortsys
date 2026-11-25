@@ -36,7 +36,11 @@ import {
 } from "../data/projectScheduleData";
 import { PERSONNEL_MODEL, personnelCollection } from "../data/personnelData";
 import { publicId } from "../data/products";
-import { commercialCollection, commercialDomain } from "../data/commercialAreas";
+import {
+  commercialCollection,
+  commercialDomain,
+  commercialMasterArea,
+} from "../data/commercialAreas";
 import {
   isAcceptedContract,
   joinCommercialFacets,
@@ -116,11 +120,6 @@ async function inspectPlanning(
   });
   missing += readablePersonnel.length - profiles.size;
   return { missing, unchecked };
-}
-
-function commercialMasterArea(id: string): Collection {
-  const area = commercialCollection(id, "master-data");
-  return { ...area, prefix: `${area.prefix}case` };
 }
 
 function inspectedCommercialAreas(scopes: string[]): Collection[] {
@@ -437,7 +436,7 @@ export async function inspectPreparedContent(
       throw new InvalidProtectedData();
   };
   const check = { operation, approval };
-  const { domains, stamp } = await required(
+  const { domains, stamp, checkCommercialRelationships } = await required(
     client.query(
       "zerotrust.content.inspect",
       { ...check, start: true },
@@ -535,6 +534,12 @@ export async function inspectPreparedContent(
   );
   const restoredFiles = await inspectRestoredFiles(client, view, projectIds, signal);
   const restoredPrintFiles = await inspectRestoredPrintFiles(client, view, signal);
+  if (checkCommercialRelationships) {
+    const { reviewRelationshipView } = await import("../data/commercialReview");
+    const administrator = await administratorContext(client, signal);
+    await reviewRelationshipView(client, administrator, view, signal);
+  }
+
   const dependencies = await required(
     client.query("zerotrust.content.inspect", check, {
       strategy: "network-only",

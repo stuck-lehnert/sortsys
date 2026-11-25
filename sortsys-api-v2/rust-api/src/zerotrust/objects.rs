@@ -250,6 +250,8 @@ pub(super) struct SaveInput {
     #[ts(optional)]
     pub references: Option<super::stock::StockReferences>,
     #[ts(optional)]
+    pub commercial_links: Option<super::commercial_links::CommercialLinks>,
+    #[ts(optional)]
     pub migration_origin: Option<super::history::MigrationOrigin>,
     #[ts(optional)]
     pub resource_access: Option<sortsys_zerotrust::resource_access::ResourceAccessState>,
@@ -370,6 +372,8 @@ struct AccessInput {
     #[ts(optional)]
     include_domains: Option<bool>,
     #[ts(optional)]
+    include_content_epoch: Option<bool>,
+    #[ts(optional)]
     pages: Option<ListBatchInput>,
 }
 
@@ -438,6 +442,9 @@ struct AccessSnapshot {
     origins: Vec<super::creation::CreationOrigin>,
     domains: Vec<DomainInfo>,
     snapshot: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    content_epoch: Option<String>,
     after: Option<String>,
     unchanged: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -953,16 +960,21 @@ fn import_receipt(input: &SaveInput, subject: &str) -> RpcResult<bool> {
     Ok(true)
 }
 
-/// Stock deletions have additional referential checks. Immutable receipts and
-/// document blobs must likewise retain their original publication protocol.
+/// Referenced resources need a deletion protocol that covers their dependents.
+/// Immutable receipts and document blobs retain their publication protocol.
 fn tombstone_binding(input: &SaveInput) -> RpcResult<()> {
     if !input.envelope.is_tombstone() {
         return Ok(());
     }
+
     let id = &input.envelope.object;
     if input.references.is_some()
+        || persistence::preserves_numbering(&input.envelope)
         || super::stock::kind(id)?.is_some()
         || super::documents::blob(id)?.is_some()
+        // Commercial case metadata also represents its documents and events.
+        // A facet tombstone alone cannot safely remove or unlink that case.
+        || input.envelope.scope.starts_with("commercial:")
         || [
             "price-import:",
             "delivery-price:",
@@ -1051,8 +1063,31 @@ mod permission_tests {
             recipient_key: None,
             planning_title: None,
             tool_rate: None,
+            commercial_links: None,
         };
         tombstone_binding(&input).unwrap();
+
+        for (scope, facet, object) in [
+            (
+                "organization:offers",
+                Facet::MasterData,
+                "organization:offers:master-data:counter:global",
+            ),
+            (
+                "organization:invoicing",
+                Facet::Billing,
+                "organization:invoicing:billing:counter:global",
+            ),
+        ] {
+            let mut number = input.clone();
+            number.domain = format!("{scope}:{}", facet.name());
+            number.envelope.scope = scope.into();
+            number.envelope.facet = facet;
+            number.envelope.object = object.into();
+
+            assert!(tombstone_binding(&number).is_err());
+        }
+
         let mut delivery = input.clone();
         delivery.envelope.object = "delivery-note:2:3".into();
         tombstone_binding(&delivery).unwrap();
@@ -1060,6 +1095,14 @@ mod permission_tests {
             crate::zerotrust::delivery::deletion_price_domain(&delivery).unwrap(),
             Some("project:2:delivery-notes:procurement".into())
         );
+
+        let mut commercial = input.clone();
+        commercial.domain = "commercial:2:master-data".into();
+        commercial.envelope.scope = "commercial:2".into();
+        commercial.envelope.facet = Facet::MasterData;
+        commercial.envelope.object = "commercial:2:master-data:case".into();
+        assert!(tombstone_binding(&commercial).is_err());
+
         for id in [
             "product:2",
             "vendor:2",
@@ -1094,6 +1137,7 @@ mod permission_tests {
             recipient_key: None,
             planning_title: None,
             tool_rate: None,
+            commercial_links: None,
         };
         tool_object_binding(&input).unwrap();
         input.envelope.object = "tool:abc:master-data:booking".into();
@@ -1141,6 +1185,7 @@ mod permission_tests {
             recipient_key: None,
             planning_title: None,
             tool_rate: None,
+            commercial_links: None,
         };
         assert!(import_receipt(&input, "user:1").unwrap());
         assert!(import_receipt(&input, "user:2").is_err());
