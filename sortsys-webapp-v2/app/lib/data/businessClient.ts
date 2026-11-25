@@ -12,7 +12,7 @@ import {
 import { llmActivity } from "../llmActivity";
 import { uiText } from "../i18n";
 import type { EncryptedChange } from "./events";
-import type { openProtectedProducts } from "./products";
+import { PRICE_MUTATIONS, type openProtectedProducts } from "./products";
 import {
   ADDRESS_QUERIES,
   ADDRESS_MUTATIONS,
@@ -24,6 +24,7 @@ import { FILE_QUERIES, FILE_MUTATIONS, fileDomainId } from "./projectFileData";
 import type { FileUpload, OfficeDraftRecovery } from "./projectFiles";
 import { liveReplay } from "./liveCheckpoints";
 import {
+  PROJECT_COST_QUERIES,
   PROJECT_QUERIES,
   PROJECT_MUTATIONS,
   projectDomainId,
@@ -56,7 +57,6 @@ import {
   VENDOR_QUERIES,
   VENDOR_MUTATIONS,
 } from "./vendorData";
-import { PRICE_MUTATIONS } from "./prices";
 import {
   DELIVERY_QUERIES,
   DELIVERY_MUTATIONS,
@@ -96,7 +96,6 @@ import {
   type CommonCostInput,
 } from "./commonCostData";
 import { FINANCIAL_MUTATIONS, financialDomain } from "./projectFinancialData";
-import { PROJECT_COST_QUERIES } from "./projectCosts";
 import { projectAccessDomain } from "./projectScope";
 import {
   scopedDocumentEditor,

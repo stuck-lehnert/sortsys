@@ -30,6 +30,7 @@ import {
 } from "./projectCostCalculation";
 import { financialRequest } from "./projectFinancialData";
 import {
+  PROJECT_COST_QUERIES,
   PROJECT_MODEL,
   projectCollection,
   projectDomainId,
@@ -50,12 +51,6 @@ import type { DataRequest, DataView } from "./runtime/runtime";
 import { acquireDataRuntime } from "./runtime/session";
 import { mapConcurrent } from "./runtime/concurrentReads";
 import { uiText } from "../i18n";
-
-export const PROJECT_COST_QUERIES = new Set([
-  "projects.costs.get",
-  "projects.costs.overview",
-  "projects.costs.filterOptions",
-]);
 
 export function projectCostRequests(projectId: string) {
   const selected = {

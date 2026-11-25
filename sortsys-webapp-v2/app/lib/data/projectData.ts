@@ -36,6 +36,12 @@ export const PROJECT_QUERIES = new Set([
   "projects.contacts.list",
   "contacts.projects.list",
 ]);
+export const PROJECT_COST_QUERIES = new Set([
+  "projects.costs.get",
+  "projects.costs.overview",
+  "projects.costs.filterOptions",
+]);
+
 export const PROJECT_EDITS = [
   "projects.update",
   "projects.finish",

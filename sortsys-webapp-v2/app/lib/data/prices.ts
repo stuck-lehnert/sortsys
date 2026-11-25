@@ -6,6 +6,7 @@ import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import {
   newProductRowId,
   PRICE_COLLECTION,
+  PRICE_MUTATIONS,
   priceRequest,
   wirePrice,
   PRODUCT_MODEL,
@@ -15,11 +16,6 @@ import {
 import { businessSchema } from "./schema";
 import { VENDOR_COLLECTION, VENDOR_MODEL } from "./vendorData";
 
-export const PRICE_MUTATIONS = new Set([
-  "products.priceRecords.create",
-  "products.priceRecords.update",
-  "products.priceRecords.delete",
-]);
 export function priceChanges(input: unknown, creating: boolean) {
   const data = partialAddressRecord(input, [
       "productId",

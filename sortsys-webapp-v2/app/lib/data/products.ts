@@ -28,6 +28,12 @@ export const PRICE_COLLECTION: Collection = {
   prefix: "product-price:",
 };
 
+export const PRICE_MUTATIONS = new Set([
+  "products.priceRecords.create",
+  "products.priceRecords.update",
+  "products.priceRecords.delete",
+]);
+
 export type ProductPayload = {
   format: "sortsys-product-v1";
   product: BusinessRow;
