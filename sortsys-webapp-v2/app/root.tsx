@@ -12,6 +12,8 @@ import {
   Scripts,
   ScrollRestoration,
   useLocation,
+  useMatch,
+  useMatches,
 } from "react-router";
 
 import "@fontsource-variable/jetbrains-mono";
@@ -24,15 +26,14 @@ import "@sortsys/dwgviewer/styles.css";
 import "./app.css";
 
 import type { Route } from "./+types/root";
-import { useEffect, useState, type ReactNode } from "react";
-import { client, reportClientError } from "./lib/client";
-import { SessionInfoProvider } from "./hooks/useSessionInfo";
-import { CryptoUnlocked } from "./components/CryptoUnlocked";
+import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { authClient, reportClientError } from "./lib/authClient";
 import { LLMActivityHost } from "./components/LLMActivityHost";
 import { Loading, NotificationProvider } from "@sortsys/react-components";
-import { MyModalsProvider } from "./hooks/useMyModals";
 import { useTheme } from "./hooks/useTheme";
 import { I18nProvider, uiText, useI18n } from "./lib/i18n";
+
+const ApplicationFrame = lazy(() => import("./components/ApplicationFrame"));
 
 export const links: Route.LinksFunction = () => [
   {
@@ -91,15 +92,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
   );
 }
 
-function _AppInner() {
-  return (
-    <MyModalsProvider>
-      <ClientErrorReporter />
-      <Outlet />
-    </MyModalsProvider>
-  );
-}
-
 function ClientErrorReporter(): undefined {
   const location = useLocation();
 
@@ -135,49 +127,59 @@ function AppContent() {
   const { setLocale, t } = useI18n();
   const [restored, setRestored] = useState(false);
   const [authVersion, setAuthVersion] = useState(0);
-  const location = useLocation();
-  const isGlobalAdminSpace = location.pathname.startsWith("/__admin");
+  const { pathname } = useLocation();
+  const signIn = useMatch("/auth/login");
+  const matches = useMatches();
 
   useEffect(() => {
-    client.restoreSession().finally(() => setRestored(true));
+    authClient.restoreSession().finally(() => setRestored(true));
   }, []);
 
   useEffect(
     () =>
-      client.listenAuthState(() => {
-        if (!client.loggedIn()) setLocale("de");
+      authClient.listenAuthState(() => {
+        if (!authClient.loggedIn()) setLocale("de");
         setAuthVersion((version) => version + 1);
       }),
     [setLocale],
   );
 
-  if (!restored) {
-    return (
-      <div className="app-session-loading-overlay">
-        <Loading
-          active
-          className="app-session-loading"
-          description={t("common.loading")}
-        />
-      </div>
-    );
-  }
+  const loading = (
+    <div className="app-session-loading-overlay">
+      <Loading
+        active
+        className="app-session-loading"
+        description={t("common.loading")}
+      />
+    </div>
+  );
+  if (!restored) return loading;
 
-  if (
-    isGlobalAdminSpace ||
-    location.pathname === "/auth/recovery" ||
-    location.pathname === "/auth/invitation"
-  )
-    return <_AppInner />;
+  const content = (
+    <>
+      <ClientErrorReporter />
+      <Outlet />
+    </>
+  );
+  const signedIn = authClient.loggedIn();
+  const shell = matches.some(({ id }) => id === "routes/(shell)/_layout");
 
-  if (!client.loggedIn()) return <_AppInner />;
+  // The shell's authentication guard redirects before it renders the outlet.
+  // Neither that redirect nor the sign-in form needs the application frame.
+  if (signIn || (!signedIn && shell)) return content;
+
+  const requireCrypto =
+    signedIn &&
+    !pathname.startsWith("/__admin") &&
+    pathname !== "/auth/recovery" &&
+    pathname !== "/auth/invitation";
 
   return (
-    <SessionInfoProvider key={authVersion}>
-      <CryptoUnlocked>
-        <_AppInner />
-      </CryptoUnlocked>
-    </SessionInfoProvider>
+    <Suspense fallback={loading}>
+      <ApplicationFrame authVersion={authVersion} requireCrypto={requireCrypto}>
+        {content}
+      </ApplicationFrame>
+    </Suspense>
   );
 }
 

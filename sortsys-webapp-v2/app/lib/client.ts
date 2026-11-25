@@ -1,27 +1,13 @@
-import { browserApiEndpoint } from "./apiEndpoint";
-import { createClient, type Client } from "@sortsys/v2-client";
+import type { Client } from "@sortsys/v2-client";
 import { Observable } from "rxjs";
-import { BUILD_REVISION } from "./buildInfo";
-import { lockCryptoSession, signIn } from "./crypto/session";
-import {
-  errorHttpStatus,
-  technicalErrorReport,
-  type TechnicalErrorContext,
-} from "./errorTelemetry";
+import { API_ENDPOINT, authClient, reportClientError } from "./authClient";
 import { createBusinessClient } from "./data/businessClient";
-import { ramCache } from "./data/ramCache";
-import { llmActivity } from "./llmActivity";
+import { errorHttpStatus } from "./errorTelemetry";
 
-const HOST = browserApiEndpoint();
-export const API_ENDPOINT = HOST;
+export { API_ENDPOINT, reportClientError } from "./authClient";
 
-const baseClient = createClient(HOST, "webapp", {
-  revision: BUILD_REVISION,
-  cache: ramCache(),
-  cacheable: (path) => !path.startsWith("zerotrust."),
-});
-const businessClient = createBusinessClient(baseClient, {
-  endpoint: HOST,
+const businessClient = createBusinessClient(authClient, {
+  endpoint: API_ENDPOINT,
   realtime: true,
 });
 
@@ -46,55 +32,14 @@ export function startAutomaticTimestampEvidence(
   void import("./crypto/timestampEvidence")
     .then((module) => {
       if (!signal.aborted)
-        stop = module.startTimestampEvidence(baseClient, signal);
+        stop = module.startTimestampEvidence(authClient, signal);
     })
     .catch(() => undefined);
   return () => stop?.();
 }
 
-let reportingError = false;
-let lastReportKey = "";
-let lastReportAt = 0;
-
-function browserPath() {
-  if (typeof window !== "object") return null;
-  return `${window.location.pathname}${window.location.search}${window.location.hash}`;
-}
-
-export async function reportClientError(input: TechnicalErrorContext) {
-  if (reportingError) return;
-  if (!baseClient.loggedIn()) return;
-
-  const report = technicalErrorReport(
-    { ...input, path: input.path ?? browserPath() },
-    BUILD_REVISION,
-  );
-  const key = JSON.stringify(report);
-  const now = Date.now();
-  if (key === lastReportKey && now - lastReportAt < 5000) return;
-  lastReportKey = key;
-  lastReportAt = now;
-
-  reportingError = true;
-  try {
-    await baseClient.mutate("errorReports.report", report);
-  } catch {
-    // reporting must never break user flow.
-  } finally {
-    reportingError = false;
-  }
-}
-
 export const client: Client = {
   ...businessClient,
-  login: (input) => signIn(baseClient, input),
-  logout: async () => {
-    try {
-      await lockCryptoSession(true);
-    } finally {
-      await baseClient.logout();
-    }
-  },
   query: (async (path: any, input: any, opts: any) => {
     const result = await businessClient.query(path, input, opts);
     const err = result[1];
@@ -173,8 +118,3 @@ export const client: Client = {
     return result;
   },
 };
-
-baseClient.listenAuthState(() => {
-  llmActivity.cancelAll();
-  if (!baseClient.loggedIn()) void lockCryptoSession(true);
-});

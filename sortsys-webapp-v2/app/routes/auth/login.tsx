@@ -3,7 +3,7 @@ import { Unauthenticated } from "~/components/Authenticated";
 import type { Route } from "./+types/login";
 import { AuthLayout } from "~/components/AuthLayout";
 import { MyForm } from "~/components/MyForm";
-import { client } from "~/lib/client";
+import { authClient } from "~/lib/authClient";
 import { useState } from "react";
 import { MyButton } from "~/components/MyButton";
 import { Icons } from "~/lib/icons";
@@ -24,7 +24,7 @@ export default Unauthenticated(function () {
     setPasskeyErr(null);
     setPasskeyLoading(true);
     try {
-      await signInWithPasskey(client);
+      await signInWithPasskey(authClient);
     } catch (err) {
       setPasskeyErr(
         (err as Error)?.message || uiText("Passkey-Anmeldung fehlgeschlagen."),
@@ -49,7 +49,7 @@ export default Unauthenticated(function () {
           }
 
           try {
-            await client.login({ username, tenant, password });
+            await authClient.login({ username, tenant, password });
           } catch (error) {
             throw new Error(loginErrorMessage(error));
           }

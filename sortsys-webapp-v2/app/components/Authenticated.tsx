@@ -1,13 +1,13 @@
 import { useEffect } from "react";
 import { Navigate } from "react-router";
 import { useForceUpdate } from "~/hooks/useForceUpdate";
-import { client } from "~/lib/client";
+import { authClient } from "~/lib/authClient";
 
 export function Authenticated<P extends object>(Component: React.FC<P>): React.FC<P> {
     return function (props: P) {
         const forceUpdate = useForceUpdate();
-        useEffect(() => client.listenAuthState(forceUpdate), []);
-        if (!client.loggedIn()) return <Navigate to="/auth/login" />;
+        useEffect(() => authClient.listenAuthState(forceUpdate), []);
+        if (!authClient.loggedIn()) return <Navigate to="/auth/login" />;
         return <Component {...props} />;
     }
 }
@@ -15,8 +15,8 @@ export function Authenticated<P extends object>(Component: React.FC<P>): React.F
 export function Unauthenticated<P extends object>(Component: React.FC<P>): React.FC<P> {
     return function (props: P) {
         const forceUpdate = useForceUpdate();
-        useEffect(() => client.listenAuthState(forceUpdate), []);
-        if (client.loggedIn()) return <Navigate to="/" />;
+        useEffect(() => authClient.listenAuthState(forceUpdate), []);
+        if (authClient.loggedIn()) return <Navigate to="/" />;
         return <Component {...props} />;
     }
 }
