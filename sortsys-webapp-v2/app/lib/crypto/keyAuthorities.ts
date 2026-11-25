@@ -1,4 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
   keyAuthority,
@@ -14,7 +15,6 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
 import { unlockedAccount, type trustedHistory } from "./session";
-import { mapConcurrent } from "../data/runtime/concurrentReads";
 
 const certificates = new WeakMap<
   Client,
@@ -68,10 +68,11 @@ export async function provisionMemberKeyAuthorities(
       return certificate;
     },
   );
-  for (let offset = 0; offset < authorities.length; offset += 32) {
+
+  for (const batch of arrayBatches(authorities, 32)) {
     input.signal.throwIfAborted();
     input.live();
-    const batch = authorities.slice(offset, offset + 32);
+
     let failure: unknown;
     try {
       const [, error] = await client.mutate(

@@ -8,7 +8,7 @@ import {
   record,
   sized,
 } from "@sortsys/zerotrust/sortsys";
-import { findAvailableNumber } from "@sortsys/zerotrust";
+import { arrayBatches, findAvailableNumber } from "@sortsys/zerotrust";
 import { ProtectedWriteConflict } from "./atomicWrites";
 import type { Collection } from "./protectedObjects";
 import { defineDataModel } from "./runtime/model";
@@ -183,11 +183,13 @@ export function defineNumberLedger<Claim extends { number: string }>() {
               const salt = await namespace();
               const address = await claimAddress(salt.value);
 
-              for (let offset = 0; offset < options.claims.length; offset += 32) {
-                const page = await Promise.all(options.claims.slice(offset, offset + 32).map(async (claim) => ({
-                  claim,
-                  request: claimRequest(await address(claim.number)),
-                })));
+              for (const batch of arrayBatches(options.claims, 32)) {
+                const page = await Promise.all(
+                  batch.map(async (claim) => ({
+                    claim,
+                    request: claimRequest(await address(claim.number)),
+                  })),
+                );
 
                 await runtime.transaction(page.map(({ request }) => request), (tx) => {
                   for (const { claim, request } of page) {

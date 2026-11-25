@@ -4,9 +4,9 @@ import {
   type QueryInput,
   type QueryResult,
 } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { required } from "./protectedObjects";
-import { mapConcurrent } from "./runtime/concurrentReads";
 
 type Selection =
   QueryInput<"zerotrust.documents.messages.pages">["selections"][number];
@@ -71,10 +71,8 @@ async function drain(client: Client, queue: Queue) {
           return false;
         }
       });
-      const batches: Request[][] = [];
-      for (let offset = 0; offset < current.length; offset += 4) {
-        batches.push(current.slice(offset, offset + 4));
-      }
+
+      const batches = [...arrayBatches(current, 4)];
       await mapConcurrent(batches, 4, async (batch) => {
         try {
           const result = await pages(client, batch);

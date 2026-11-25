@@ -1,4 +1,5 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
   DEFAULT_RECOVERY_LIMITS,
@@ -7,7 +8,6 @@ import {
   verifyDomain,
 } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
-import { mapConcurrent } from "../data/runtime/concurrentReads";
 import { readBoxKeyAuthority } from "./keyAuthorities";
 
 type Rewrap = Parameters<typeof rewrapDomainKey>[0];
@@ -91,10 +91,11 @@ export async function prepareHistoricalKeyGrants(
         : {}),
     }));
   }
+
   const grants: Grant[] = [];
-  for (let offset = 0; offset < generations.length; offset += 16) {
+  for (const selected of arrayBatches(generations, 16)) {
     checkpoint();
-    const selected = generations.slice(offset, offset + 16);
+
     const page = await required(
       client.query(
         "zerotrust.keys.history",

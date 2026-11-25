@@ -1,9 +1,9 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import type { PreparedWrites } from "./atomicWrites";
 import { toolUsageCollection } from "./projectToolUsage";
 import { protectedCollections, required, type Collection } from "./protectedObjects";
-import { mapConcurrent } from "./runtime/concurrentReads";
 import { deferredToolRate, toolCollection, TOOL_MODEL } from "./toolData";
 
 type Collections = Awaited<ReturnType<typeof protectedCollections>>;
@@ -35,10 +35,8 @@ export async function prepareBookingRates(
     !mayPublishProjectRate ||
     !collections.readable(toolCollection("tool", tool, "procurement")),
   );
-  const batches = [];
-  for (let offset = 0; offset < deferred.length; offset += 32) {
-    batches.push(deferred.slice(offset, offset + 32));
-  }
+  const batches = [...arrayBatches(deferred, 32)];
+
   const pins = await mapConcurrent(batches, 4, async (batch) => {
     signal.throwIfAborted();
     const sources = await required(client.query(
