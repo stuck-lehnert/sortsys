@@ -364,15 +364,16 @@ impl SignedPolicy {
         }
     }
 
-    pub fn frame(&self) -> RpcResult<Vec<u8>> {
+    fn validate_application_fields(&self) -> RpcResult<()> {
         if let Some(administration) = &self.administration {
             if administration.root.administration.is_some() {
                 return Err(invalid());
             }
             // Application-specific rule origins must also be valid in the
             // primary checkpoint, including rules replaced by a profile.
-            administration.root.frame()?;
+            administration.root.validate_application_fields()?;
         }
+
         if let Some(subjects) = &self.suspended {
             for subject in subjects {
                 let value = subject.strip_prefix("user:").ok_or_else(invalid)?;
@@ -382,12 +383,23 @@ impl SignedPolicy {
                 }
             }
         }
-        validate_rule_origins(&self.rules)?;
-        self.as_protocol().frame().map_err(Into::into)
+
+        validate_rule_origins(&self.rules)
+    }
+
+    pub fn frame(&self) -> RpcResult<Vec<u8>> {
+        self.validate_application_fields()?;
+
+        let policy = self.as_protocol();
+        if let Some(administration) = &policy.administration {
+            // The outer frame binds the signature, not the root's rule bytes.
+            administration.root.frame()?;
+        }
+        policy.frame().map_err(Into::into)
     }
 
     pub fn verify(&self, key: &[u8]) -> RpcResult<()> {
-        self.frame()?;
+        self.validate_application_fields()?;
         self.as_protocol()
             .verify(key, &self.signature)
             .map_err(Into::into)
@@ -450,9 +462,11 @@ pub(super) use sortsys_zerotrust::protocol::{
 pub(super) type EncryptedObject = sortsys_zerotrust::protocol::EncryptedObject<Facet>;
 
 #[cfg(test)]
-mod object_tombstone_tests {
+mod policy_frame_tests {
     use super::*;
     use crate::zerotrust::crypto::encode;
+    use ed25519_dalek::{Signer, SigningKey};
+    use sortsys_zerotrust::administration::{AdministrativeProfile, PolicyAdministration};
 
     #[test]
     fn delegated_frames_validate_primary_rule_origins_and_reject_nested_administration() {
@@ -497,13 +511,130 @@ mod object_tombstone_tests {
             signature: root.signature.clone(),
         };
         assert!(delegated.frame().is_err());
+
         root.rules[0].origin = None;
-        *delegated.administration.as_mut().unwrap().root = root;
+        *delegated.administration.as_mut().unwrap().root = root.clone();
         assert!(delegated.frame().is_ok());
+
+        delegated.administration.as_mut().unwrap().root.rules[0]
+            .actions
+            .clear();
+        assert!(delegated.frame().is_err());
+        *delegated.administration.as_mut().unwrap().root = root;
+
         let nested = delegated.clone();
         *delegated.administration.as_mut().unwrap().root = nested;
         assert!(delegated.frame().is_err());
     }
+
+    #[test]
+    fn policy_verification_keeps_primary_delegated_and_continued_signatures() {
+        let authority = SigningKey::from_bytes(&[1; 32]);
+        let authority_public = authority.verifying_key().to_bytes();
+        let manager = SigningKey::from_bytes(&[2; 32]);
+        let mut author = IdentityCertificate {
+            tenant: "frame-test".into(),
+            generation: "1".into(),
+            user: "user:2".into(),
+            previous_signature: None,
+            encryption_key: encode(&[0; 32]),
+            signing_key: encode(&manager.verifying_key().to_bytes()),
+            signature: String::new(),
+        };
+        author.signature = encode(&authority.sign(&author.frame().unwrap()).to_bytes());
+
+        let mut primary = SignedPolicy {
+            tenant: author.tenant.clone(),
+            version: "1".into(),
+            rules: vec![Rule {
+                subject: author.user.clone(),
+                scope: "catalog:products".into(),
+                facet: Facet::MasterData,
+                actions: vec![Action::Read, Action::Update, Action::Grant],
+                effect: Effect::Allow,
+                origin: None,
+            }],
+            suspended: Some(vec!["user:3".into()]),
+            transaction: None,
+            administration: None,
+            signature: String::new(),
+        };
+        primary.signature = encode(&authority.sign(&primary.frame().unwrap()).to_bytes());
+        primary.verify(&authority_public).unwrap();
+
+        let mut profile = AdministrativeProfile {
+            tenant: primary.tenant.clone(),
+            root_signature: primary.signature.clone(),
+            version: "2".into(),
+            subject: "user:4".into(),
+            scope: "catalog:products".into(),
+            facet: Facet::MasterData,
+            actions: vec![Action::Read, Action::Update],
+            author: author.clone(),
+            signature: String::new(),
+        };
+        profile.signature = encode(
+            &manager
+                .sign(&profile.as_protocol().frame().unwrap())
+                .to_bytes(),
+        );
+
+        let granted = Rule {
+            subject: profile.subject.clone(),
+            scope: profile.scope.clone(),
+            facet: profile.facet,
+            actions: profile.actions.clone(),
+            effect: Effect::Allow,
+            origin: None,
+        };
+        let denied = Rule {
+            actions: vec![Action::Create, Action::Delete, Action::Approve],
+            effect: Effect::Deny,
+            ..granted.clone()
+        };
+        let mut delegated = SignedPolicy {
+            version: "2".into(),
+            rules: vec![primary.rules[0].clone(), granted, denied],
+            administration: Some(PolicyAdministration {
+                root: Box::new(primary.clone()),
+                profiles: vec![profile],
+                author,
+                previous_signature: primary.signature.clone(),
+                continuation: None,
+            }),
+            ..primary
+        };
+        delegated.signature = encode(&manager.sign(&delegated.frame().unwrap()).to_bytes());
+        delegated.verify(&authority_public).unwrap();
+
+        let mut reordered = delegated.clone();
+        reordered.rules[1].actions.reverse();
+        reordered.signature = encode(&manager.sign(&reordered.frame().unwrap()).to_bytes());
+        assert!(reordered.verify(&authority_public).is_err());
+
+        let mut incomplete = delegated.clone();
+        incomplete.rules.pop();
+        incomplete.signature = encode(&manager.sign(&incomplete.frame().unwrap()).to_bytes());
+        assert!(incomplete.verify(&authority_public).is_err());
+
+        let mut continued = delegated.clone();
+        continued.version = "3".into();
+        let administration = continued.administration.as_mut().unwrap();
+        administration.previous_signature = delegated.signature;
+        administration.continuation = Some(encode(&[4; 32]));
+        continued.signature = encode(&authority.sign(&continued.frame().unwrap()).to_bytes());
+        continued.verify(&authority_public).unwrap();
+
+        continued.administration.as_mut().unwrap().root.rules[0]
+            .actions
+            .clear();
+        assert!(continued.verify(&authority_public).is_err());
+    }
+}
+
+#[cfg(test)]
+mod object_tombstone_tests {
+    use super::*;
 
     #[test]
     fn browser_tombstones_are_signed_empty_bodies_and_cannot_be_relabelled() {

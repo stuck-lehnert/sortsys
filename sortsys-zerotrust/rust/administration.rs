@@ -141,6 +141,11 @@ impl AdministrativeProfileRef<'_> {
 
     pub fn admits(&self, root: &PolicyRef<'_>, signature: &str) -> Result<bool> {
         self.frame()?;
+
+        self.admitted_by(root, signature)
+    }
+
+    fn admitted_by(&self, root: &PolicyRef<'_>, signature: &str) -> Result<bool> {
         if self.tenant != root.tenant
             || self.root_signature != signature
             || revision(self.version)? <= revision(root.version)?
@@ -186,14 +191,20 @@ impl AdministrativeProfileRef<'_> {
         authority: &[u8],
         generation: &str,
     ) -> Result<()> {
-        if self.author.generation != generation || !self.admits(root, signature)? {
+        if self.author.generation != generation {
             return Err(invalid());
         }
+
+        let frame = self.frame()?;
+        if !self.admitted_by(root, signature)? {
+            return Err(invalid());
+        }
+
         self.author.verify(authority)?;
         verify(
             &sized::<32>(&self.author.signing_key)?,
             self.signature,
-            &self.frame()?,
+            &frame,
         )
     }
 }
@@ -274,15 +285,11 @@ impl PolicyAdministrationRef<'_> {
         {
             return Err(invalid());
         }
-        let expected = self.rule_frames()?;
-        let actual = current
-            .rules
-            .iter()
-            .map(RuleRef::frame)
-            .collect::<Result<Vec<_>>>()?;
-        if expected != actual {
+
+        if !self.matches_rules(&current.rules) {
             return Err(invalid());
         }
+
         let permissions = current.frame()?;
         if self.continuation.is_some() {
             return verify(authority, signature, &permissions);
@@ -294,21 +301,28 @@ impl PolicyAdministrationRef<'_> {
         )
     }
 
-    fn rule_frames(&self) -> Result<Vec<Vec<u8>>> {
+    // The rule frame encodes these fields in order, including action order
+    // and the presence of an origin. Compare them directly; the signed
+    // current frame still validates every rule before signature verification.
+    fn matches_rules(&self, rules: &[RuleRef<'_>]) -> bool {
         let keys = self
             .profiles
             .iter()
             .map(AdministrativeProfileRef::key)
             .collect::<std::collections::HashSet<_>>();
-        let mut result = Vec::new();
+        let mut actual = rules.iter();
+
         for rule in &self.root.rules {
             let derived = rule.origin.is_some()
                 && rule.effect == Effect::Allow
                 && !rule.actions.contains(&Action::Grant);
-            if derived || !keys.contains(&(rule.subject, rule.scope, rule.facet)) {
-                result.push(rule.frame()?);
+            if (derived || !keys.contains(&(rule.subject, rule.scope, rule.facet)))
+                && actual.next() != Some(rule)
+            {
+                return false;
             }
         }
+
         for profile in &self.profiles {
             let denied = ORDINARY_ACTIONS
                 .iter()
@@ -322,20 +336,22 @@ impl PolicyAdministrationRef<'_> {
                 if actions.is_empty() {
                     continue;
                 }
-                result.push(
-                    RuleRef {
-                        subject: profile.subject,
-                        scope: profile.scope,
-                        facet: profile.facet,
-                        actions,
-                        effect,
-                        origin: None,
-                    }
-                    .frame()?,
-                );
+
+                let expected = RuleRef {
+                    subject: profile.subject,
+                    scope: profile.scope,
+                    facet: profile.facet,
+                    actions,
+                    effect,
+                    origin: None,
+                };
+                if actual.next() != Some(&expected) {
+                    return false;
+                }
             }
         }
-        Ok(result)
+
+        actual.next().is_none()
     }
 
     /// Both snapshots must be independently verified before admission. A root

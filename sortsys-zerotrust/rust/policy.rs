@@ -7,7 +7,7 @@ use ts_rs::TS;
 
 /// A borrowed rule avoids copying large signed policies for admission checks.
 /// Facet and subject vocabularies belong to the consuming application.
-#[derive(Clone, Copy)]
+#[derive(Clone, Copy, PartialEq, Eq)]
 pub struct RuleRef<'a> {
     pub subject: &'a str,
     pub scope: &'a str,
