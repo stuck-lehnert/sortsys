@@ -8487,6 +8487,54 @@ test("added delivery-note products and special items focus the new field without
     .waitFor();
 });
 
+test("editing a delivery note loads distinct products together and keeps line order and units", async () => {
+  api.respond("projects.get", { id: "c", title: "Fixture project" });
+  api.respond("products.get", ({ id }) => ({
+    id,
+    customId: id === "p" ? 1 : 2,
+    name: id === "p" ? "Schraube" : "Bohrschablone",
+    baseUnit: "Stk",
+    otherUnits: { Packung: 10 },
+  }));
+
+  await openApplication("/fixtures/forms?deliveryLineItems", "de");
+  const products = api.holdNextSnapshot("products.get");
+
+  try {
+    await page.getByRole("button", { name: "Edit delivery note", exact: true }).click();
+    const request = await products.captured;
+    const pathname = decodeURIComponent(new URL(request.url()).pathname);
+    const paths = pathname.split("/").at(-1).split(",");
+    assert.equal(paths.filter((path) => path === "products.get").length, 2);
+  } finally {
+    products.release();
+  }
+
+  const dialog = page.getByRole("dialog", { name: "Lieferschein bearbeiten" });
+  const quantities = dialog.getByRole("spinbutton", { name: /^Anzahl/ });
+  const unitFields = 'select[name^="record:"][name$=":unit"]';
+  const units = dialog.locator(unitFields);
+
+  await quantities.nth(2).waitFor();
+  await page.waitForFunction(
+    (selector) => [...document.querySelectorAll(selector)]
+      .map((element) => element.value).join(",") === "Packung,Stk,Packung",
+    unitFields,
+  );
+  assert.deepEqual(
+    await quantities.evaluateAll((fields) => fields.map((field) => field.value)),
+    ["2", "5", "1"],
+  );
+  assert.deepEqual(
+    await units.evaluateAll((fields) => fields.map((field) => field.value)),
+    ["Packung", "Stk", "Packung"],
+  );
+  assert.deepEqual(
+    api.requests.filter(({ path }) => path === "products.get").map(({ input }) => input.id).sort(),
+    ["p", "q"],
+  );
+});
+
 test("editing a delivery note adds and removes special items without losing other entries", async () => {
   api.respond("projects.get", { id: "c", title: "Fixture project" });
   await openApplication("/fixtures/forms", "en");

@@ -13,6 +13,7 @@ import type { MyModalsInterface } from "~/hooks/useMyModals";
 import { client, contentAccess } from "~/lib/client";
 import { deliveryCollection } from "~/lib/data/deliveryNoteData";
 import { projectCollection } from "~/lib/data/projectData";
+import { mapConcurrent } from "~/lib/data/runtime/concurrentReads";
 import {
   scannedDeliveryRequestId,
   type DeliveryNotePrefill,
@@ -570,7 +571,9 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
             onLoad={async () => {
               context.setValues({ comment: note.comment ?? "" });
 
-              if (canMove) {
+              async function prefillProject() {
+                if (!canMove) return;
+
                 const [project] = await client.query(
                   "projects.get",
                   { id: note.projectId },
@@ -579,25 +582,29 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                 if (project) context.setValues({ project: [project] });
               }
 
-              const recordIdList: string[] = [];
-              for (const record of note.records) {
-                const id = record.id ?? generateId();
-                recordIdList.push(id);
+              const productIds = new Set(note.records.map((record) => record.productId));
+              const [products] = await Promise.all([
+                mapConcurrent([...productIds], 4, async (id) => {
+                  const [product] = await client.query(
+                    "products.get",
+                    { id },
+                    { strategy: "cache-first" },
+                  );
+                  return [id, product] as const;
+                }),
+                prefillProject(),
+              ]);
 
-                const [product] = await client.query(
-                  "products.get",
-                  { id: record.productId },
-                  { strategy: "cache-first" },
-                );
+              const productsById = new Map(products);
+              const recordIdList = note.records.map((record) => {
+                const id = record.id ?? generateId();
+                const product = productsById.get(record.productId) ?? null;
                 const [amount, unit] = product
                   ? quantityInUnit(product, record.quantity, record.unit)
                   : [record.quantity, null];
-                initialRecordValues[id] = {
-                  product: product ?? null,
-                  amount,
-                  unit,
-                };
-              }
+                initialRecordValues[id] = { product, amount, unit };
+                return id;
+              });
 
               const specialRecordIdList: string[] = [];
               note.specialRecords?.forEach((record) => {
@@ -611,7 +618,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
                 };
               });
 
-              setRecordIds(recordIdList.length ? recordIdList : []);
+              setRecordIds(recordIdList);
               setSpecialRecordIds(specialRecordIdList);
             }}
           />

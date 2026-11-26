@@ -199,7 +199,13 @@ function FormEntrypoints() {
         projectId: "c",
         revision: "3",
         comment: "Lieferung vor Ort",
-        records: [],
+        records: new URLSearchParams(location.search).has("deliveryLineItems")
+          ? [
+              { id: "a", noteId: "e", productId: "p", quantity: 20, unit: "Packung", comment: null },
+              { id: "b", noteId: "e", productId: "q", quantity: 5, unit: "Stk", comment: null },
+              { id: "c", noteId: "e", productId: "p", quantity: 10, unit: "Packung", comment: null },
+            ]
+          : [],
         specialRecords: [],
       })}>
         Edit delivery note
