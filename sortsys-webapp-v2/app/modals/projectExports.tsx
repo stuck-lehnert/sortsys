@@ -14,6 +14,7 @@ import { addUniqueWorksheet, workbookSections } from "~/lib/workbookSections";
 import {
   readDeliveryExportCosts,
   readExportReferences,
+  readRegieExportReferences,
 } from "~/lib/exportReferences";
 import { dayInIsoWeek, isoWeekLabel, startOfIsoWeek, WEEKDAY_NAMES } from "~/lib/week";
 import type { Project } from "~/type-helpers";
@@ -343,22 +344,10 @@ export function showExportProjectRegieReportsModal(
         throw new Error(uiText("Fur dieses Projekt sind keine Regieberichte vorhanden"));
       }
 
-      const [productsById, usersById] = await Promise.all([
-        readExportReferences(
-          client,
-          "products.get",
-          reportList.flatMap((report) =>
-            report.products.map((entry) => entry.productId),
-          ),
-        ),
-        readExportReferences(
-          client,
-          "users.get",
-          reportList.flatMap((report) =>
-            report.workHours.map((entry) => entry.userId),
-          ),
-        ),
-      ]);
+      const { productsById, usersById } = await readRegieExportReferences(
+        client,
+        reportList,
+      );
 
       if (format === 'pdf') {
         const documents = reportList.map((report) => {

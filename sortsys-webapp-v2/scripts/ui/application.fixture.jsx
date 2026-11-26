@@ -57,6 +57,7 @@ import AdminPage from "../../app/routes/(shell)/admin";
 import DeploymentsPage from "../../app/routes/(shell)/deployments";
 import ProjectFilesPage from "../../app/routes/(shell)/projects.$id.files";
 import ProjectRegieReportsPage from "../../app/routes/(shell)/projects.$id.regieReports";
+import RegieReportDetailPage from "../../app/routes/(shell)/regieReports.$id";
 import ProjectDetailShell from "../../app/routes/(shell)/projects.$id.shell";
 
 import OffersPage from "../../app/routes/(shell)/offers.index";
@@ -288,6 +289,7 @@ export function ApplicationFixture() {
               <Route path="/projects/:id/regieReports" element={<ProjectDetailShell />}>
                 <Route index element={<ProjectRegieReportsPage />} />
               </Route>
+              <Route path="/regieReports/:id" element={<RegieReportDetailPage />} />
               <Route path="/projects/:id/costs" element={<ProjectDetailShell />} />
               <Route path="/offers" element={<OffersPage />} />
               <Route path="/offers/new" element={<NewOfferPage />} />

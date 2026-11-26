@@ -8799,7 +8799,7 @@ test("delivery export reads costs only for the selected period and reports denie
   assert.deepEqual(costReads(), [{ id: "d" }]);
 });
 
-test("delivery export downloads a workbook containing only the selected period", async () => {
+async function serveWorkbookPreview() {
   const officeOrigin = new URL(server.origin);
   officeOrigin.hostname = "localhost";
   await page.route(`${officeOrigin.origin}/integration/`, (route) => route.fulfill({
@@ -8830,6 +8830,57 @@ test("delivery export downloads a workbook containing only the selected period",
     </script>`,
   }));
   api.respond("zerotrust.editors.config", { officeOrigin: officeOrigin.origin });
+}
+
+test("a regie report exports its project, personnel and materials in Excel", async () => {
+  await serveWorkbookPreview();
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("users.get", { id: "d", firstName: "Anna", lastName: "Kraft" });
+  api.respond("products.get", { id: "e", name: "Dichtband", baseUnit: "m" });
+  api.respond("regieReports.get", {
+    id: "r",
+    projectId: "c",
+    autoId: "7",
+    day: "2026-06-15",
+    createdAt: new Date("2026-06-15T09:00:00Z"),
+    summary: "Fenster abgedichtet",
+    workHours: [{ userId: "d", day: "2026-06-15", hours: 2.5 }],
+    products: [{ productId: "e", quantity: 3 }],
+    specialRecords: [],
+  });
+
+  await openApplication("/regieReports/r");
+  await page.getByRole("heading", { name: "Time-and-material report #7" }).waitFor();
+  await page.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Excel", exact: true }).click();
+
+  const fileName = "Time-and-material report-7.xlsx";
+  const excel = page.getByRole("dialog", { name: fileName });
+  const [file] = await Promise.all([
+    page.waitForEvent("download"),
+    excel.getByRole("button", { name: "Download", exact: true }).click(),
+  ]);
+
+  assert.equal(file.suggestedFilename(), fileName);
+  const { default: ExcelJS } = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(await file.path()));
+
+  const sheet = workbook.worksheets[0];
+  assert.equal(sheet.getCell("A1").value, "Time-and-material report #7");
+  assert.match(sheet.getCell("A2").value, /Baustelle Nord$/);
+  assert.equal(sheet.getCell("A5").value, "Fenster abgedichtet");
+
+  const rows = [];
+  sheet.eachRow((row) => rows.push(row.values));
+  assert.ok(rows.some((row) => row[1] === "Anna Kraft" && row[2] === 2.5));
+  assert.deepEqual(rows.find((row) => row[1] === "Dichtband")?.slice(1), [
+    "Dichtband", "3.00 m", "-",
+  ]);
+});
+
+test("delivery export downloads a workbook containing only the selected period", async () => {
+  await serveWorkbookPreview();
   api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
   api.respond("deliveryNotes.list", [
     { id: "e", autoId: 2, effectiveTimestamp: "2026-07-01T12:00:00.000Z" },

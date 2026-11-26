@@ -1,5 +1,9 @@
 import { expect, test } from "bun:test";
-import { readDeliveryExportCosts, readExportReferences } from "./exportReferences.ts";
+import {
+  readDeliveryExportCosts,
+  readExportReferences,
+  readRegieExportReferences,
+} from "./exportReferences.ts";
 
 test("exports use one cache-first query per distinct nonempty reference", async () => {
   const calls = [];
@@ -36,6 +40,37 @@ test("a new export does not retain records from an earlier query", async () => {
 
   expect(before.get("p")).toBe(visible);
   expect(after.get("p")).toBe(null);
+});
+
+test("regie exports read material and staff together without repeating references", async () => {
+  const started = [];
+  let release;
+  const ready = new Promise((resolve) => { release = resolve; });
+  const product = { id: "a", name: "Stahl" };
+  const client = {
+    async query(path, { id }, { strategy }) {
+      started.push([path, id, strategy]);
+      await ready;
+
+      if (path === "products.get") return [product, null];
+      return [null, { code: "FORBIDDEN" }];
+    },
+  };
+  const report = {
+    products: [{ productId: "a" }],
+    workHours: [{ userId: "a" }],
+  };
+
+  const reading = readRegieExportReferences(client, [report, report]);
+  release();
+  expect(started).toEqual([
+    ["products.get", "a", "cache-first"],
+    ["users.get", "a", "cache-first"],
+  ]);
+
+  const { productsById, usersById } = await reading;
+  expect([...productsById]).toEqual([["a", product]]);
+  expect([...usersById]).toEqual([["a", null]]);
 });
 
 test("large exports bound concurrent reads without dropping references", async () => {

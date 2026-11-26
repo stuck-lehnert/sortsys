@@ -1,5 +1,6 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import { mapConcurrent } from "@sortsys/zerotrust";
+import type { RegieReport } from "~/type-helpers";
 
 type ReferencePath = "products.get" | "tools.get" | "users.get";
 type ExportPath = ReferencePath | "deliveryNotes.costs.get";
@@ -20,6 +21,30 @@ export function readDeliveryExportCosts(
   ids: Iterable<string>,
 ) {
   return readExportRecords(client, "deliveryNotes.costs.get", ids, "strict");
+}
+
+export async function readRegieExportReferences(
+  client: Pick<Client, "query">,
+  reports: readonly Pick<RegieReport, "products" | "workHours">[],
+) {
+  const [productsById, usersById] = await Promise.all([
+    readExportReferences(
+      client,
+      "products.get",
+      reports.flatMap(({ products }) =>
+        products.map(({ productId }) => productId),
+      ),
+    ),
+    readExportReferences(
+      client,
+      "users.get",
+      reports.flatMap(({ workHours }) =>
+        workHours.map(({ userId }) => userId),
+      ),
+    ),
+  ]);
+
+  return { productsById, usersById };
 }
 
 async function readExportRecords<Path extends ExportPath>(

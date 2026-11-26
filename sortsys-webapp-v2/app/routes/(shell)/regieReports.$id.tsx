@@ -26,7 +26,8 @@ import { Icons } from "~/lib/icons";
 import { renderStructuredPdf } from "~/lib/pdf";
 import { buildRegieReportPdfDocument } from "~/lib/regieReportPdf";
 import { appendRegieMaterials, appendRegieWorkHours } from "~/lib/regieWorkbook";
-import { readExportReferences } from "~/lib/exportReferences";
+import { readRegieExportReferences } from "~/lib/exportReferences";
+import type { RegieReport } from "~/type-helpers";
 import {
   showDeleteRegieReportModal,
   showModifyRegieReportModal,
@@ -41,6 +42,19 @@ import {
   startOfIsoWeek,
   WEEKDAY_NAMES,
 } from "~/lib/week";
+
+async function readReportExportData(report: RegieReport) {
+  const [[project], references] = await Promise.all([
+    client.query(
+      "projects.get",
+      { id: report.projectId },
+      { strategy: "cache-first" },
+    ),
+    readRegieExportReferences(client, [report]),
+  ]);
+
+  return { projectTitle: project?.title ?? "Unbekannt", ...references };
+}
 
 export default function RegieReportDetailPage() {
   const { id } = useParams();
@@ -109,29 +123,12 @@ export default function RegieReportDetailPage() {
     setIsPdfExporting(true);
 
     try {
-      const [project] = await client.query(
-        "projects.get",
-        { id: currentReport.projectId },
-        { strategy: "cache-first" },
-      );
-
-      const productMap = await readExportReferences(
-        client,
-        "products.get",
-        currentReport.products.map((record) => record.productId),
-      );
-      const userMap = await readExportReferences(
-        client,
-        "users.get",
-        currentReport.workHours.map((record) => record.userId),
-      );
+      const exportData = await readReportExportData(currentReport);
 
       const pdfData = await renderStructuredPdf(
         buildRegieReportPdfDocument({
           report: currentReport,
-          projectTitle: project?.title ?? "Unbekannt",
-          productsById: productMap,
-          usersById: userMap,
+          ...exportData,
         }),
       );
 
@@ -182,24 +179,11 @@ export default function RegieReportDetailPage() {
                 hideIf: !sessionInfo.canDo("view:regieReports"),
                 onClick: async () => {
                   const openExcel = prepareExcelExport(modals);
-                  const ExcelJS = await import("exceljs");
-
-                  const [project] = await client.query(
-                    "projects.get",
-                    { id: report.projectId },
-                    { strategy: "cache-first" },
-                  );
-
-                  const productMap = await readExportReferences(
-                    client,
-                    "products.get",
-                    report.products.map((record) => record.productId),
-                  );
-                  const userMap = await readExportReferences(
-                    client,
-                    "users.get",
-                    report.workHours.map((record) => record.userId),
-                  );
+                  const [ExcelJS, { projectTitle, productsById, usersById }] =
+                    await Promise.all([
+                      import("exceljs"),
+                      readReportExportData(report),
+                    ]);
 
                   const wb = new ExcelJS.Workbook();
                   wb.creator = "exceljs";
@@ -216,8 +200,8 @@ export default function RegieReportDetailPage() {
                     WEEKDAY_NAMES.length - 1,
                   );
                   const subtitle = uiText(
-                    `${isoWeekLabel(weekStart)} (${formatDate(weekStart)} bis ${formatDate(weekEnd)}) — ${project?.title ?? "Unbekannt"}`,
-                    `${isoWeekLabel(weekStart)} (${formatDate(weekStart)} to ${formatDate(weekEnd)}) — ${project?.title ?? "Unbekannt"}`,
+                    `${isoWeekLabel(weekStart)} (${formatDate(weekStart)} bis ${formatDate(weekEnd)}) — ${projectTitle}`,
+                    `${isoWeekLabel(weekStart)} (${formatDate(weekStart)} to ${formatDate(weekEnd)}) — ${projectTitle}`,
                   );
 
                   ws.getCell(1, 1).value = title;
@@ -254,8 +238,8 @@ export default function RegieReportDetailPage() {
                   }
 
                   const sections = workbookSections(ws, cursor);
-                  appendRegieWorkHours(ws, sections, report, weekStart, userMap);
-                  appendRegieMaterials(ws, sections, report, productMap);
+                  appendRegieWorkHours(ws, sections, report, weekStart, usersById);
+                  appendRegieMaterials(ws, sections, report, productsById);
 
                   const safeSuffix = `${report.autoId}`.replace(
                     /[^\w\-]+/g,
