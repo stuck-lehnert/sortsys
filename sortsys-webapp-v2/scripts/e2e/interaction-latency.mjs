@@ -86,6 +86,7 @@ const projectContacts =
 const samples = Number(process.env.SORTSYS_LATENCY_SAMPLES ?? "12");
 const actionTimeout = Number(process.env.SORTSYS_LATENCY_ACTION_TIMEOUT_MS ?? "30000");
 const diagnosticsEnabled = process.env.SORTSYS_LATENCY_DIAGNOSTICS === "1";
+const waitForDashboard = process.env.SORTSYS_LATENCY_WAIT_DASHBOARD === "1";
 
 if (
   projectContacts !== undefined &&
@@ -139,6 +140,18 @@ async function scenario(browser, target) {
       await page.getByRole("button", { name: /^(Anmelden|Sign in)$/ }).click();
       await ready(nav("/settings"));
     });
+
+    if (waitForDashboard) {
+      await measure("dashboardAfterLogin", async () => {
+        await page.waitForURL((url) => url.pathname === "/dashboard");
+        await ready(page.locator(".dashboard-activity"));
+
+        await page
+          .locator(".dashboard-loading:visible, .dashboard-activity-loading:visible")
+          .first()
+          .waitFor({ state: "hidden" });
+      });
+    }
 
     // The default dashboard leaves this group collapsed on both branches.
     // Opening the navigation is separate from signing in and loading the list.

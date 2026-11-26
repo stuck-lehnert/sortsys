@@ -118,19 +118,27 @@ export function identityCertificate(input: unknown): IdentityCertificate {
     "signature",
     ...(hasPrevious ? ["previousSignature"] : []),
   ]) as IdentityCertificate;
-  identityCertificateFrame(value);
+  validateIdentityCertificateFields(value);
   sized(value.signature, 64);
   return { ...value };
 }
 
-export function identityCertificateFrame(
+function validateIdentityCertificateFields(
   input: Omit<IdentityCertificate, "signature">,
-): Uint8Array<ArrayBuffer> {
+) {
   identifier(input.tenant);
   identifier(input.user);
   revision(input.generation);
   sized(input.encryptionKey, 32);
   sized(input.signingKey, 32);
+  if (input.previousSignature !== undefined) sized(input.previousSignature, 64);
+}
+
+export function identityCertificateFrame(
+  input: Omit<IdentityCertificate, "signature">,
+): Uint8Array<ArrayBuffer> {
+  validateIdentityCertificateFields(input);
+
   const fields = [
     input.tenant,
     input.generation,
@@ -139,7 +147,6 @@ export function identityCertificateFrame(
     input.signingKey,
   ];
   if (input.previousSignature !== undefined) {
-    sized(input.previousSignature, 64);
     fields.push(input.previousSignature);
     return frame("sortsys/identity-certificate/v2", fields);
   }

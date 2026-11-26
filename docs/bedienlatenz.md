@@ -75,3 +75,18 @@ erfassten Abschlüsse; parallele Aufrufe können sich dabei überlappen.
 `detailWithContacts` schließt `detail` ein. Die Diagnose protokolliert keine
 Schlüssel oder Klartexte und liefert keine Bedienlatenz-Perzentile. Die
 Bedienlatenz wird ohne diese Instrumentierung gemessen.
+
+Mit `SORTSYS_LATENCY_WAIT_DASHBOARD=1` wartet der Test nach dem sichtbaren
+Einstellungslink zusätzlich auf das Dashboard ohne Ladeanzeigen für Verlauf
+und Aktivitäten. `dashboardAfterLogin` erfasst diesen Abschnitt getrennt.
+So lässt sich der erste Aufruf der Projektliste nach einem sichtbaren
+Dashboard mit dem direkten Wechsel vergleichen. Die Wartebedingung betrifft
+nur die sichtbaren Bereiche; Hintergrundarbeit kann weiterlaufen. Werte aus
+den beiden Abläufen nicht als eine Stichprobe zusammenfassen.
+
+Weniger Kryptografieaufrufe sind für sich genommen kein Nachweis für schnellere
+Bedienung. Der verworfene Cache für Chiffrat-Signaturen sparte in einer
+Chromium-Probe mit 32 synthetischen Datensätzen Signaturprüfungen (kalt
+64 → 40, warm 64 → 16). Die Dauer des Ablaufs aus Autorensuche und Öffnen
+sank dabei aber nicht: Erneutes Framing und Hashing kosten ebenfalls Zeit.
+Die Probe lief in der CPU-emulierten VM und ersetzt keinen App-Vergleich.
