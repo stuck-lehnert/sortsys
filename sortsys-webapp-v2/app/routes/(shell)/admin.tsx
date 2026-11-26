@@ -407,6 +407,12 @@ function OrganizationAdministration() {
               </MyCallout>
             )}
 
+            {usageRequested && !llmUsage && !llmUsageErr && (
+              <InlineLoading
+                description={uiText("Verbrauch laden", "Loading usage")}
+              />
+            )}
+
             {(llmUsage ?? []).map((row) => (
               <div
                 key={row.provider + row.model}
@@ -430,7 +436,7 @@ function OrganizationAdministration() {
               </div>
             ))}
 
-            {!llmUsage?.length && (
+            {llmUsage?.length === 0 && !llmUsageErr && (
               <p className="light">
                 {uiText("Noch kein Verbrauch in diesem Monat.")}
               </p>

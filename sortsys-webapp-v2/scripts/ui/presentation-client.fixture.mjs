@@ -181,6 +181,11 @@ export async function installPresentationClient() {
         "settings.invoiceNumbering.get",
         "settings.invoiceNumbering.set",
       ),
+    offerNumbering: () =>
+      editSettings(
+        "settings.offerNumbering.get",
+        "settings.offerNumbering.set",
+      ),
   });
   gaebDocuments.open = async (caseId, id) => {
     const [session, error] = await transport.query(

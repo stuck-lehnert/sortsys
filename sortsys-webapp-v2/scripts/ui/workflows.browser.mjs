@@ -105,6 +105,7 @@ function createWorkflowApi() {
   };
   let documentTemplate = { source: null, revision: "0", assets: [] };
   let invoiceNumbering = { scheme: "sequential", startNumber: "1" };
+  let offerNumbering = { scheme: "sequential", startNumber: "1" };
   const failures = new Map();
   const injectedErrors = new Set();
   const responses = new Map();
@@ -290,6 +291,11 @@ function createWorkflowApi() {
         return invoiceNumbering;
       case "settings.invoiceNumbering.set":
         invoiceNumbering = input;
+        return { success: true };
+      case "settings.offerNumbering.get":
+        return offerNumbering;
+      case "settings.offerNumbering.set":
+        offerNumbering = input;
         return { success: true };
       case "settings.organization.get":
         return {
@@ -5487,6 +5493,26 @@ test("contractor subcontract package selects contract work, compares purchase bi
   await checkPageLayout("contractor-subcontract-awarded");
 });
 
+test("organization administration distinguishes loading, failed and empty usage", async () => {
+  const failure = "Synthetic usage load failure";
+  const empty = page.getByText("Noch kein Verbrauch in diesem Monat.", {
+    exact: true,
+  });
+
+  api.fail("llm.admin.usage", failure);
+  await openApplication("/admin?tab=usage&holdStream=llm.admin.usage", "de");
+  await page.getByText("Verbrauch laden", { exact: true }).waitFor();
+  assert.equal(await empty.count(), 0);
+
+  await page.evaluate(() => window.__sortsysReleasePresentationStream());
+  await page.getByText(failure, { exact: true }).waitFor();
+  assert.equal(await empty.count(), 0);
+
+  api.recover("llm.admin.usage");
+  await openApplication("/admin?tab=usage", "de");
+  await empty.waitFor();
+});
+
 for (const [locale, width] of [
   ["en", 1400],
   ["de", 390],
@@ -5747,6 +5773,33 @@ for (const [locale, width] of [
     );
   });
 }
+
+test("organization offer numbering uses its own global settings and exact preview", async () => {
+  await openApplication("/admin?tab=offer-numbers");
+  const scheme = page.getByRole("button", { name: /Offer numbering scheme/ });
+  await scheme.and(page.locator(":enabled")).waitFor();
+  await scheme.click();
+  assert.equal(await page.getByRole("option").count(), 3);
+  await page.getByRole("option", { name: "Date with separators", exact: true }).click();
+
+  const start = page.getByRole("textbox", { name: /^Global starting number/ });
+  const output = page.getByRole("status", { name: "Example offer numbers" });
+  await start.fill("9007199254740993");
+  assert.match(await output.locator("code").first().innerText(), /^\d{2}-\d{2}-\d{2}-9007199254740993$/);
+  assert.match(await output.locator("code").last().innerText(), /-9007199254740997$/);
+
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+  await page.getByText("Offer numbering saved", { exact: true }).waitFor();
+  const writes = api.requests.filter(({ path }) => path === "settings.offerNumbering.set");
+  assert.deepEqual(writes.map(({ input }) => input), [
+    { scheme: "dateSeparated", startNumber: "9007199254740993" },
+  ]);
+  assert.ok(!api.requests.some(({ path }) => path === "settings.invoiceNumbering.set"));
+
+  await page.reload();
+  await scheme.getByText("Date with separators", { exact: true }).waitFor();
+  assert.equal(await start.inputValue(), "9007199254740993");
+});
 
 test("administration opens settings on demand and keeps a draft when switching tabs", async () => {
   await openApplication("/admin?tab=invoices");
