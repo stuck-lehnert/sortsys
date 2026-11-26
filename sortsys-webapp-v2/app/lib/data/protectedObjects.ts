@@ -5,6 +5,7 @@ import {
   type QueryInput,
   type QueryResult,
 } from "@sortsys/v2-client";
+import { splitBatchOn } from "@sortsys/zerotrust";
 import {
   areaKey,
   base64,
@@ -226,7 +227,7 @@ export async function protectedCollections(
   return bindCollections(client, signal, selectedDomains);
 }
 
-function exceedsResponseBudget(error: unknown): boolean {
+export function exceedsResponseBudget(error: unknown): boolean {
   return error instanceof RpcClientError && error.data?.httpCode === 413;
 }
 
@@ -235,28 +236,16 @@ function createPageReader(
   source: PreparedPageSource | undefined,
   live: () => void,
 ) {
-  async function batch(requests: PageInput[]): Promise<ObjectPage[]> {
+  async function readBatch(requests: PageInput[]): Promise<ObjectPage[]> {
     live();
     const input = { selections: requests };
-    let pages: ObjectPage[];
-    try {
-      pages = source
-        ? await source.pages(input)
-        : await required(
-            client.query("zerotrust.objects.pages", input, {
-              strategy: "network-only",
-            }),
-          );
-    } catch (error) {
-      if (!exceedsResponseBudget(error)) throw error;
-      if (requests.length === 1) {
-        if (source) throw error;
-        return [await single(requests[0]!)];
-      }
-      const middle = Math.ceil(requests.length / 2);
-      const first = await batch(requests.slice(0, middle));
-      return [...first, ...(await batch(requests.slice(middle)))];
-    }
+    const pages = source
+      ? await source.pages(input)
+      : await required(
+          client.query("zerotrust.objects.pages", input, {
+            strategy: "network-only",
+          }),
+        );
     live();
     if (
       !Array.isArray(pages) ||
@@ -266,6 +255,11 @@ function createPageReader(
       throw new InvalidProtectedData();
     }
     return pages;
+  }
+
+  function batch(requests: PageInput[]): Promise<ObjectPage[]> {
+    const readSingle = source ? undefined : single;
+    return splitBatchOn(requests, readBatch, exceedsResponseBudget, readSingle);
   }
 
   async function single(input: PageInput): Promise<ObjectPage> {
@@ -1022,16 +1016,6 @@ function openCollection(
         { strategy: "network-only" },
       );
       live();
-      if (
-        error instanceof RpcClientError &&
-        error.data?.httpCode === 413 &&
-        ids.length > 1
-      ) {
-        const middle = Math.ceil(ids.length / 2);
-        const first = await fetchSelected(ids.slice(0, middle));
-        const last = await fetchSelected(ids.slice(middle));
-        return [...first, ...last];
-      }
       if (error) throw error;
       if (!Array.isArray(values) || values.length !== ids.length)
         throw new InvalidProtectedData();
@@ -1039,7 +1023,11 @@ function openCollection(
     }
     for (let offset = 0; offset < ids.length; offset += 32) {
       const selectedIds = ids.slice(offset, offset + 32);
-      const envelopes = await fetchSelected(selectedIds);
+      const envelopes = await splitBatchOn(
+        selectedIds,
+        fetchSelected,
+        exceedsResponseBudget,
+      );
       const part = await mapConcurrent(envelopes, 16, (envelope, index) => {
         live();
         if (envelope === null) return Promise.resolve(null);

@@ -1,12 +1,7 @@
-import {
-  RpcClientError,
-  type Client,
-  type QueryInput,
-  type QueryResult,
-} from "@sortsys/v2-client";
-import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
+import type { Client, QueryInput, QueryResult } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent, splitBatchOn } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import { required } from "./protectedObjects";
+import { exceedsResponseBudget, required } from "./protectedObjects";
 
 type Selection =
   QueryInput<"zerotrust.documents.messages.pages">["selections"][number];
@@ -25,32 +20,13 @@ async function pages(
   requests: readonly Request[],
 ): Promise<Page[]> {
   for (const request of requests) request.live();
-  let result: Page[];
-  try {
-    result = await required(
-      client.query(
-        "zerotrust.documents.messages.pages",
-        {
-          selections: requests.map((request) => request.selection),
-        },
-        { strategy: "network-only" },
-      ),
-    );
-  } catch (error) {
-    if (
-      !(error instanceof RpcClientError) ||
-      error.data?.httpCode !== 413 ||
-      requests.length === 1
-    ) {
-      throw error;
-    }
-    // Split only a response-budget rejection. Authorization and snapshot
-    // failures must invalidate the original read rather than return partial data.
-    const middle = Math.ceil(requests.length / 2);
-    const left = await pages(client, requests.slice(0, middle));
-    const right = await pages(client, requests.slice(middle));
-    return [...left, ...right];
-  }
+  const result = await required(
+    client.query(
+      "zerotrust.documents.messages.pages",
+      { selections: requests.map((request) => request.selection) },
+      { strategy: "network-only" },
+    ),
+  );
   if (!Array.isArray(result) || result.length !== requests.length) {
     throw new InvalidProtectedData();
   }
@@ -75,7 +51,11 @@ async function drain(client: Client, queue: Queue) {
       const batches = [...arrayBatches(current, 4)];
       await mapConcurrent(batches, 4, async (batch) => {
         try {
-          const result = await pages(client, batch);
+          const result = await splitBatchOn(
+            batch,
+            (requests) => pages(client, requests),
+            exceedsResponseBudget,
+          );
           const copies = result.map((page) => structuredClone(page));
           for (const [index, request] of batch.entries()) {
             request.resolve(copies[index]!);
