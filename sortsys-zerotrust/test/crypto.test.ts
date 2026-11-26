@@ -93,6 +93,17 @@ describe("recovery secret", () => {
   });
 });
 
+test("base64url decoding preserves every byte and enforces its size and alphabet", () => {
+  const content = Uint8Array.from({ length: 0x4001 }, (_, index) => index % 256);
+  const encoded = base64(content);
+
+  expect(unbase64(encoded, content.length)).toEqual(content);
+  expect(unbase64("", 0)).toEqual(new Uint8Array());
+  expect(() => unbase64(encoded, content.length - 1)).toThrow(InvalidProtectedData);
+  expect(() => unbase64("Zg\n")).toThrow(InvalidProtectedData);
+  expect(() => unbase64("+w")).toThrow(InvalidProtectedData);
+});
+
 test("wire encoding rejects noncanonical base64 and frames are unambiguous", async () => {
   expect(() => unbase64("Zh")).toThrow(InvalidProtectedData);
   expect(() => unbase64("Zg==")).toThrow(InvalidProtectedData);

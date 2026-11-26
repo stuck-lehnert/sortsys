@@ -27,13 +27,27 @@ export function base64(value: BufferSource): string {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export function unbase64(value: string, maximum = 24 * 1024 * 1024): Uint8Array<ArrayBuffer> {
-  if (!/^[A-Za-z0-9_-]*$/.test(value) || value.length > Math.ceil(maximum * 4 / 3)) {
+export function unbase64(
+  value: string,
+  maximum = 24 * 1024 * 1024,
+): Uint8Array<ArrayBuffer> {
+  if (
+    value.length > Math.ceil(maximum * 4 / 3) ||
+    !/^[A-Za-z0-9_-]*$/.test(value)
+  ) {
     throw new InvalidProtectedData();
   }
+
   try {
-    const result = Uint8Array.from(atob(value.replaceAll("-", "+").replaceAll("_", "/")), c => c.charCodeAt(0));
-    if (result.length > maximum || base64(result) !== value) throw new InvalidProtectedData();
+    const binary = atob(value.replaceAll("-", "+").replaceAll("_", "/"));
+    const result = new Uint8Array(binary.length);
+    for (let i = 0; i < binary.length; i++) {
+      result[i] = binary.charCodeAt(i);
+    }
+
+    if (result.length > maximum || base64(result) !== value) {
+      throw new InvalidProtectedData();
+    }
     return result;
   } catch {
     throw new InvalidProtectedData();
