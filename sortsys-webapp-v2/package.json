@@ -24,7 +24,7 @@
     "test:table": "bun test app/components/MyTable.test.mjs",
     "test:menus": "bun test app/components/Menu.test.mjs",
     "test:ui": "bun scripts/ui/build-fixtures.mjs && node --test --test-concurrency=1 scripts/ui/*.browser.mjs",
-    "test:editors": "bun test app/lib/editorStartup.test.mjs",
+    "test:editors": "bun test app/lib/data/officeCapsule.test.mjs app/lib/data/documentEditor.test.mjs app/lib/officeDraft.test.ts",
     "test:i18n": "bun test app/lib/i18n.test.mjs app/lib/loginError.test.mjs app/components/MyCallout.test.mjs",
     "test:pdf": "bun test app/lib/pdfLayout.test.mjs",
     "test:invoice-numbering": "bun test app/lib/invoiceNumbering.test.mjs",

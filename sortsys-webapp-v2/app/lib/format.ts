@@ -50,13 +50,6 @@ export function toolStatus(tool: Tool) {
   return uiText("verfügbar", "available");
 }
 
-export function toolStatusColor(tool: Tool): string {
-  if (tool.status === "lost") return Colors.red;
-  if (tool.status === "broken") return Colors.red;
-  if (!tool.available) return Colors.cyan;
-  return Colors.green;
-}
-
 export function toolStatusTagType(tool: Tool): OperationalTagBaseProps["type"] {
   if (tool.status === "lost") return "red";
   if (tool.status === "broken") return "magenta";

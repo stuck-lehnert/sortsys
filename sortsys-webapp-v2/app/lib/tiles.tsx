@@ -18,7 +18,6 @@ import {
   toolStatus,
   toolStatusTagType,
   toolTitle,
-  userContractName,
   userFullName,
 } from "~/lib/format";
 import { nowrap } from "~/lib/primitives";
@@ -383,38 +382,6 @@ export function ToolTile({ tool }: { tool: Tool }) {
       </Heading>
 
       <Tag type={toolStatusTagType(tool)}>{toolStatus(tool)}</Tag>
-    </Tile>
-  );
-}
-
-export function UserTile({ user }: { user: User }) {
-  return (
-    <Tile key={user.id} className="w-full">
-      <Heading level={5} noMargin>
-        <MyLink
-          className={nowrap({ class: "max-w-full" })}
-          to={`/users/${user.id}`}
-        >
-          {userFullName(user)}
-        </MyLink>
-      </Heading>
-
-      <AttrList>
-        <AttrList.Attr name="Vertrag" value={userContractName(user)} />
-
-        {!!user.email && (
-          <AttrList.Attr
-            name="E-Mail"
-            value={<MyLink to={`mailto:${user.email}`}>{user.email}</MyLink>}
-          />
-        )}
-        {!!user.phone && (
-          <AttrList.Attr
-            name="Telefon"
-            value={<MyLink to={`tel:${user.phone}`}>{user.phone}</MyLink>}
-          />
-        )}
-      </AttrList>
     </Tile>
   );
 }

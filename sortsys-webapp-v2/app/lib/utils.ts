@@ -1,10 +1,6 @@
 import type { Address, Product } from "~/type-helpers";
 import { formatAddress } from "./format";
 
-export function forever() {
-  return new Promise(() => { });
-}
-
 export function isEmptyNode(node?: React.ReactNode | null): boolean {
   if (node === null || node === undefined || node === false) return true;
   if (typeof node === 'string') return !node.trim();
@@ -23,19 +19,6 @@ export function generateId(length: number = 10) {
   let result = '';
   for (let i = 0; i < length; i++) result += chooseRandom(choosable);
   return result;
-}
-
-export function isJson(str: string): boolean {
-  try {
-    JSON.parse(str);
-    return true;
-  } catch (_) {
-    return false;
-  }
-}
-
-export function formatJson(str: string): string {
-  return JSON.stringify(JSON.parse(str), null, 4);
 }
 
 export function parseFloatCustom(value: string | number | null | undefined): number {

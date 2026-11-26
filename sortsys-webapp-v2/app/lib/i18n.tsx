@@ -24,10 +24,6 @@ export function uiText(source: string, english?: string): string {
   return leadingSpace + translated + trailingSpace;
 }
 
-export function hasEnglishUiText(source: string): boolean {
-  return Object.hasOwn(EN_UI_TEXT, source);
-}
-
 const de = {
   'language.de': 'Deutsch',
   'language.en': 'Englisch',
