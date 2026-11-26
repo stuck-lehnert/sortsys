@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { verifyIdentityCertificate } from "../src/index";
 import {
   base64,
   certifyIdentity,
@@ -11,6 +12,49 @@ import {
   verifyTrustHistory,
 } from "../src/sortsys";
 import { identitySuccessionFixture } from "./support/identitySuccessionFixture";
+
+test("public certificate verification binds the identity and authority on every read", async () => {
+  const f = await identitySuccessionFixture();
+  const { authority } = await verifyTrustHistory(f.history, f.pinned);
+
+  for (const certificate of [f.initial, f.latest]) {
+    const { tenant, user, generation } = certificate;
+    const binding = { tenant, user, generation };
+
+    expect(await verifyIdentityCertificate(certificate, binding, authority)).toEqual(
+      certificate,
+    );
+    expect(await verifyIdentityCertificate(certificate, { tenant, user }, authority)).toEqual(
+      certificate,
+    );
+
+    await expect(
+      verifyIdentityCertificate(
+        certificate,
+        binding,
+        () => f.first.signingKey.publicKey,
+      ),
+    ).rejects.toThrow(InvalidProtectedData);
+
+    for (const unexpected of [
+      { ...binding, tenant: "other" },
+      { ...binding, user: "account:other" },
+      { ...binding, generation: "2" },
+    ]) {
+      await expect(
+        verifyIdentityCertificate(certificate, unexpected, authority),
+      ).rejects.toThrow(InvalidProtectedData);
+    }
+
+    await expect(
+      verifyIdentityCertificate(
+        { ...certificate, encryptionKey: base64(randomSecret()) },
+        binding,
+        authority,
+      ),
+    ).rejects.toThrow(InvalidProtectedData);
+  }
+});
 
 test("a complete unordered succession selects the current key and keeps historical signatures verifiable", async () => {
   const f = await identitySuccessionFixture();

@@ -138,7 +138,12 @@ export function identityCertificateFrame(
   input: Omit<IdentityCertificate, "signature">,
 ): Uint8Array<ArrayBuffer> {
   validateIdentityCertificateFields(input);
+  return checkedIdentityCertificateFrame(input);
+}
 
+function checkedIdentityCertificateFrame(
+  input: Omit<IdentityCertificate, "signature">,
+): Uint8Array<ArrayBuffer> {
   const fields = [
     input.tenant,
     input.generation,
@@ -151,6 +156,31 @@ export function identityCertificateFrame(
     return frame("sortsys/identity-certificate/v2", fields);
   }
   return frame("sortsys/identity-certificate/v1", fields);
+}
+
+/** Verify an identity against trust anchors selected by the caller.
+ * A successful signature does not establish current membership or access. */
+export async function verifyIdentityCertificate(
+  input: unknown,
+  expected: { tenant: string; user: string; generation?: string },
+  authority: (generation: string) => CryptoKey,
+): Promise<IdentityCertificate> {
+  const certificate = identityCertificate(input);
+  if (
+    certificate.tenant !== expected.tenant ||
+    certificate.user !== expected.user ||
+    (expected.generation !== undefined &&
+      certificate.generation !== expected.generation)
+  ) {
+    throw new InvalidProtectedData();
+  }
+
+  await verify(
+    authority(certificate.generation),
+    certificate.signature,
+    checkedIdentityCertificateFrame(certificate),
+  );
+  return certificate;
 }
 
 /** Select the last certificate of each complete, unbranched identity chain.

@@ -37,6 +37,7 @@ import {
 import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import { verifiedAccessContext } from "../crypto/accessContext";
 import { createObjectAuthorVerifier } from "../crypto/objectAuthors";
+import { readRecipientCertificate } from "../crypto/recipientCertificate";
 import type { trustedHistory, unlockedAccount } from "../crypto/session";
 import { addressId, addressText } from "./addressBook";
 import {
@@ -147,30 +148,16 @@ export function planningRecipientWriter(client: Client, context: WriteContext) {
   ): Promise<IdentityCertificate | null> {
     let pending = certificates.get(subject);
     if (!pending) {
-      pending = (async () => {
-        const [input, error] = await client.query(
-          "zerotrust.identities.get",
-          { subject },
-          { strategy: "network-only" },
-        );
-        context.live();
-        if (error) throw error;
-        if (input === null) return null;
-        const value = identityCertificate(input);
-        if (
-          value.tenant !== context.account.tenant ||
-          value.user !== subject ||
-          value.generation !== context.history.current.generation
-        )
-          throw new InvalidProtectedData();
-        await verify(
-          context.history.authority(value.generation),
-          value.signature,
-          identityCertificateFrame(value),
-        );
-        context.live();
-        return value;
-      })();
+      pending = readRecipientCertificate(
+        client,
+        {
+          tenant: context.account.tenant,
+          user: subject,
+          generation: context.history.current.generation,
+        },
+        context.history.authority,
+        context.live,
+      );
       certificates.set(subject, pending);
     }
     return pending;
@@ -565,21 +552,14 @@ export async function refreshPlanningRecipientKeys(
     return project ? scheduleCollection(project) : null;
   });
   if (!areas.length) return;
-  const [candidate, error] = await client.query(
-    "zerotrust.identities.get",
-    { subject },
-    { strategy: "network-only" },
+  const certificate = await readRecipientCertificate(
+    client,
+    { tenant: collections.tenant, user: subject },
+    collections.authority,
+    () => signal.throwIfAborted(),
   );
-  if (error) throw error;
-  if (!candidate) throw new InvalidProtectedData();
-  const certificate = identityCertificate(candidate);
-  if (certificate.tenant !== collections.tenant || certificate.user !== subject)
-    throw new InvalidProtectedData();
-  await verify(
-    collections.authority(certificate.generation),
-    certificate.signature,
-    identityCertificateFrame(certificate),
-  );
+  if (!certificate) throw new InvalidProtectedData();
+
   for (const area of areas) {
     signal.throwIfAborted();
     const collection = collections(area);

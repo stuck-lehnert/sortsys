@@ -14,14 +14,13 @@ import {
   certifyCreationCapability,
   base64,
   randomSecret,
-  identityCertificate,
-  identityCertificateFrame,
-  verify,
   type CreationNamespace,
   type CreationParent,
   type DomainDefinition,
+  type IdentityCertificate,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
+import { readRecipientCertificate } from "../crypto/recipientCertificate";
 import { readVerifiedPolicy } from "../crypto/policy";
 import { required, type Collection } from "./protectedObjects";
 import { provisionOwnedCollections } from "./prepareCollections";
@@ -160,35 +159,24 @@ export async function createResourceAreas(
   ) {
     throw new InvalidProtectedData();
   }
-  let assignee: ReturnType<typeof identityCertificate> | undefined;
+  let assignee: IdentityCertificate | undefined;
   if (
     options.assignee &&
     ![capability.creator, ...capability.readers].some(
       (member) => member.user === options.assignee,
     )
   ) {
-    const [candidate, error] = await client.query(
-      "zerotrust.identities.get",
-      { subject: options.assignee },
-      { strategy: "network-only" },
+    const certificate = await readRecipientCertificate(
+      client,
+      {
+        tenant: account.tenant,
+        user: options.assignee,
+        generation: history.current.generation,
+      },
+      history.authority,
+      live,
     );
-    live();
-    if (error) throw error;
-    if (candidate) {
-      assignee = identityCertificate(candidate);
-      if (
-        assignee.tenant !== account.tenant ||
-        assignee.generation !== history.current.generation ||
-        assignee.user !== options.assignee
-      )
-        throw new InvalidProtectedData();
-      await verify(
-        history.authority(assignee.generation),
-        assignee.signature,
-        identityCertificateFrame(assignee),
-      );
-      live();
-    }
+    assignee = certificate ?? undefined;
   }
   const { permissions } = await readVerifiedPolicy(client, {
     account,
