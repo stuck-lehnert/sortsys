@@ -32,7 +32,9 @@ export function legacyActivityReader(
   access: (value: Change["access"]) => void,
   live: () => void,
 ) {
-  const names = new Map<string, Promise<LegacyName | null>>();
+  const fetchedNames = new Map<string, Promise<Change | null>>();
+  const opened = new WeakMap<Change, Promise<LegacyActivity>>();
+
   async function open(change: Change): Promise<LegacyActivity> {
     access(change.access);
     const envelope = change.envelope;
@@ -86,17 +88,18 @@ export function legacyActivityReader(
     }
     return value;
   }
-  async function name(
-    values: Record<string, unknown>,
-    part: LegacyName["part"],
-    instant: string,
-  ): Promise<LegacyName | null> {
-    const area = legacyNameArea(values, part);
-    if (!area || !context.readable(area)) {
-      return null;
+
+  function openOnce(change: Change) {
+    let value = opened.get(change);
+    if (!value) {
+      value = open(change);
+      opened.set(change, value);
     }
-    const id = legacyActivityObject(area, values.id as string, part);
-    let result = names.get(id);
+    return value;
+  }
+
+  function fetchName(id: string) {
+    let result = fetchedNames.get(id);
     if (!result) {
       result = (async () => {
         const [change, error] = await client.query(
@@ -108,29 +111,56 @@ export function legacyActivityReader(
         if (error) {
           throw error;
         }
-        if (!change) {
-          return null;
-        }
-        if (
-          change.domain !== area.domain ||
-          change.envelope.object !== id ||
-          change.occurredMicros !== instant
-        ) {
-          throw new InvalidProtectedData();
-        }
-        const value = await open(change);
-        live();
-        if (value.part !== part) {
-          throw new InvalidProtectedData();
-        }
-        return value as LegacyName;
+        return change;
       })();
-      names.set(id, result);
+      fetchedNames.set(id, result);
     }
     return result;
   }
-  return async (change: Change): Promise<ActivityCandidate[]> => {
-    const value = await open(change);
+
+  async function name(
+    values: Record<string, unknown>,
+    part: LegacyName["part"],
+    instant: string,
+    page: readonly Change[],
+  ): Promise<LegacyName | null> {
+    const area = legacyNameArea(values, part);
+    if (!area || !context.readable(area)) {
+      return null;
+    }
+
+    const id = legacyActivityObject(area, values.id as string, part);
+    // Name facets often share this page with their event. Across a page
+    // boundary, read the exact revision as before.
+    const included = page.find((change) => change.envelope.object === id);
+    const change = included ?? (await fetchName(id));
+    live();
+    if (!change) {
+      return null;
+    }
+
+    if (
+      change.domain !== area.domain ||
+      change.envelope.object !== id ||
+      change.envelope.revision !== "1" ||
+      change.occurredMicros !== instant
+    ) {
+      throw new InvalidProtectedData();
+    }
+
+    const value = await openOnce(change);
+    live();
+    if (value.part !== part) {
+      throw new InvalidProtectedData();
+    }
+    return value;
+  }
+
+  return async (
+    change: Change,
+    page: readonly Change[],
+  ): Promise<ActivityCandidate[]> => {
+    const value = await openOnce(change);
     live();
     if (value.part !== "event") {
       return [];
@@ -138,9 +168,9 @@ export function legacyActivityReader(
     const values = value.row.values;
     const instant = change.occurredMicros;
     const [resource, actor, project] = await Promise.all([
-      name(values, "resource", instant),
-      name(values, "actor", instant),
-      name(values, "context", instant),
+      name(values, "resource", instant, page),
+      name(values, "actor", instant, page),
+      name(values, "context", instant, page),
     ]);
     live();
     const position = {

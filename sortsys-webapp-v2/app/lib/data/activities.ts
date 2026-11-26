@@ -467,7 +467,10 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       verifyAccessVersion,
       assertCurrentAccess,
     );
-    async function readCandidates(change: Change): Promise<Candidate[]> {
+    async function readCandidates(
+      change: Change,
+      page: readonly Change[],
+    ): Promise<Candidate[]> {
       verifyAccessVersion(change.access);
       parseHistoryCounter(change.sequence);
       historyInstant(change.occurredMicros);
@@ -478,7 +481,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         throw new InvalidProtectedData();
       }
       if (change.envelope.object.startsWith(LEGACY_ACTIVITY_PREFIX)) {
-        return legacy(change);
+        return legacy(change, page);
       }
       if (change.orderId !== change.sequence) {
         throw new InvalidProtectedData();
@@ -641,6 +644,13 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       }
       return output;
     }
+    async function readPage(changes: Page["changes"]) {
+      const candidates = await Promise.all(
+        changes.map((change) => readCandidates(change, changes)),
+      );
+      return candidates.flat();
+    }
+
     function validatePage(
       page: Page,
       before: ActivityPosition | null,
@@ -728,9 +738,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       assertCurrentAccess();
       const firstEdge = validatePage(first, null, null);
       if (!first.unchanged) {
-        const initial = (
-          await Promise.all(first.changes.map(readCandidates))
-        ).flat();
+        const initial = await readPage(first.changes);
         assertCurrentAccess();
         cache = {
           stamp: context.stamp,
@@ -795,9 +803,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         if (page.unchanged) {
           throw new InvalidProtectedData();
         }
-        state.candidates.push(
-          ...(await Promise.all(page.changes.map(readCandidates))).flat(),
-        );
+        state.candidates.push(...await readPage(page.changes));
         assertCurrentAccess();
         state.after = page.after;
         state.edge = edge;

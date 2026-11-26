@@ -667,6 +667,14 @@ test("late legacy copies retain original microsecond chronology, actors and labe
       changedColumns: ["cost_per_hour", "first_name"],
       action: "updated",
     });
+    const legacyNameReads = () =>
+      tenant.calls.filter(
+        (call) =>
+          call.path === "zerotrust.history.get" &&
+          call.input.id.startsWith("legacy-activity:"),
+      );
+    expect(legacyNameReads()).toEqual([]);
+
     const rest = await tenant.store.query("personalization.activity.list", {
       limit: 10,
       cursor: events[1].id,
@@ -689,6 +697,14 @@ test("late legacy copies retain original microsecond chronology, actors and labe
     expect(
       hidden.every((value) => !value.changedColumns.includes("cost_per_hour")),
     ).toBe(true);
+    await tenant.revokeArea("personnel:1", "master-data");
+    const withoutActor = await tenant.store.query(
+      "personalization.activity.list",
+      { limit: 10 },
+    );
+    expect(withoutActor.filter((value) => value.isImported)).toHaveLength(3);
+    expect(withoutActor.every((value) => value.actorName === null)).toBe(true);
+    expect(legacyNameReads()).toEqual([]);
     expect(JSON.stringify(tenant.calls)).not.toContain("Frühere Bearbeiterin");
   } finally {
     tenant.close();
@@ -739,6 +755,28 @@ test("stripped or altered chronology never turns a copied action into a current 
     }
   }
 });
+test("a historical name included on the page still needs its authority proof", async () => {
+  const tenant = await createActivityFixture();
+  try {
+    const entries = await tenant.legacy(
+      legacyRow("101", "2026-02-01T09:30:00.123456Z"),
+    );
+    const actor = entries.find((entry) =>
+      entry.envelope.object.endsWith(":actor"),
+    );
+    expect(actor).toBeDefined();
+    actor.migrationOrigin.history.occurredMicros = "1769938200123457";
+
+    await expect(
+      tenant.store.query("personalization.activity.list", {}),
+    ).rejects.toThrow();
+    expect(
+      tenant.calls.some((call) => call.path === "zerotrust.history.get"),
+    ).toBe(false);
+  } finally {
+    tenant.close();
+  }
+});
 test("same-time originals keep source-ID order and a split across storage pages never duplicates an action", async () => {
   const tenant = await createActivityFixture();
   try {
@@ -772,6 +810,21 @@ test("same-time originals keep source-ID order and a split across storage pages 
     expect(
       [...first, ...second].every((value) => value.changedColumns.length === 2),
     ).toBe(true);
+    expect(
+      [...first, ...second].every(
+        (value) =>
+          value.actorName === "Frühere Bearbeiterin 71928" &&
+          value.resourceTitle === "Historischer Name 26481",
+      ),
+    ).toBe(true);
+    const boundaryReads = tenant.calls.filter(
+      (call) =>
+        call.path === "zerotrust.history.get" &&
+        call.input.id.startsWith("legacy-activity:"),
+    );
+    expect(boundaryReads.length).toBeGreaterThan(0);
+    expect(boundaryReads.length).toBeLessThan(10);
+    expect(boundaryReads.every((call) => call.input.revision === "1")).toBe(true);
   } finally {
     tenant.close();
   }
