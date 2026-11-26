@@ -5,6 +5,7 @@ import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { VitePWA } from "vite-plugin-pwa";
 import { pdfjsViewerPlugin } from "./scripts/pdfjsViewerPlugin";
+import { scriptClientTypesPlugin } from "./scripts/scriptClientTypesPlugin.mjs";
 import { gaebLicensePlugin } from "../sortsys-gaeb/scripts/licensePlugin";
 
 const exceljsBareBrowserBuild = fileURLToPath(
@@ -124,6 +125,7 @@ export default defineConfig({
     tailwindcss(),
     reactRouter(),
     pdfjsViewerPlugin(),
+    scriptClientTypesPlugin(),
     gaebLicensePlugin(),
 
     VitePWA({

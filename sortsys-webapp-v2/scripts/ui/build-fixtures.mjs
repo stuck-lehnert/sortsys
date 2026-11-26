@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { build as viteBuild } from "vite";
+import { scriptClientTypesPlugin } from "../scriptClientTypesPlugin.mjs";
 
 const directory = dirname(fileURLToPath(import.meta.url));
 const webapp = resolve(directory, "../..");
@@ -143,6 +144,7 @@ await viteBuild({
     ],
   },
   plugins: [
+    scriptClientTypesPlugin(),
     {
       name: "actual-application-ui-source",
       enforce: "pre",

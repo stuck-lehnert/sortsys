@@ -383,13 +383,11 @@ tatsächlichen Bearbeiter. Die API erhält weder Skripttexte noch Suchbegriffe.
 Ein nativer Test prüft getrennte Rechte und Schlüsselwechsel über zwei
 API-Instanzen sowie den Erhalt nach zwei Mandanten-Recoveries.
 
-Die Typvervollständigung im Skripteditor wird aus den Deklarationen des
-installierten API-Clients erzeugt. Nach einem Client-Build und dem Erneuern der
-lokalen Abhängigkeit aktualisiert `npm run scripts:generate-client-types` in
-`sortsys-webapp-v2` die Editorbibliothek. Typprüfung und Produktionsbuild weisen
-einen veralteten Stand zurück. Die Bibliothek enthält Ein- und Ausgabetypen;
-die Skriptumgebung stellt weiterhin nur Abfragen, Änderungen und das Verwerfen
-von Zwischenspeichern bereit. Die Typen ersetzen keine Zugriffsprüfung.
+Vite liest die Deklarationen für die Typvervollständigung aus dem installierten
+API-Client. Die Webapp verwaltet keine zweite Kopie des Vertrags. Der Skripteditor
+bindet die Deklarationen beim Öffnen ein. Die Skriptumgebung stellt
+Abfragen, Änderungen und das Verwerfen von Zwischenspeichern bereit. Die Typen
+ersetzen keine Zugriffsprüfung.
 
 `remove` löscht gewöhnliche Modelle durch eine signierte Löschmarkierung und
 prüft bei Wiederholung diese Markierung erneut. Ein fehlendes Objekt allein

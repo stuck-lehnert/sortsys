@@ -196,7 +196,7 @@ export function ScriptEditor(props: {
         import('monaco-editor'),
         import('monaco-editor/editor/editor.worker.js?worker'),
         import('monaco-editor/languages/features/typescript/ts.worker.js?worker'),
-        import('~/lib/scriptClientTypes.generated').then(module => module.SCRIPT_CLIENT_TYPES),
+        import('virtual:sortsys-script-client-types').then(module => module.default),
       ]);
       if (disposed || !containerRef.current) return;
 

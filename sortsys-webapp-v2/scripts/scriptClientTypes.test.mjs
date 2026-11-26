@@ -5,10 +5,9 @@ import { dirname, join } from "node:path";
 import { test } from "node:test";
 import ts from "typescript";
 import {
-  generateScriptClientTypes,
-  scriptClientTypesPath,
-  writeScriptClientTypes,
-} from "./generate-script-client-types.mjs";
+  loadScriptClientTypes,
+  scriptClientTypesPlugin,
+} from "./scriptClientTypesPlugin.mjs";
 
 function templateConstant(source, name) {
   const parsed = ts.createSourceFile(
@@ -29,10 +28,23 @@ function templateConstant(source, name) {
   throw new Error(`Missing declaration: ${name}`);
 }
 
-const apiTypes = templateConstant(
-  await readFile(scriptClientTypesPath, "utf8"),
-  "SCRIPT_CLIENT_TYPES",
-);
+const plugin = scriptClientTypesPlugin();
+const resolvedId = plugin.resolveId("virtual:sortsys-script-client-types");
+assert.ok(resolvedId);
+
+const watchedPaths = [];
+const editorTypeModule = await plugin.load.call({
+  addWatchFile(path) { watchedPaths.push(path); },
+}, resolvedId);
+const [defaultExport] = ts.createSourceFile(
+  "editor-types.js",
+  editorTypeModule,
+  ts.ScriptTarget.Latest,
+).statements;
+assert.ok(ts.isExportAssignment(defaultExport));
+assert.ok(ts.isStringLiteral(defaultExport.expression));
+const apiTypes = defaultExport.expression.text;
+
 // Compile the exact ambient declarations installed by the production editor.
 const bridgeTypes = templateConstant(
   await readFile(
@@ -88,8 +100,7 @@ function diagnostics(source) {
   }));
 }
 
-test("script declarations match the installed API and compile without Node, RxJS or an RPC framework", async () => {
-  await writeScriptClientTypes({ check: true });
+test("script declarations match the installed API and compile without Node, RxJS or an RPC framework", () => {
   const result = diagnostics(`
 const { client } = await import("sortsys-client");
 const [note] = await client.query("deliveryNotes.get", { id: "1" });
@@ -148,40 +159,31 @@ for (const [name, source, message] of [
   });
 }
 
-test("generation detects contract drift, preserves template types and fails on missing client aliases", async () => {
+test("loading picks up contract changes, preserves template types and rejects missing client aliases", async () => {
   const directory = await mkdtemp(join(tmpdir(), "sortsys-script-types-"));
   try {
+    assert.equal(watchedPaths.length, 2);
+    const [, installedClientPath] = watchedPaths;
     const contractPath = join(directory, "contract.d.ts");
-    const outputPath = join(directory, "generated.ts");
     const contract =
       "export type Route = `scope:${string}`;\nexport interface QueryInputs { current: { revision: string }; }\n";
     await writeFile(contractPath, contract);
-    await writeScriptClientTypes({ contractPath, outputPath });
-    await writeScriptClientTypes({ contractPath, outputPath, check: true });
-    const original = await readFile(outputPath, "utf8");
-    assert.match(
-      templateConstant(original, "SCRIPT_CLIENT_TYPES"),
-      /`scope:\$\{string\}`/,
-    );
+    const original = await loadScriptClientTypes(contractPath, installedClientPath);
+    assert.match(original, /`scope:\$\{string\}`/);
+    assert.match(original, /revision: string/);
+
     await writeFile(
       contractPath,
       contract.replace("revision: string", "revision: number"),
     );
-    await assert.rejects(
-      writeScriptClientTypes({ contractPath, outputPath, check: true }),
-      /veraltet/,
-    );
-    assert.equal(
-      await readFile(outputPath, "utf8"),
-      original,
-      "check must not overwrite the reviewed declarations",
-    );
-    await writeScriptClientTypes({ contractPath, outputPath });
-    await writeScriptClientTypes({ contractPath, outputPath, check: true });
+    const changed = await loadScriptClientTypes(contractPath, installedClientPath);
+    assert.match(changed, /revision: number/);
+    assert.doesNotMatch(changed, /revision: string/);
+
     const clientPath = join(directory, "client.d.ts");
     await writeFile(clientPath, "export type CacheMode = string;\n");
     await assert.rejects(
-      generateScriptClientTypes({ contractPath, clientPath }),
+      loadScriptClientTypes(contractPath, clientPath),
       /Fehlende API-Deklaration: QueryPath/,
     );
   } finally {
