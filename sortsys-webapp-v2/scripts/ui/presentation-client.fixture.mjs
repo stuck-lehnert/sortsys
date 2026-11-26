@@ -25,6 +25,7 @@ export async function installPresentationClient() {
   const heldStream = fixtureOptions.get("holdStream");
   const readableProject = fixtureOptions.get("readProject");
   const readableRegieReports = fixtureOptions.get("readRegieReports");
+  const readableDeliveryNotes = fixtureOptions.get("readDeliveryNotes");
   let releaseStream;
   const streamReleased = new Promise((resolve) => {
     releaseStream = resolve;
@@ -124,7 +125,9 @@ export async function installPresentationClient() {
             action === "read" &&
             ((readableProject !== null && scope === `project:${readableProject}`) ||
               (readableRegieReports !== null &&
-                scope === `project:${readableRegieReports}:regie-reports`))),
+                scope === `project:${readableRegieReports}:regie-reports`) ||
+              (readableDeliveryNotes !== null &&
+                scope === `project:${readableDeliveryNotes}:delivery-notes`))),
         canCreate: () => administrator,
         canAny: () => administrator,
         canManagePermissions: () => administrator,

@@ -8558,6 +8558,32 @@ test("project cost actions hide the delivery export when there are no notes", as
   );
 });
 
+test("project cost actions use the delivery note grant for that project", async () => {
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("deliveryNotes.list", [
+    { id: "d", autoId: 1, effectiveTimestamp: "2026-06-15T12:00:00.000Z" },
+  ]);
+
+  const deliveryAction = () =>
+    page.getByRole("menuitem", { name: "Delivery notes: Excel (period)" });
+  const deliveryReads = () => api.requests
+    .filter(({ path }) => path === "deliveryNotes.list")
+    .map(({ input }) => input);
+
+  api.setRoles(["view:deliveryNotes", "manage:projectDeployments"]);
+  await openApplication("/projects/c/costs?readProject=c&readDeliveryNotes=d");
+  await page.getByRole("button", { name: "Actions", exact: true }).click();
+  assert.equal(await deliveryAction().count(), 0);
+  assert.deepEqual(deliveryReads(), []);
+
+  api.setRoles([]);
+  await openApplication("/projects/c/costs?readProject=c&readDeliveryNotes=c");
+  await page.getByRole("button", { name: "Actions", exact: true }).click();
+  await deliveryAction().click();
+  await page.getByRole("dialog", { name: "Export delivery notes as Excel" }).waitFor();
+  assert.deepEqual(deliveryReads(), [{ projectId: "c" }]);
+});
+
 test("delivery export reads costs only for the selected period and reports denied access", async () => {
   api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
   api.respond("deliveryNotes.list", [
@@ -8587,6 +8613,85 @@ test("delivery export reads costs only for the selected period and reports denie
   await submit.click();
   await dialog.getByText("No permission to read delivery costs").waitFor();
   assert.deepEqual(costReads(), [{ id: "d" }]);
+});
+
+test("delivery export downloads a workbook containing only the selected period", async () => {
+  const officeOrigin = new URL(server.origin);
+  officeOrigin.hostname = "localhost";
+  await page.route(`${officeOrigin.origin}/integration/`, (route) => route.fulfill({
+    contentType: "text/html",
+    body: `<!doctype html><script>
+      const app = ${JSON.stringify(server.origin)};
+      let workbook;
+
+      function reply(q, data) {
+        parent.postMessage({ msg: { q, data }, txid: crypto.randomUUID() }, app);
+      }
+
+      addEventListener("message", ({ source, origin, data }) => {
+        if (source !== parent || origin !== app || !data.msg) return;
+        const ack = (args) => parent.postMessage({ ack: data.txid, args }, app);
+
+        if (data.msg.q === "GET_SESSION") {
+          ack({ key: "export-edit", viewKey: "export-view" });
+        } else if (data.msg.q === "START") {
+          workbook = data.msg.data.document;
+          ack({});
+          reply("DOCUMENT_READY");
+        } else if (data.msg.q === "DOWNLOAD_AS" && data.msg.data === "xlsx") {
+          reply("ON_DOWNLOADAS", workbook);
+        }
+      });
+      parent.postMessage({ q: "INTEGRATION_READY" }, app);
+    </script>`,
+  }));
+  api.respond("zerotrust.editors.config", { officeOrigin: officeOrigin.origin });
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("deliveryNotes.list", [
+    { id: "e", autoId: 2, effectiveTimestamp: "2026-07-01T12:00:00.000Z" },
+    { id: "d", autoId: 1, effectiveTimestamp: "2026-06-15T12:00:00.000Z" },
+  ]);
+  api.respond("deliveryNotes.costs.get", {
+    noteId: "d",
+    totalCost: 25,
+    records: [],
+    specialRecords: [{
+      recordId: "f", name: "Teillieferung", amount: 20, unit: "Stk",
+      pricePerUnit: 1.25, totalCost: 25, comment: null,
+    }],
+  });
+
+  await openApplication("/projects/c/costs");
+  await page.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Delivery notes: Excel (period)" }).click();
+
+  const form = page.getByRole("dialog", { name: "Export delivery notes as Excel" });
+  await form.locator('input[name="fromDate"]').fill("2026-06-01");
+  await form.locator('input[name="toDate"]').fill("2026-06-30");
+  await form.getByRole("button", { name: "Export", exact: true }).click();
+
+  const fileName = "Delivery-notes-period-Baustelle-Nord-20260601-20260630.xlsx";
+  const excel = page.getByRole("dialog", { name: fileName });
+  await excel.waitFor();
+  const [file] = await Promise.all([
+    page.waitForEvent("download"),
+    excel.getByRole("button", { name: "Download", exact: true }).click(),
+  ]);
+
+  assert.equal(file.suggestedFilename(), fileName);
+  const { default: ExcelJS } = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(await file.path()));
+  const sheet = workbook.getWorksheet("Lieferscheine");
+  assert.equal(sheet.getCell("A7").value, "#1");
+  assert.equal(sheet.getCell("E7").value, 25);
+  assert.equal(sheet.getCell("D11").value, "Teillieferung");
+  assert.equal(sheet.getCell("G11").value, 1.25);
+  assert.equal(sheet.getCell("H11").value, 25);
+  assert.deepEqual(
+    api.requests.filter(({ path }) => path === "deliveryNotes.costs.get").map(({ input }) => input),
+    [{ id: "d" }],
+  );
 });
 
 test("daily-report editing keeps zero weather values and clears an empty field", async () => {

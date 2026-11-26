@@ -69,6 +69,17 @@ function ProjectDetail({ id }: { id: string }) {
   const canReadRegieReports =
     regieReportsArea !== null &&
     sessionInfo.canAccess(regieReportsArea.scope, regieReportsArea.facet, "read");
+  const deliveryNotesArea =
+    canReadProject && isCostsTab
+      ? projectModuleArea(id, "delivery-notes", "master-data")
+      : null;
+  const canReadDeliveryNotes =
+    deliveryNotesArea !== null &&
+    sessionInfo.canAccess(
+      deliveryNotesArea.scope,
+      deliveryNotesArea.facet,
+      "read",
+    );
 
   const [project, err] = useClientStream(
     () =>
@@ -79,10 +90,10 @@ function ProjectDetail({ id }: { id: string }) {
   );
   const [deliveryNotes] = useClientStream(
     () =>
-      canReadProject && isCostsTab && sessionInfo.canDo("view:deliveryNotes")
+      canReadDeliveryNotes
         ? client.streamQuery("deliveryNotes.list", { projectId: id })
         : from([[null, null] as [null, null]]),
-    [id, canReadProject, isCostsTab, sessionInfo.canDo("view:deliveryNotes")],
+    [id, canReadDeliveryNotes],
   );
   const [regieReports, regieReportsError] = useClientStream(
     () =>
@@ -280,10 +291,7 @@ function ProjectDetail({ id }: { id: string }) {
               {
                 label: uiText("Lieferscheine Excel (Zeitraum)"),
                 renderIcon: Icons.Excel,
-                hideIf:
-                  !isCostsTab ||
-                  !sessionInfo.canDo("view:deliveryNotes") ||
-                  !hasDeliveryNotes,
+                hideIf: !canReadDeliveryNotes || !hasDeliveryNotes,
                 onClick: () =>
                   showExportProjectDeliveryNotesTimespanModal(modals, project),
               },
