@@ -119,6 +119,27 @@ export function createObjectAuthorVerifier(
   const origins = new Map<string, Promise<DomainDefinition>>();
   const accessViews = new Map<string, ReturnType<typeof compilePolicy>>();
   const publicDefinitions = new Map<string, Promise<BirthProof>>();
+
+  function accessView(
+    { generation, permissions }: CheckedPolicy,
+    subject: string,
+    origin?: DomainDefinition["creation"],
+  ) {
+    const id = `${generation}/${permissions.version}/${subject}/${origin?.id ?? ""}`;
+    let access = accessViews.get(id);
+    if (!access) {
+      const input = origin
+        ? {
+            ...permissions,
+            rules: [...permissions.rules, ...creationRules(origin)],
+          }
+        : permissions;
+      access = compilePolicy(input, [subject]);
+      accessViews.set(id, access);
+    }
+    return access;
+  }
+
   async function verifyKeyManagement(
     proof: BirthProof,
     scope: string,
@@ -128,9 +149,7 @@ export function createObjectAuthorVerifier(
     if (!certificate) return;
     const checked = await policy(proof.policyVersion);
     context.live();
-    const access = compilePolicy(checked.permissions, [
-      certificate.holder.user,
-    ]);
+    const access = accessView(checked, certificate.holder.user);
     if (
       checked.generation !== certificate.generation ||
       !access.allows(scope, facet, "grant") ||
@@ -271,22 +290,7 @@ export function createObjectAuthorVerifier(
       first.creation?.capability.generation === checked.generation
         ? first.creation
         : undefined;
-    const viewId = `${version}/${author}/${origin?.id ?? "root"}`;
-    let access = accessViews.get(viewId);
-    if (!access) {
-      access = compilePolicy(
-        {
-          ...checked.permissions,
-          rules: [
-            ...checked.permissions.rules,
-            ...(origin ? creationRules(origin) : []),
-          ],
-        },
-        [author],
-      );
-      accessViews.set(viewId, access);
-    }
-    return access;
+    return accessView(checked, author, origin);
   }
   async function verifyPublicDefinition(
     value: unknown,
@@ -589,7 +593,7 @@ export function createObjectAuthorVerifier(
       if (checked.generation !== value.authorityGeneration) {
         throw new InvalidProtectedData();
       }
-      const access = compilePolicy(checked.permissions, [value.author]);
+      const access = accessView(checked, value.author);
       const scope = `catalog:${match[1]}`;
       const facet = match[2] as "master-data" | "procurement";
       if (

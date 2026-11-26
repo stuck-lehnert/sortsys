@@ -668,29 +668,33 @@ test("managed key definitions require recorded Grant and Read rights at their si
     ["update", "grant"],
   ]) {
     const f = await fixture(actions);
-    const certificate = await certifyKeyAuthority(
-      {
-        tenant: "test",
-        generation: "1",
-        scope: area.scope,
-        facet: area.facet,
-        holder: f.context.history.identityCertificate("user:2"),
-      },
-      f.authorityKey.privateKey,
-    );
-    const made = await createManagedDomain({
-      tenant: "test",
-      ...area,
-      generation: "2",
-      policyVersion: "2",
-      keyAuthority: certificate,
-      signingKey: f.reader.signingKey.privateKey,
-      recovery: {
-        encryptionKey: f.setup.authority.recoveryEncryptionKey,
-        signingKey: f.setup.authority.recoverySigningKey,
-      },
-      readers: [{ subject: "user:2", identity: certificate.holder }],
-    });
+    async function managedDefinition(area, generation, policyVersion) {
+      const expected = { tenant: "test", ...area, generation };
+      const certificate = await certifyKeyAuthority(
+        {
+          tenant: expected.tenant,
+          generation: "1",
+          scope: area.scope,
+          facet: area.facet,
+          holder: f.context.history.identityCertificate("user:2"),
+        },
+        f.authorityKey.privateKey,
+      );
+      const { definition } = await createManagedDomain({
+        ...expected,
+        policyVersion,
+        keyAuthority: certificate,
+        signingKey: f.reader.signingKey.privateKey,
+        recovery: {
+          encryptionKey: f.setup.authority.recoveryEncryptionKey,
+          signingKey: f.setup.authority.recoverySigningKey,
+        },
+        readers: [{ subject: "user:2", identity: certificate.holder }],
+      });
+      return { definition, expected };
+    }
+
+    const made = await managedDefinition(area, "2", "2");
     f.definitions.set("2", made.definition);
     const publicVerifier = createObjectAuthorVerifier(f.client, {
       ...f.context,
@@ -698,11 +702,7 @@ test("managed key definitions require recorded Grant and Read rights at their si
     });
     const control = await signedControl(f);
     const replies = await Promise.allSettled([
-      f.verifier.definition(made.definition, {
-        tenant: "test",
-        ...area,
-        generation: "2",
-      }),
+      f.verifier.definition(made.definition, made.expected),
       publicVerifier.control(control.value, control.signedFrame, {
         all: [{ facet: area.facet, action: "update", keyGeneration: "2" }],
       }),
@@ -713,6 +713,16 @@ test("managed key definitions require recorded Grant and Read rights at their si
         "fulfilled",
       ]);
       expect(replies[0].value.proof).toBe(made.definition.proof);
+
+      const unrelated = await managedDefinition(
+        { ...area, id: "project:5:master-data", scope: "project:5" },
+        "2",
+        "2",
+      );
+      await expect(
+        f.verifier.definition(unrelated.definition, unrelated.expected),
+      ).rejects.toThrow();
+
       const original = permissionsOf(f.roots.get("2").policy);
       f.roots.set("3", {
         generation: "1",
@@ -728,34 +738,12 @@ test("managed key definitions require recorded Grant and Read rights at their si
           f.authorityKey.privateKey,
         ),
       });
-      const future = await createManagedDomain({
-        tenant: "test",
-        ...area,
-        generation: "3",
-        policyVersion: "3",
-        keyAuthority: certificate,
-        signingKey: f.reader.signingKey.privateKey,
-        recovery: {
-          encryptionKey: f.setup.authority.recoveryEncryptionKey,
-          signingKey: f.setup.authority.recoverySigningKey,
-        },
-        readers: [{ subject: "user:2", identity: certificate.holder }],
-      });
+      const future = await managedDefinition(area, "3", "3");
       await expect(
-        f.verifier.definition(future.definition, {
-          tenant: "test",
-          ...area,
-          generation: "3",
-        }),
+        f.verifier.definition(future.definition, future.expected),
       ).rejects.toThrow();
       expect(
-        (
-          await f.verifier.definition(made.definition, {
-            tenant: "test",
-            ...area,
-            generation: "2",
-          })
-        ).proof,
+        (await f.verifier.definition(made.definition, made.expected)).proof,
       ).toBe(made.definition.proof);
     } else {
       expect(replies.map((reply) => reply.status)).toEqual([

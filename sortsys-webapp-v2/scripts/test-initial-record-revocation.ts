@@ -4,12 +4,15 @@ import {
   attestMigrationOrigin,
   type CreationNamespace,
 } from "@sortsys/zerotrust/sortsys";
+import { addressId } from "../app/lib/data/addressBook";
+import { splitCommercialRows } from "../app/lib/data/commercialData";
 import { createResourceAreas } from "../app/lib/data/createProjectArea";
 import { newProductRowId, publicId } from "../app/lib/data/products";
 import {
   protectedCollection,
   required,
 } from "../app/lib/data/protectedObjects";
+import { row } from "../app/lib/data/testing/businessRow.mjs";
 import { administratorContext } from "../app/lib/crypto/administration";
 import {
   readVerifiedPolicy,
@@ -31,15 +34,48 @@ function initialArea(namespace: CreationNamespace) {
   };
 }
 
-/** Exercise the public authorization boundary with valid signed ciphertext.
- * The payload deliberately has no business schema: the API must not read it. */
+function initialRecord(
+  namespace: CreationNamespace,
+  area: ReturnType<typeof initialArea>,
+  actor: string,
+  title: string,
+) {
+  if (namespace !== "commercial") return { private: title };
+
+  // The browser must issue a case-link attestation for this packet. Use the
+  // same facet layout as a real standalone offer, not arbitrary plaintext.
+  const caseId = area.scope.slice("commercial:".length);
+  const date = "2026-11-08T12:30:00.123456Z";
+
+  const payload = splitCommercialRows(caseId, [
+    row("commercial_cases", {
+      id: addressId(caseId),
+      reference: `ANG-2026-${caseId.toUpperCase()}`,
+      kind: "offer",
+      status: "draft",
+      title,
+      existing_contract: false,
+      currency: "EUR",
+      scope_item_ids: "[]",
+      created_by_user_id: addressId(actor),
+      created_at: date,
+      modified_at: date,
+    }),
+  ]).get("master-data");
+  assert.ok(payload);
+  return payload;
+}
+
+/** Exercise the public authorization boundary with valid signed ciphertext. */
 export async function exerciseInitialRecordRevocation(
   owner: Client,
   peer: Client,
 ) {
   const signal = new AbortController().signal;
   const context = await administratorContext(owner, signal);
-  const subject = `user:${context.session.user.id}`;
+  const actor = context.session.user.id;
+  const subject = `user:${actor}`;
+
   const selections = NAMESPACES.map((namespace) => ({
     namespace,
     empty: initialArea(namespace),
@@ -59,11 +95,14 @@ export async function exerciseInitialRecordRevocation(
     );
     try {
       await collection.read();
-      await collection.write([
-        await collection.packet(selection.established.prefix, {
-          private: "First authorized publication",
-        }),
-      ]);
+      const value = initialRecord(
+        selection.namespace,
+        selection.established,
+        actor,
+        "First authorized publication",
+      );
+      const packet = await collection.packet(selection.established.prefix, value);
+      await collection.write([packet]);
     } finally {
       collection.close();
     }
@@ -98,9 +137,13 @@ export async function exerciseInitialRecordRevocation(
           true,
           "The existing area grant alone must not admit its first business record",
         );
-        const packet = await collection.packet(selection.empty.prefix, {
-          private: "Must remain unpublished after revocation",
-        });
+        const value = initialRecord(
+          selection.namespace,
+          selection.empty,
+          actor,
+          "Must remain unpublished after revocation",
+        );
+        const packet = await collection.packet(selection.empty.prefix, value);
         const head = {
           domain: selection.empty.domain,
           sequence: collection.snapshot(),
@@ -181,32 +224,57 @@ export async function exerciseInitialRecordRevocation(
       } finally {
         collection.close();
       }
+
       const existing = await protectedCollection(
         peer,
         selection.established,
         signal,
       );
       try {
-        const previous = (await existing.read())[0]!;
-        await existing.write([
-          await existing.packet(
-            selection.established.prefix,
-            { private: "Existing resource remains editable" },
-            previous.envelope,
-          ),
-        ]);
-        const updated = (await existing.read())[0]!;
-        assert.deepEqual(updated.value, {
-          private: "Existing resource remains editable",
-        });
-        // These protocol fixtures deliberately have no business schema. Keep
-        // their immutable history, but exclude them from later business lists.
-        await existing.write([
-          await existing.tombstone(
-            selection.established.prefix,
-            updated.envelope,
-          ),
-        ]);
+        const [previous] = await existing.read();
+        assert.ok(previous);
+
+        const value = initialRecord(
+          selection.namespace,
+          selection.established,
+          actor,
+          "Existing resource remains editable",
+        );
+        const packet = await existing.packet(
+          selection.established.prefix,
+          value,
+          previous.envelope,
+        );
+        await existing.write([packet]);
+
+        const [updated] = await existing.read();
+        assert.ok(updated);
+        assert.deepEqual(updated.value, value);
+
+        const tombstone = await existing.tombstone(
+          selection.established.prefix,
+          updated.envelope,
+        );
+        if (selection.namespace === "commercial") {
+          // Only case retirement can remove the whole offer. This fixture
+          // remains in the disposable tenant until teardown.
+          const head = {
+            domain: selection.established.domain,
+            sequence: existing.snapshot(),
+          };
+          const [deleted, error] = await peer.mutate("zerotrust.objects.batch", {
+            objects: [tombstone],
+            heads: [head],
+          });
+          assert.equal(deleted, null);
+          assert.ok(error instanceof RpcClientError);
+          assert.equal(error.code, "BAD_REQUEST");
+
+          const [retained] = await existing.read();
+          assert.equal(retained?.envelope.revision, updated.envelope.revision);
+        } else {
+          await existing.write([tombstone]);
+        }
       } finally {
         existing.close();
       }
