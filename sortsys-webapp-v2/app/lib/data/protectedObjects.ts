@@ -506,6 +506,7 @@ async function collectionContext(
     contentEpoch,
     pages: initialPages,
     live,
+    compiledAccess,
   } = await verifiedAccessContext(client, signal, options);
   const domains = source?.domains ?? currentDomains;
   const author = createObjectAuthorVerifier(
@@ -536,7 +537,7 @@ async function collectionContext(
     domains: new Map(domains.map((domain) => [domain.id, domain])),
     origins,
     author,
-    access: compilePolicy(permissions, [subject]),
+    access: compiledAccess(),
     readers(scope: string, facet: Collection["facet"]) {
       readership ??= compileReadership(permissions);
       return readership(scope, facet);

@@ -93,12 +93,25 @@ test("a fresh unchanged response reuses only verified metadata and keeps returne
   const expectedRules = structuredClone(first.permissions.rules);
   first.domains.length = 0;
   first.permissions.rules.length = 0;
-  const second = await verifiedAccessContext(fixture.client, signal());
+
+  const { scope, facet } = fixture.areas[0];
+  const access = first.compiledAccess();
+  expect(access.allows(scope, facet, "read")).toBe(true);
+
+  const controller = new AbortController();
+  const second = await verifiedAccessContext(fixture.client, controller.signal);
   expect(second.domains).toHaveLength(5);
   expect(second.permissions.rules).toEqual(expectedRules);
+  expect(second.compiledAccess()).toBe(access);
   expect(fixture.pageCalls.map((call) => call.path)).toEqual([
     "zerotrust.access.snapshot",
   ]);
+
+  controller.abort();
+  expect(() => second.compiledAccess()).toThrow();
+
+  lockCryptoSession();
+  expect(() => first.compiledAccess()).toThrow();
 });
 
 test("unchanged claims need a matching verified cache and cannot carry content or a different subject", async () => {
@@ -125,16 +138,29 @@ test("unchanged claims need a matching verified cache and cannot carry content o
 
 test("a signed replacement policy cannot claim that the old inventory is unchanged", async () => {
   const fixture = await inventory();
-  await verifiedAccessContext(fixture.client, signal());
+  const first = await verifiedAccessContext(fixture.client, signal());
+  const { scope, facet } = fixture.areas[0];
+  const access = first.compiledAccess();
+  expect(access.allows(scope, facet, "read")).toBe(true);
+
   const { signature, ...policy } = fixture.setup.policy;
   const replacement = await signPolicy(
-    { ...policy, version: "3" },
+    {
+      ...policy,
+      version: "3",
+      rules: policy.rules.filter((rule) => rule.scope !== scope),
+    },
     fixture.authorityKey.privateKey,
   );
   fixture.changeHead((head) => unchanged({ ...head, policy: replacement }));
   await expect(
     verifiedAccessContext(fixture.client, signal()),
   ).rejects.toThrow();
+
+  fixture.changeHead((head) => ({ ...head, policy: replacement }));
+  const second = await verifiedAccessContext(fixture.client, signal());
+  expect(second.compiledAccess()).not.toBe(access);
+  expect(second.compiledAccess().allows(scope, facet, "read")).toBe(false);
 });
 
 test("a verified inventory cannot serve a failed network read or another transport", async () => {

@@ -6,6 +6,7 @@ import {
 } from "@sortsys/v2-client";
 import { readSnapshotPages } from "@sortsys/zerotrust";
 import {
+  compilePolicy,
   type CreationOrigin,
   InvalidProtectedData,
   record,
@@ -22,13 +23,16 @@ const MAX_ACCESS_PAGE_ITEMS = 128;
 const MAX_ORIGIN_PAGE_ITEMS = 640;
 type Domains = QueryResult<"zerotrust.access.snapshot">["domains"];
 type CachedInventory = {
-  domains: Domains;
-  origins: CreationOrigin[];
+  data: {
+    domains: Domains;
+    origins: CreationOrigin[];
+    permissions: Policy;
+  };
   snapshot: string;
   subject: string;
   policySignature: string;
   authoritySignature: string;
-  permissions: Policy;
+  access?: ReturnType<typeof compilePolicy>;
 };
 
 // Only public, fully verified metadata is retained. Weak account keys prevent
@@ -198,7 +202,7 @@ async function readAccessContext(
       input.after !== null
     )
       throw new InvalidProtectedData();
-    ({ domains, origins, permissions } = structuredClone(previous));
+    ({ domains, origins, permissions } = structuredClone(previous.data));
   } else {
     const returned = new Set<string>();
     const originPackets: OriginPacket[] = [];
@@ -270,19 +274,26 @@ async function readAccessContext(
       selected,
     ));
   }
+
   live();
-  if (!input.unchanged)
-    cache?.set(includeDomains, {
-      ...structuredClone({ domains, origins, permissions }),
+  const subject = input.subject;
+  let inventory = input.unchanged ? previous : undefined;
+  if (cache && !input.unchanged) {
+    inventory = {
+      data: structuredClone({ domains, origins, permissions }),
       snapshot: input.snapshot,
-      subject: input.subject,
+      subject,
       policySignature: input.policy.signature,
       authoritySignature: history.current.signature,
-    });
+    };
+    cache.set(includeDomains, inventory);
+  }
+
+  let selectedAccess: ReturnType<typeof compilePolicy> | undefined;
   return {
     account,
     history,
-    subject: input.subject,
+    subject,
     rootPolicy,
     rootPolicySignature,
     snapshot: input.snapshot,
@@ -291,6 +302,17 @@ async function readAccessContext(
     domains,
     origins,
     pages: input.pages,
+    compiledAccess() {
+      live();
+      // The compiled view is immutable and bound to the same verified
+      // snapshot as its input. No failed or skipped network read can use it.
+      if (inventory) {
+        inventory.access ??= compilePolicy(inventory.data.permissions, [subject]);
+        return inventory.access;
+      }
+      selectedAccess ??= compilePolicy(permissions, [subject]);
+      return selectedAccess;
+    },
     live,
   };
 }
