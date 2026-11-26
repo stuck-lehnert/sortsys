@@ -1,9 +1,15 @@
 import { uiText } from "~/lib/i18n";
-import { Fragment, useRef, useState } from "react";
+import {
+  Fragment,
+  useRef,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from "react";
 import { MyButton } from "~/components/MyButton";
 import { MyCallout } from "~/components/MyCallout";
 import { MyDivider } from "~/components/MyDivider";
-import { MyForm } from "~/components/MyForm";
+import { MyForm, type MyMultiSelectCreateAction } from "~/components/MyForm";
 import { ProductRecordFields } from "~/components/ProductRecordFields";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -31,6 +37,144 @@ function quantityInUnit(product: Product, baseQuantity: number, unit: string | n
   return [baseQuantity / factor, unit];
 }
 
+type LineIds = [ids: string[], setIds: Dispatch<SetStateAction<string[]>>];
+
+type SpecialLineValues = DeliveryNotePrefill["specialRecords"][number];
+
+function DeliveryNoteLines({
+  products: [recordIds, setRecordIds],
+  specialItems: [specialRecordIds, setSpecialRecordIds],
+  prefillProduct,
+  initialSpecialItems,
+  createProduct,
+  onProductChange,
+  canSeePrices,
+  canWritePrices,
+  includeLineComments = false,
+}: {
+  products: LineIds;
+  specialItems: LineIds;
+  prefillProduct: (id: string, prefix: string) => void;
+  initialSpecialItems: Readonly<Record<string, SpecialLineValues>>;
+  createProduct?: MyMultiSelectCreateAction<Product>;
+  onProductChange: () => void;
+  canSeePrices: boolean;
+  canWritePrices: boolean;
+  includeLineComments?: boolean;
+}) {
+  const context = MyForm.$useContext();
+  const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
+
+  return (
+    <>
+      <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
+      <p className="light">
+        {uiText("Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.")}
+      </p>
+
+      <MyDivider />
+      <h4 className="text-lg leading-snug font-semibold">{uiText("Produkte")}</h4>
+      <p className="light">
+        {uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}
+      </p>
+
+      {recordIds.map((id) => {
+        const prefix = `record:${id}:`;
+
+        return (
+          <Fragment key={id}>
+            <ProductRecordFields
+              prefix={prefix}
+              focusProduct={autoFocusFieldName === prefix + "product"}
+              createProduct={createProduct}
+              onProductChange={onProductChange}
+              onRemove={() =>
+                setRecordIds((ids) => ids.filter((item) => item !== id))
+              }
+            />
+            {includeLineComments && (
+              <MyForm.Input
+                name={prefix + "comment"}
+                labelText={uiText("Positionskommentar", "Line comment")}
+              />
+            )}
+            <NotifyLoaded onLoad={() => prefillProduct(id, prefix)} />
+            <div style={{ height: "1rem" }} />
+          </Fragment>
+        );
+      })}
+
+      <MyButton
+        kind="secondary"
+        renderIcon={Icons.Plus}
+        onClick={() => {
+          const id = generateId();
+          setRecordIds((ids) => [...ids, id]);
+          setAutoFocusFieldName(`record:${id}:product`);
+        }}
+      >
+        {uiText("Eintrag")}
+      </MyButton>
+
+      <MyDivider />
+      <h4 className="text-lg leading-snug font-semibold">{uiText("Sonderposten")}</h4>
+      <p className="light">
+        {uiText(
+          "Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.",
+        )}
+      </p>
+
+      {specialRecordIds.map((id) => {
+        const prefix = `specialRecord:${id}:`;
+
+        return (
+          <Fragment key={id}>
+            <DeliverySpecialRecordFields
+              prefix={prefix}
+              canSeePrices={canSeePrices}
+              canWritePrices={canWritePrices}
+              focusOnMount={autoFocusFieldName === prefix + "name"}
+              includeComment={includeLineComments}
+              onRemove={() =>
+                setSpecialRecordIds((ids) => ids.filter((item) => item !== id))
+              }
+            />
+            <NotifyLoaded
+              onLoad={() => {
+                const initial = initialSpecialItems[id];
+                if (!initial) return;
+
+                context.setValues({
+                  [prefix + "name"]: initial.name,
+                  [prefix + "unit"]: initial.unit,
+                  [prefix + "amount"]: initial.amount,
+                  [prefix + "pricePerUnit"]: initial.pricePerUnit ?? "",
+                  ...(includeLineComments
+                    ? { [prefix + "comment"]: initial.comment ?? "" }
+                    : {}),
+                });
+              }}
+            />
+            <div style={{ height: "1rem" }} />
+          </Fragment>
+        );
+      })}
+
+      <MyButton
+        kind="secondary"
+        renderIcon={Icons.Plus}
+        onClick={() => {
+          const id = generateId();
+          setSpecialRecordIds((ids) => [...ids, id]);
+          setAutoFocusFieldName(`specialRecord:${id}:name`);
+        }}
+      >
+        {uiText("Sonderposten")}
+      </MyButton>
+    </>
+  );
+}
+
 export function showCreateDeliveryNoteModal(
   modals: MyModalsInterface,
   prefill?: DeliveryNotePrefill,
@@ -40,7 +184,7 @@ export function showCreateDeliveryNoteModal(
     content: ({ context }) => {
       const session = useSessionInfo();
       const initialRecordValues = useRef<Record<string, DeliveryNotePrefill["records"][number]>>({}).current;
-      const initialSpecialRecordValues = useRef<Record<string, DeliveryNotePrefill["specialRecords"][number]>>({}).current;
+      const initialSpecialRecordValues = useRef<Record<string, SpecialLineValues>>({}).current;
 
       const [recordIds, setRecordIds] = useState<string[]>(() => {
         if (!prefill) return [generateId()];
@@ -60,7 +204,6 @@ export function showCreateDeliveryNoteModal(
           return id;
         })
       );
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
       const createEntityAction = useCreateEntityAction(modals);
       const forceUpdate = useForceUpdate();
       const projectId = context.field("project")?.getValue()?.[0]?.id;
@@ -115,135 +258,30 @@ export function showCreateDeliveryNoteModal(
             labelText={uiText("Lieferdatum", "Delivery date")}
           />
 
-          <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
-          <p className="light">
-            {uiText(
-              "Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.",
-            )}
-          </p>
+          <DeliveryNoteLines
+            products={[recordIds, setRecordIds]}
+            specialItems={[specialRecordIds, setSpecialRecordIds]}
+            initialSpecialItems={initialSpecialRecordValues}
+            createProduct={createEntityAction.product}
+            onProductChange={forceUpdate}
+            canSeePrices={canSeePrices}
+            canWritePrices={canWritePrices}
+            includeLineComments
+            prefillProduct={(id, prefix) => {
+              const initial = initialRecordValues[id];
+              if (!initial) return;
 
-          <MyDivider />
-
-          <h4 className="text-lg leading-snug font-semibold">
-            {uiText("Produkte")}
-          </h4>
-          <p className="light">
-            {uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}
-          </p>
-
-          {recordIds.map((id) => {
-            const prefix = `record:${id}:`;
-
-            return (
-              <Fragment key={id}>
-                <ProductRecordFields
-                  prefix={prefix}
-                  focusProduct={autoFocusFieldName === `${prefix}product`}
-                  createProduct={createEntityAction.product}
-                  onProductChange={forceUpdate}
-                  onRemove={() =>
-                    setRecordIds((ids) => ids.filter((current) => current !== id))
-                  }
-                />
-
-                <MyForm.Input
-                  name={prefix + "comment"}
-                  labelText={uiText("Positionskommentar", "Line comment")}
-                />
-
-                <NotifyLoaded
-                  onLoad={() => {
-                    const initial = initialRecordValues[id];
-                    if (!initial) return;
-
-                    context.setValues({
-                      [prefix + "product"]: [initial.product],
-                      [prefix + "amount"]: initial.amount,
-                      [prefix + "comment"]: initial.comment ?? "",
-                    });
-                    window.setTimeout(() => {
-                      context.setValues({ [prefix + "unit"]: initial.unit });
-                    }, 0);
-                  }}
-                />
-
-                <div style={{ height: "1rem" }} />
-              </Fragment>
-            );
-          })}
-
-          <MyButton
-            kind="secondary"
-            renderIcon={Icons.Plus}
-            onClick={() => {
-              const id = generateId();
-              setRecordIds((ids) => [...ids, id]);
-              setAutoFocusFieldName("record:" + id + ":product");
+              context.setValues({
+                [prefix + "product"]: [initial.product],
+                [prefix + "amount"]: initial.amount,
+                [prefix + "comment"]: initial.comment ?? "",
+              });
+              window.setTimeout(
+                () => context.setValues({ [prefix + "unit"]: initial.unit }),
+                0,
+              );
             }}
-          >
-            {uiText("Eintrag")}
-          </MyButton>
-
-          <MyDivider />
-
-          <h4 className="text-lg leading-snug font-semibold">
-            {uiText("Sonderposten")}
-          </h4>
-          <p className="light">
-            {uiText(
-              "Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.",
-            )}
-          </p>
-
-          {specialRecordIds.map((id) => {
-            const prefix = "specialRecord:" + id + ":";
-
-            return (
-              <Fragment key={id}>
-                <DeliverySpecialRecordFields
-                  prefix={prefix}
-                  canSeePrices={canSeePrices}
-                  canWritePrices={canWritePrices}
-                  focusOnMount={autoFocusFieldName === prefix + "name"}
-                  includeComment
-                  onRemove={() =>
-                    setSpecialRecordIds((ids) =>
-                      ids.filter((current) => current !== id),
-                    )
-                  }
-                />
-
-                <NotifyLoaded
-                  onLoad={() => {
-                    const initial = initialSpecialRecordValues[id];
-                    if (!initial) return;
-
-                    context.setValues({
-                      [prefix + "name"]: initial.name,
-                      [prefix + "unit"]: initial.unit,
-                      [prefix + "amount"]: initial.amount,
-                      [prefix + "pricePerUnit"]: initial.pricePerUnit ?? "",
-                      [prefix + "comment"]: initial.comment ?? "",
-                    });
-                  }}
-                />
-
-                <div style={{ height: "1rem" }} />
-              </Fragment>
-            );
-          })}
-
-          <MyButton
-            kind="secondary"
-            renderIcon={Icons.Plus}
-            onClick={() => {
-              const id = generateId();
-              setSpecialRecordIds((ids) => [...ids, id]);
-              setAutoFocusFieldName("specialRecord:" + id + ":name");
-            }}
-          >
-            {uiText("Sonderposten")}
-          </MyButton>
+          />
 
           <NotifyLoaded
             onLoad={() => {
@@ -393,7 +431,6 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
         session.canAccess(source.scope, source.facet, "read");
       const [recordIds, setRecordIds] = useState<string[]>([]);
       const [specialRecordIds, setSpecialRecordIds] = useState<string[]>([]);
-      const [autoFocusFieldName, setAutoFocusFieldName] = useState<string | null>(null);
       const createEntityAction = useCreateEntityAction(modals);
 
       const initialRecordValues = useRef<Record<string, {
@@ -401,12 +438,7 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
         amount: number;
         unit: string | null;
       }>>({}).current;
-      const initialSpecialRecordValues = useRef<Record<string, {
-        name: string;
-        unit: string;
-        amount: number;
-        pricePerUnit: number | null;
-      }>>({}).current;
+      const initialSpecialRecordValues = useRef<Record<string, SpecialLineValues>>({}).current;
 
       const forceUpdate = useForceUpdate();
 
@@ -435,137 +467,30 @@ export function showModifyDeliveryNoteModal(modals: MyModalsInterface, note: Del
             createAction={createEntityAction.project}
           />}
 
-          <MyForm.Input name="comment" labelText={uiText("Kommentar")} />
-          <p className="light">
-            {uiText(
-              "Hinweise wie Lieferant, Baustellenbereich oder Besonderheiten.",
-            )}
-          </p>
+          <DeliveryNoteLines
+            products={[recordIds, setRecordIds]}
+            specialItems={[specialRecordIds, setSpecialRecordIds]}
+            initialSpecialItems={initialSpecialRecordValues}
+            createProduct={createEntityAction.product}
+            onProductChange={forceUpdate}
+            canSeePrices={canSeePrices}
+            canWritePrices={canWritePrices}
+            prefillProduct={(id, prefix) => {
+              const initial = initialRecordValues[id];
+              if (!initial) return;
 
-          <MyDivider />
-
-          <h4 className="text-lg leading-snug font-semibold">
-            {uiText("Produkte")}
-          </h4>
-          <p className="light">
-            {uiText("Erfasse gelieferte Produkte mit Menge und Einheit.")}
-          </p>
-
-          {recordIds.map((id) => {
-            const prefix = `record:${id}:`;
-
-            return (
-              <Fragment key={id}>
-                <ProductRecordFields
-                  prefix={prefix}
-                  focusProduct={autoFocusFieldName === `${prefix}product`}
-                  createProduct={createEntityAction.product}
-                  onProductChange={forceUpdate}
-                  onRemove={() =>
-                    setRecordIds((ids) => ids.filter((current) => current !== id))
-                  }
-                />
-
-                <NotifyLoaded
-                  onLoad={() => {
-                    const initial = initialRecordValues[id];
-                    if (!initial) return;
-
-                    const values: Record<string, any> = {
-                      [`record:${id}:amount`]: initial.amount,
-                    };
-
-                    if (initial.product)
-                      values[`record:${id}:product`] = [initial.product];
-
-                    context.setValues(values);
-                    if (initial.unit) {
-                      window.setTimeout(
-                        () =>
-                          context.setValues({
-                            [`record:${id}:unit`]: initial.unit,
-                          }),
-                        0,
-                      );
-                    }
-                  }}
-                />
-
-                <div style={{ height: "1rem" }} />
-              </Fragment>
-            );
-          })}
-
-          <MyButton
-            kind="secondary"
-            renderIcon={Icons.Plus}
-            onClick={() => {
-              const id = generateId();
-              setRecordIds((ids) => [...ids, id]);
-              setAutoFocusFieldName(`record:${id}:product`);
+              context.setValues({
+                [prefix + "amount"]: initial.amount,
+                ...(initial.product ? { [prefix + "product"]: [initial.product] } : {}),
+              });
+              if (initial.unit) {
+                window.setTimeout(
+                  () => context.setValues({ [prefix + "unit"]: initial.unit }),
+                  0,
+                );
+              }
             }}
-          >
-            {uiText("Eintrag")}
-          </MyButton>
-
-          <MyDivider />
-
-          <h4 className="text-lg leading-snug font-semibold">
-            {uiText("Sonderposten")}
-          </h4>
-          <p className="light">
-            {uiText(
-              "Sonderposten sind zusätzliche Leistungen oder Materialien, die nicht als Produktstamm vorhanden sind.",
-            )}
-          </p>
-
-          {specialRecordIds.map((id) => {
-            const prefix = `specialRecord:${id}:`;
-
-            return (
-              <Fragment key={id}>
-                <DeliverySpecialRecordFields
-                  prefix={prefix}
-                  canSeePrices={canSeePrices}
-                  canWritePrices={canWritePrices}
-                  focusOnMount={autoFocusFieldName === prefix + "name"}
-                  onRemove={() =>
-                    setSpecialRecordIds((ids) =>
-                      ids.filter((current) => current !== id),
-                    )
-                  }
-                />
-
-                <NotifyLoaded
-                  onLoad={() => {
-                    const initial = initialSpecialRecordValues[id];
-                    if (!initial) return;
-
-                    context.setValues({
-                      [prefix + "name"]: initial.name,
-                      [prefix + "unit"]: initial.unit,
-                      [prefix + "amount"]: initial.amount,
-                      [prefix + "pricePerUnit"]: initial.pricePerUnit ?? "",
-                    });
-                  }}
-                />
-
-                <div style={{ height: "1rem" }} />
-              </Fragment>
-            );
-          })}
-
-          <MyButton
-            kind="secondary"
-            renderIcon={Icons.Plus}
-            onClick={() => {
-              const id = generateId();
-              setSpecialRecordIds((ids) => [...ids, id]);
-              setAutoFocusFieldName(`specialRecord:${id}:name`);
-            }}
-          >
-            {uiText("Sonderposten")}
-          </MyButton>
+          />
 
           <NotifyLoaded
             onLoad={async () => {
