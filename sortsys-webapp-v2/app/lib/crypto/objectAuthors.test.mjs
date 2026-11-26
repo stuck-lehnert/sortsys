@@ -14,6 +14,7 @@ import {
   sign,
   createOrigin,
   createTenantSetup,
+  decryptObject,
   encryptObject,
   encryptTombstone,
   publicIdentity,
@@ -245,6 +246,43 @@ test("historical and current writer proofs choose their own certified key after 
   };
   expect(await f.verifier(historical, f.domain.definition)).toBeTruthy();
   expect(await f.verifier(current, f.domain.definition)).toBeTruthy();
+
+  const context = {
+    tenant: historical.tenant,
+    scope: historical.scope,
+    facet: historical.facet,
+    object: historical.object,
+    revision: historical.revision,
+    generation: historical.generation,
+    policyVersion: historical.policyVersion,
+    author: historical.author,
+  };
+  for (const envelope of [historical, current]) {
+    const candidates = await f.verifier.signingKeysFor(
+      envelope,
+      f.domain.definition,
+    );
+    const plaintext = await decryptObject(envelope, context, f.domain.key, {
+      candidates,
+    });
+    expect(JSON.parse(new TextDecoder().decode(plaintext))).toEqual({
+      secret: "must be authorized before parsing",
+    });
+  }
+
+  const wrongSignature = await sign(
+    f.owner.signingKey.privateKey,
+    objectFrame(historical),
+  );
+  const otherAuthor = { ...historical, signature: wrongSignature };
+  const candidates = await f.verifier.signingKeysFor(
+    otherAuthor,
+    f.domain.definition,
+  );
+  await expect(
+    decryptObject(otherAuthor, context, f.domain.key, { candidates }),
+  ).rejects.toThrow();
+
   expect(f.context.history.identityCertificate("user:2").signature).toBe(
     certificate.signature,
   );
@@ -256,6 +294,9 @@ test("a genuinely signed and decryptable reader forgery is rejected before it ca
     const packet = await f.envelope("2", revision);
     expect(await f.context.history.signer(packet)).toBeTruthy(); // Former signature-only path accepted it.
     await expect(f.verifier(packet, f.domain.definition)).rejects.toThrow();
+    await expect(
+      f.verifier.signingKeysFor(packet, f.domain.definition),
+    ).rejects.toThrow();
   }
   expect(
     await f.verifier(await f.envelope("2", "1", "user:1"), f.domain.definition),

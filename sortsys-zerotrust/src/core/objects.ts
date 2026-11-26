@@ -11,7 +11,7 @@ import {
   sized,
   unbase64,
 } from "../encoding";
-import { sign, verify } from "../identity";
+import { sign, verifyWithSigningKeys } from "../identity";
 import {
   openBox,
   sealBox,
@@ -49,6 +49,9 @@ export type ObjectShareContext = {
   recipient: string;
   author: string;
 };
+
+/** Already certified for the expected author; not yet checked on this object. */
+type ObjectSigningKeys = CryptoKey | { candidates: readonly CryptoKey[] };
 
 const contextKeys = [
   "tenant",
@@ -90,7 +93,10 @@ export function createObjectCodec<const F extends string>(
   }
 
   function contextFrame(context: ObjectContext<F>): Uint8Array<ArrayBuffer> {
-    objectContext(context);
+    return frameContext(objectContext(context));
+  }
+
+  function frameContext(context: ObjectContext<F>): Uint8Array<ArrayBuffer> {
     return frame(
       "sortsys/object-context/v1",
       contextKeys.map((key) => context[key]),
@@ -216,7 +222,7 @@ export function createObjectCodec<const F extends string>(
     input: unknown,
     expected: ObjectContext<F>,
     key: CryptoKey,
-    author: CryptoKey,
+    author: ObjectSigningKeys,
   ): Promise<Uint8Array<ArrayBuffer>> {
     try {
       const obj = await verifiedObject(input, expected, author);
@@ -229,7 +235,7 @@ export function createObjectCodec<const F extends string>(
         false,
         ["decrypt"],
       );
-      return await openPayload(obj, expected, dataKey);
+      return await openPayload(obj, dataKey);
     } catch {
       throw new InvalidProtectedData();
     }
@@ -238,20 +244,21 @@ export function createObjectCodec<const F extends string>(
   async function verifiedObject(
     input: unknown,
     expected: ObjectContext<F>,
-    author: CryptoKey,
+    author: ObjectSigningKeys,
   ) {
     const obj = encryptedObject(input);
-    objectContext(expected);
-    if (contextKeys.some((name) => obj[name] !== expected[name])) {
+    const context = objectContext(expected);
+    if (contextKeys.some((name) => obj[name] !== context[name])) {
       throw new InvalidProtectedData();
     }
-    await verify(author, obj.signature, objectFrame(obj));
+
+    const keys = "candidates" in author ? author.candidates : [author];
+    await verifyWithSigningKeys(keys, obj.signature, objectFrame(obj));
     return obj;
   }
 
   async function openPayload(
     obj: EncryptedObject<F>,
-    expected: ObjectContext<F>,
     key: CryptoKey,
   ) {
     return new Uint8Array(
@@ -259,7 +266,7 @@ export function createObjectCodec<const F extends string>(
         {
           name: "AES-GCM",
           iv: sized(obj.nonce, 12),
-          additionalData: contextFrame(expected),
+          additionalData: frameContext(obj),
           tagLength: 128,
         },
         key,
@@ -367,7 +374,7 @@ export function createObjectCodec<const F extends string>(
       const key = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, [
         "decrypt",
       ]);
-      return await openPayload(object, input.expected, key);
+      return await openPayload(object, key);
     } catch {
       throw new InvalidProtectedData();
     } finally {

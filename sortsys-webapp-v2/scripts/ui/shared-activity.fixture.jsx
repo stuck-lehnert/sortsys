@@ -1,16 +1,19 @@
 import React from "react";
 import { MemoryRouter } from "react-router";
+import { of } from "rxjs";
 import {
   attestMigrationOrigin,
   compilePolicy,
   signPolicy,
 } from "@sortsys/zerotrust/sortsys";
 import { EntityActivityTimeline } from "../../app/components/EntityActivityTimeline";
+import { SessionInfoProvider } from "../../app/hooks/useSessionInfo";
 import { I18nProvider } from "../../app/lib/i18n";
 import { client } from "../../app/lib/client";
 import { createBusinessClient } from "../../app/lib/data/businessClient";
 import { protectedTenant } from "../../app/lib/data/testing/protectedTenant.mjs";
 import { splitLegacyActivity } from "../../app/lib/data/legacyActivityData";
+import { createContentAccess } from "../../app/lib/data/menuAccess";
 import { businessSchema } from "../../app/lib/data/schema";
 
 // The component and activity adapter are real. Only the accepted journal's
@@ -140,10 +143,30 @@ export async function showSharedActivity(root, { showPrices = false } = {}) {
   client.streamQuery = business.streamQuery;
   client.query = business.query;
   window.cryptoFixture.sharedActivityWire = () => JSON.stringify(tenant.calls);
+
+  const [session, error] = await tenant.client.query("auth.sessionInfo");
+  if (error) throw error;
+  const sessionClient = {
+    loggedIn: tenant.client.loggedIn,
+    streamQuery: () =>
+      of([
+        {
+          ...session,
+          session: { id: "shared-activity-fixture" },
+          tenant: { objectStorageEnabled: false },
+        },
+        null,
+      ]),
+  };
+  const signal = new AbortController().signal;
+  const menuAccess = createContentAccess(tenant.client, () => signal);
+
   root.render(
     <I18nProvider>
       <MemoryRouter>
-        <EntityActivityTimeline resourceType="user" resourceId="2" />
+        <SessionInfoProvider sessionClient={sessionClient} access={menuAccess}>
+          <EntityActivityTimeline resourceType="user" resourceId="2" />
+        </SessionInfoProvider>
       </MemoryRouter>
     </I18nProvider>,
   );

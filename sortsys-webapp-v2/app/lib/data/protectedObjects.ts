@@ -745,7 +745,7 @@ function openCollection(
     live();
     const definition = definitions.get(envelope.generation);
     if (!definition) throw new InvalidProtectedData();
-    const signer = await author(
+    const candidates = await author.signingKeysFor(
       envelope,
       definition,
       isStagedObject(collection, id),
@@ -764,7 +764,7 @@ function openCollection(
         author: envelope.author,
       },
       key,
-      signer,
+      { candidates },
     );
     try {
       if (envelope.format === TOMBSTONE_FORMAT) {

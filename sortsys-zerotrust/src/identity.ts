@@ -131,6 +131,25 @@ export async function verify(
     throw new InvalidProtectedData();
 }
 
+/** Try the certified keys in history order. A retired key can still prove a
+ * historical record, but the caller chooses the eligible identity and epoch. */
+export async function verifyWithSigningKeys(
+  keys: readonly CryptoKey[],
+  signature: string,
+  message: Uint8Array<ArrayBuffer>,
+): Promise<CryptoKey> {
+  for (const key of keys) {
+    try {
+      await verify(key, signature, message);
+      return key;
+    } catch {
+      // A different certified key may have signed the record.
+    }
+  }
+
+  throw new InvalidProtectedData();
+}
+
 export async function deriveSecret(
   secret: Uint8Array<ArrayBuffer>,
   purpose: string,

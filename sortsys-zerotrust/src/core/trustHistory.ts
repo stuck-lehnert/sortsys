@@ -14,7 +14,7 @@ import {
   revision,
   signedPacketFrame,
 } from "../encoding";
-import { importSigningKey, verify } from "../identity";
+import { importSigningKey, verify, verifyWithSigningKeys } from "../identity";
 import { verifyPublicProof } from "../publicProofs";
 import type { ObjectCodec } from "./objects";
 import type { EncryptedObject } from "./objects";
@@ -39,6 +39,7 @@ export function createTrustHistoryVerifier<F extends string>(
     current: AuthorityCertificate;
     authority: (generation: string) => CryptoKey;
     authorityCertificate: (generation: string) => AuthorityCertificate;
+    signingKeys: (subject: string, generation: string) => readonly CryptoKey[];
     signer: (envelope: EncryptedObject<F>) => Promise<CryptoKey>;
     proofSigner: (
       subject: string,
@@ -162,23 +163,14 @@ export function createTrustHistoryVerifier<F extends string>(
       identities.set(cert.user, signers);
     }
     const heads = identityCertificateHeads(certificates);
-    async function findSigner(
-      subject: string,
-      proof: string,
-      message: Uint8Array<ArrayBuffer>,
-      generation?: string,
-    ): Promise<CryptoKey> {
-      for (const candidate of identities.get(subject) ?? []) {
-        if (generation !== undefined && candidate.generation !== generation)
-          continue;
-        try {
-          await verify(candidate.key, proof, message);
-          return candidate.key;
-        } catch {
-          // A retired key can still authenticate a historical record.
-        }
-      }
-      throw new InvalidProtectedData();
+    function signingKeys(subject: string, generation?: string) {
+      if (generation !== undefined) revision(generation);
+
+      return (identities.get(subject) ?? [])
+        .filter(
+          (entry) => generation === undefined || entry.generation === generation,
+        )
+        .map((entry) => entry.key);
     }
     async function proofSigner(
       subject: string,
@@ -186,11 +178,15 @@ export function createTrustHistoryVerifier<F extends string>(
       proof: string,
       message: Uint8Array<ArrayBuffer>,
     ) {
-      revision(generation);
-      return findSigner(subject, proof, message, generation);
+      return verifyWithSigningKeys(
+        signingKeys(subject, generation),
+        proof,
+        message,
+      );
     }
     return {
       current: previous,
+      signingKeys,
       proofSigner,
       identityCertificate: (subject, generation = previous!.generation) => {
         const matches = heads.filter(
@@ -216,8 +212,8 @@ export function createTrustHistoryVerifier<F extends string>(
       },
       signer: async (envelope) => {
         if (envelope.tenant !== pinned.tenant) throw new InvalidProtectedData();
-        return findSigner(
-          envelope.author,
+        return verifyWithSigningKeys(
+          signingKeys(envelope.author),
           envelope.signature,
           objects.objectFrame(objects.encryptedObject(envelope)),
         );

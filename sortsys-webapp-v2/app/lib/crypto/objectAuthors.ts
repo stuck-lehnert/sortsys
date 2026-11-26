@@ -44,6 +44,8 @@ type BirthProof = Pick<
   DomainDefinition,
   "policyVersion" | "creation" | "keyAuthority"
 >;
+type WriterDefinition = BirthProof &
+  Pick<DomainDefinition, "tenant" | "scope" | "facet" | "generation">;
 const proofCaches = new WeakMap<
   Client,
   WeakMap<object, Map<string, BirthProof>>
@@ -338,17 +340,12 @@ export function createObjectAuthorVerifier(
       throw error;
     }
   }
-  async function authorizeObject(
+  async function objectAuthorGeneration(
     envelope: EncryptedObject,
-    definition: BirthProof & {
-      tenant: string;
-      scope: string;
-      facet: Facet;
-      generation: string;
-    },
+    definition: WriterDefinition,
     first: BirthProof,
     staged: boolean,
-  ): Promise<CryptoKey> {
+  ): Promise<string> {
     context.live();
     if (
       envelope.tenant !== context.account.tenant ||
@@ -389,14 +386,29 @@ export function createObjectAuthorVerifier(
     if (!canWrite && !canStageFirstUpdate) {
       throw new InvalidProtectedData();
     }
-    const key = await signer(
+
+    context.live();
+    return checked.generation;
+  }
+  async function authorizeObject(
+    envelope: EncryptedObject,
+    definition: WriterDefinition,
+    first: BirthProof,
+    staged: boolean,
+  ): Promise<CryptoKey> {
+    const generation = await objectAuthorGeneration(
+      envelope,
+      definition,
+      first,
+      staged,
+    );
+
+    return signer(
       envelope.author,
-      checked.generation,
+      generation,
       envelope.signature,
       objectFrame(envelope),
     );
-    context.live();
-    return key;
   }
   const object = async (
     envelope: EncryptedObject,
@@ -407,6 +419,22 @@ export function createObjectAuthorVerifier(
   return Object.assign(object, {
     definition,
     verifyPublicDefinition,
+    /** The codec verifies the exact envelope before opening it. Keep the same
+     * writer authorization without checking that signature a second time. */
+    async signingKeysFor(
+      envelope: EncryptedObject,
+      definition: DomainDefinition,
+      staged = false,
+    ) {
+      const generation = await objectAuthorGeneration(
+        envelope,
+        definition,
+        await initial(definition),
+        staged,
+      );
+      context.live();
+      return context.history.signingKeys(envelope.author, generation);
+    },
     /** A per-object reader receives signed public proofs, never the containing
      * area's key packages. Apply exactly the ordinary writer authorization. */
     async fromProofs(envelope: EncryptedObject, inputs: readonly unknown[]) {
