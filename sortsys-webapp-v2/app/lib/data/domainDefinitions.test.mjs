@@ -18,7 +18,8 @@ async function fixture(count = 2) {
   );
   const saved = new Map();
   const calls = [];
-  const state = { lose: false, discard: false, substitute: false };
+  const selections = [];
+  const state = { lose: false, discard: false, substitute: false, reorder: false };
   const client = {
     ...tenant.client,
     async mutate(path, input) {
@@ -32,16 +33,20 @@ async function fixture(count = 2) {
       return [{ success: true }, null];
     },
     async query(path, input, options) {
-      expect(path).toBe("zerotrust.domains.get");
+      expect(path).toBe("zerotrust.domains.selected");
       expect(options.strategy).toBe("network-only");
-      const value = saved.get(input.domain);
-      if (!value) return [null, new Error("Not found")];
-      const copy = structuredClone(value);
-      if (state.substitute) copy.scope = "testing:substituted";
-      return [copy, null];
+      selections.push(input.keys);
+
+      const values = input.keys.map(({ domain }) => saved.get(domain));
+      if (values.some((value) => !value)) return [null, new Error("Not found")];
+
+      const copies = structuredClone(values);
+      if (state.substitute) copies[0].scope = "testing:substituted";
+      if (state.reorder) copies.reverse();
+      return [copies, null];
     },
   };
-  return { client, definitions, calls, state };
+  return { client, definitions, calls, selections, state };
 }
 
 test("related definitions share one bounded publication and a lost reply needs their exact signed frames", async () => {
@@ -76,6 +81,14 @@ test("a false successful reply cannot acknowledge unpersisted definitions", asyn
   ).rejects.toThrow();
 });
 
+test("readback definitions must match the requested order", async () => {
+  const f = await fixture();
+  f.state.reorder = true;
+  await expect(
+    publishDomainDefinitions(f.client, f.definitions, new AbortController().signal),
+  ).rejects.toThrow();
+});
+
 test("large inventories preserve definition order in bounded publication groups", async () => {
   const f = await fixture(65);
   await publishDomainDefinitions(
@@ -85,6 +98,10 @@ test("large inventories preserve definition order in bounded publication groups"
   );
   expect(f.calls.map((definitions) => definitions.length)).toEqual([32, 32, 1]);
   expect(f.calls.flat()).toEqual(f.definitions);
+  expect(f.selections.map(({ length }) => length)).toEqual([...Array(8).fill(8), 1]);
+  expect(f.selections.flat()).toEqual(
+    f.definitions.map(({ id, generation }) => ({ domain: id, generation })),
+  );
 });
 
 test("cancellation and duplicate domains cannot publish anything", async () => {

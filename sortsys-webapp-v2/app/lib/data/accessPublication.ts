@@ -7,9 +7,8 @@ import {
   type DomainDefinition,
 } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
-import { sameDomainDefinition } from "./domainDefinitions";
+import { verifyPublishedDomainDefinitions } from "./domainDefinitions";
 import { required } from "./protectedObjects";
-import { mapConcurrent } from "./runtime/concurrentReads";
 
 type Publication = Omit<MutateInput<"zerotrust.access.publish">, "domains"> & {
   domains: DomainDefinition[];
@@ -106,22 +105,9 @@ async function publishAccessChanges(
       failure = error;
     }
     live();
+
     const checks = await Promise.allSettled([
-      mapConcurrent(value.domains, 8, async (definition) => {
-        const saved = await required(
-          client.query(
-            "zerotrust.domains.get",
-            {
-              domain: definition.id,
-              generation: definition.generation,
-            },
-            { strategy: "network-only" },
-          ),
-        );
-        live();
-        if (!(await sameDomainDefinition(saved, definition)))
-          throw new InvalidProtectedData();
-      }),
+      verifyPublishedDomainDefinitions(client, value.domains, live),
       (async () => {
         if (!value.grants.length) return;
         const saved = await required(

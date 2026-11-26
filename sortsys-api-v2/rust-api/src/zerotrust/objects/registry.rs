@@ -209,13 +209,18 @@ pub(in crate::zerotrust) async fn publish_domain(
 ) -> RpcResult<()> {
     super::domain_access::publish(transaction, area).await
 }
+
+fn authority_key(generation: &str) -> RpcResult<sortsys_zerotrust::metadata::RecordKey> {
+    Ok(key("authority-history", &padded(generation)?))
+}
+
 pub(in crate::zerotrust) async fn authority_at(
     transaction: &mut Transaction,
     tenant: &str,
     generation: &str,
 ) -> RpcResult<AuthorityCertificate> {
     let row: AuthorityHistory = transaction
-        .read(key("authority-history", &padded(generation)?))
+        .read(authority_key(generation)?)
         .await?
         .ok_or_else(not_found)?;
     row.certificate.verify()?;
@@ -538,6 +543,7 @@ pub(in crate::zerotrust) fn register(
     let key_history = Arc::clone(&service);
     let key_grant = Arc::clone(&service);
     let definitions = Arc::clone(&service);
+    let selected_definitions = Arc::clone(&service);
     let directory = Arc::clone(&service);
     let public_identity = Arc::clone(&service);
     let key_authority_get = Arc::clone(&service);
@@ -727,35 +733,19 @@ pub(in crate::zerotrust) fn register(
         .query("zerotrust.domains.get", move |ctx, input: KeyInput| {
             let service = Arc::clone(&definitions);
             async move {
-                identifier(&input.domain)?;
-                let mut context = metadata_context_for_domains(
-                    &service,
-                    &ctx,
-                    Some(std::slice::from_ref(&input.domain)),
-                )
-                .await?;
-                let area = domain(&mut context.transaction, &input.domain).await?;
-                if !context.auth.is_admin()
-                    && !context.security.allows(
-                        &context.security.subject,
-                        &area.scope,
-                        area.facet,
-                        Action::Read,
-                    )
-                {
-                    return Err(forbidden());
-                }
-                let result = definition_at(
-                    &mut context.transaction,
-                    &context.security,
-                    &area,
-                    &input.generation,
-                )
-                .await?;
-                context.transaction.validate().await?;
-                Ok(result)
+                read_domain_selection(&service, &ctx, vec![input])
+                    .await?
+                    .pop()
+                    .ok_or_else(not_found)
             }
         })
+        .query(
+            "zerotrust.domains.selected",
+            move |ctx, input: DomainSelection| {
+                let service = Arc::clone(&selected_definitions);
+                async move { read_domain_selection(&service, &ctx, input.keys).await }
+            },
+        )
         .query(
             "zerotrust.keys.history",
             move |ctx, input: KeyHistoryInput| {
@@ -1086,6 +1076,75 @@ pub(in crate::zerotrust) async fn definition_at(
     };
     verify(&signing_key, &definition.proof, &definition.frame()?)?;
     Ok(definition)
+}
+
+/// Check every area and its signed definition against the same current view.
+/// Never return partial results when an area is missing or not readable.
+async fn read_domain_selection(
+    service: &AuthService,
+    request: &RequestContext,
+    keys: Vec<KeyInput>,
+) -> RpcResult<Vec<DomainDefinition>> {
+    if keys.is_empty() || keys.len() > 8 {
+        return Err(invalid());
+    }
+
+    let mut domains = BTreeSet::new();
+    for input in &keys {
+        identifier(&input.domain)?;
+        if !domains.insert(input.domain.clone()) {
+            return Err(invalid());
+        }
+    }
+
+    let domains: Vec<_> = domains.into_iter().collect();
+    let mut context = metadata_context_for_domains(service, request, Some(&domains)).await?;
+    context
+        .transaction
+        .prefetch(domains.iter().flat_map(|id| domain_keys(id)).collect())
+        .await?;
+
+    let mut areas = Vec::with_capacity(keys.len());
+    let mut records = Vec::with_capacity(keys.len() * 2);
+    for input in &keys {
+        let area = domain(&mut context.transaction, &input.domain).await?;
+        if !context.auth.is_admin()
+            && !context.security.allows(
+                &context.security.subject,
+                &area.scope,
+                area.facet,
+                Action::Read,
+            )
+        {
+            return Err(forbidden());
+        }
+
+        let generation = definition_authority_generation(
+            &area,
+            &input.generation,
+            context.security.root.generation,
+        )?;
+        records.push(definition_key(&area.id, &input.generation, generation)?);
+        records.push(authority_key(generation)?);
+        areas.push(area);
+    }
+
+    context.transaction.prefetch(records).await?;
+    let mut definitions = Vec::with_capacity(keys.len());
+    for (input, area) in keys.iter().zip(areas) {
+        definitions.push(
+            definition_at(
+                &mut context.transaction,
+                &context.security,
+                &area,
+                &input.generation,
+            )
+            .await?,
+        );
+    }
+
+    context.transaction.validate().await?;
+    Ok(definitions)
 }
 
 /// Read one area's own historical key packages under one current authorization

@@ -315,6 +315,12 @@ export async function protectedTenant(
           ];
         case "zerotrust.domains.get":
           return [domains.get(input.domain).definition, null];
+        case "zerotrust.domains.selected": {
+          const selected = input.keys.map(({ domain }) => domains.get(domain)?.definition);
+          return selected.every(Boolean)
+            ? [selected, null]
+            : [null, new Error("Missing public domain definition")];
+        }
         case "zerotrust.domains.proof": {
           const domain = domains.get(input.domain);
           if (!domain) {

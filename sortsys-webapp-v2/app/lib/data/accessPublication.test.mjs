@@ -119,12 +119,16 @@ async function fixture(count = 2, readersPerArea = 1) {
         if (state.substitute === "keys") result.reverse();
         return [result, null];
       }
-      expect(path).toBe("zerotrust.domains.get");
-      const saved = definitions.get(`${input.domain}:${input.generation}`);
-      if (!saved) return [null, new Error("Definition missing")];
+      expect(path).toBe("zerotrust.domains.selected");
+      const saved = input.keys.map(({ domain, generation }) =>
+        definitions.get(`${domain}:${generation}`),
+      );
+      if (saved.some((definition) => !definition))
+        return [null, new Error("Definition missing")];
+
       const result = structuredClone(saved);
       if (state.substitute === "definition")
-        result.scope = "testing:substituted";
+        result[0].scope = "testing:substituted";
       return [result, null];
     },
   };
@@ -145,6 +149,17 @@ test("historical grants and replacement definitions share a publication and surv
   ).toHaveLength(1);
   expect(f.calls[0].input.grants).toHaveLength(2);
   expect(f.calls[0].input.domains).toHaveLength(2);
+
+  expect(
+    f.calls
+      .filter((call) => call.path === "zerotrust.domains.selected")
+      .map(({ input }) => input.keys),
+  ).toEqual([
+    f.rotations.map(({ definition: { id, generation } }) => ({
+      domain: id,
+      generation,
+    })),
+  ]);
   expect(
     f.calls.filter((call) => call.path === "zerotrust.keys.inspect"),
   ).toHaveLength(1);
@@ -272,7 +287,7 @@ test("invitation grants use bounded publications without creating replacement ge
   expect(
     f.calls.filter((call) => call.path === "zerotrust.keys.inspect"),
   ).toHaveLength(3);
-  expect(f.calls.some((call) => call.path === "zerotrust.domains.get")).toBe(
+  expect(f.calls.some((call) => call.path === "zerotrust.domains.selected")).toBe(
     false,
   );
 });

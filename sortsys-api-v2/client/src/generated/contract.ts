@@ -138,6 +138,8 @@ export type KeyAuthorityAreaInput = { scope: string, facet: Facet, holder?: stri
 
 export type KeyGrant = { domain: string, generation: string, envelope: SealedBox, keyAuthority?: KeyAuthority<Facet>, };
 
+export type KeyInput = { domain: string, generation: string, };
+
 export type KeyRecipientInput = { domain: string, generation: string, recipient: string, };
 
 export type Kind = "initialize" | "update" | "presence";
@@ -409,6 +411,7 @@ export type QueryInputs = {
   "zerotrust.domains.get": { domain: string, generation: string, };
   "zerotrust.domains.list": void;
   "zerotrust.domains.proof": { domain: string, generation: string, };
+  "zerotrust.domains.selected": { keys: Array<KeyInput>, };
   "zerotrust.editors.config": void;
   "zerotrust.fileChunks.findMany": { domain: string, ids: Array<string>, prepared?: PreparedView, };
   "zerotrust.fileChunks.get": { domain: string, id: string, };
@@ -568,6 +571,7 @@ export type QueryOutputs = {
   "zerotrust.domains.get": { tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
   "zerotrust.domains.list": Array<{ id: string, scope: string, facet: string, generation: string, rotationRequired: boolean, }>;
   "zerotrust.domains.proof": { format: string, tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopeHashes: Array<string>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, };
+  "zerotrust.domains.selected": Array<{ tenant: string, id: string, scope: string, facet: Facet, generation: string, policyVersion: string, envelopes: Array<SealedBox>, recoveryEnvelope: SealedBox, proof: string, creation?: CreationOrigin, keyAuthority?: KeyAuthority<Facet>, }>;
   "zerotrust.editors.config": { officeOrigin: string | null, };
   "zerotrust.fileChunks.findMany": Array<{ tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, } | null>;
   "zerotrust.fileChunks.get": { tenant: string, scope: string, facet: Facet, object: string, revision: string, generation: string, policyVersion: string, author: string, format: string, nonce: string, ciphertext: string, wrappedKey: string, signature: string, };
@@ -1163,6 +1167,7 @@ const queryProcedures = new Set<string>([
   "zerotrust.domains.get",
   "zerotrust.domains.list",
   "zerotrust.domains.proof",
+  "zerotrust.domains.selected",
   "zerotrust.editors.config",
   "zerotrust.fileChunks.findMany",
   "zerotrust.fileChunks.get",

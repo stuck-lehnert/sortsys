@@ -288,6 +288,52 @@ try {
   }
   await signIn(newcomer, { tenant: "new-tenant", username: input.username, password });
   await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
+
+  console.log("Native invitation: checking bounded definition reads as a member");
+  const networkOnly = { strategy: "network-only" } as const;
+  const domainKeys = [MASTER_DATA_AREAS.vendors, MASTER_DATA_AREAS.catalogue].map(
+    ({ domain }) => ({ domain, generation: "1" }),
+  );
+  const definitions = await required(
+    newcomer.query(
+      "zerotrust.domains.selected",
+      { keys: domainKeys },
+      networkOnly,
+    ),
+  );
+  assert.deepEqual(
+    definitions.map(({ id }) => id),
+    domainKeys.map(({ domain }) => domain),
+  );
+  for (const [index, key] of domainKeys.entries()) {
+    const single = await required(
+      newcomer.query("zerotrust.domains.get", key, networkOnly),
+    );
+    assert.deepEqual(definitions[index], single);
+  }
+
+  const deniedKey = { domain: priceArea.domain, generation: "1" };
+  await required(
+    administrator.query("zerotrust.domains.get", deniedKey, networkOnly),
+  );
+  const [partial, denied] = await newcomer.query(
+    "zerotrust.domains.selected",
+    { keys: [...domainKeys, deniedKey] },
+    networkOnly,
+  );
+  assert.equal(partial, null);
+  assert.equal(denied?.code, "FORBIDDEN");
+
+  for (const keys of [[], [domainKeys[0]!, domainKeys[0]!]]) {
+    const [result, error] = await newcomer.query(
+      "zerotrust.domains.selected",
+      { keys },
+      networkOnly,
+    );
+    assert.equal(result, null);
+    assert.equal(error?.code, "BAD_REQUEST");
+  }
+
   console.log("Native invitation: reading own personnel profile");
   const reader = createBusinessClient(newcomer, { productDriver: duckDriver });
   try {

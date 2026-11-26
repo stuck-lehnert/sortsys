@@ -564,6 +564,11 @@ export type KeyGrant = {
     keyAuthority?: KeyAuthority<Facet>;
 };
 
+export type KeyInput = {
+    domain: string;
+    generation: string;
+};
+
 export type KeyRecipientInput = {
     domain: string;
     generation: string;
@@ -1517,6 +1522,9 @@ export type QueryInputs = {
     "zerotrust.domains.proof": {
         domain: string;
         generation: string;
+    };
+    "zerotrust.domains.selected": {
+        keys: Array<KeyInput>;
     };
     "zerotrust.editors.config": void;
     "zerotrust.fileChunks.findMany": {
@@ -3120,6 +3128,19 @@ export type QueryOutputs = {
         creation?: CreationOrigin;
         keyAuthority?: KeyAuthority<Facet>;
     };
+    "zerotrust.domains.selected": Array<{
+        tenant: string;
+        id: string;
+        scope: string;
+        facet: Facet;
+        generation: string;
+        policyVersion: string;
+        envelopes: Array<SealedBox>;
+        recoveryEnvelope: SealedBox;
+        proof: string;
+        creation?: CreationOrigin;
+        keyAuthority?: KeyAuthority<Facet>;
+    }>;
     "zerotrust.editors.config": {
         officeOrigin: string | null;
     };

@@ -8,20 +8,21 @@ import {
   type DomainDefinition,
 } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
-import { mapConcurrent } from "./runtime/concurrentReads";
 import { invalidateReadableAreas } from "./readableAreas";
 
 // Recipient envelopes, integrity witnesses and notifications all participate in
 // the same server transaction. Its record budget also bounds small definitions.
 const MAX_DEFINITIONS_PER_BATCH = 32;
+const MAX_DEFINITION_READBACK = 8;
 
 /** Compare the complete signed frame with a locally prepared definition. A
  * matching signature alone must not hide substituted envelope fields. */
-export async function sameDomainDefinition(
+async function sameDomainDefinition(
   saved: QueryResult<"zerotrust.domains.get">,
   expected: DomainDefinition,
 ): Promise<boolean> {
   if (saved.proof !== expected.proof) return false;
+
   const [actualFrame, expectedFrame] = await Promise.all([
     domainFrame({
       ...saved,
@@ -34,7 +35,43 @@ export async function sameDomainDefinition(
     }),
     domainFrame(expected),
   ]);
+
   return base64(actualFrame) === base64(expectedFrame);
+}
+
+/** Confirm ordered, complete signed definitions in bounded selections. */
+export async function verifyPublishedDomainDefinitions(
+  client: Client,
+  definitions: readonly DomainDefinition[],
+  live: () => void,
+): Promise<void> {
+  for (
+    let offset = 0;
+    offset < definitions.length;
+    offset += MAX_DEFINITION_READBACK
+  ) {
+    live();
+
+    const group = definitions.slice(offset, offset + MAX_DEFINITION_READBACK);
+    const keys = group.map(({ id, generation }) => ({ domain: id, generation }));
+    const [saved, error] = await client.query(
+      "zerotrust.domains.selected",
+      { keys },
+      { strategy: "network-only" },
+    );
+
+    live();
+    if (!saved || saved.length !== group.length)
+      throw error ?? new InvalidProtectedData();
+
+    const matches = await Promise.all(
+      group.map((definition, index) =>
+        sameDomainDefinition(saved[index]!, definition),
+      ),
+    );
+    live();
+    if (matches.includes(false)) throw new InvalidProtectedData();
+  }
 }
 
 /** Related public key definitions become visible in one transaction.
@@ -69,22 +106,15 @@ export async function publishDomainDefinitions(
       failure = error;
     }
     live();
-    await mapConcurrent(domains, 8, async (definition) => {
-      const [saved, error] = await client.query(
-        "zerotrust.domains.get",
-        {
-          domain: definition.id,
-          generation: definition.generation,
-        },
-        { strategy: "network-only" },
-      );
+
+    try {
+      await verifyPublishedDomainDefinitions(client, domains, live);
+    } catch (error) {
       live();
-      if (!saved || saved.proof !== definition.proof)
-        throw failure ?? error ?? new InvalidProtectedData();
-      const matches = await sameDomainDefinition(saved, definition);
-      live();
-      if (!matches) throw new InvalidProtectedData();
-    });
+      throw failure ?? error;
+    }
+
+    live();
     invalidateReadableAreas(client);
   }
   const encoder = new TextEncoder();
