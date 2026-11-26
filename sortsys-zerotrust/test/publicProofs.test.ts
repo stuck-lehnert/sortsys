@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from "bun:test";
 import { bytes, digest, frame, InvalidProtectedData } from "../src/encoding";
+import { certifyAuthority, certifyIdentity } from "../src/core/certificates";
 import {
   createIdentity,
   importSigningKey,
@@ -11,6 +12,70 @@ import {
   createPublicProofVerifier,
   publicProofDigest,
 } from "../src/publicProofs";
+import { verifyTrustHistory } from "../src/trustHistory";
+
+test("warm trust history reuses public signature checks but reads the current identity set", async () => {
+  const recovery = await createIdentity();
+  const authority = await createIdentity();
+  const recoveryKeys = await publicIdentity(recovery);
+  const authorityKeys = await publicIdentity(authority);
+  const pin = {
+    tenant: "test-trust-history",
+    generation: "1",
+    recoverySigningKey: recoveryKeys.signingKey,
+  };
+  const certificate = await certifyAuthority(
+    {
+      ...pin,
+      recoveryEncryptionKey: recoveryKeys.encryptionKey,
+      authoritySigningKey: authorityKeys.signingKey,
+    },
+    recovery.signingKey.privateKey,
+  );
+  const identities = await Promise.all(
+    Array.from({ length: 52 }, async (_, index) => {
+      const identity = await publicIdentity(await createIdentity());
+      return certifyIdentity(
+        {
+          ...identity,
+          tenant: pin.tenant,
+          generation: pin.generation,
+          user: `user:${index + 1}`,
+        },
+        authority.signingKey.privateKey,
+      );
+    }),
+  );
+  const history = { authorities: [{ certificate, transition: null }], identities };
+
+  const math = spyOn(crypto.subtle, "verify");
+  try {
+    const first = await verifyTrustHistory(history, pin);
+    expect(first.identityCertificate("user:52")).toEqual(identities[51]!);
+    expect(math).toHaveBeenCalledTimes(53);
+
+    math.mockClear();
+    const second = await verifyTrustHistory(structuredClone(history), pin);
+    expect(second.identityCertificate("user:52")).toEqual(identities[51]!);
+    expect(math).toHaveBeenCalledTimes(0);
+
+    const fewerIdentities = { ...history, identities: identities.slice(0, -1) };
+    const current = await verifyTrustHistory(fewerIdentities, pin);
+    expect(() => current.identityCertificate("user:52")).toThrow(
+      InvalidProtectedData,
+    );
+    expect(math).toHaveBeenCalledTimes(0);
+
+    const substituted = structuredClone(history);
+    substituted.identities[51]!.signingKey = identities[50]!.signingKey;
+    await expect(verifyTrustHistory(substituted, pin)).rejects.toThrow(
+      InvalidProtectedData,
+    );
+    expect(math).toHaveBeenCalledTimes(1);
+  } finally {
+    math.mockRestore();
+  }
+});
 
 test("public proof digests match WebCrypto for small, offset and large frames", async () => {
   const source = bytes("Prüfung mit Umlauten und einem Rand");

@@ -15,6 +15,7 @@ import {
   signedPacketFrame,
 } from "../encoding";
 import { importSigningKey, verify } from "../identity";
+import { verifyPublicProof } from "../publicProofs";
 import type { ObjectCodec } from "./objects";
 import type { EncryptedObject } from "./objects";
 import { recoveryTransitionFrame } from "../recovery";
@@ -145,7 +146,13 @@ export function createTrustHistoryVerifier<F extends string>(
       if (!root || cert.tenant !== pinned.tenant) {
         throw new InvalidProtectedData();
       }
-      await verify(root.key, cert.signature, identityCertificateFrame(cert));
+
+      // Reuse the signature check, not the identity set from an older response.
+      await verifyPublicProof(
+        root.key,
+        cert.signature,
+        identityCertificateFrame(cert),
+      );
       certificates.push({ ...cert });
       const signers = identities.get(cert.user) ?? [];
       signers.push({
