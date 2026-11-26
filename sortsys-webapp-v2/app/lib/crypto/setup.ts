@@ -1,8 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
 import {
-  createIdentity,
-  createRecoveryPhrase,
-  createTenantSetup,
   frame,
   importSigningKey,
   InvalidProtectedData,
@@ -11,76 +8,11 @@ import {
   verify,
   verifyTenantSetup,
 } from "@sortsys/zerotrust/sortsys";
-import type { PrivateIdentity, TenantSetup } from "@sortsys/zerotrust/sortsys";
 import {
-  enrollPasswordAccount,
   trustedHistory,
   unlockedAccount,
-  updateAccountPins,
   type UnlockedAccount,
 } from "./session";
-import { uiText } from "../i18n";
-
-export type SetupDraft = {
-  phrase: string;
-  setup: TenantSetup;
-  identity: PrivateIdentity;
-};
-
-export async function prepareTenantSetup(
-  tenant: string,
-  subject: string,
-  username: string,
-): Promise<SetupDraft> {
-  const current = unlockedAccount();
-  const identity =
-    current?.tenant === tenant && current.vault.subject === subject
-      ? current.identity
-      : await createIdentity();
-  const phrase = createRecoveryPhrase();
-  const { setup } = await createTenantSetup(tenant, subject, identity, phrase);
-  return { phrase, setup, identity };
-}
-
-/** Called only after the phrase has been backed up and locally confirmed. */
-export async function commitTenantSetup(
-  client: Client,
-  draft: SetupDraft,
-  username: string,
-  password?: string,
-): Promise<void> {
-  const tenant = draft.setup.authority.tenant;
-  const pins = {
-    recoveryGeneration: draft.setup.authority.generation,
-    recoverySigningKey: draft.setup.authority.recoverySigningKey,
-  };
-  const current = unlockedAccount();
-  if (current?.tenant === tenant && current.vault.subject === draft.setup.owner.user) {
-    if (
-      current.vault.signingKey !== draft.setup.owner.signingKey ||
-      current.vault.encryptionKey !== draft.setup.owner.encryptionKey
-    )
-      throw new InvalidProtectedData();
-    await updateAccountPins(client, pins);
-  } else {
-    // Noninteractive migration tools can still enroll with the existing login
-    // password. The normal UI has already done this during sign-in.
-    if (!password?.length || password.length > 2000)
-      throw new Error(
-        uiText("Bitte erneut anmelden.", "Please sign in again."),
-      );
-    await enrollPasswordAccount(client, {
-      tenant,
-      username,
-      subject: draft.setup.owner.user,
-      password,
-      identity: draft.identity,
-      pins,
-    });
-  }
-  const [, setupError] = await client.mutate("zerotrust.setup", draft.setup);
-  if (setupError) throw setupError;
-}
 
 export async function openAuthority(
   client: Client,

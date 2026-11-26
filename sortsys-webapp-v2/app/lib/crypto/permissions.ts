@@ -1,7 +1,6 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import {
   ACTIONS,
-  absenceDomain,
   allows,
   base64,
   certifyCreationCapability,
@@ -56,13 +55,6 @@ import {
   type ProjectAccessKey,
 } from "../data/projectScope";
 import {
-  TOOL_INDEX,
-  toolCollection,
-  toolDomain,
-  type ToolNamespace,
-} from "../data/toolData";
-import type { Facet } from "@sortsys/zerotrust/sortsys";
-import {
   PERSONNEL_FACETS,
   personnelCollection,
   personnelDomain,
@@ -74,7 +66,6 @@ import {
 } from "./administration";
 import { finishAccessChanges } from "./accessRotations";
 export { finishAccessChanges };
-import { absenceCollection } from "../data/absenceData";
 import { canUseAssistant } from "../data/assistantArea";
 import { provisionMemberKeyAuthorities } from "./keyAuthorities";
 import { changeDelegatedAreaActions } from "./delegatedAccess";
@@ -234,34 +225,7 @@ export async function memberProjectAccess(
 }
 
 export type PersonnelAccessLevels = Record<PersonnelFacet, AccessValue>;
-export const ABSENCE_ACCESS_KEYS = ["requests", "decisions"] as const;
-export type AbsenceAccessLevels = Record<
-  (typeof ABSENCE_ACCESS_KEYS)[number],
-  AccessValue
->;
-export async function memberAbsenceAccess(
-  client: Client,
-  user: string,
-  signal: AbortSignal,
-): Promise<Record<string, AbsenceAccessLevels>> {
-  const context = await memberPolicyContext(client, user, signal);
-  const level = compileManagedAccess(context.effective, user);
-  const ids = new Set(
-    context.effective.rules
-      .filter((rule) => rule.subject === user)
-      .map((rule) => absenceDomain(`${rule.scope}:${rule.facet}`)?.user)
-      .filter((id): id is string => !!id),
-  );
-  return Object.fromEntries(
-    [...ids].map((id) => [
-      id,
-      {
-        requests: level(absenceCollection(id)),
-        decisions: level(absenceCollection(id, true)),
-      },
-    ]),
-  );
-}
+
 export async function memberPersonnelAccess(
   client: Client,
   user: string,
@@ -356,32 +320,6 @@ export function changeCommercialCreation(
 ): Promise<void> {
   return changeCreation(client, user, enabled, "commercial", signal);
 }
-export function changeToolCreation(
-  client: Client,
-  user: string,
-  enabled: boolean,
-  namespace: ToolNamespace,
-  signal: AbortSignal,
-): Promise<void> {
-  return changeCreation(client, user, enabled, namespace, signal);
-}
-export function changeToolAccess(
-  client: Client,
-  user: string,
-  namespace: ToolNamespace,
-  id: string,
-  facet: Facet,
-  access: AccessValue,
-  signal: AbortSignal,
-): Promise<void> {
-  return changeAreaAccess(
-    client,
-    user,
-    toolCollection(namespace, id, facet),
-    access,
-    signal,
-  );
-}
 export function changePersonnelAccess(
   client: Client,
   user: string,
@@ -397,14 +335,6 @@ export function changePersonnelAccess(
     access,
     signal,
   );
-}
-export function changeToolIndexAccess(
-  client: Client,
-  user: string,
-  access: AccessValue,
-  signal: AbortSignal,
-): Promise<void> {
-  return changeAreaAccess(client, user, TOOL_INDEX, access, signal);
 }
 async function changeCreation(
   client: Client,
