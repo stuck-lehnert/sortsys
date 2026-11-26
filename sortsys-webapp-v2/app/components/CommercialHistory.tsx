@@ -1,8 +1,8 @@
 import RecentlyViewed from "@carbon/icons-react/es/RecentlyViewed";
-import { useEffect, type ReactNode } from "react";
+import type { ReactNode } from "react";
 import { EditorIconButton } from "@sortsys/gaeb";
 import { Modal } from "@sortsys/react-components";
-import { useProtectedState } from "~/hooks/useProtectedState";
+import { usePersonnelNames } from "~/hooks/usePersonnelNames";
 import { client } from "~/lib/client";
 import {
   purposeLabel,
@@ -80,35 +80,10 @@ export function CommercialHistory({
   children?: ReactNode;
   summary?: ReactNode;
 }) {
-  const [labels, setLabels, context] = useProtectedState<{
-    events: CommercialDetail["events"];
-    names: ReadonlyMap<string, string>;
-  } | undefined>(undefined);
-
-  useEffect(() => {
-    setLabels(undefined);
-    if (!open) return;
-
-    const ids = events.flatMap(({ actor, actorId }) =>
-      !actor && actorId ? [actorId] : [],
-    );
-    if (!ids.length) return;
-
-    const controller = new AbortController();
-    const signal = AbortSignal.any([context, controller.signal]);
-    void import("~/lib/data/personnelNames")
-      .then(({ loadPersonnelNames }) => loadPersonnelNames(client, ids, signal))
-      .then((names) => {
-        if (!signal.aborted) setLabels({ events, names });
-      })
-      .catch(() => {
-        // Unavailable names must not hide readable events.
-      });
-
-    return () => controller.abort();
-  }, [context, events, open, setLabels]);
-
-  const names = labels?.events === events ? labels.names : undefined;
+  const actorIds = open
+    ? events.flatMap(({ actor, actorId }) => !actor && actorId ? [actorId] : [])
+    : [];
+  const { names } = usePersonnelNames(client, actorIds);
 
   return (
     <Modal

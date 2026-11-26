@@ -8,9 +8,10 @@ import { MyExpandable } from "~/components/MyExpandable";
 import { MyForm } from "~/components/MyForm";
 import { MyHeader } from "~/components/MyHeader";
 import { MyLink } from "~/components/MyLink";
-import { MyTable } from "~/components/MyTable";
+import { MyTable, type MyTableColumn } from "~/components/MyTable";
 import { NotifyLoaded } from "~/components/NotifyLoaded";
 import { useClientStream } from "~/hooks/useClientStream";
+import { usePersonnelNames } from "~/hooks/usePersonnelNames";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useMyModals } from "~/hooks/useMyModals";
 import { useShortcut } from "~/hooks/useShortcut";
@@ -23,7 +24,10 @@ import { SmallTile } from "~/lib/tiles";
 import { deliverBlob, type BlobTarget } from "~/lib/utils";
 import { prepareExcelExport } from "~/lib/officeExports";
 import { createTableWorkbook } from "~/lib/xlsx";
+import type { QueryResult } from "@sortsys/v2-client";
 import type { Route } from "./+types";
+
+type InventoryTool = QueryResult<"tools.inventories.overview">[number];
 
 const DEFAULT_INVENTORY_DAYS = 30;
 
@@ -91,6 +95,31 @@ export default function InventoryOverviewPage() {
     hadInventory: false,
   }), [days]);
 
+  function canReadResponsible(id: string) {
+    return sessionInfo.canAccess(`personnel:${id}`, "master-data", "read");
+  }
+
+  const responsibleIds = [...(inventoriedTools ?? []), ...(missingTools ?? [])]
+    .flatMap(({ lastResponsibleUserId: id }) =>
+      id && canReadResponsible(id) ? [id] : [],
+    );
+  const { names, pending: namesPending, context } = usePersonnelNames(client, responsibleIds);
+  const canExport = !!inventoriedTools && !!missingTools && !namesPending;
+
+  function responsibleName(id: string | null) {
+    return id && canReadResponsible(id) ? names?.get(id) : undefined;
+  }
+
+  function exportRow(tool: InventoryTool, dateStyle: "short" | "long") {
+    return [
+      tool.customId,
+      inventoryToolTitle(tool),
+      responsibleName(tool.lastResponsibleUserId) ?? "—",
+      inventoryStatusLabel(tool),
+      tool.lastInventoryAt ? formatDate(tool.lastInventoryAt, dateStyle) : "—",
+    ];
+  }
+
   function showDaysFilterModal() {
     modals.showForm({
       content: ({ context }) => (
@@ -133,23 +162,17 @@ export default function InventoryOverviewPage() {
   }
 
   async function exportInventoryOverviewToExcel() {
+    if (!canExport) return;
+
     const openExcel = prepareExcelExport(modals);
     const rows = [
-      ...(inventoriedTools ?? []).map((tool: any) => [
+      ...(inventoriedTools ?? []).map((tool) => [
         uiText('Inventiert'),
-        tool.customId,
-        inventoryToolTitle(tool),
-        inventoryLastResponsibleLabel(tool),
-        inventoryStatusLabel(tool),
-        tool.lastInventoryAt ? formatDate(tool.lastInventoryAt, 'long') : '—',
+        ...exportRow(tool, "long"),
       ]),
-      ...(missingTools ?? []).map((tool: any) => [
+      ...(missingTools ?? []).map((tool) => [
         uiText(`Keine Inventur (${days} Tage)`, `No inventory (${days} days)`),
-        tool.customId,
-        inventoryToolTitle(tool),
-        inventoryLastResponsibleLabel(tool),
-        inventoryStatusLabel(tool),
-        tool.lastInventoryAt ? formatDate(tool.lastInventoryAt, 'long') : '—',
+        ...exportRow(tool, "long"),
       ]),
     ];
 
@@ -166,37 +189,26 @@ export default function InventoryOverviewPage() {
   }
 
   async function exportInventoryOverviewToPdf(target: BlobTarget = 'open') {
+    if (!canExport) return;
+
     const pdfWindow = target === 'open' ? window.open('', '_blank') : null;
 
     setPdfExportErr(null);
     setIsPdfExporting(true);
 
     try {
-      const sortedInventoriedTools = [...(inventoriedTools ?? [])].sort((left: any, right: any) => {
+      function compareTools(left: InventoryTool, right: InventoryTool) {
         const leftId = `${left.customId ?? ''}`;
         const rightId = `${right.customId ?? ''}`;
         const byId = leftId.localeCompare(rightId, 'de', { numeric: true, sensitivity: 'base' });
         if (byId !== 0) return byId;
 
         return inventoryToolTitle(left).localeCompare(inventoryToolTitle(right), 'de', { sensitivity: 'base' });
-      });
+      }
 
-      const sortedMissingTools = [...(missingTools ?? [])].sort((left: any, right: any) => {
-        const leftId = `${left.customId ?? ''}`;
-        const rightId = `${right.customId ?? ''}`;
-        const byId = leftId.localeCompare(rightId, 'de', { numeric: true, sensitivity: 'base' });
-        if (byId !== 0) return byId;
-
-        return inventoryToolTitle(left).localeCompare(inventoryToolTitle(right), 'de', { sensitivity: 'base' });
-      });
-
-      const toToolRow = (tool: any) => [
-        tool.customId,
-        inventoryToolTitle(tool),
-        inventoryLastResponsibleLabel(tool),
-        inventoryStatusLabel(tool),
-        tool.lastInventoryAt ? formatDate(tool.lastInventoryAt, 'short') : '—',
-      ];
+      const sortedInventoriedTools = [...(inventoriedTools ?? [])].sort(compareTools);
+      const sortedMissingTools = [...(missingTools ?? [])].sort(compareTools);
+      const toToolRow = (tool: InventoryTool) => exportRow(tool, "short");
 
       const sections: PdfTableSection[] = [
         {
@@ -241,12 +253,15 @@ export default function InventoryOverviewPage() {
         sections,
         emptyMessage: uiText("Keine Inventurdaten verfügbar."),
       });
+      context.throwIfAborted();
 
       const blob = new Blob([pdfData] as any, { type: 'application/pdf' });
       deliverBlob(blob, uiText(`Inventuruebersicht-${days}Tage.pdf`, `Inventoryuebersicht-${days}Tage.pdf`), target, pdfWindow);
     } catch (err) {
       if (pdfWindow && !pdfWindow.closed) pdfWindow.close();
-      setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
+      if (!context.aborted) {
+        setPdfExportErr((err as Error)?.message || uiText('Unbekannter Fehler beim PDF-Export.'));
+      }
     } finally {
       setIsPdfExporting(false);
     }
@@ -258,41 +273,42 @@ export default function InventoryOverviewPage() {
     void exportInventoryOverviewToPdf('open');
   });
 
-  const columns = [
+  const columns: MyTableColumn<InventoryTool>[] = [
     {
       label: uiText("Nummer"),
-      render: (row: any) => row.customId,
-      sortKey: (row: any) => row.customId,
+      render: (row) => row.customId,
+      sortKey: (row) => row.customId,
     },
     {
       label: uiText("Werkzeug"),
-      render: (row: any) => (
+      render: (row) => (
         <MyLink to={`/tools/${row.id}`}>{inventoryToolTitle(row)}</MyLink>
       ),
-      sortKey: (row: any) => inventoryToolTitle(row).toLowerCase(),
+      sortKey: (row) => inventoryToolTitle(row).toLowerCase(),
     },
     {
       label: uiText("Letzter Verantwortlicher"),
-      render: (row: any) => {
-        const label = inventoryLastResponsibleLabel(row);
-        if (!row.lastResponsibleUserId) return label;
+      render: (row) => {
+        const label = responsibleName(row.lastResponsibleUserId);
+        if (!label) return "—";
         return (
           <MyLink to={`/users/${row.lastResponsibleUserId}`}>{label}</MyLink>
         );
       },
-      sortKey: (row: any) => inventoryLastResponsibleLabel(row).toLowerCase(),
+      sortKey: (row) =>
+        (responsibleName(row.lastResponsibleUserId) ?? "—").toLowerCase(),
     },
     {
       label: uiText("Status"),
-      render: (row: any) => inventoryStatusLabel(row),
-      sortKey: (row: any) => inventoryStatusLabel(row),
+      render: inventoryStatusLabel,
+      sortKey: inventoryStatusLabel,
     },
     {
       label: uiText("Letzte Inventur"),
-      render: (row: any) => row.lastInventoryAt ? formatDate(row.lastInventoryAt, 'long') : '—',
-      sortKey: (row: any) => row.lastInventoryAt ? row.lastInventoryAt.getTime() : 0,
+      render: (row) => row.lastInventoryAt ? formatDate(row.lastInventoryAt, 'long') : '—',
+      sortKey: (row) => row.lastInventoryAt?.getTime() ?? 0,
     },
-  ] as const;
+  ];
 
   return (
     <>
@@ -313,6 +329,7 @@ export default function InventoryOverviewPage() {
               size="sm"
               renderIcon={Icons.Download}
               loading={isPdfExporting}
+              disabled={!canExport}
               onClick={() => exportInventoryOverviewToPdf()}
             >
               {uiText("PDF")}
@@ -321,6 +338,7 @@ export default function InventoryOverviewPage() {
               kind="ghost"
               size="sm"
               renderIcon={Icons.Excel}
+              disabled={!canExport}
               onClick={exportInventoryOverviewToExcel}
             >
               {uiText("Excel")}
@@ -348,7 +366,7 @@ export default function InventoryOverviewPage() {
           onRowClick={(row) => navigate(`/tools/${row.id}`)}
           loading={!inventoriedTools}
           error={inventoriedToolsError}
-          columns={columns as any}
+          columns={columns}
           loadMore={{}}
           renderSmallViewport={(row) => (
             <SmallTile
@@ -380,7 +398,7 @@ export default function InventoryOverviewPage() {
           onRowClick={(row) => navigate(`/tools/${row.id}`)}
           loading={!missingTools}
           error={missingToolsError}
-          columns={columns as any}
+          columns={columns}
           loadMore={{}}
           renderSmallViewport={(row) => (
             <SmallTile
@@ -405,18 +423,6 @@ export default function InventoryOverviewPage() {
 
 function inventoryToolTitle(tool: { brand: string; category: string; label: string | null; }) {
   return [tool.brand, tool.category, tool.label].filter(Boolean).join(' ');
-}
-
-function inventoryLastResponsibleLabel(tool: {
-  lastResponsibleFirstName: string | null;
-  lastResponsibleLastName: string | null;
-}) {
-  const name = [tool.lastResponsibleFirstName, tool.lastResponsibleLastName]
-    .filter(Boolean)
-    .join(' ')
-    .trim();
-
-  return name || '—';
 }
 
 function inventoryStatusLabel(tool: {

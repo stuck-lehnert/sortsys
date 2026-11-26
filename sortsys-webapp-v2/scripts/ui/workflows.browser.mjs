@@ -8929,6 +8929,62 @@ test("delivery export downloads a workbook containing only the selected period",
   );
 });
 
+test("inventory exports wait for data and omit unauthorized names like the table", async () => {
+  await serveWorkbookPreview();
+  api.setRoles(["view:toolInventories"]);
+
+  const recent = {
+    id: "j",
+    customId: 11,
+    brand: "Hilti",
+    category: "Bohrhammer",
+    label: "TE 60",
+    status: null,
+    available: false,
+    archivedSince: null,
+    lastInventoryAt: new Date("2026-11-17T08:00:00Z"),
+    lastResponsibleUserId: "d",
+    lastResponsibleFirstName: "Hidden",
+    lastResponsibleLastName: "Person",
+  };
+  const missing = {
+    ...recent,
+    id: "k",
+    customId: 12,
+    brand: "Bosch",
+    lastInventoryAt: null,
+  };
+  api.respond("tools.inventories.overview", ({ hadInventory }) => hadInventory ? [recent] : [missing]);
+
+  await openApplication("/inventories?holdStream=tools.inventories.overview", "de");
+  await page.setViewportSize({ width: 1700, height: 1000 });
+  const excelButton = page.getByRole("button", { name: "Excel", exact: true });
+  await excelButton.waitFor();
+  assert.equal(await excelButton.isDisabled(), true);
+  await page.evaluate(() => window.__sortsysReleasePresentationStream());
+  const row = page.getByRole("row").filter({ hasText: "Hilti" });
+  await row.getByText("—", { exact: true }).waitFor();
+  assert.equal(await row.locator('a[href="/users/d"]').count(), 0);
+
+  await excelButton.click();
+  const fileName = "Inventuruebersicht-30Tage.xlsx";
+  const excel = page.getByRole("dialog", { name: fileName });
+  await excel.waitFor();
+  const [file] = await Promise.all([
+    page.waitForEvent("download"),
+    excel.getByRole("button", { name: "Herunterladen", exact: true }).click(),
+  ]);
+  assert.equal(file.suggestedFilename(), fileName);
+
+  const { default: ExcelJS } = await import("exceljs");
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.load(await readFile(await file.path()));
+  const sheet = workbook.getWorksheet("Inventurübersicht");
+  assert.deepEqual(sheet.getRow(4).values.slice(1, 5), ["Inventiert", 11, "Hilti Bohrhammer TE 60", "—"]);
+  assert.deepEqual(sheet.getRow(5).values.slice(1, 5), ["Keine Inventur (30 Tage)", 12, "Bosch Bohrhammer TE 60", "—"]);
+  assert.equal(api.requests.some(({ path }) => path.startsWith("users.") || path === "zerotrust.domains.selected"), false);
+});
+
 test("daily-report editing keeps zero weather values and clears an empty field", async () => {
   api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
   api.respond("projects.dailyReports.update", { projectId: "c" });
