@@ -5,6 +5,8 @@ import { createFixtureServer } from "./browser-support.mjs";
 
 let browser;
 let server;
+const archiveModule = /\/bundle\/BackupInitialization-[^/]+\.js$/;
+
 before(async () => {
   server = await createFixtureServer();
   try {
@@ -25,6 +27,10 @@ for (const locale of ["de", "en"]) {
   test(`a direct business URL stays blocked until signed tenant setup is complete (${locale})`, async () => {
     const context = await browser.newContext();
     const page = await context.newPage();
+    const archiveRequests = [];
+    page.on("request", (request) => {
+      if (archiveModule.test(request.url())) archiveRequests.push(request.url());
+    });
     try {
       await page.goto(`${server.origin}/crypto.html`);
       await page.waitForFunction(() => window.cryptoFixture);
@@ -58,11 +64,46 @@ for (const locale of ["de", "en"]) {
       await page
         .getByRole("heading", { name: "Arbeitsbereich bereit" })
         .waitFor();
+      assert.deepEqual(archiveRequests, []);
     } finally {
       await context.close();
     }
   });
 }
+
+test("a pending restore loads the archive picker without opening the workspace", async () => {
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  let releaseArchive;
+  const archiveReady = new Promise((resolve) => {
+    releaseArchive = resolve;
+  });
+
+  try {
+    await page.route(archiveModule, async (route) => {
+      await archiveReady;
+      await route.continue();
+    });
+    await page.goto(`${server.origin}/crypto.html`);
+    await page.waitForFunction(() => window.cryptoFixture);
+    await page.evaluate(() =>
+      window.cryptoFixture.showTenantInitialization({ pendingBackup: true }),
+    );
+
+    await page.getByText("Archivimport wird geladen …", { exact: true }).waitFor();
+    releaseArchive();
+    await page
+      .getByLabel("Vorhandene Sicherung übernehmen (optional)", { exact: true })
+      .waitFor();
+    assert.equal(
+      await page.evaluate(() => window.cryptoFixture.tenantInitializationMounts()),
+      0,
+    );
+  } finally {
+    releaseArchive();
+    await context.close();
+  }
+});
 
 test("an invalid readiness proof cannot open the workspace", async () => {
   const context = await browser.newContext();

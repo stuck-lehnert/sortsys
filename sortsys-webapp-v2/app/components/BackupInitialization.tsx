@@ -49,7 +49,7 @@ function stepLabel(step: string): string {
   return labels[step] ?? uiText("Sicherung übernehmen", "Restoring backup");
 }
 
-export function BackupInitialization({
+export default function BackupInitialization({
   context,
   onComplete,
 }: {

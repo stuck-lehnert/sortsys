@@ -9,10 +9,18 @@ import { I18nProvider, useI18n } from "../../app/lib/i18n";
 
 export async function showTenantInitialization(
   root,
-  { locale = "de", invalid = false } = {},
+  { locale = "de", invalid = false, pendingBackup = false } = {},
 ) {
-  const tenant = await protectedTenant([]);
-  client.query = tenant.client.query;
+  const tenant = await protectedTenant([], undefined, { backup: pendingBackup });
+  client.query = (path, ...args) => {
+    if (pendingBackup && path === "zerotrust.setup.backup.status") {
+      return Promise.resolve([
+        { context: tenant.setup.authority.context, source: null, completion: null },
+        null,
+      ]);
+    }
+    return tenant.client.query(path, ...args);
+  };
   client.mutate = tenant.client.mutate;
   const unsigned = {
     tenant: "test",
@@ -59,7 +67,7 @@ export async function showTenantInitialization(
           accountEnrolled: true,
           accountCertified: true,
           accessReady: true,
-          canInitialize: false,
+          canInitialize: pendingBackup,
           profile: tenant.setup,
           initialization,
         }}

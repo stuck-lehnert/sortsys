@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useCallback,
   useEffect,
   useRef,
@@ -16,8 +18,9 @@ import { uiText } from "~/lib/i18n";
 import { AuthLayout } from "./AuthLayout";
 import { MyButton } from "./MyButton";
 import { MyCallout } from "./MyCallout";
-import { BackupInitialization } from "./BackupInitialization";
 import { readInitializationSource } from "~/lib/crypto/initializationSource";
+
+const BackupInitialization = lazy(() => import("./BackupInitialization"));
 
 type Status = QueryResult<"zerotrust.status">;
 
@@ -105,11 +108,23 @@ export function TenantInitialization({
     >
       {backup?.tenant === status.tenant &&
       backup.generation === status.generation ? (
-        <BackupInitialization
-          key={backup.context}
-          context={backup.context}
-          onComplete={backupCompleted}
-        />
+        <Suspense
+          fallback={
+            <Loading
+              active
+              description={uiText(
+                "Archivimport wird geladen …",
+                "Loading archive import…",
+              )}
+            />
+          }
+        >
+          <BackupInitialization
+            key={backup.context}
+            context={backup.context}
+            onComplete={backupCompleted}
+          />
+        </Suspense>
       ) : failed ? (
         <>
           <MyCallout color="red">
