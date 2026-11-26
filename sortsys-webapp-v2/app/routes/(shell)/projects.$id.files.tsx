@@ -1,4 +1,5 @@
 import { FileResourceImage } from "~/components/FileResourceImage";
+import { projectFolderDestinations } from "~/lib/projectFolderPaths";
 import {
   downloadFileResource,
   fetchFileResource,
@@ -640,40 +641,6 @@ export default function ProjectFilesPage() {
     });
   }
 
-  function folderPath(folder: ProjectFileBrowserFolder) {
-    const names = [folder.name];
-    const seen = new Set([folder.id]);
-    let parentFolderId = folder.parentFolderId;
-
-    while (parentFolderId && !seen.has(parentFolderId)) {
-      seen.add(parentFolderId);
-      const parent = folders.find(
-        (candidate) => candidate.id === parentFolderId,
-      );
-      if (!parent) break;
-
-      names.unshift(parent.name);
-      parentFolderId = parent.parentFolderId;
-    }
-
-    return names.join(" / ");
-  }
-
-  function isFolderInside(candidateId: string, ancestorId: string) {
-    const seen = new Set<string>();
-    let folderId: string | null = candidateId;
-
-    while (folderId && !seen.has(folderId)) {
-      if (folderId === ancestorId) return true;
-      seen.add(folderId);
-      folderId =
-        folders.find((folder) => folder.id === folderId)?.parentFolderId ??
-        null;
-    }
-
-    return false;
-  }
-
   async function moveFiles(fileIds: string[], folderId: string | null) {
     if (!fileIds.length) return;
 
@@ -702,49 +669,67 @@ export default function ProjectFilesPage() {
     }
   }
 
-  function showMoveFilesModal(fileIds: string[]) {
-    if (!fileIds.length) return;
-
-    const firstFile = documentFiles.find((file) => file.id === fileIds[0]);
-    const destinationRef = { current: firstFile?.folderId ?? "" };
-    const destinations = folders
-      .slice()
-      .sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
+  function showMoveDestination({
+    initialId,
+    excludeId,
+    heading,
+    label,
+    move,
+  }: {
+    initialId: string | null;
+    excludeId?: string;
+    heading: string;
+    label: string;
+    move: (destinationId: string | null) => Promise<void>;
+  }) {
+    let destinationId = initialId;
+    const destinations = projectFolderDestinations(folders, excludeId);
 
     modals.showDefault({
       content: () => (
         <Select
           labelText={uiText("Zielordner", "Destination folder")}
           className="w-full"
-          defaultValue={destinationRef.current}
+          defaultValue={initialId ?? ""}
           onChange={(event: {
             target: { value: string };
             currentTarget: { value: string };
           }) => {
-            destinationRef.current = event.currentTarget.value;
+            destinationId = event.currentTarget.value || null;
           }}
         >
           <SelectItem value="">{uiText("Anhänge", "Attachments")}</SelectItem>
-          {destinations.map((folder) => (
-            <SelectItem key={folder.id} value={folder.id}>
-              {folderPath(folder)}
+          {destinations.map(({ id, label }) => (
+            <SelectItem key={id} value={id}>
+              {label}
             </SelectItem>
           ))}
         </Select>
       ),
       modalProps: () => ({
         noFullscreen: true,
-        modalHeading:
-          fileIds.length === 1
-            ? uiText("Datei verschieben", "Move file")
-            : uiText("Dateien verschieben", "Move files"),
-        modalLabel: project.title,
+        modalHeading: heading,
+        modalLabel: label,
         primaryButtonText: uiText("Verschieben", "Move"),
       }),
       onPrimaryAction: async ({ hide }) => {
-        await moveFiles(fileIds, destinationRef.current || null);
+        await move(destinationId);
         hide();
       },
+    });
+  }
+
+  function showMoveFilesModal(fileIds: string[]) {
+    if (!fileIds.length) return;
+
+    const firstFile = documentFiles.find((file) => file.id === fileIds[0]);
+    showMoveDestination({
+      initialId: firstFile?.folderId ?? null,
+      heading: fileIds.length === 1
+        ? uiText("Datei verschieben", "Move file")
+        : uiText("Dateien verschieben", "Move files"),
+      label: project.title,
+      move: (destinationId) => moveFiles(fileIds, destinationId),
     });
   }
 
@@ -774,42 +759,12 @@ export default function ProjectFilesPage() {
   }
 
   function showMoveFolderModal(folder: ProjectFileBrowserFolder) {
-    const destinationRef = { current: folder.parentFolderId ?? "" };
-    const destinations = folders
-      .filter((candidate) => !isFolderInside(candidate.id, folder.id))
-      .sort((left, right) => folderPath(left).localeCompare(folderPath(right)));
-
-    modals.showDefault({
-      content: () => (
-        <Select
-          labelText={uiText("Zielordner", "Destination folder")}
-          className="w-full"
-          defaultValue={destinationRef.current}
-          onChange={(event: {
-            target: { value: string };
-            currentTarget: { value: string };
-          }) => {
-            destinationRef.current = event.currentTarget.value;
-          }}
-        >
-          <SelectItem value="">{uiText("Anhänge", "Attachments")}</SelectItem>
-          {destinations.map((destination) => (
-            <SelectItem key={destination.id} value={destination.id}>
-              {folderPath(destination)}
-            </SelectItem>
-          ))}
-        </Select>
-      ),
-      modalProps: () => ({
-        noFullscreen: true,
-        modalHeading: uiText("Ordner verschieben", "Move folder"),
-        modalLabel: folder.name,
-        primaryButtonText: uiText("Verschieben", "Move"),
-      }),
-      onPrimaryAction: async ({ hide }) => {
-        await moveFolder(folder, destinationRef.current || null);
-        hide();
-      },
+    showMoveDestination({
+      initialId: folder.parentFolderId,
+      excludeId: folder.id,
+      heading: uiText("Ordner verschieben", "Move folder"),
+      label: folder.name,
+      move: (destinationId) => moveFolder(folder, destinationId),
     });
   }
 

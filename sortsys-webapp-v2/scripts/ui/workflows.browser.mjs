@@ -1942,6 +1942,69 @@ function populateAttachments() {
   ]);
 }
 
+test("project file and folder moves use labeled paths without offering a nested self move", async () => {
+  populateAttachments();
+  const date = new Date("2026-10-27T08:00:00Z");
+  api.respond("projects.files.folders.list", [
+    { id: "folder-fixture", parentFolderId: null, name: "Plans" },
+    { id: "details", parentFolderId: "folder-fixture", name: "Details" },
+    { id: "archive", parentFolderId: null, name: "Archive" },
+  ].map((folder) => ({
+    ...folder,
+    projectId: "c",
+    createdAt: date,
+    modifiedAt: date,
+  })));
+  api.respond("projects.files.move", true);
+  api.respond("projects.files.folders.move", true);
+
+  await openApplication("/projects/c/files");
+  const actions = page.getByRole("menu", { name: "Actions", exact: true });
+  const moveItem = actions.getByRole("button", { name: "Move", exact: true });
+  await page.getByRole("button", { name: "Specification.pdf" }).click({ button: "right" });
+  await moveItem.click();
+
+  const fileDialog = page.getByRole("dialog", { name: "Move file", exact: true });
+  const destinations = page.getByRole("listbox", { name: /Destination folder/ });
+
+  await fileDialog.getByRole("button", { name: /Destination folder/ }).click();
+  await destinations.waitFor();
+  assert.deepEqual(await destinations.getByRole("option").allTextContents(), [
+    "Attachments", "Archive", "Plans", "Plans / Details",
+  ]);
+  await destinations.getByRole("option", { name: "Attachments", selected: true }).waitFor();
+  await destinations.getByRole("option", { name: "Plans / Details", exact: true }).click();
+  await fileDialog.getByRole("button", { name: "Move", exact: true }).click();
+  await fileDialog.waitFor({ state: "hidden" });
+
+  await page.getByRole("button", { name: "Plans", exact: true }).press("Shift+F10");
+  await moveItem.click();
+
+  const folderDialog = page.getByRole("dialog", { name: "Move folder", exact: true });
+
+  await folderDialog.getByRole("button", { name: /Destination folder/ }).click();
+  await destinations.waitFor();
+  assert.deepEqual(await destinations.getByRole("option").allTextContents(), [
+    "Attachments", "Archive",
+  ]);
+  await destinations.getByRole("option", { name: "Archive", exact: true }).click();
+  await folderDialog.getByRole("button", { name: "Move", exact: true }).click();
+  await folderDialog.waitFor({ state: "hidden" });
+
+  const moveRequests = api.requests.filter(({ path }) =>
+    path === "projects.files.move" || path === "projects.files.folders.move");
+  assert.deepEqual(moveRequests, [
+    {
+      path: "projects.files.move",
+      input: { projectId: "c", fileIds: ["e"], folderId: "details" },
+    },
+    {
+      path: "projects.files.folders.move",
+      input: { projectId: "c", folderId: "folder-fixture", parentFolderId: "archive" },
+    },
+  ]);
+});
+
 test("production email worker reads Outlook MSG and MIME EML messages", async () => {
   const { assets } = JSON.parse(
     await readFile(join(fixtureDirectory, "assets.json"), "utf8"),

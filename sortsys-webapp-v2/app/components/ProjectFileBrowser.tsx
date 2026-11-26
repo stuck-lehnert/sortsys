@@ -4,6 +4,7 @@ import { Input as UIInput } from "@heroui/react";
 import { uiText } from "~/lib/i18n";
 import { Icons } from "~/lib/icons";
 import { formatDate, formatFileSize } from "~/lib/format";
+import { projectFolderLabel, projectFolderTrail } from "~/lib/projectFolderPaths";
 import { MyButton } from "~/components/MyButton";
 import { MyDropdown } from "~/components/MyDropdown";
 import type { NewProjectFileType } from "~/lib/blankProjectFiles";
@@ -195,24 +196,10 @@ export function ProjectFileBrowser(props: {
 
   const documentFileIdSet = useMemo(() => new Set(files.map(file => file.id)), [files]);
 
-  const breadcrumbs = useMemo(() => {
-    const ancestors: ProjectFileBrowserFolder[] = [];
-    const seen = new Set<string>();
-    let folderId = currentFolderId;
-
-    while (folderId) {
-      if (seen.has(folderId)) break;
-      seen.add(folderId);
-
-      const folder = folderById.get(folderId);
-      if (!folder) break;
-
-      ancestors.unshift(folder);
-      folderId = folder.parentFolderId;
-    }
-
-    return ancestors;
-  }, [currentFolderId, folderById]);
+  const breadcrumbs = useMemo(
+    () => projectFolderTrail(folderById, currentFolderId),
+    [currentFolderId, folderById],
+  );
 
   const normalizedSearch = search.trim().toLocaleLowerCase();
   const visibleFolders = folders
@@ -337,21 +324,8 @@ export function ProjectFileBrowser(props: {
   }
 
   function locationLabel(folderId: string | null) {
-    if (!folderId) return uiText("Anhänge", "Attachments");
-
-    const names: string[] = [];
-    const seen = new Set<string>();
-    let cursor: string | null = folderId;
-
-    while (cursor && !seen.has(cursor)) {
-      seen.add(cursor);
-      const folder = folderById.get(cursor);
-      if (!folder) break;
-      names.unshift(folder.name);
-      cursor = folder.parentFolderId;
-    }
-
-    return names.join(" / ") || uiText("Anhänge", "Attachments");
+    const trail = projectFolderTrail(folderById, folderId);
+    return projectFolderLabel(trail) || uiText("Anhänge", "Attachments");
   }
 
   const folderMenuItems = (folder: ProjectFileBrowserFolder) => [
