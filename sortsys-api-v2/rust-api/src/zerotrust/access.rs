@@ -83,11 +83,18 @@ async fn metadata_security_for_selection(
     domain_reads: DomainReads,
 ) -> RpcResult<Security> {
     use crate::control::{accounts, key};
-    let (account, _) = accounts::checked_session(transaction, auth).await?;
+
+    let (account, _) = accounts::checked_session_prefetch(
+        transaction,
+        auth,
+        super::setup::metadata_root_records(),
+    )
+    .await?;
     let credential = account.credential()?;
     if credential.pending_invitation.is_some() {
         return Err(forbidden());
     }
+
     let stored = super::setup::metadata_root(transaction, &auth.tenant).await?;
     let certificate = &stored.profile.authority;
     super::content::verify_view(transaction, &auth.tenant, certificate).await?;

@@ -348,19 +348,22 @@ pub(super) async fn public_root(system: &Repository, tenant: &str) -> RpcResult<
     .await
 }
 
+pub(super) fn metadata_root_records() -> [sortsys_zerotrust::metadata::RecordKey; 4] {
+    use sortsys_zerotrust::anchors::ANCHOR_COLLECTION;
+
+    [
+        root_key(),
+        crate::control::content::head_key(),
+        key(ANCHOR_COLLECTION, "authority"),
+        key(ANCHOR_COLLECTION, "security"),
+    ]
+}
+
 pub(super) async fn metadata_root(
     transaction: &mut Transaction,
     tenant: &str,
 ) -> RpcResult<RootState> {
-    use sortsys_zerotrust::anchors::ANCHOR_COLLECTION;
-    transaction
-        .prefetch(vec![
-            root_key(),
-            crate::control::content::head_key(),
-            key(ANCHOR_COLLECTION, "authority"),
-            key(ANCHOR_COLLECTION, "security"),
-        ])
-        .await?;
+    transaction.prefetch(metadata_root_records().into()).await?;
     let root: RootState = transaction.read(root_key()).await?.ok_or_else(forbidden)?;
     root.profile.authority.verify()?;
     if root.profile.authority.tenant != tenant {

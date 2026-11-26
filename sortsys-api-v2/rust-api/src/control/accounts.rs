@@ -3,7 +3,9 @@
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use sortsys_zerotrust::{credentials::CredentialPrincipal, crypto::AccountVault};
+use sortsys_zerotrust::{
+    credentials::CredentialPrincipal, crypto::AccountVault, metadata::RecordKey,
+};
 
 use super::{Repository, Transaction, key, unavailable};
 use crate::{
@@ -209,24 +211,34 @@ pub async fn checked_session(
     transaction: &mut Transaction,
     auth: &AuthResult,
 ) -> RpcResult<(Account, TenantStatus)> {
+    checked_session_prefetch(transaction, auth, []).await
+}
+
+/// Combine independent control reads in this transaction. The caller still
+/// validates its own records after the session and account checks succeed.
+pub(crate) async fn checked_session_prefetch(
+    transaction: &mut Transaction,
+    auth: &AuthResult,
+    records: impl IntoIterator<Item = RecordKey>,
+) -> RpcResult<(Account, TenantStatus)> {
     let user = auth.user.id.parse::<i64>().map_err(|_| denied())?;
     let session_id = auth.session.id.parse::<i64>().map_err(|_| denied())?;
-    transaction
-        .prefetch(vec![
-            session_key(session_id),
-            account_key(user),
-            tenant_key(),
-        ])
-        .await?;
-    let session: Session = transaction
-        .read(session_key(session_id))
-        .await?
-        .ok_or_else(denied)?;
-    let account: Account = transaction
-        .read(account_key(user))
-        .await?
-        .ok_or_else(denied)?;
-    let tenant: TenantStatus = transaction.read(tenant_key()).await?.ok_or_else(denied)?;
+    let session_record = session_key(session_id);
+    let account_record = account_key(user);
+    let tenant_record = tenant_key();
+
+    let mut keys = vec![
+        session_record.clone(),
+        account_record.clone(),
+        tenant_record.clone(),
+    ];
+    keys.extend(records);
+    transaction.prefetch(keys).await?;
+
+    let session: Session = transaction.read(session_record).await?.ok_or_else(denied)?;
+    let account: Account = transaction.read(account_record).await?.ok_or_else(denied)?;
+    let tenant: TenantStatus = transaction.read(tenant_record).await?.ok_or_else(denied)?;
+
     let now = Utc::now();
     if !tenant.available(now)
         || !account.active(now)

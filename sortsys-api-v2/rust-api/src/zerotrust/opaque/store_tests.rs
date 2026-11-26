@@ -1817,7 +1817,8 @@ async fn access_inventories_page_across_api_instances_without_tracking_content_r
     );
     let root = PathBuf::from(std::env::var("SORTSYS_NATIVE_AUTH_ROOT").unwrap());
     let config = QuackConfig::from_env().unwrap().unwrap();
-    let first = Repository::system(CipherStore::new(config.clone()).unwrap());
+    let (store, probe, _proxy) = batching::measured_store(&config).await;
+    let first = Repository::system(store);
     let second = Repository::system(CipherStore::new(config.clone()).unwrap());
     let mut settings = configuration(config);
     settings.jwt_secret = Arc::from(b"disposable-access-pages-signing-secret-2026".as_slice());
@@ -1827,6 +1828,26 @@ async fn access_inventories_page_across_api_instances_without_tracking_content_r
     let (first_url, _first_api) = api(auth_service(&settings, first)).await;
     let (second_url, _second_api) = api(auth_service(&settings, second)).await;
     browser("owner-access-pages", &root, Some(&[first_url, second_url])).await;
+
+    let root_records = crate::zerotrust::setup::metadata_root_records();
+    let session_collection = accounts::session_key(0).collection;
+    let account_collection = accounts::account_key(0).collection;
+    let tenant = accounts::tenant_key();
+
+    assert!(
+        probe.take_reads().iter().any(|records| {
+            records.len() == root_records.len() + 3
+                && records.contains(&tenant)
+                && root_records.iter().all(|record| records.contains(record))
+                && records
+                    .iter()
+                    .any(|record| record.collection == session_collection)
+                && records
+                    .iter()
+                    .any(|record| record.collection == account_collection)
+        }),
+        "the current session, account, tenant and authority observations must share one store read"
+    );
 }
 
 #[tokio::test]
