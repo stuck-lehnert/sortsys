@@ -2,7 +2,6 @@ import { createClient } from "@sortsys/v2-client";
 import { Observable } from "rxjs";
 import { base64, createAccountVault, createIdentity } from "@sortsys/zerotrust";
 import { acceptVault } from "../../app/lib/crypto/session";
-import { ramCache } from "../../app/lib/data/ramCache";
 import { errorHttpStatus } from "../../app/lib/errorTelemetry";
 import {
   API_ENDPOINT,
@@ -32,7 +31,6 @@ export async function installPresentationClient() {
   });
   window.__sortsysReleasePresentationStream = () => releaseStream();
   const transport = createClient(API_ENDPOINT, "presentation-fixture", {
-    cache: ramCache(),
   });
   transport.setToken("sortsys-ui-synthetic-session");
   const [session, sessionError] = await transport.query(

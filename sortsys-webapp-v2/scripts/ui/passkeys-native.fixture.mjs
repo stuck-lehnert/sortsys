@@ -24,7 +24,6 @@ import {
   removePasskey,
   signInWithPasskey,
 } from "../../app/lib/crypto/passkeys";
-import { ramCache } from "../../app/lib/data/ramCache";
 
 const originalFetch = window.fetch;
 const calls = [];
@@ -67,7 +66,6 @@ window.fetch = new Proxy(originalFetch, {
 });
 const clients = ["one", "two"].map((part) =>
   createClient(`${location.origin}/api-${part}/`, `native-passkey-${part}`, {
-    cache: ramCache(),
   }),
 );
 let selected = 0;

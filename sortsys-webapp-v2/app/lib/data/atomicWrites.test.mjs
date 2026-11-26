@@ -8,7 +8,6 @@ import {
   mergePreparedWrites,
   ProtectedWriteConflict,
 } from "./atomicWrites";
-import { ramCache } from "./ramCache";
 
 test("optional object revisions distinguish missing, malformed and stale expectations", () => {
   expect(() => checkExpectedRevision(undefined, "10")).not.toThrow();
@@ -255,7 +254,6 @@ test("staged writes share real HTTP transport batches before the separate final 
   // Exercise the production RPC serializer and batch window. This transport
   // fixture acknowledges opaque packets; native tests cover the API checks.
   const client = createClient("https://staged-writes.test", "staging-test", {
-    cache: ramCache(),
     fetch: async (input, options) => {
       const paths = new URL(String(input)).pathname.slice(1).split(",");
       const encoded = JSON.parse(String(options.body));

@@ -1,6 +1,3 @@
-import { KVDB } from './kvdb';
-import { LRUMap } from './lrumap';
-
 export function isInBrowser() {
   try {
     return typeof window === 'object';
@@ -17,93 +14,65 @@ export interface Cache {
   keys(): Promise<Set<string>>;
 }
 
-export function createCache(): Cache {
-  const toBuffer = (u8: Uint8Array): ArrayBuffer | SharedArrayBuffer =>
-    u8.buffer.slice(u8.byteOffset, u8.byteOffset + u8.byteLength);
-
-  const fromBuffer = (v: ArrayBuffer | SharedArrayBuffer): Uint8Array =>
-    new Uint8Array(v);
-
-  if (!isInBrowser() || !("indexedDB" in globalThis)) {
-    const store = new LRUMap<string, Uint8Array>(500);
-
-    return {
-      async getBytes(key) {
-        const v = store.get(key);
-        return v ? new Uint8Array(v) : null;
-      },
-      async setBytes(key, bytes) {
-        store.set(key, new Uint8Array(bytes));
-      },
-      async delete(key) {
-        store.delete(key);
-      },
-      async clear() {
-        store.clear();
-      },
-      async keys() {
-        return new Set(store.keys());
-      },
-    };
+/** The default reply cache owns its bytes and never persists them in the browser. */
+export function createCache(maxEntries = 200, maxBytes = 8 * 1024 * 1024): Cache {
+  if (
+    !Number.isSafeInteger(maxEntries) ||
+    maxEntries < 0 ||
+    !Number.isSafeInteger(maxBytes) ||
+    maxBytes < 0
+  ) {
+    throw new RangeError("Invalid reply cache limits");
   }
 
-  let kv: KVDB | null = null;
-  try {
-    kv = new KVDB("sortsys-v2-cache");
-  } catch {
-    throw new Error('failed to create cache');
+  const entries = new Map<string, Uint8Array>();
+  let size = 0;
+
+  function remove(key: string) {
+    const bytes = entries.get(key);
+    if (!bytes) return;
+
+    entries.delete(key);
+    size -= bytes.byteLength;
+    bytes.fill(0);
   }
-
-  type DBEntry = {
-    value: ArrayBuffer | SharedArrayBuffer;
-    exp: number; // epoch ms; 0 = no expiry
-  };
-
 
   return {
     async getBytes(key) {
-      const entry = await kv!.get(key);
-      if (!entry) return null;
+      const bytes = entries.get(key);
+      if (!bytes) return null;
 
-      if (entry.exp !== 0 && entry.exp <= Date.now()) {
-        await kv!.del(key);
-        return null;
-      }
-
-      return fromBuffer(entry.value);
+      entries.delete(key);
+      entries.set(key, bytes);
+      return new Uint8Array(bytes);
     },
 
     async setBytes(key, bytes) {
-      const entry: DBEntry = {
-        value: toBuffer(bytes),
-        exp: Date.now() + 3 * 24 * 3600 * 1000, // 3 days
-      };
+      remove(key);
+      if (maxEntries === 0 || bytes.byteLength > maxBytes) return;
 
-      try {
-        await kv!.set(key, entry);
-      } catch {
-        /* best-effort: ignore */
+      const copy = new Uint8Array(bytes);
+      entries.set(key, copy);
+      size += copy.byteLength;
+
+      for (const key of entries.keys()) {
+        if (entries.size <= maxEntries && size <= maxBytes) break;
+        remove(key);
       }
     },
 
     async delete(key) {
-      try {
-        await kv!.del(key);
-      } catch { }
+      remove(key);
     },
 
     async clear() {
-      try {
-        await kv!.clear();
-      } catch { }
+      for (const bytes of entries.values()) bytes.fill(0);
+      entries.clear();
+      size = 0;
     },
 
     async keys() {
-      try {
-        return await kv!.keys();
-      } catch {
-        return new Set();
-      }
+      return new Set(entries.keys());
     },
   };
 }

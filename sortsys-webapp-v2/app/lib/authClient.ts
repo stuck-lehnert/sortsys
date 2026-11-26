@@ -2,7 +2,6 @@ import { createClient, type Client } from "@sortsys/v2-client";
 import { browserApiEndpoint } from "./apiEndpoint";
 import { BUILD_REVISION } from "./buildInfo";
 import { lockCryptoSession, signIn } from "./crypto/session";
-import { ramCache } from "./data/ramCache";
 import {
   technicalErrorReport,
   type TechnicalErrorContext,
@@ -13,7 +12,6 @@ export const API_ENDPOINT = browserApiEndpoint();
 
 const transport = createClient(API_ENDPOINT, "webapp", {
   revision: BUILD_REVISION,
-  cache: ramCache(),
   cacheable: (path) => !path.startsWith("zerotrust."),
 });
 

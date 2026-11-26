@@ -6,7 +6,6 @@ import {
   createIdentity,
   publicIdentity,
 } from "@sortsys/zerotrust";
-import { ramCache } from "../../app/lib/data/ramCache";
 import {
   acceptVault,
   acceptVaultWithKey,
@@ -174,7 +173,6 @@ async function responseFor(path, input) {
 }
 
 const client = createClient(location.origin, "passkey-browser-test", {
-  cache: ramCache(),
   fetch: async (input, options) => {
     const url = new URL(String(input));
     const paths = url.pathname.slice(1).split(",");

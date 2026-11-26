@@ -9,7 +9,6 @@ import {
 } from "./deliveryRegistry";
 import { createAccountDataKey } from "@sortsys/zerotrust/sortsys";
 import { publicId } from "./products";
-import { ramCache } from "./ramCache";
 import { businessSchema } from "./schema";
 
 test("delivery creation normalizes only allowed values before any request", () => {
@@ -189,7 +188,6 @@ test("delivery number checks share one HTTP batch even across registry chunk bou
   const transmissions = [];
   let corruptNumber = false;
   const client = createClient("https://delivery-batch.test", "delivery-batch", {
-    cache: ramCache(),
     async fetch(input, options) {
       const url = new URL(String(input));
       const paths = url.pathname.slice(1).split(",");

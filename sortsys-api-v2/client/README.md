@@ -42,6 +42,11 @@ Pfade, Eingaben und Ergebnisse von `query` und `mutate` kommen aus
 `cache-first` und `cache-only`. Tokens werden als Bearer-Header angehängt;
 `restoreSession()` stellt Browsersitzungen wieder her.
 
+Der Standardcache hält API-Antworten nur im Arbeitsspeicher der Clientinstanz.
+Er verwirft die am längsten nicht verwendeten Ergebnisse bei mehr als 200
+Einträgen oder 8 MiB serialisierter Antworten. Nach einem Neuladen fragt der
+Client die Daten erneut ab. Der Cache ändert die Sitzungsspeicherung nicht.
+
 `network-only` teilt nur noch laufende identische Anfragen. Sobald eine Antwort
 eingetroffen ist, fragt der nächste Aufruf den Server erneut. Das gilt auch,
 wenn zuvor eine andere Cache-Strategie dieselbe Anfrage abgeschlossen hat.

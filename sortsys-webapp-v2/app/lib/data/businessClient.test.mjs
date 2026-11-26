@@ -9,7 +9,6 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { acceptVault, lockCryptoSession } from "../crypto/session";
 import { createBusinessClient } from "./businessClient";
-import { ramCache } from "./ramCache";
 import { announceDataChanges } from "./runtime/changes";
 import { duckDriver } from "./testing/duckDriver.mjs";
 
@@ -46,7 +45,6 @@ function raw({ beforeReply } = {}) {
     "https://private-client.test",
     "business-client-test",
     {
-      cache: ramCache(),
       fetch: async (url, init) => {
         requests.push({ url: String(url), body: init?.body });
         const paths = new URL(String(url)).pathname.slice(1).split(",");

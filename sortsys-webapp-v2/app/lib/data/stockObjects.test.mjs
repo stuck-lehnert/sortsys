@@ -20,7 +20,6 @@ import {
   stockReferenceData,
 } from "./stockObjects";
 import { row } from "./rowCodec.test.mjs";
-import { ramCache } from "./ramCache";
 import { mapConcurrent } from "./runtime/concurrentReads";
 
 async function fixture() {
@@ -140,7 +139,6 @@ test("320 stock proofs use two HTTP requests and preserve each independently sig
   const data = await catalogue(320);
   const transmissions = [];
   const client = createClient("https://stock-proofs.test", "stock-batching", {
-    cache: ramCache(),
     fetch: async (input, options) => {
       const url = new URL(String(input));
       const paths = url.pathname.slice(1).split(",");

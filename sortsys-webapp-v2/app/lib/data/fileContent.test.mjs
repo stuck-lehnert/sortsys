@@ -17,7 +17,6 @@ import {
 } from "./fileContent";
 import { chunkCollection, FILE_CHUNK_BYTES } from "./projectFileData";
 import { protectedCollection } from "./protectedObjects";
-import { ramCache } from "./ramCache";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 const namespace = "organization";
@@ -70,7 +69,6 @@ async function packetHash(envelope) {
 function wireClient(tenant) {
   const requests = [];
   const client = createClient("https://file-blocks.test", "file-block-test", {
-    cache: ramCache(),
     fetch: async (input, options) => {
       const url = new URL(String(input));
       const paths = url.pathname.slice(1).split(",");
