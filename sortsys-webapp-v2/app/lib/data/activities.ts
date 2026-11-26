@@ -51,6 +51,7 @@ import { regieCollection, regieDomain } from "./regieReportData";
 import { deliveryCollection, deliveryDomain } from "./deliveryNoteData";
 import { scheduleDomain } from "./projectScheduleData";
 import { toolCollection, toolDomain } from "./toolData";
+import { mapConcurrent } from "./runtime/concurrentReads";
 import type { RowSource } from "./runtime/model";
 import { financialDomain } from "./projectFinancialData";
 
@@ -75,7 +76,8 @@ type ActivityCache = {
   snapshot: string;
   after: string | null;
   edge: ActivityPosition | null;
-  candidates: Candidate[];
+  groups: Map<string, Candidate>;
+  actorNames: Map<string, string | null>;
   complete: boolean;
 };
 class ChangedAccess extends Error {}
@@ -137,17 +139,19 @@ function resourceLabel(
   );
 }
 
-function mergeActivityFacets(items: readonly Candidate[]): Activity[] {
-  const groups = new Map<string, Candidate>();
-  for (const value of [...items].sort(activityOrder)) {
+function appendActivityFacets(
+  groups: Map<string, Candidate>,
+  page: readonly Candidate[],
+) {
+  // The validated history pages arrive in descending order. Keep the first
+  // candidate's position even when more facets arrive on a later page.
+  for (const value of page) {
     const previous = groups.get(value.group);
     if (!previous) {
-      groups.set(value.group, {
-        ...value,
-        item: { ...value.item, changedColumns: [...value.item.changedColumns] },
-      });
+      groups.set(value.group, value);
       continue;
     }
+
     previous.item.changedColumns = [
       ...new Set([
         ...previous.item.changedColumns,
@@ -163,7 +167,6 @@ function mergeActivityFacets(items: readonly Candidate[]): Activity[] {
       previous.item.action = value.item.action;
     }
   }
-  return [...groups.values()].map((value) => value.item);
 }
 
 function actionForChange(
@@ -448,17 +451,27 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         day: typeof values?.day === "string" ? values.day : null,
       };
     }
-    async function resolveActor(author: string) {
-      const id = author.startsWith("user:") ? author.slice(5) : null;
-      if (!id) {
-        return { id: null, name: null };
-      }
-      const area = personnelCollection(id, "master-data");
-      const values = findRowValues(
-        await loadHistoryNode(area, area.prefix),
-        "users",
+    async function nameVisibleActors(result: Activity[], state: ActivityCache) {
+      // The signed legacy actor facet has its own visibility and name. Never
+      // fill in a missing historical name from current personnel data.
+      const native = result.filter(
+        (item) => item.actorUserId && !activityCursor(item.id).legacy,
       );
-      return { id, name: resourceLabel(values, "users") || null };
+      const ids = new Set(native.map((item) => item.actorUserId!));
+      const missing = [...ids].filter((id) => !state.actorNames.has(id));
+      await mapConcurrent(missing, 4, async (id) => {
+        const area = personnelCollection(id, "master-data");
+        const node = await loadHistoryNode(area, area.prefix);
+        assertCurrentAccess();
+
+        const name = resourceLabel(findRowValues(node, "users"), "users");
+        state.actorNames.set(id, name || null);
+      });
+      assertCurrentAccess();
+
+      for (const item of native) {
+        item.actorName = state.actorNames.get(item.actorUserId!) ?? null;
+      }
     }
     const legacy = legacyActivityReader(
       client,
@@ -564,7 +577,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         removed ? after : before,
         removed ? [] : after,
       );
-      const who = await resolveActor(author);
+      const actorUserId = author.startsWith("user:") ? author.slice(5) : null;
       const output: Candidate[] = [];
       for (const [ordinal, value] of changes.entries()) {
         const parent = await resolveOwner(area, value, change);
@@ -613,9 +626,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           entityTable: value.table,
           entityId: value.entityId,
           changedColumns: unknownPrevious ? [] : value.columns,
-          actorUserId: who.id,
-          actorKind: who.id ? "user" : "system",
-          actorName: who.name,
+          actorUserId,
+          actorKind: actorUserId ? "user" : "system",
+          actorName: null,
           isImported: false,
           resourceType: parent.type,
           resourceId: parent.id,
@@ -644,11 +657,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       }
       return output;
     }
+
     async function readPage(changes: Page["changes"]) {
-      const candidates = await Promise.all(
-        changes.map((change) => readCandidates(change, changes)),
-      );
-      return candidates.flat();
+      return (
+        await Promise.all(changes.map((change) => readCandidates(change, changes)))
+      ).flat();
     }
 
     function validatePage(
@@ -740,6 +753,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       if (!first.unchanged) {
         const initial = await readPage(first.changes);
         assertCurrentAccess();
+
+        const groups = new Map<string, Candidate>();
+        appendActivityFacets(groups, initial);
         cache = {
           stamp: context.stamp,
           prefixes: prefixKey,
@@ -748,7 +764,8 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           snapshot: first.snapshot,
           after: first.after,
           edge: firstEdge,
-          candidates: initial,
+          groups,
+          actorNames: new Map(),
           complete: first.after === null,
         };
       } else {
@@ -760,20 +777,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           throw new InvalidProtectedData();
         }
       }
+
       const state = cache!;
       for (let pages = 0; pages < MAX_HISTORY_PAGES; pages++) {
-        const selected = selectActivity(
-          mergeActivityFacets(state.candidates),
-          request,
-        );
-        const cursor = request.cursor ? activityCursor(request.cursor) : null;
-        const following = cursor
-          ? selected.filter(
-              (item) => activityOrder(activityCursor(item.id), cursor) > 0,
-            )
-          : selected;
-        const result = following.slice(0, request.limit);
-        const lastRequested = result.at(-1);
+        const result = selectActivity(state.groups.values(), request);
+        const lastRequested = result.at(-1)?.item;
         const endPosition = lastRequested
           ? activityCursor(lastRequested.id)
           : null;
@@ -781,9 +789,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         const finishedBoundary = isCompleteBoundary(endPosition, state.edge);
 
         if (state.complete || (enoughEntries && finishedBoundary)) {
-          assertCurrentAccess();
-          return result;
+          const items = result.map(({ item }) => structuredClone(item));
+          await nameVisibleActors(items, state);
+          return items;
         }
+
         const before = state.after;
         const page = await required(
           client.query(
@@ -803,8 +813,10 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         if (page.unchanged) {
           throw new InvalidProtectedData();
         }
-        state.candidates.push(...await readPage(page.changes));
+
+        const next = await readPage(page.changes);
         assertCurrentAccess();
+        appendActivityFacets(state.groups, next);
         state.after = page.after;
         state.edge = edge;
         state.complete = page.after === null;

@@ -109,12 +109,11 @@ export function activityInput(input: unknown) {
       addressId(value[field]);
     }
   }
-  if (value.cursor != null) {
-    activityCursor(value.cursor);
-  }
+  const cursor = value.cursor == null ? null : activityCursor(value.cursor);
+
   return {
     limit: Math.max(1, Math.min(50, limit)),
-    cursor: value.cursor as string | undefined,
+    cursor,
     latest: value.latestPerResource === true,
     resourceType: value.resourceType as ResourceType | undefined,
     resourceId: value.resourceId as string | undefined,
@@ -181,17 +180,18 @@ export function changedRows(
   return result;
 }
 export function selectActivity(
-  items: readonly Activity[],
+  candidates: Iterable<ActivityCandidate>,
   input: ReturnType<typeof activityInput>,
 ) {
   const seen = new Set<string>();
-  const output: Activity[] = [];
+  const output: ActivityCandidate[] = [];
   const includesProjectContext =
     input.includeProject &&
     input.resourceType === "project" &&
     Boolean(input.resourceId);
 
-  for (const item of items) {
+  for (const candidate of candidates) {
+    const { item } = candidate;
     const matchesType =
       !input.resourceType || item.resourceType === input.resourceType;
     const matchesId = !input.resourceId || item.resourceId === input.resourceId;
@@ -209,12 +209,17 @@ export function selectActivity(
       continue;
     }
 
-    const key = `${item.resourceType}:${item.resourceId}`;
-    if (input.latest && seen.has(key)) {
-      continue;
+    if (input.latest) {
+      // The latest event still claims its resource if it precedes the cursor.
+      const key = `${item.resourceType}:${item.resourceId}`;
+      if (seen.has(key)) continue;
+      seen.add(key);
     }
-    seen.add(key);
-    output.push(item);
+    if (input.cursor && activityOrder(candidate, input.cursor) <= 0) continue;
+
+    output.push(candidate);
+    if (output.length === input.limit) break;
   }
+
   return output;
 }

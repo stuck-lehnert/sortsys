@@ -539,6 +539,59 @@ test("unchanged pages reuse verified data; a signed revocation drops old price m
     tenant.close();
   }
 });
+
+test("native history reads names only for returned actors and purges them after revocation", async () => {
+  const tenant = await createActivityFixture();
+  const author = personnelCollection("1", "master-data");
+  const actorReads = () =>
+    tenant.calls.filter(
+      ({ path, input }) =>
+        path === "zerotrust.history.get" && input.id === author.prefix,
+    );
+  const query = (resourceType) =>
+    tenant.store.query("personalization.activity.list", { resourceType });
+
+  try {
+    const profile = newPersonnelProfile(
+      "1",
+      "test-owner",
+      "2026-01-01T10:00:00Z",
+      "1",
+      "de",
+      { first_name: "Test", last_name: "Autor" },
+    );
+    await tenant.appendObject(
+      author,
+      author.prefix,
+      personnelPart(profile, "master-data"),
+      true,
+    );
+    await tenant.append("master-data", { first_name: "Neuer Name" });
+
+    expect(await query("project")).toEqual([]);
+    expect(actorReads()).toHaveLength(0);
+
+    const visible = await query("user");
+    expect(visible).toHaveLength(1);
+    expect(visible[0]).toMatchObject({
+      actorUserId: "1",
+      actorName: "Test Autor",
+    });
+    expect(actorReads()).toHaveLength(1);
+
+    expect(await query("user")).toEqual(visible);
+    expect(actorReads()).toHaveLength(1);
+
+    await tenant.revokeArea(author.scope, author.facet);
+    const revoked = await query("user");
+    expect(revoked).toHaveLength(1);
+    expect(revoked[0]).toMatchObject({ actorUserId: "1", actorName: null });
+    expect(actorReads()).toHaveLength(1);
+  } finally {
+    tenant.close();
+  }
+});
+
 test("timeline cursors, latest-per-resource and a fresh reader preserve paging without duplicates", async () => {
   const tenant = await createActivityFixture();
   try {
@@ -569,11 +622,16 @@ test("timeline cursors, latest-per-resource and a fresh reader preserve paging w
     } finally {
       fresh.close();
     }
+    const latest = await tenant.store.query("personalization.activity.list", {
+      latestPerResource: true,
+    });
+    expect(latest).toHaveLength(1);
     expect(
       await tenant.store.query("personalization.activity.list", {
         latestPerResource: true,
+        cursor: latest[0].id,
       }),
-    ).toHaveLength(1);
+    ).toEqual([]);
     expect(
       await tenant.store.query("personalization.activity.list", {
         resourceType: "project",
@@ -594,6 +652,41 @@ test("timeline cursors, latest-per-resource and a fresh reader preserve paging w
     tenant.close();
   }
 });
+test("native facets merge across pages without exposing the cached result to callers", async () => {
+  const tenant = await createActivityFixture();
+  const occurredAt = new Date("2026-11-12T12:01:00Z");
+  const occurredMicros = String(BigInt(occurredAt.getTime()) * 1000n);
+
+  async function append(facet, changes, publication) {
+    const entry = await tenant.append(facet, changes, false, publication);
+    entry.occurredAt = occurredAt;
+    entry.occurredMicros = occurredMicros;
+  }
+
+  try {
+    await append("calculation", { cost_per_hour: 44 }, "paired");
+    for (let i = 0; i < 15; i++) {
+      await append("master-data", { first_name: `Zwischenstand ${i}` });
+    }
+    await append("master-data", { first_name: "Endstand" }, "paired");
+
+    const input = { limit: 1 };
+    const query = () => tenant.store.query("personalization.activity.list", input);
+    const result = await query();
+    expect(result).toHaveLength(1);
+    expect(result[0].changedColumns).toEqual(["cost_per_hour", "first_name"]);
+
+    result[0].changedColumns.length = 0;
+    result[0].occurredAt.setTime(0);
+
+    const repeated = await query();
+    expect(repeated[0].changedColumns).toEqual(["cost_per_hour", "first_name"]);
+    expect(repeated[0].occurredAt).toEqual(occurredAt);
+  } finally {
+    tenant.close();
+  }
+});
+
 test("forged origin evidence and changed ciphertext fail before a history row is shown", async () => {
   for (const tamper of [
     (entry) => {
