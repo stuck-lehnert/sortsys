@@ -227,6 +227,12 @@ export async function testProjectModulePermissions(
     assert.equal(newEnvelope, null);
     assert.equal(denied?.code, "FORBIDDEN");
 
+    const [historicalEnvelope, historyDenied] = await memberClient.query(
+      "zerotrust.history.get", { id: probe.initial, revision: "1" }, fresh,
+    );
+    assert.equal(historicalEnvelope, null);
+    assert.equal(historyDenied?.code, "FORBIDDEN", "A retained key does not bypass a revoked grant");
+
     await changeProjectAccess(ownerClient, subject, project, "read", signal, key);
     await useAccount(member);
     try {
@@ -407,6 +413,16 @@ async function exerciseProjectClosure(
   const confirmed = await required(ownerClient.query("zerotrust.objects.get", { id: root.prefix }, fresh));
   assert.equal(confirmed.format, TOMBSTONE_FORMAT);
   assert.equal(confirmed.author, member.vault.subject);
+
+  const deletion = await required(ownerClient.query(
+    "zerotrust.history.get", { id: root.prefix, revision: null }, fresh,
+  ));
+  assert.deepEqual(deletion?.envelope, confirmed);
+  assert.ok(deletion?.previous);
+  const previous = await required(ownerClient.query("zerotrust.history.get", {
+    id: root.prefix, revision: deletion.previous.revision,
+  }, fresh));
+  assert.deepEqual(previous?.envelope, deletion.previous);
 
   const denied = await Promise.all([
     ownerClient.query("zerotrust.objects.get", { id: object }, fresh),

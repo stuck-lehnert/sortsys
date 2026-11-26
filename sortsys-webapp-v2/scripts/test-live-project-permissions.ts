@@ -100,6 +100,35 @@ export async function testProjectPermissions(ownerClient: Client, memberClient: 
     assert.equal(quantities.creation?.facet, "master-data");
     assert.equal(quantities.creation?.capability.creator.user, user);
     assert.deepEqual(quantities.envelopes.map(box => box.recipient).sort(), [user, `user:${ownerId}`].sort());
+
+    const child = {
+      ...deliveryCollection(created.id),
+      prefix: `history-probe:${created.id}`,
+    };
+    const records = await protectedCollection(memberClient, child, signal);
+    try {
+      await records.read();
+      const packet = await records.packet(child.prefix, {
+        text: "Delegierter Projektbereich",
+      });
+      await records.write([packet]);
+
+      const fresh = { strategy: "network-only" } as const;
+      const published = await required(memberClient.query("zerotrust.history.get", {
+        id: child.prefix, revision: packet.envelope.revision,
+      }, fresh));
+      assert.ok(published);
+      assert.deepEqual(published.envelope, packet.envelope);
+      assert.equal(published.domain, child.domain);
+
+      const missing = await required(memberClient.query("zerotrust.history.get", {
+        id: `${child.prefix}:unpublished`, revision: null,
+      }, fresh));
+      assert.equal(missing, null);
+    } finally {
+      records.close();
+    }
+
     // A legitimate creator can sign another root-shaped proof locally. The
     // API must bind children to the actual registered root of that project.
     const history = await trustedHistory(memberClient), ownOrigin = await verifyCreationOrigin(definition.creation, history.authority);

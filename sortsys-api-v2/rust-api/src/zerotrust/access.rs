@@ -22,6 +22,28 @@ impl Security {
         self.policy
             .allows_with(&self.inherited, subject, scope, facet, action)
     }
+
+    async fn select_creation_origins(
+        &mut self,
+        transaction: &mut crate::control::Transaction,
+        auth: &AuthResult,
+        domains: Option<&[String]>,
+    ) -> RpcResult<()> {
+        let origins = super::creation::metadata_origins(
+            transaction,
+            auth,
+            self.root.generation,
+            &self.authority,
+            &self.subject,
+            &self.policy,
+            domains,
+        )
+        .await?;
+
+        self.inherited = inherited_rules(&origins, &self.policy);
+        self.origins = origins;
+        Ok(())
+    }
 }
 
 pub(super) fn inherited_rules(
@@ -109,20 +131,10 @@ async fn metadata_security_for_selection(
     {
         return Err(forbidden());
     }
-    let origins = super::creation::metadata_origins(
-        transaction,
-        auth,
-        generation,
-        &authority,
-        &subject,
-        &policy,
-        domains,
-    )
-    .await?;
-    let inherited = inherited_rules(&origins, &policy);
     sized::<32>(&certificate.recovery_encryption_key)?;
     sized::<32>(&certificate.recovery_signing_key)?;
-    Ok(Security {
+
+    let mut security = Security {
         root: Root {
             generation,
             policy_version: super::crypto::revision(&stored.policy_version)?,
@@ -131,9 +143,13 @@ async fn metadata_security_for_selection(
         subject,
         signing_key: sized::<32>(&identity.signing_key)?.to_vec(),
         authority,
-        origins,
-        inherited,
-    })
+        origins: Vec::new(),
+        inherited: Vec::new(),
+    };
+    security
+        .select_creation_origins(transaction, auth, domains)
+        .await?;
+    Ok(security)
 }
 
 pub(super) struct MetadataContext {
@@ -141,6 +157,18 @@ pub(super) struct MetadataContext {
     pub transaction: crate::control::Transaction,
     pub repository: crate::control::Repository,
     pub security: Security,
+}
+
+impl MetadataContext {
+    /// A historical read can resolve its scope only after checking the session
+    /// and policy. Load that scope's creation proof in the same transaction.
+    pub async fn select_creation_for(&mut self, scope: &str, facet: Facet) -> RpcResult<()> {
+        let domains = [format!("{scope}:{}", facet.name())];
+
+        self.security
+            .select_creation_origins(&mut self.transaction, &self.auth, Some(&domains))
+            .await
+    }
 }
 
 /// Resolve an object's public domain inside the transaction that will also

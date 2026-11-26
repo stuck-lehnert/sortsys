@@ -1,6 +1,6 @@
 //! Authorized historical ciphertext, addressed by immutable shared journal IDs.
 use super::super::{
-    access::{MetadataContext, metadata_context},
+    access::{MetadataContext, metadata_context, metadata_context_for_domains},
     objects::{
         ChangeRecord, DomainDescriptor, metadata_catalog, metadata_check_read, metadata_has_key,
         metadata_journal_id, metadata_raw_object, metadata_read,
@@ -227,7 +227,8 @@ async fn get(
     if let Some(version) = &input.revision {
         revision(version)?;
     }
-    let mut context = metadata_context(service, request).await?;
+
+    let mut context = metadata_context_for_domains(service, request, Some(&[])).await?;
     let Some(record) = metadata_raw_object(&mut context.transaction, &input.id).await? else {
         context.transaction.validate().await?;
         return Ok(None);
@@ -240,7 +241,10 @@ async fn get(
     if area.id != record.domain {
         return Err(invalid());
     }
+
+    context.select_creation_for(&area.scope, area.facet).await?;
     allowed(&context.security, &area)?;
+
     let id: Option<String> = if input.revision.is_none() && record.deleted {
         context
             .transaction
