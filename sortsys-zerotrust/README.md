@@ -50,6 +50,11 @@ der Rust-Teil prüft die frisch erzeugten Signaturen und OpenTimestamps-Nachweis
 Der Test veröffentlicht nichts und entfernt das Fremdprojekt anschließend.
 Sind die Abhängigkeiten bereits in den Bun- und Cargo-Caches vorhanden,
 läuft `node scripts/test-portable.mjs --offline` ohne Netzwerkzugriff.
+Fehlen Bun die Installationsmetadaten, kann `--use-installed-dependencies`
+zusätzlich gesetzt werden. Der Test kopiert dann die zu `package-lock.json`
+passenden, lokal installierten Abhängigkeiten in das Fremdprojekt. Die
+Bibliotheken stammen weiterhin aus den Archiven; die Installation über Bun
+wird in diesem Modus nicht geprüft.
 Die OpenTimestamps-Beispiele behalten ihre
 [ursprüngliche Lizenz](test/fixtures/opentimestamps.LICENSE).
 Die Bibliothek steht unter [AGPL-3.0-only](LICENSE). Eine externe kryptografische

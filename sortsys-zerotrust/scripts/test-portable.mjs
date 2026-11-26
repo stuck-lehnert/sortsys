@@ -8,6 +8,11 @@ const framework = dirname(dirname(fileURLToPath(import.meta.url)));
 const bun = process.env.SORTSYS_PORTABLE_BUN ?? "bun";
 const cargo = process.env.SORTSYS_PORTABLE_CARGO ?? "cargo";
 const offline = process.argv.includes("--offline");
+const useInstalledDependencies = process.argv.includes("--use-installed-dependencies");
+if (useInstalledDependencies && !offline) {
+  throw new Error("--use-installed-dependencies requires --offline");
+}
+
 const cancellation = new AbortController();
 
 function interrupt() {
@@ -42,6 +47,24 @@ function run(command, args, cwd) {
   });
 }
 
+async function copyLockedDependencies(consumer) {
+  const lock = JSON.parse(await readFile(join(framework, "package-lock.json"), "utf8"));
+  for (const [path, locked] of Object.entries(lock.packages)) {
+    if (!path || (locked.dev && path !== "node_modules/typescript")) continue;
+    if (!path.startsWith("node_modules/") || locked.link) {
+      throw new Error(`Expected a registry dependency: ${path}`);
+    }
+
+    const installed = join(framework, path);
+    const { version } = JSON.parse(await readFile(join(installed, "package.json"), "utf8"));
+    if (version !== locked.version) {
+      throw new Error(`${path}: expected ${locked.version}, got ${version}`);
+    }
+
+    await cp(installed, join(consumer, path), { recursive: true, dereference: true });
+  }
+}
+
 const temporary = await mkdtemp(join(tmpdir(), "sortsys-zerotrust-consumer-"));
 try {
   const artifacts = join(temporary, "artifacts");
@@ -72,7 +95,18 @@ try {
     devDependencies: { typescript: "^5.9.3" },
   }, null, 2) + "\n");
   console.log("Installing and type-checking the isolated TypeScript consumer.");
-  await run(bun, ["install", "--ignore-scripts", offline ? "--offline" : "--prefer-offline"], consumer);
+  if (useInstalledDependencies) {
+    console.log("Copying locally installed dependencies in their locked versions.");
+    await copyLockedDependencies(consumer);
+
+    // The framework still comes from its archive, not from the checkout.
+    const dependency = join(consumer, "node_modules/@sortsys/zerotrust");
+    await mkdir(dependency, { recursive: true });
+    await run("tar", ["-xzf", join(artifacts, "framework.tgz"), "--strip-components=1", "-C", dependency], temporary);
+  } else {
+    await run(bun, ["install", "--ignore-scripts", offline ? "--offline" : "--prefer-offline"], consumer);
+  }
+
   await run(process.execPath, ["./node_modules/typescript/bin/tsc", "--project", "./tsconfig.json"], consumer);
 
   console.log("Building the browser entry without password authentication.");
