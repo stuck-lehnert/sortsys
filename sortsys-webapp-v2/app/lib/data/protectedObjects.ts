@@ -163,7 +163,7 @@ export async function protectedLivePacket(
     includeContentEpoch: true,
   });
   const page = context.pages.get(pageKey(request));
-  const domain = context.domains.find(({ id }) => id === area.domain);
+  const domain = context.domains.get(area.domain);
 
   if (
     context.contentEpoch === undefined ||
@@ -372,12 +372,9 @@ async function bindCollections(
     if (signal.aborted || unlockedAccount() !== context.account)
       throw new InvalidProtectedData();
   }
-  const domainById = new Map(
-    context.domains.map((domain) => [domain.id, domain]),
-  );
   function hasArea(collection: Collection): boolean {
     live();
-    const domain = domainById.get(collection.domain);
+    const domain = context.domains.get(collection.domain);
     return domain?.scope === collection.scope && domain.facet === collection.facet;
   }
   function readable(collection: Collection): boolean {
@@ -434,7 +431,7 @@ async function bindCollections(
       areas(select: (domain: string) => Collection | null): Collection[] {
         live();
         const selected: Collection[] = [];
-        for (const domain of context.domains) {
+        for (const domain of context.domains.values()) {
           const area = select(domain.id);
           if (!area) continue;
           if (
@@ -451,7 +448,7 @@ async function bindCollections(
       stamp: JSON.stringify([
         context.history.current.generation,
         context.permissions,
-        context.domains.map((domain) => [
+        Array.from(context.domains.values(), (domain) => [
           domain.id,
           domain.generation,
           domain.rotationRequired,
@@ -521,6 +518,9 @@ async function collectionContext(
     const page = initialPages?.[index];
     if (page) pages.set(pageKey(request), page);
   }
+
+  let readership: ReturnType<typeof compileReadership> | undefined;
+
   return {
     pages,
     pageReader: createPageReader(client, source, live),
@@ -533,11 +533,14 @@ async function collectionContext(
     rootPolicy,
     contentEpoch,
     live,
-    domains,
+    domains: new Map(domains.map((domain) => [domain.id, domain])),
     origins,
     author,
     access: compilePolicy(permissions, [subject]),
-    readership: compileReadership(permissions),
+    readers(scope: string, facet: Collection["facet"]) {
+      readership ??= compileReadership(permissions);
+      return readership(scope, facet);
+    },
   };
 }
 function openCollection(
@@ -554,7 +557,7 @@ function openCollection(
     domains,
     author,
     access,
-    readership,
+    readers,
   } = context;
   let closed = false;
   let head: string | null = null;
@@ -574,7 +577,7 @@ function openCollection(
     action: "read" | "create" | "update" | "delete" | "approve",
   ) => access.allows(collection.scope, collection.facet, action);
   if (!permitted("read")) throw new InvalidProtectedData();
-  const domain = domains.find((d) => d.id === collection.domain);
+  const domain = domains.get(collection.domain);
   if (
     !domain ||
     domain.scope !== collection.scope ||
@@ -706,7 +709,7 @@ function openCollection(
     const key = await keyFor(domain!.generation);
     live();
     const definition = definitions.get(domain!.generation);
-    let expected = readership(collection.scope, collection.facet);
+    let expected = readers(collection.scope, collection.facet);
     if (origin?.assignee && !origin.access && definition?.creation?.assignee) {
       const prospective = compileReadership({
         ...permissions,
