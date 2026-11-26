@@ -552,6 +552,72 @@ function memoryCache() {
   return { cache, values };
 }
 
+test("a query and a stream share a pending read without changing the stream options", async () => {
+  let requests = 0;
+  const session = { user: { id: "one" }, roles: [] };
+  const client = createClient("https://api.example.test", "shared-read", {
+    cache: memoryCache().cache,
+    fetch: Object.assign(
+      async () => {
+        requests++;
+        return success(session);
+      },
+      { preconnect() {} },
+    ),
+  });
+  const options = Object.freeze({});
+  const stream = client.streamQuery("auth.sessionInfo", undefined, options);
+
+  const result = await Promise.all([
+    client.query("auth.sessionInfo", undefined),
+    firstValueFrom(stream),
+  ]);
+
+  expect(result).toEqual([
+    [session, null],
+    [session, null],
+  ]);
+  expect(requests).toBe(1);
+});
+
+test("exact and cascading invalidation keep unrelated query namespaces cached", async () => {
+  const client = createClient("https://api.example.test", "invalidation", {
+    cache: memoryCache().cache,
+    fetch: Object.assign(
+      async (url: RequestInfo | URL) =>
+        success({ path: new URL(String(url)).pathname }),
+      { preconnect() {} },
+    ),
+  });
+  const paths = ["projects.list", "projects.files.list", "projectsArchive.list"];
+
+  for (const path of paths) {
+    expect(await client.queryDynamic(path, undefined)).toEqual([
+      { path: `/${path}` },
+      null,
+    ]);
+  }
+
+  const readCached = (path: string) =>
+    client.queryDynamic(path, undefined, { strategy: "cache-only" });
+
+  await client.invalidate("projects.list");
+  expect(await readCached("projects.list")).toEqual([null, null]);
+  expect(await readCached("projects.files.list")).toEqual([
+    { path: "/projects.files.list" },
+    null,
+  ]);
+
+  await client.queryDynamic("projects.list", undefined);
+  await client.invalidateCascading("projects.update");
+  expect(await readCached("projects.list")).toEqual([null, null]);
+  expect(await readCached("projects.files.list")).toEqual([null, null]);
+  expect(await readCached("projectsArchive.list")).toEqual([
+    { path: "/projectsArchive.list" },
+    null,
+  ]);
+});
+
 function modelListFailure() {
   return new Response(
     JSON.stringify([

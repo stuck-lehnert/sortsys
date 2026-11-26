@@ -19,6 +19,8 @@ export type CacheMode =
   | "network-first"
   | "network-only";
 
+type QueryPayload<T> = [T | null, RpcClientError | null];
+
 // Cancelling one consumer must not cancel other operations in the same HTTP
 // batch. A mutation already sent may still commit; only its late client-side
 // result and authentication/cache side effects are discarded here.
@@ -384,7 +386,7 @@ export function createClient(
     return request.promise;
   }
 
-  async function _lookup(cacheKey: string, path: string) {
+  async function _lookup<T>(cacheKey: string, path: string): Promise<T | null> {
     await staleCacheCleanup;
     if (!cacheable(path)) {
       await cache.delete(cacheKey);
@@ -395,11 +397,76 @@ export function createClient(
       if (!bytes) return null;
 
       try {
-        return superjson.parse(_td.decode(bytes));
+        return superjson.parse<T>(_td.decode(bytes));
       } catch (_) {
         return null;
       }
     });
+  }
+
+  async function _fetchQuery<T>(
+    path: string,
+    input: unknown,
+    cacheKey: string,
+    strategy: CacheMode,
+  ): Promise<QueryPayload<T>> {
+    const requestAuthScope = _authScope();
+
+    try {
+      const fresh = strategy === "network-only" || !cacheable(path);
+      const data = await _dedupeRequest(
+        cacheKey,
+        () => rpc.query<T>(path, input),
+        fresh,
+      );
+      return [data ?? null, null];
+    } catch (error) {
+      if (error instanceof RpcClientError) {
+        _autoLogoutOnAuthError(error, requestAuthScope);
+        if (strategy !== "network-only" && error.code === "ConnectionRefused")
+          return [null, null];
+        return [null, error];
+      }
+
+      return [null, RpcClientError.from(error)];
+    }
+  }
+
+  async function _storeQueryResult<T>(
+    path: string,
+    cacheKey: string,
+    [data, error]: QueryPayload<T>,
+  ): Promise<QueryPayload<T>> {
+    if (error || !data) {
+      await cache.delete(cacheKey);
+      return [null, error];
+    }
+
+    if (cacheable(path)) {
+      await cache.setBytes(cacheKey, _te.encode(superjson.stringify(data)));
+    } else {
+      await cache.delete(cacheKey);
+    }
+    return [data, null];
+  }
+
+  async function _invalidateQueries(matches: (path: string) => boolean) {
+    const deletions: Promise<void>[] = [];
+
+    for (const key of await cache.keys()) {
+      const path = _cachePath(key);
+      if (path && matches(path)) {
+        deletions.push(cache.delete(key));
+        delete _pendingRequests[key];
+      }
+    }
+
+    for (const key of Object.keys(_pendingRequests)) {
+      const path = _cachePath(key);
+      if (path && matches(path)) delete _pendingRequests[key];
+    }
+
+    await Promise.all(deletions);
   }
 
   const _streamQueryListeners: [string, () => void][] = [];
@@ -434,78 +501,34 @@ export function createClient(
       >;
     },
 
-    async queryDynamic(path, input, _opts) {
-      const _strategy = _opts?.strategy ?? "network-first";
-
+    async queryDynamic(path, input, opts) {
+      const strategy = opts?.strategy ?? "network-first";
       const cacheKey = _cacheKey(path, input);
+      const fetchQuery = () => _fetchQuery(path, input, cacheKey, strategy);
 
-      async function _fetch(): Promise<[any, RpcClientError<any> | null]> {
-        const requestAuthScope = _authScope();
-
-        try {
-          const fresh = _strategy === "network-only" || !cacheable(path);
-          return [
-            (await _dedupeRequest(
-              cacheKey,
-              () => rpc.query(path, input),
-              fresh,
-            )) ?? null,
-            null,
-          ];
-        } catch (e) {
-          if (e instanceof RpcClientError) {
-            _autoLogoutOnAuthError(e, requestAuthScope);
-            if (_strategy !== "network-only" && e.code === "ConnectionRefused")
-              return [null, null];
-            return [null, e];
-          }
-
-          return [null, RpcClientError.from(e as any)];
-        }
+      if (strategy === "cache-only") {
+        return [await _lookup(cacheKey, path), null];
       }
 
-      async function _process<T>(
-        payload: [T | null, RpcClientError<any> | null],
-      ): Promise<typeof payload> {
-        const [data, err] = payload;
-        if (err || !data) {
-          await cache.delete(cacheKey);
-          return [null, err];
-        }
-
-        if (!cacheable(path)) {
-          await cache.delete(cacheKey);
-          return [data, null];
-        }
-        const bytes = _te.encode(superjson.stringify(data));
-        await cache.setBytes(cacheKey, bytes);
-        return [data, null];
+      if (strategy === "network-only") {
+        return _storeQueryResult(path, cacheKey, await fetchQuery());
       }
 
-      if (_strategy === "cache-only") {
-        return [(await _lookup(cacheKey, path)) as any, null];
-      }
-
-      if (_strategy === "network-only") {
-        return await _process(await _fetch());
-      }
-
-      if (_strategy === "cache-first") {
-        const data = (await _lookup(cacheKey, path)) as any;
+      if (strategy === "cache-first") {
+        const data = await _lookup(cacheKey, path);
         if (data) return [data, null];
-        return await _process(await _fetch());
+        return _storeQueryResult(path, cacheKey, await fetchQuery());
       }
 
-      if (_strategy === "network-first") {
-        let [data, err] = await _fetch();
-        if (data) return await _process([data, null]);
+      if (strategy === "network-first") {
+        const [data, error] = await fetchQuery();
+        if (data) return _storeQueryResult(path, cacheKey, [data, null]);
 
-        data = await _lookup(cacheKey, path);
-        if (data) return [data, null];
-        return [null, err];
+        const cached = await _lookup(cacheKey, path);
+        return cached ? [cached, null] : [null, error];
       }
 
-      throw new Error(`invalid strategy for _query: ${_strategy}`);
+      throw new Error(`invalid strategy for _query: ${strategy}`);
     },
 
     async invalidate(pathOrKey) {
@@ -517,27 +540,9 @@ export function createClient(
         return;
       }
 
-      const targetPath = pathOrKey;
-      const targetQueryPath = `${targetPath}.query`;
-      const promises: Promise<void>[] = [];
-
-      for (const key of await cache.keys()) {
-        const keyPath = _cachePath(key);
-        if (!keyPath || keyPath !== targetQueryPath) continue;
-
-        promises.push(cache.delete(key));
-        delete _pendingRequests[key];
-      }
-
-      for (const key of Object.keys(_pendingRequests)) {
-        const keyPath = _cachePath(key);
-        if (keyPath === targetQueryPath) {
-          delete _pendingRequests[key];
-        }
-      }
-
-      await Promise.all(promises);
-      _notifyStreamQueryListeners(targetPath);
+      const targetQueryPath = `${pathOrKey}.query`;
+      await _invalidateQueries((path) => path === targetQueryPath);
+      _notifyStreamQueryListeners(pathOrKey);
     },
 
     async invalidateCascading(pathOrKey) {
@@ -552,115 +557,43 @@ export function createClient(
 
       if (!rawPath.includes(".")) return;
       const parentPath = rawPath.split(".").slice(0, -1).join(".");
-      const promises: Promise<void>[] = [];
-
-      for (const key of await cache.keys()) {
-        const keyPath = _cachePath(key);
-        if (!keyPath?.endsWith(".query")) continue;
-
-        const basePath = keyPath.slice(0, -".query".length);
-        if (basePath === parentPath || basePath.startsWith(`${parentPath}.`)) {
-          promises.push(cache.delete(key));
-          delete _pendingRequests[key];
-        }
+      function matches(path: string) {
+        if (!path.endsWith(".query")) return false;
+        const basePath = path.slice(0, -".query".length);
+        return basePath === parentPath || basePath.startsWith(`${parentPath}.`);
       }
 
-      for (const key of Object.keys(_pendingRequests)) {
-        const keyPath = _cachePath(key);
-        if (!keyPath?.endsWith(".query")) continue;
-
-        const basePath = keyPath.slice(0, -".query".length);
-        if (basePath === parentPath || basePath.startsWith(`${parentPath}.`)) {
-          delete _pendingRequests[key];
-        }
-      }
-
-      await Promise.all(promises);
+      await _invalidateQueries(matches);
 
       for (const [key, listener] of _streamQueryListeners) {
-        const listenerPath = _cachePath(key);
-        if (!listenerPath?.endsWith(".query")) continue;
-
-        const basePath = listenerPath.slice(0, -".query".length);
-        if (basePath === parentPath || basePath.startsWith(`${parentPath}.`)) {
-          (async () => listener())();
-        }
+        const path = _cachePath(key);
+        if (path && matches(path)) (async () => listener())();
       }
     },
 
     streamQuery(path, input, opts) {
-      opts ??= {};
-      opts.strategy ??= "cache-first";
-
+      type Output = QueryOutput<typeof path>;
+      const strategy = opts?.strategy ?? "cache-first";
       const cacheKey = _cacheKey(path, input);
 
-      async function _fetch(): Promise<[any, RpcClientError<any> | null]> {
-        const requestAuthScope = _authScope();
-
-        try {
-          const fresh = opts?.strategy === "network-only" || !cacheable(path);
-          return [
-            (await _dedupeRequest(
-              cacheKey,
-              () => rpc.query(path, input),
-              fresh,
-            )) ?? null,
-            null,
-          ];
-        } catch (e) {
-          if (e instanceof RpcClientError) {
-            _autoLogoutOnAuthError(e, requestAuthScope);
-            if (
-              opts?.strategy !== "network-only" &&
-              e.code === "ConnectionRefused"
-            )
-              return [null, null];
-            return [null, e];
-          }
-
-          return [null, RpcClientError.from(e as any)];
-        }
-      }
-
-      async function _process<T>(
-        payload: [T | null, RpcClientError<any> | null],
-      ): Promise<typeof payload> {
-        const [data, err] = payload;
-        if (err || !data) {
-          await cache.delete(cacheKey);
-          return [null, err];
-        }
-
-        if (!cacheable(path)) {
-          await cache.delete(cacheKey);
-          return [data, null];
-        }
-        const bytes = _te.encode(superjson.stringify(data));
-        await cache.setBytes(cacheKey, bytes);
-        return [data, null];
-      }
-
-      async function _networkResult() {
-        const payload = await _fetch();
+      async function _networkResult(): Promise<QueryPayload<Output>> {
+        const payload = await _fetchQuery<Output>(path, input, cacheKey, strategy);
 
         // Keep a usable cached response on failure; without one, preserve the
         // error instead of emitting an empty result that looks like loading.
-        if (payload[1] && opts?.strategy === "network-first") {
-          const cached = await _lookup(cacheKey, path);
-          if (cached !== null) return [cached, null] as typeof payload;
+        if (payload[1] && strategy === "network-first") {
+          const cached = await _lookup<Output>(cacheKey, path);
+          if (cached !== null) return [cached, null];
         }
 
-        return _process(payload);
+        return _storeQueryResult(path, cacheKey, payload);
       }
 
-      async function* createGenerator() {
-        if (
-          opts!.strategy === "cache-first" ||
-          opts!.strategy === "cache-only"
-        ) {
-          const cached = await _lookup(cacheKey, path);
+      async function* createGenerator(): AsyncGenerator<QueryPayload<Output>> {
+        if (strategy === "cache-first" || strategy === "cache-only") {
+          const cached = await _lookup<Output>(cacheKey, path);
           if (cached) yield [cached, null];
-          if (opts!.strategy === "cache-only") return;
+          if (strategy === "cache-only") return;
         }
 
         yield await _networkResult();
@@ -668,7 +601,7 @@ export function createClient(
 
       const generator = from(createGenerator());
 
-      const listener = new Observable<any>((sub) => {
+      const listener = new Observable<QueryPayload<Output>>((sub) => {
         const _listener = async () => {
           sub.next(await _networkResult());
         };
