@@ -160,6 +160,23 @@ Chromium-Profil. Die beiden Containerkennungen stehen in
 `office-volume-restore.log`. `TEST_OFFICE_IMAGE` kann ein bereits gebautes
 Office-Image für den Lauf auswählen.
 
+## Umfang der Produktquellen vergleichen
+
+Mit Python 3.10 oder neuer und `cloc` (Referenzversion 2.12) lassen sich zwei Commitstände
+vergleichen:
+
+```bash
+python3 scripts/compare-source-size.py 149137d HEAD
+```
+
+Die Tabelle zeigt Dateizahlen und Codezeilen pro Paket. Gezählt werden
+TypeScript, JavaScript, Rust, CSS, HTML und SQL aus den Produktverzeichnissen.
+Separate Tests einschließlich Testhilfen, Skripte, generierte Dateien,
+Fremdquellen und der frühere Jobrunner zählen nicht mit. Lokale Änderungen
+beeinflussen die Messung nicht: Das Skript liest beide Stände aus Git.
+Paketgrößen und Ladezeiten sind eigene Messwerte; dafür gibt es den
+[Bedienlatenzvergleich](bedienlatenz.md).
+
 ## Browser-E2E mit echten Diensten
 
 Nach `bun run build` in `sortsys-webapp-v2` führt
