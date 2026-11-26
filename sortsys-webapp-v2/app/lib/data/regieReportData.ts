@@ -10,7 +10,11 @@ import {
 } from "./calendarDays";
 import type { HistoricalPriceLookup } from "./historicalPrices";
 import { publicId, wirePrice } from "./products";
-import { projectModuleArea, projectModuleDomain } from "./projectScope";
+import {
+  projectModuleArea,
+  projectModuleDecoder,
+  projectModuleDomain,
+} from "./projectScope";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
 import type { Collection } from "./protectedObjects";
@@ -58,18 +62,6 @@ export function regieDomain(
     ["personnel", "master-data"].includes(part.facet)
     ? { projectId: part.id, hours: part.facet === "personnel" }
     : null;
-}
-function binding(area: Collection, hours: boolean): string {
-  const part = regieDomain(area.domain);
-  if (
-    !part ||
-    part.hours !== hours ||
-    area.scope !== `project:${part.projectId}:regie-reports` ||
-    area.facet !== (hours ? "personnel" : "master-data") ||
-    area.prefix !== regieCollection(part.projectId, hours).prefix
-  )
-    throw new InvalidProtectedData();
-  return part.projectId;
 }
 export function regiePayload(
   input: unknown,
@@ -167,15 +159,13 @@ export const REGIE_MODEL = defineDataModel<RegiePayload>({
     "regie_report_products",
     "regie_report_special_records",
   ],
-  decode: (input, object, area) =>
-    regiePayload(input, object, binding(area, false)),
+  decode: projectModuleDecoder(regieCollection, regiePayload),
   externalReferences: ["projects", "users", "products"],
 });
 export const REGIE_HOUR_MODEL = defineDataModel<RegieHours>({
   name: "regie-hours",
   tables: ["regie_report_work_hours"],
-  decode: (input, object, area) =>
-    regieHours(input, object, binding(area, true)),
+  decode: projectModuleDecoder((id) => regieCollection(id, true), regieHours),
   externalReferences: ["regie_reports", "users"],
 });
 export const regieRequest = (id: string) => ({

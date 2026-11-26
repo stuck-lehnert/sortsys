@@ -72,6 +72,30 @@ export function projectModuleDomain(
     return null;
   return { id: resource.id, module: resource.module, facet };
 }
+
+/** Verify the collection binding before handing its project to a row codec. */
+export function projectModuleDecoder<T>(
+  collection: (projectId: string) => Collection,
+  decode: (value: unknown, object: string, projectId: string) => T,
+) {
+  return (value: unknown, object: string, area: Collection): T => {
+    const part = projectModuleDomain(area.domain);
+    if (!part) throw new InvalidProtectedData();
+
+    const expected = collection(part.id);
+    if (
+      area.domain !== expected.domain ||
+      area.scope !== expected.scope ||
+      area.facet !== expected.facet ||
+      area.prefix !== expected.prefix
+    ) {
+      throw new InvalidProtectedData();
+    }
+
+    return decode(value, object, part.id);
+  };
+}
+
 export function projectAccessArea(
   id: string,
   key: ProjectAccessKey,

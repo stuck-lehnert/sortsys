@@ -18,6 +18,7 @@ import { row } from "./rowCodec.test.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { isKeyEnvelopeQuery } from "./testing/keyQueries.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
 afterEach(() => lockCryptoSession());
 const range = { from: "2026-03-01T00:00:00Z", to: "2026-04-01T00:00:00Z" };
 const deployment = () => ({
@@ -180,7 +181,7 @@ test("planning filters use half-open instant ranges, inclusive calendar days and
   } finally {
     f.store.close();
   }
-}, 20000);
+}, fixtureTimeout(20_000));
 test("new assignments survive lost replies and retry with the same operation ID without duplicate bookings", async () => {
   const f = await fixture();
   try {

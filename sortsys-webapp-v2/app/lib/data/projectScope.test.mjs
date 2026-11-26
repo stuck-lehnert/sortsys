@@ -1,5 +1,5 @@
 import { afterEach, expect, test } from "bun:test";
-import { ACTIONS } from "@sortsys/zerotrust/sortsys";
+import { ACTIONS, InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import {
@@ -12,10 +12,12 @@ import {
   projectAccessArea,
   projectAccessDomain,
   projectModuleArea,
+  projectModuleDecoder,
   projectModuleDomain,
 } from "./projectScope";
 import { dailyCollection, dailyDomain } from "./dailyReportData";
 import { deliveryCollection, deliveryDomain } from "./deliveryNoteData";
+import { scheduleCollection } from "./projectScheduleData";
 import { regieCollection, regieDomain } from "./regieReportData";
 
 afterEach(() => lockCryptoSession());
@@ -85,6 +87,51 @@ test("the shared project inventory has canonical, independent module bindings", 
     ).toHaveLength(1);
   }
 });
+test("project codecs check the entire collection binding before decoding", () => {
+  const dailyCosts = (id) => dailyCollection(id, true);
+  const regieHours = (id) => regieCollection(id, true);
+  const deliveryPrices = (id) => deliveryCollection(id, true);
+  const cases = [
+    [dailyCollection, dailyCosts],
+    [dailyCosts, dailyCollection],
+    [regieCollection, regieHours],
+    [regieHours, regieCollection],
+    [deliveryCollection, deliveryPrices],
+    [deliveryPrices, deliveryCollection],
+    [scheduleCollection, dailyCollection],
+  ];
+
+  for (const [collection, otherCollection] of cases) {
+    const value = { report: "original" };
+    const area = collection("1");
+    const otherProject = collection("2");
+    const object = `${area.prefix}3`;
+    let decoded = 0;
+    const read = projectModuleDecoder(collection, (input, id, project) => {
+      decoded++;
+      return { input, id, project };
+    });
+
+    expect(read(value, object, area)).toEqual({
+      input: value,
+      id: object,
+      project: "1",
+    });
+
+    for (const foreign of [
+      otherCollection("1"),
+      { ...area, domain: "not-a-project-module" },
+      { ...area, domain: otherProject.domain },
+      { ...area, scope: otherProject.scope },
+      { ...area, facet: "documents" },
+      { ...area, prefix: otherProject.prefix },
+    ]) {
+      expect(() => read(value, object, foreign)).toThrow(InvalidProtectedData);
+    }
+    expect(decoded).toBe(1);
+  }
+});
+
 test("report discovery and real envelope keys stay isolated even when every ciphertext is supplied", async () => {
   const areas = [
     dailyCollection("2"),

@@ -3,7 +3,11 @@ import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import { aggregateRows } from "./aggregateRows";
 import { publicId } from "./products";
-import { projectModuleArea, projectModuleDomain } from "./projectScope";
+import {
+  projectModuleArea,
+  projectModuleDecoder,
+  projectModuleDomain,
+} from "./projectScope";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
 import { calendarDay } from "./calendarDays";
@@ -178,18 +182,6 @@ export function dailyCosts(
     costs,
   };
 }
-function boundProject(area: Collection, costs: boolean): string {
-  const part = dailyDomain(area.domain);
-  if (
-    !part ||
-    part.costs !== costs ||
-    area.scope !== `project:${part.projectId}:daily-reports` ||
-    area.facet !== (costs ? "calculation" : "master-data") ||
-    area.prefix !== dailyCollection(part.projectId, costs).prefix
-  )
-    throw new InvalidProtectedData();
-  return part.projectId;
-}
 export const DAILY_MODEL = defineDataModel<DailyPayload>({
   name: "daily-reports",
   tables: [
@@ -197,16 +189,14 @@ export const DAILY_MODEL = defineDataModel<DailyPayload>({
     "daily_project_report_work_hours",
     "daily_project_report_files",
   ],
-  decode: (value, object, area) =>
-    dailyPayload(value, object, boundProject(area, false)),
+  decode: projectModuleDecoder(dailyCollection, dailyPayload),
   exclude: { daily_project_report_work_hours: ["cost_per_hour"] },
   externalReferences: ["projects", "users", "project_files"],
 });
 export const DAILY_COST_MODEL = defineDataModel<DailyCosts>({
   name: "daily-report-costs",
   tables: ["daily_project_report_work_hours"],
-  decode: (value, object, area) =>
-    dailyCosts(value, object, boundProject(area, true)),
+  decode: projectModuleDecoder((id) => dailyCollection(id, true), dailyCosts),
   sources: (value) =>
     value.costs.map((cost, index) => ({
       table: "daily_project_report_work_hours",

@@ -7,7 +7,11 @@ import type { Collection } from "./protectedObjects";
 import { defineDataModel } from "./runtime/model";
 import type { HistoricalPriceLookup } from "./historicalPrices";
 import { timestampMicros } from "./timestamps";
-import { projectModuleArea, projectModuleDomain } from "./projectScope";
+import {
+  projectModuleArea,
+  projectModuleDecoder,
+  projectModuleDomain,
+} from "./projectScope";
 import { aggregateRows } from "./aggregateRows";
 import { deliveryPlacement } from "./deliveryIdentity";
 
@@ -34,19 +38,18 @@ export type DeliveryPrices = {
   noteId: string;
   prices: { id: string; pricePerUnit: number | null }[];
 };
-export const DELIVERY_MODEL = defineDataModel({
+export const DELIVERY_MODEL = defineDataModel<DeliveryPayload>({
   name: "delivery-notes",
-  decode(value: unknown, object: string, area: Collection) {
-    return deliveryPayload(value, object, boundProject(area, false));
-  },
+  decode: projectModuleDecoder(deliveryCollection, deliveryPayload),
   exclude: { product_delivery_special_records: ["price_per_unit"] },
   externalReferences: ["projects", "users", "products"],
 });
-export const DELIVERY_PRICE_MODEL = defineDataModel({
+export const DELIVERY_PRICE_MODEL = defineDataModel<DeliveryPrices>({
   name: "delivery-prices",
-  decode(value: unknown, object: string, area: Collection) {
-    return deliveryPrices(value, object, boundProject(area, true));
-  },
+  decode: projectModuleDecoder(
+    (id) => deliveryCollection(id, true),
+    deliveryPrices,
+  ),
   sources: (value) =>
     value.prices.map((price, index) => ({
       table: "product_delivery_special_records",
@@ -78,21 +81,6 @@ export function deliveryDomain(
     ? { projectId: part.id, prices: part.facet === "procurement" }
     : null;
 }
-function boundProject(area: Collection, prices: boolean): string {
-  const part = deliveryDomain(area.domain),
-    expected = part && deliveryCollection(part.projectId, prices);
-  if (
-    !expected ||
-    part!.prices !== prices ||
-    area.domain !== expected.domain ||
-    area.scope !== expected.scope ||
-    area.facet !== expected.facet ||
-    area.prefix !== expected.prefix
-  )
-    throw new InvalidProtectedData();
-  return part!.projectId;
-}
-
 function rows(input: unknown, table: string, noteId: unknown): BusinessRow[] {
   return aggregateRows(input, table, "note_id", noteId).map((row) => {
     if (table === "product_delivery_records")

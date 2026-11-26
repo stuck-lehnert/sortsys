@@ -2,7 +2,11 @@ import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import { calendarDay } from "./calendarDays";
 import { publicId } from "./products";
-import { projectModuleArea, projectModuleDomain } from "./projectScope";
+import {
+  projectModuleArea,
+  projectModuleDecoder,
+  projectModuleDomain,
+} from "./projectScope";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
 import { timestampInstant, timestampMicros } from "./timestamps";
@@ -151,17 +155,7 @@ export const SCHEDULE_MODEL = defineDataModel<SchedulePayload>({
   name: "project-schedule",
   tables: Object.values(SCHEDULE_TABLES),
   externalReferences: ["projects", "users"],
-  decode(value, object, area) {
-    const project = scheduleDomain(area.domain);
-    if (
-      !project ||
-      area.scope !== `project:${project}:planning` ||
-      area.facet !== "master-data" ||
-      area.prefix !== scheduleCollection(project).prefix
-    )
-      throw new InvalidProtectedData();
-    return schedulePayload(value, object, project);
-  },
+  decode: projectModuleDecoder(scheduleCollection, schedulePayload),
 });
 export const scheduleRequest = (project: string) => ({
   model: SCHEDULE_MODEL,
