@@ -3,6 +3,7 @@ import { createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { I18nProvider } from "../../app/lib/i18n";
 import { Observable } from "rxjs";
+import { RpcClientError } from "@sortsys/v2-client";
 import { ProtectedOfficeEditor } from "../../app/components/ProtectedOfficeEditor";
 import { client, gaebDocuments, projectFiles } from "../../app/lib/client";
 import { prepareExcelExport } from "../../app/lib/officeExports";
@@ -526,6 +527,7 @@ Object.assign(window, {
       state.recovered = [];
       let canEdit = !options.readOnly;
       let allowed = true;
+      let apiAvailable = true;
       let fileId = "5";
       let epoch: string | null = null;
       let contentVersion = "1";
@@ -536,6 +538,9 @@ Object.assign(window, {
         ? { epoch: "old-office-room", viewKey: "view-capability", version: "1" }
         : null;
       const subscribers = new Set<() => void>();
+      const notifyFileChange = () => {
+        for (const subscriber of subscribers) subscriber();
+      };
       const current = () => {
         const original =
           fileId === "5" ? "private browser document" : `Private document ${fileId}`;
@@ -570,6 +575,8 @@ Object.assign(window, {
         return value;
       };
       projectFiles.officeStatus = async () => {
+        if (!apiAvailable)
+          throw RpcClientError.from(new TypeError("Editor API unavailable"));
         if (!allowed) throw new Error("Document access denied");
         return current();
       };
@@ -621,12 +628,16 @@ Object.assign(window, {
         },
         replacePrivateOfficeRoom: () => {
           epoch = "new-shared-room";
-          for (const subscriber of subscribers) subscriber();
+          notifyFileChange();
         },
         replaceConfirmedPrivateOfficeFile: (text: string) => {
           replacement = text;
           contentVersion = "2";
-          for (const subscriber of subscribers) subscriber();
+          notifyFileChange();
+        },
+        setPrivateOfficeApiAvailable: (available: boolean) => {
+          apiAvailable = available;
+          notifyFileChange();
         },
       });
       const host = document.createElement("div");

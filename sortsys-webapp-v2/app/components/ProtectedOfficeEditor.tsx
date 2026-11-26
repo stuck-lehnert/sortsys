@@ -140,16 +140,15 @@ export function ProtectedOfficeEditor({
     };
     const check = async () => {
       if (!ready || controller.signal.aborted) return;
-      if (!navigator.onLine) {
-        pauseConnection();
-        return;
-      }
       if (checking) {
         checkAgain = true;
         return;
       }
+
       checking = true;
       try {
+        // The browser's offline hint does not establish whether the API is
+        // reachable. Recheck the confirmed file and rights even on a local network.
         const status = await projectFiles.officeStatus(projectId, fileId);
         live();
         if (
@@ -159,8 +158,6 @@ export function ProtectedOfficeEditor({
         ) {
           dispose();
           setAttempt((value) => value + 1);
-        } else if (!navigator.onLine) {
-          pauseConnection();
         } else if (connectionPaused) {
           clearTimeout(reconnectTimer);
           reconnectTimer = undefined;

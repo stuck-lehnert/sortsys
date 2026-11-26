@@ -940,9 +940,12 @@ test("the private editor rejects other windows and commits capabilities before s
   }
 });
 
-test("an independent read-only Office preview follows the confirmed file version", async () => {
+test("a read-only Office preview follows confirmed file versions even if the browser reports offline", async () => {
   const context = await browser.newContext();
   try {
+    await context.addInitScript(() => {
+      Object.defineProperty(navigator, "onLine", { get: () => false });
+    });
     const page = await context.newPage();
     await page.goto(`${server.origin}/private-editors.html`);
     await page.waitForFunction(() => window.privateEditorFixture);
@@ -960,15 +963,27 @@ test("an independent read-only Office preview follows the confirmed file version
       })),
       { readOnly: true, document: "private browser document" },
     );
+
+    await page.evaluate(() => window.setPrivateOfficeApiAvailable(false));
+    await page
+      .getByText(/Verbindung unterbrochen|Connection interrupted/)
+      .waitFor();
+    assert.equal(original.isDetached(), false);
+    assert.deepEqual(await page.evaluate(() => window.privateOfficeLoads), [
+      "5",
+    ]);
+
     await page.evaluate(() =>
       window.replaceConfirmedPrivateOfficeFile("Confirmed replacement"),
     );
+    await page.evaluate(() => window.setPrivateOfficeApiAvailable(true));
     await page.waitForFunction(
       () => window.privateOfficeLoads.length === 2,
       undefined,
       { timeout: 4000 },
     );
     assert.equal(original.isDetached(), true);
+
     const reader = await openProtectedFrame(page);
     assert.deepEqual(
       await reader.evaluate(() => ({
@@ -977,10 +992,11 @@ test("an independent read-only Office preview follows the confirmed file version
       })),
       { readOnly: true, document: "Confirmed replacement" },
     );
-    assert.equal(
-      await page.evaluate(() => window.privateEditorFixture.state.published),
-      0,
+    const { published, saved } = await page.evaluate(
+      () => window.privateEditorFixture.state,
     );
+    assert.equal(published, 0);
+    assert.deepEqual(saved, []);
   } finally {
     await context.close();
   }
