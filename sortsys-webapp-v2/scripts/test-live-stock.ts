@@ -3,7 +3,7 @@ import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
 import { areaKey, base64, bytes, domainBoxSigner, encryptObject, openBox, randomSecret, signStockDeletion, stockBinding, verifyDomain } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
 import { createBusinessClient } from "../app/lib/data/businessClient";
-import { prepareVendors } from "../app/lib/data/migrateVendors";
+import { prepareProductCatalog } from "../app/lib/data/migrateProducts";
 import { newProductRowId, PRICE_COLLECTION, pricePayload, PRODUCT_COLLECTION, publicId } from "../app/lib/data/products";
 import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 import { VENDOR_COLLECTION } from "../app/lib/data/vendorData";
@@ -60,7 +60,9 @@ async function assertNativeReadonlyPrice(client: Client, account: UnlockedAccoun
 }
 export async function testProtectedStock(client: Client, source: BusinessDatabase, subject: string, driver: () => Promise<DuckDriver>, baseline: QueryResult<"products.vendors.list">, products: QueryResult<"products.list">) {
   const signal = new AbortController().signal;
-  await prepareVendors(client, source, subject, signal); await prepareVendors(client, source, subject, signal);
+  await prepareProductCatalog(client, source, subject, signal);
+  await prepareProductCatalog(client, source, subject, signal);
+
   const sent: { path: string; input: unknown }[] = [];
   const deleteProofs: MutateInput<"zerotrust.stock.delete">[] = [];
   let lost = false, discard = false, changeReference = false, lostDelete = false, discardDelete = false;

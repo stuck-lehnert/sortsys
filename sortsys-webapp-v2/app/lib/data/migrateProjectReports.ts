@@ -1,8 +1,7 @@
 import type { Client } from "@sortsys/v2-client";
-import { arrayBatches } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { groupBy } from "../groupBy";
-import { copyProtectedCollection } from "./copyCollection";
+import { copyOwnedAreas } from "./copyCollection";
 import type { BusinessDatabase } from "./database";
 import {
   dailyCollection,
@@ -12,8 +11,7 @@ import {
   type DailyPayload,
 } from "./dailyReportData";
 import { publicId, readBusinessRows } from "./products";
-import { prepareOwnerCollections } from "./prepareCollections";
-import { protectedCollections, type Collection } from "./protectedObjects";
+import type { Collection } from "./protectedObjects";
 import {
   regieCollection,
   regieHours,
@@ -85,33 +83,7 @@ async function copyReports(
     });
   });
 
-  if (!copies.length) return;
-
-  await prepareOwnerCollections(
-    client,
-    subject,
-    copies.map(({ area }) => area),
-    signal,
-  );
-
-  // Share the verified context, but keep each facet's own guarded publication.
-  const open = await protectedCollections(client, signal);
-  for (const page of arrayBatches(copies, 16)) {
-    signal.throwIfAborted();
-    await open.prefetch(page.map(({ area }) => ({ area })));
-
-    for (const { area, rows, validate } of page) {
-      await copyProtectedCollection(
-        client,
-        area,
-        rows,
-        validate,
-        signal,
-        false,
-        open,
-      );
-    }
-  }
+  await copyOwnedAreas(client, subject, copies, signal);
 }
 
 export async function prepareDailyReports(

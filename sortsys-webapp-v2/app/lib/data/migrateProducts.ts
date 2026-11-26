@@ -3,8 +3,7 @@ import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import { prepareOwnerCollections } from "./prepareCollections";
 import type { BusinessDatabase } from "./database";
-import { copyProtectedCollection } from "./copyCollection";
-import { prepareVendors } from "./migrateVendors";
+import { copyProtectedAreas } from "./copyCollection";
 import {
   PRICE_COLLECTION,
   PRODUCT_COLLECTION,
@@ -14,6 +13,19 @@ import {
   publicId,
   readBusinessRows,
 } from "./products";
+import { VENDOR_COLLECTION, vendorPayload } from "./vendorData";
+
+async function vendorCopy(database: BusinessDatabase) {
+  const vendors = await readBusinessRows(database, "product_vendors");
+  return {
+    area: VENDOR_COLLECTION,
+    rows: vendors.map((vendor) => ({
+      id: VENDOR_COLLECTION.prefix + publicId(vendor.values.id),
+      value: { format: "sortsys-vendor-v1", vendor },
+    })),
+    validate: vendorPayload,
+  };
+}
 
 /** Converts the verified owner archive into normal, independently keyed
  * catalogue objects. Retrying verifies existing objects rather than replacing
@@ -33,34 +45,38 @@ export async function prepareProductCatalog(
   await prepareOwnerCollections(
     client,
     subject,
-    [PRODUCT_COLLECTION, PRICE_COLLECTION],
+    [PRODUCT_COLLECTION, VENDOR_COLLECTION, PRICE_COLLECTION],
     signal,
   );
   live();
   const productRows = await productPayloads(database);
   live();
+  const vendors = await vendorCopy(database);
+  live();
   const prices = await readBusinessRows(database, "product_price_records");
   live();
-  await copyProtectedCollection(
+
+  await copyProtectedAreas(
     client,
-    PRODUCT_COLLECTION,
-    productRows.map((p) => ({
-      id: `product:${publicId(p.product.values.id)}`,
-      value: p,
-    })),
-    productPayload,
-    signal,
-  );
-  await prepareVendors(client, database, subject, signal);
-  live();
-  await copyProtectedCollection(
-    client,
-    PRICE_COLLECTION,
-    prices.map((p) => ({
-      id: `product-price:${publicId(p.values.id)}`,
-      value: { format: "sortsys-product-price-v1", price: p },
-    })),
-    pricePayload,
+    [
+      {
+        area: PRODUCT_COLLECTION,
+        rows: productRows.map((product) => ({
+          id: PRODUCT_COLLECTION.prefix + publicId(product.product.values.id),
+          value: product,
+        })),
+        validate: productPayload,
+      },
+      vendors,
+      {
+        area: PRICE_COLLECTION,
+        rows: prices.map((price) => ({
+          id: PRICE_COLLECTION.prefix + publicId(price.values.id),
+          value: { format: "sortsys-product-price-v1", price },
+        })),
+        validate: pricePayload,
+      },
+    ],
     signal,
   );
 }

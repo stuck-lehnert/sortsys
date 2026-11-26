@@ -11,7 +11,7 @@ import {
   type LegacyActivityPart,
 } from "./legacyActivityData";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { copyProtectedCollection } from "./copyCollection";
+import { copyProtectedAreas, lazyCopyAttester } from "./copyCollection";
 import { protectedCollections } from "./protectedObjects";
 import { verifyActivityCopies } from "./verifyActivityCopies";
 
@@ -22,6 +22,7 @@ export async function prepareActivities(
   source: BusinessDatabase,
   subject: string,
   signal: AbortSignal,
+  progress?: (phase: "provision" | "copy" | "verify") => void,
 ) {
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
@@ -47,6 +48,7 @@ export async function prepareActivities(
       groups.set(part.area.domain, items);
     }
   }
+  progress?.("provision");
   await prepareOwnerCollections(
     client,
     subject,
@@ -57,33 +59,35 @@ export async function prepareActivities(
   const history = await trustedHistory(client);
   const open = await protectedCollections(client, signal);
   live();
-  for (const [domain, items] of groups) {
-    live();
-
+  const attest = lazyCopyAttester(client, signal);
+  const entries = [...groups.values()].map((items) => {
     const area = {
       ...items[0]!.area,
-      prefix: `${LEGACY_ACTIVITY_PREFIX}${domain}:`,
+      prefix: `${LEGACY_ACTIVITY_PREFIX}${items[0]!.area.domain}:`,
     };
     const byId = new Map(items.map((item) => [item.id, item]));
-    await copyProtectedCollection(
-      client,
+    return {
       area,
-      items,
-      (value, id) => legacyActivity(value, id, area),
-      signal,
-      false,
-      open,
-      (_, id) => {
-        const item = byId.get(id);
+      rows: items,
+      validate: (value: unknown, id: string) => legacyActivity(value, id, area),
+      attest(packet: Parameters<typeof attest>[0]) {
+        const item = byId.get(packet.envelope.object);
         if (!item) throw new InvalidProtectedData();
-        return { source: item.source, occurredMicros: item.occurredMicros };
+        return attest(packet, {
+          source: item.source,
+          occurredMicros: item.occurredMicros,
+        });
       },
-    );
-  }
+    };
+  });
+  progress?.("copy");
+  await copyProtectedAreas(client, entries, signal, open);
 
-  live();
-  const copies = [...groups].flatMap(([domain, items]) =>
-    items.map((item) => ({ domain, item })),
+  progress?.("verify");
+  // Share one bounded queue across areas. Even an unchanged copy must
+  // retain its original authority evidence.
+  const copies = entries.flatMap(({ area, rows }) =>
+    rows.map((item) => ({ domain: area.domain, item })),
   );
   await verifyActivityCopies(client, copies, history.authority, live);
 }

@@ -1,9 +1,5 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
-import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
-import {
-  InvalidProtectedData,
-  type HistoryOrigin,
-} from "@sortsys/zerotrust/sortsys";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import {
   protectedCollection,
@@ -13,12 +9,15 @@ import {
 } from "./protectedObjects";
 import { migrationOriginAttester } from "../crypto/migrationOrigin";
 import { commitProtectedWrites, type PreparedWrites } from "./atomicWrites";
+import { prepareOwnerCollections } from "./prepareCollections";
+import { mapConcurrent } from "./runtime/concurrentReads";
 
 type SourceRow = { id: string; value: unknown };
 type DecodeCopy = (input: unknown, object: string) => unknown;
 type AttestCopy = Awaited<ReturnType<typeof migrationOriginAttester>>;
 
-/** Open the migration authority only when there is a packet to sign. */
+/** Open the verified source only if a copy adds a packet. The CAS still
+ * checks the pending setup and current authority for each publication. */
 export function lazyCopyAttester(
   client: Client,
   signal: AbortSignal,
@@ -30,99 +29,223 @@ export function lazyCopyAttester(
   };
 }
 
-type SingletonCopy = {
+// access.snapshot accepts up to sixteen selected domains in one request.
+const SMALL_COLLECTION_PAGE_SIZE = 16;
+const SMALL_COLLECTION_MAX_ROWS = 2;
+
+type SmallCollectionCopy = {
   area: Collection;
-  row: SourceRow;
+  rows: readonly SourceRow[];
   validate: DecodeCopy;
-  partial?: boolean;
   attest?: AttestCopy;
+  partial?: boolean;
 };
 
-/** Copy independent one-row areas in access pages. Each changed area keeps
- * its own guarded head and is confirmed against the signed packet and source. */
-export async function copyProtectedSingletons(
+function copyDomains(entries: readonly SmallCollectionCopy[]): string[] {
+  const domains = entries.map(({ area }) => area.domain);
+  if (new Set(domains).size !== domains.length) throw new InvalidProtectedData();
+
+  return domains;
+}
+
+export type SingletonCopy = Omit<SmallCollectionCopy, "rows"> & {
+  row: SourceRow;
+};
+
+function copyPage({ area, rows, partial }: SmallCollectionCopy) {
+  return {
+    area: partial && rows.length === 1 ? { ...area, prefix: rows[0]!.id } : area,
+  };
+}
+
+export async function copyOwnedAreas(
+  client: Client,
+  subject: string,
+  entries: readonly Omit<SmallCollectionCopy, "partial">[],
+  signal: AbortSignal,
+) {
+  await prepareOwnerCollections(
+    client,
+    subject,
+    entries.map(({ area }) => area),
+    signal,
+  );
+  await copyProtectedAreas(client, entries, signal);
+}
+
+export function copyProtectedSingletons(
   client: Client,
   entries: readonly SingletonCopy[],
   signal: AbortSignal,
   open?: Awaited<ReturnType<typeof protectedCollections>>,
 ) {
+  return copySmallProtectedCollections(
+    client,
+    entries.map(({ row, ...entry }) => ({ ...entry, rows: [row] })),
+    signal,
+    open,
+  );
+}
+
+/** Reuse the verified access context for a group of complete migrations.
+ * Small areas share pages; larger areas keep their normal bounded copier. */
+export async function copyProtectedAreas(
+  client: Client,
+  entries: readonly Omit<SmallCollectionCopy, "partial">[],
+  signal: AbortSignal,
+  open?: Awaited<ReturnType<typeof protectedCollections>>,
+) {
   if (!entries.length) return;
 
-  if (new Set(entries.map(({ area }) => area.domain)).size !== entries.length)
-    throw new InvalidProtectedData();
+  const domains = copyDomains(entries);
+  const selection =
+    domains.length <= SMALL_COLLECTION_PAGE_SIZE ? domains : undefined;
+  open ??= await protectedCollections(client, signal, selection);
 
-  signal.throwIfAborted();
-  const target = open ?? (await protectedCollections(client, signal));
   const defaultAttest = lazyCopyAttester(client, signal);
+  const copies = entries.map((entry) =>
+    entry.attest ? entry : { ...entry, attest: defaultAttest },
+  );
+  await copySmallProtectedCollections(
+    client,
+    copies.filter(({ rows }) => rows.length <= SMALL_COLLECTION_MAX_ROWS),
+    signal,
+    open,
+  );
 
-  for (const page of arrayBatches(entries, 16)) {
-    signal.throwIfAborted();
+  for (const { area, rows, validate, attest } of copies) {
+    if (rows.length <= SMALL_COLLECTION_MAX_ROWS) continue;
 
-    const requests = page.map(({ area, row, partial }) => ({
-      area: partial ? { ...area, prefix: row.id } : area,
-    }));
-    await target.prefetch(requests);
-
-    const opened: ReturnType<typeof target>[] = [];
-    try {
-      const prepared = await mapConcurrent(page, 4, async (entry, index) => {
-        const { area, row, validate, partial = false, attest = defaultAttest } =
-          entry;
-        const request = requests[index]!;
-
-        signal.throwIfAborted();
-        const collection = target(area);
-        opened.push(collection);
-
-        const expected = expectedCopies([row], validate);
-        const existing = await collection.read(request.area.prefix);
-        signal.throwIfAborted();
-
-        if (matchingCopies(existing, expected, validate, partial).has(row.id))
-          return;
-
-        const packet = await attest(await collection.packet(row.id, row.value));
-        return { request, collection, packet, expected, validate, partial };
-      });
-      const pending = prepared.filter((copy) => copy !== undefined);
-      if (!pending.length) continue;
-
-      let confirming: Promise<void> | undefined;
-      const groups: PreparedWrites[] = pending.map((copy) => ({
-        packets: [copy.packet],
-        head: {
-          domain: copy.request.area.domain,
-          sequence: copy.collection.snapshot(),
-        },
-        async verify() {
-          confirming ??= target.prefetch(pending.map(({ request }) => request));
-          await confirming;
-
-          const saved = await copy.collection.read(copy.request.area.prefix);
-          signal.throwIfAborted();
-
-          const matched = matchingCopies(
-            saved,
-            copy.expected,
-            copy.validate,
-            copy.partial,
-          );
-          return matched.size === 1 && hasPackets(saved, [copy.packet]);
-        },
-        close() {}, // The page owns the collection until verification ends.
-      }));
-
-      await commitProtectedWrites(client, groups, signal);
-    } finally {
-      for (const collection of opened) collection.close();
-    }
+    await copyProtectedCollection(
+      client,
+      area,
+      rows,
+      validate,
+      signal,
+      false,
+      open,
+      attest,
+    );
   }
 }
 
-function expectedCopies(rows: readonly SourceRow[], validate: DecodeCopy) {
-  return new Map(
-    rows.map(({ id, value }) => [id, JSON.stringify(validate(value, id))]),
-  );
+/** Verify or publish up to sixteen areas of at most two objects per page.
+ * An empty source area must still have an empty target. Each written area
+ * keeps its own guarded head, verification and immutable migration origin.
+ * At most four areas are prepared or verified concurrently. */
+export async function copySmallProtectedCollections(
+  client: Client,
+  entries: readonly SmallCollectionCopy[],
+  signal: AbortSignal,
+  open?: Awaited<ReturnType<typeof protectedCollections>>,
+) {
+  if (!entries.length) return;
+
+  copyDomains(entries);
+  if (
+    entries.some(
+      ({ rows, partial }) =>
+        (partial && rows.length === 0) ||
+        rows.length > SMALL_COLLECTION_MAX_ROWS ||
+        new Set(rows.map(({ id }) => id)).size !== rows.length,
+    )
+  )
+    throw new InvalidProtectedData();
+
+  signal.throwIfAborted();
+  open ??= await protectedCollections(client, signal);
+  const defaultAttest = lazyCopyAttester(client, signal);
+
+  for (
+    let offset = 0;
+    offset < entries.length;
+    offset += SMALL_COLLECTION_PAGE_SIZE
+  ) {
+    signal.throwIfAborted();
+    const page = entries.slice(offset, offset + SMALL_COLLECTION_PAGE_SIZE);
+
+    await open.prefetch(page.map(copyPage));
+    await copySmallBatch(client, page, signal, open, defaultAttest);
+  }
+}
+
+async function copySmallBatch(
+  client: Client,
+  entries: readonly SmallCollectionCopy[],
+  signal: AbortSignal,
+  open: Awaited<ReturnType<typeof protectedCollections>>,
+  defaultAttest: AttestCopy,
+) {
+  const targets: ReturnType<typeof open>[] = [];
+
+  try {
+    const copies = await mapConcurrent(
+      entries,
+      4,
+      async (entry) => {
+        const { area, rows, validate, attest = defaultAttest, partial = false } =
+          entry;
+        const page = copyPage(entry);
+        signal.throwIfAborted();
+        const target = open(area);
+        targets.push(target);
+
+        const expected = new Map(
+          rows.map(({ id, value }) => [id, JSON.stringify(validate(value, id))]),
+        );
+        const existing = await target.read(page.area.prefix);
+        signal.throwIfAborted();
+
+        const done = matchingCopies(existing, expected, validate, partial);
+        if (done.size === expected.size) return;
+
+        const packets: PreparedWrites["packets"] = [];
+        for (const row of rows) {
+          if (done.has(row.id)) continue;
+          signal.throwIfAborted();
+          packets.push(await attest(await target.packet(row.id, row.value)));
+        }
+
+        return {
+          page,
+          target,
+          packets,
+          expected,
+          validate,
+          partial,
+          sequence: target.snapshot(),
+        };
+      },
+    );
+    const pending = copies.filter((copy) => copy !== undefined);
+    if (!pending.length) return;
+
+    let confirmation: Promise<void> | undefined;
+    const groups: PreparedWrites[] = pending.map((copy) => {
+      const { page, target, packets, expected, validate, partial, sequence } =
+        copy;
+
+      return {
+        packets,
+        head: { domain: page.area.domain, sequence },
+        async verify() {
+          confirmation ??= open.prefetch(pending.map(({ page }) => page));
+          await confirmation;
+
+          const saved = await target.read(page.area.prefix);
+          signal.throwIfAborted();
+
+          const matched = matchingCopies(saved, expected, validate, partial);
+          return matched.size === expected.size && hasPackets(saved, packets);
+        },
+        close() {}, // The batch owns every opened target until confirmation ends.
+      };
+    });
+
+    await commitProtectedWrites(client, groups, signal);
+  } finally {
+    for (const target of targets) target.close();
+  }
 }
 
 function matchingCopies(
@@ -134,28 +257,32 @@ function matchingCopies(
   const matched = new Set<string>();
   for (const { envelope, value } of items) {
     const id = envelope.object;
-    if (partial && !expected.has(id)) continue;
+    if (!expected.has(id)) {
+      if (partial) continue;
+      throw new InvalidProtectedData();
+    }
+
     if (
-      !expected.has(id) ||
       matched.has(id) ||
       expected.get(id) !== JSON.stringify(validate(value, id))
-    )
+    ) {
       throw new InvalidProtectedData();
-
+    }
     matched.add(id);
   }
+
   return matched;
 }
 
 function hasPackets(
   saved: readonly OpenedObject[],
   packets: PreparedWrites["packets"],
-) {
-  return packets.every(({ envelope }) =>
+): boolean {
+  return packets.every((packet) =>
     saved.some(
-      ({ envelope: actual }) =>
-        actual.object === envelope.object &&
-        actual.signature === envelope.signature,
+      (item) =>
+        item.envelope.object === packet.envelope.object &&
+        item.envelope.signature === packet.envelope.signature,
     ),
   );
 }
@@ -172,7 +299,7 @@ export async function copyProtectedCollection(
   open?: (
     collection: Collection,
   ) => Awaited<ReturnType<typeof protectedCollection>>,
-  history?: (value: unknown, id: string) => HistoryOrigin,
+  attest = lazyCopyAttester(client, signal),
 ): Promise<void> {
   const account = unlockedAccount();
   if (!account) throw new InvalidProtectedData();
@@ -184,18 +311,22 @@ export async function copyProtectedCollection(
     ? open(collection)
     : await protectedCollection(client, collection, signal);
   try {
-    const expected = expectedCopies(rows, validate);
+    const expected = new Map(
+      rows.map((row) => [row.id, JSON.stringify(validate(row.value, row.id))]),
+    );
     const prefix =
       partial && rows.length === 1 ? rows[0]!.id : collection.prefix;
     const existing = await target.read(prefix);
     live();
     const done = matchingCopies(existing, expected, validate, partial);
+
+    // This read already verified the exact copy. Read again only after writes.
     if (done.size === expected.size) return;
 
     let packets: MutateInput<"zerotrust.objects.save">[] = [],
       size = 0;
-    let attest: AttestCopy | undefined;
-    async function flush() {
+
+    async function flush(final: boolean) {
       if (!packets.length) return;
       live();
       const pending = packets;
@@ -206,18 +337,33 @@ export async function copyProtectedCollection(
             packets: pending,
             head: { domain: collection.domain, sequence: target.snapshot() },
             async verify() {
-              const saved = await target.selected(
-                pending.map((packet) => packet.envelope.object),
-              );
+              // The last confirmation checks both the exact packets and the
+              // complete target in the same verified snapshot.
+              const saved = final
+                ? await target.read(prefix)
+                : await target.selected(
+                    pending.map((packet) => packet.envelope.object),
+                  );
               live();
-              return saved.length === pending.length && hasPackets(saved, pending);
+              if (final) {
+                const complete = matchingCopies(
+                  saved,
+                  expected,
+                  validate,
+                  partial,
+                );
+                if (complete.size !== expected.size) return false;
+              } else if (saved.length !== pending.length) {
+                return false;
+              }
+
+              return hasPackets(saved, pending);
             },
             close() {}, // The complete copy owns this collection across its batches.
           },
         ],
         signal,
       );
-      await target.inspect();
       live();
       packets = [];
       size = 0;
@@ -225,26 +371,24 @@ export async function copyProtectedCollection(
     for (const row of rows) {
       live();
       if (done.has(row.id)) continue;
-      attest ??= await migrationOriginAttester(client, signal);
-      const packet = await attest(
-        await target.packet(row.id, row.value),
-        history?.(row.value, row.id),
-      );
+      const packet = await attest(await target.packet(row.id, row.value));
       if (
-        packets.length >= 16 ||
-        size + packet.envelope.ciphertext.length > 24 * 1024 * 1024
-      )
-        await flush();
+        packets.length > 0 &&
+        (packets.length >= 16 ||
+          size + packet.envelope.ciphertext.length > 24 * 1024 * 1024)
+      ) {
+        await flush(false);
+        // Only another write batch needs a fresh head. The final full read
+        // already revalidates the resulting collection after the last batch.
+        await target.inspect();
+        live();
+      }
+
       packets.push(packet);
       size += packet.envelope.ciphertext.length;
     }
-    await flush();
-    const verified = await target.read(prefix);
-    live();
-    if (
-      matchingCopies(verified, expected, validate, partial).size !== expected.size
-    )
-      throw new InvalidProtectedData();
+
+    await flush(true);
   } finally {
     target.close();
   }
