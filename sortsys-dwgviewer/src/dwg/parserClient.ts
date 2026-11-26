@@ -1,6 +1,7 @@
 import type { CadDocument, DwgParserSettings, PlanSource } from "../types.ts";
 import { loadSourceBytes } from "../core/source.ts";
-import DwgParserWorker from "./dwg.worker.ts?worker&inline";
+// The worker needs an HTTP base URL to resolve the separately emitted WASM.
+import DwgParserWorker from "./dwg.worker.ts?worker";
 
 export type ParseDwgOptions = DwgParserSettings & {
   signal?: AbortSignal;

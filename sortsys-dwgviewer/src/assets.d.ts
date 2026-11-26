@@ -3,7 +3,7 @@ declare module "*.wasm?url" {
   export default url;
 }
 
-declare module "*?worker&inline" {
+declare module "*?worker" {
   const WorkerConstructor: {
     new (options?: { name?: string }): Worker;
   };

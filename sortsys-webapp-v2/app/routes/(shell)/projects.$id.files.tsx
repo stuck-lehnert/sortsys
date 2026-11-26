@@ -11,8 +11,8 @@ import { Input as UIInput } from "@heroui/react";
 import { RpcClientError } from "@sortsys/v2-client";
 import { uiText } from "~/lib/i18n";
 import { Modal, useNotifications } from "@sortsys/react-components";
-import { PlanViewer, type PlanDocument } from "@sortsys/dwgviewer";
-import { ProtectedOfficeEditor } from "~/components/ProtectedOfficeEditor";
+import type { PlanDocument } from "@sortsys/dwgviewer";
+import { PlanViewer, ProtectedOfficeEditor } from "~/components/projectFileViewers";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { ZoomableImage } from "~/components/ZoomableImage";
 import {
@@ -69,6 +69,16 @@ const GaebFileModal = lazy(() => import("~/components/GaebFileModal"));
 const ProjectFilePreviewModal = lazy(
   () => import("~/components/ProjectFilePreviewModal"),
 );
+
+function FileViewerLoading() {
+  return (
+    <Loading
+      active
+      withOverlay={false}
+      description={uiText("Datei wird geöffnet …", "Opening file…")}
+    />
+  );
+}
 
 type ProjectFileEntry = {
   id: string;
@@ -1644,10 +1654,17 @@ export default function ProjectFilesPage() {
           data-fullwidth="true"
           className="project-files-office-modal"
         >
-          <ProtectedOfficeEditor
-            projectId={project.id}
-            fileId={activeOfficeFile.id}
-          />
+          <ScopedErrorBoundary
+            scope="project-office-editor"
+            resetKey={activeOfficeFile.id}
+          >
+            <Suspense fallback={<FileViewerLoading />}>
+              <ProtectedOfficeEditor
+                projectId={project.id}
+                fileId={activeOfficeFile.id}
+              />
+            </Suspense>
+          </ScopedErrorBoundary>
         </Modal>
       )}
 
@@ -1699,12 +1716,16 @@ export default function ProjectFilesPage() {
 
             <div className="project-files-dwg-canvas">
               {activeDwgResource.loading ? (
-                <Loading
-                  active
-                  description={uiText("Datei wird geöffnet …", "Opening file…")}
-                />
+                <FileViewerLoading />
               ) : activeDwgDocument ? (
-                <PlanViewer document={activeDwgDocument} defaultUnit="m" />
+                <ScopedErrorBoundary
+                  scope="project-plan-viewer"
+                  resetKey={activeDwgFile.id}
+                >
+                  <Suspense fallback={<FileViewerLoading />}>
+                    <PlanViewer document={activeDwgDocument} defaultUnit="m" />
+                  </Suspense>
+                </ScopedErrorBoundary>
               ) : (
                 <MyCallout icon={Icons.Info} color="amber">
                   {uiText(

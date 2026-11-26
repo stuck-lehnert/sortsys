@@ -5,7 +5,7 @@ import { lazy, Suspense, useCallback, useState } from "react";
 import { from } from "rxjs";
 import { MyCallout } from "~/components/MyCallout";
 import { MyButton } from "~/components/MyButton";
-import { ProtectedOfficeEditor } from "~/components/ProtectedOfficeEditor";
+import { PlanViewer, ProtectedOfficeEditor } from "~/components/projectFileViewers";
 import { ScopedErrorBoundary } from "~/components/ScopedErrorBoundary";
 import { ZoomableImage } from "~/components/ZoomableImage";
 import { useClientStream } from "~/hooks/useClientStream";
@@ -22,11 +22,6 @@ const EmailAttachmentViewer = lazy(
   () => import("~/components/EmailAttachmentViewer"),
 );
 const GaebFileModal = lazy(() => import("~/components/GaebFileModal"));
-const PlanViewer = lazy(() =>
-  import("@sortsys/dwgviewer").then((module) => ({
-    default: module.PlanViewer,
-  })),
-);
 
 type ProjectFile = QueryResult<"projects.files.list">[number];
 

@@ -2541,6 +2541,119 @@ for (const [locale, theme, viewport] of [
   });
 }
 
+test("project files load the plan viewer and office editor only when opened", async () => {
+  const dir = join(fixtureDirectory, "bundle");
+  const viewerScripts = new Map();
+  const viewerMarkers = {
+    plan: ['"ss-dwgviewer-canvas-wrap"'],
+    // The Excel export also creates an iframe with the editor's CSS class.
+    office: ['"project-files-office-editor"', '"Document editor"'],
+  };
+
+  for (const name of await readdir(dir)) {
+    if (!name.endsWith(".js")) continue;
+    const script = await readFile(join(dir, name), "utf8");
+
+    const viewers = Object.entries(viewerMarkers)
+      .filter(([, markers]) => markers.every((marker) => script.includes(marker)))
+      .map(([viewer]) => viewer);
+
+    if (viewers.length) {
+      viewerScripts.set(`${server.origin}/bundle/${name}`, viewers);
+    }
+  }
+
+  const isOfficeScript = (url) =>
+    viewerScripts.get(url.href)?.includes("office") ?? false;
+  const viewerRequests = [];
+  page.on("request", (request) => {
+    viewerRequests.push(...(viewerScripts.get(request.url()) ?? []));
+  });
+
+  populateAttachments();
+  const plan = await readFile(
+    new URL(
+      "../../../sortsys-api-v2/seed-assets/grundriss-erdgeschoss.dwg",
+      import.meta.url,
+    ),
+  );
+  const date = new Date("2026-10-27T08:00:00Z");
+  const file = {
+    projectId: "c",
+    folderId: null,
+    kind: "file",
+    status: "uploaded",
+    textExtractionStatus: "none",
+    createdAt: date,
+    modifiedAt: date,
+    uploadedAt: date,
+  };
+  api.respond("projects.files.list", [
+    {
+      ...file,
+      id: "plan-file",
+      fileName: "Ground floor.dwg",
+      mimeType: "image/vnd.dwg",
+      downloadUrl: `${server.origin}/ground-floor.dwg`,
+      sizeBytes: plan.length,
+    },
+    {
+      ...file,
+      id: "office-file",
+      fileName: "Specification.docx",
+      mimeType: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    },
+  ]);
+  api.respond("projects.files.folders.list", []);
+  await page.route(`${server.origin}/ground-floor.dwg`, (route) =>
+    route.fulfill({ contentType: "image/vnd.dwg", body: plan }),
+  );
+
+  await openApplication("/projects/c/files");
+  const openPlan = page.getByRole("button", { name: /Ground floor\.dwg/ });
+  await openPlan.waitFor();
+  assert.deepEqual(
+    viewerRequests,
+    [],
+    "The file browser should not load editor code",
+  );
+
+  await openPlan.click();
+  const planDialog = page.getByRole("dialog", { name: "DWG Viewer" });
+  const layouts = planDialog.getByRole("combobox");
+  await layouts.waitFor();
+  assert.deepEqual(await layouts.locator("option").allTextContents(), ["Model"]);
+  await planDialog.locator(".ss-dwgviewer-canvas").waitFor();
+  assert.deepEqual(viewerRequests, ["plan"]);
+  await planDialog.getByRole("button", { name: "Close", exact: true }).click();
+
+  const releaseOffice = Promise.withResolvers();
+  await page.route(isOfficeScript, async (route) => {
+    await releaseOffice.promise;
+    await route.continue();
+  });
+
+  try {
+    await page.getByRole("button", { name: /Specification\.docx/ }).click();
+    const officeDialog = page.getByRole("dialog", { name: "Document" });
+    await officeDialog.getByText("Opening file…", { exact: true }).waitFor();
+    await officeDialog.getByRole("button", { name: "Close", exact: true }).click();
+    const response = page.waitForResponse((value) =>
+      isOfficeScript(new URL(value.url())),
+    );
+    releaseOffice.resolve();
+    await response;
+    await officeDialog.waitFor({ state: "hidden" });
+    assert.deepEqual(viewerRequests, ["plan", "office"]);
+    assert.equal(
+      await page.locator("iframe.project-files-office-editor").count(),
+      0,
+    );
+  } finally {
+    releaseOffice.resolve();
+  }
+});
+
 for (const canEdit of [true, false]) {
   test(`actual GAEB files open in their native editor and respect canEdit=${canEdit}`, async () => {
     populateAttachments();
