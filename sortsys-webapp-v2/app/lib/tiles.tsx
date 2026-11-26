@@ -7,7 +7,7 @@ import {
   ContactDetailsList,
 } from "~/components/ContactDetailsList";
 import { MyLink } from "~/components/MyLink";
-import { trackingToolReference } from "~/components/trackingToolReference";
+import { TrackingToolReference } from "~/components/trackingToolReference";
 import { client } from "~/lib/client";
 import {
   contactName,
@@ -459,11 +459,7 @@ export function TrackingTile({
         {!omit.includes("tool") && (
           <AttrList.Attr
             name={uiText("Werkzeug")}
-            value={
-              <Awaited
-                promise={() => trackingToolReference(tracking)}
-              />
-            }
+            value={<TrackingToolReference tracking={tracking} />}
           />
         )}
 

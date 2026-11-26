@@ -7,7 +7,7 @@ import { client } from "~/lib/client";
 import { MyLink } from "./MyLink";
 import { formatDate, userFullNameComma } from "~/lib/format";
 import { TrackingTile } from "~/lib/tiles";
-import { trackingToolReference } from "./trackingToolReference";
+import { TrackingToolReference } from "./trackingToolReference";
 
 function ReturnBookingButton({ trackingId }: { trackingId: string }) {
   const [running, setRunning] = useState(false);
@@ -53,7 +53,7 @@ export function TrackingTable(props: {
   if (!props.omit?.includes("tool")) {
     columns.push({
       label: uiText("Werkzeug"),
-      render: trackingToolReference,
+      render: (tracking) => <TrackingToolReference tracking={tracking} />,
     });
   }
 

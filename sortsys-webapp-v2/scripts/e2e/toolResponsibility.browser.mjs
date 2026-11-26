@@ -12,13 +12,20 @@ const endpoints = JSON.parse(process.env.SORTSYS_AUTH_TEST_ENDPOINTS);
 assert.equal(endpoints.length, 2);
 const scenario = fixture.artifactName ?? "late-tools";
 assert.match(scenario, /^[a-z0-9-]+$/);
+
+const actionTimeout = Number(process.env.SORTSYS_E2E_ACTION_TIMEOUT_MS ?? 20_000);
+assert.ok(
+  Number.isSafeInteger(actionTimeout) && actionTimeout > 0,
+  "SORTSYS_E2E_ACTION_TIMEOUT_MS must be a positive integer",
+);
+const expect = playwrightExpect.configure({ timeout: actionTimeout });
+
 const artifacts = join(dirname(fixturePath), "browser-artifacts", scenario);
 await mkdir(artifacts, { recursive: true });
 const directory = process.env.SORTSYS_E2E_APPLICATION_BUILD ??
   new URL("../../build/client", import.meta.url).pathname;
 const server = await applicationServer(directory, endpoints[1]);
 let managerServer;
-const expect = playwrightExpect.configure({ timeout: 20_000 });
 const errors = [];
 const leaks = [];
 const events = [];
@@ -93,7 +100,7 @@ try {
     sources: true,
   });
   page = await context.newPage();
-  page.setDefaultTimeout(20_000);
+  page.setDefaultTimeout(actionTimeout);
   page.on("pageerror", (error) => errors.push(error.message));
   page.on("request", (request) => {
     const url = new URL(request.url());
@@ -116,7 +123,13 @@ try {
     });
   });
   await signIn(page, server.origin, fixture.member);
-  await page.goto(`${server.origin}/tools/trackings`);
+
+  const history = new URL("/tools/trackings", server.origin);
+  // Return scenarios share a tenant with other active bookings. Only the
+  // target tool's history must be empty after a return.
+  if (fixture.manager || fixture.selfReturn)
+    history.searchParams.set("tool", fixture.toolId);
+  await page.goto(history.href);
   await expect(
     page.getByRole("heading", { name: "Buchungshistorie", exact: true }),
   ).toBeVisible();

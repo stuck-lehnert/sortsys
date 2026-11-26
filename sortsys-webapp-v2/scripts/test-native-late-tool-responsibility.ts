@@ -653,6 +653,30 @@ async function exerciseOwnToolReturn(
   const current = await required(peer.query("tools.get", { id: toolId }));
   assert.equal(current.activeTrackingId, next.trackingId);
   console.log("Native own tool return: separate API replicas check denied actors, false and lost replies, lost read access, costs, competing transfers and later booking");
+
+  if (process.env.SORTSYS_NATIVE_BROWSER === "1") {
+    const { exerciseToolResponsibilityBrowser } =
+      await import("./test-tool-responsibility-browser");
+
+    await exerciseToolResponsibilityBrowser({
+      tenant: unlockedAccount()!.tenant,
+      member: {
+        username: "late.tool.member",
+        password: "Late-tool-member-password-2026!",
+      },
+      activeLabel: "Frühere Ausgabe",
+      toolBrand: "Privater Werkzeugbestand 571943",
+      toolId,
+      bookingDomain: toolCollection("tool-tracking", next.trackingId, "master-data").domain,
+      artifactName: "own-tool-return",
+      selfReturn: true,
+    }, async () => {});
+
+    const returned = await required(peer.query("tools.get", { id: toolId }, {
+      strategy: "network-only",
+    }));
+    assert.equal(returned.activeTrackingId, null);
+  }
 }
 
 async function exerciseDelegatedToolReturn(
@@ -734,7 +758,6 @@ async function exerciseDelegatedToolReturn(
         },
         manager: { username: "scoped.tool.manager", password: managerPassword },
         activeLabel: "Aktive Ausgabe",
-        closedLabel: "Frühere Ausgabe",
         toolBrand: "Privater Werkzeugbestand 571943",
         toolId,
         bookingDomain: tracking.domain,
