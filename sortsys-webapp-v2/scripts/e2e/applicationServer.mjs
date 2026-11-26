@@ -8,6 +8,7 @@ const types = new Map([
   [".mjs", "text/javascript"],
   [".css", "text/css"],
   [".json", "application/json"],
+  [".webmanifest", "application/manifest+json"],
   [".wasm", "application/wasm"],
   [".svg", "image/svg+xml"],
   [".png", "image/png"],
@@ -25,9 +26,11 @@ export async function applicationServer(directory, endpoint, { port = 0 } = {}) 
   if (api.hostname !== "127.0.0.1" || api.protocol !== "http:") {
     throw new Error("E2E requires an isolated loopback API");
   }
+
   function proxy(request, upgradedSocket) {
-    const target = new URL(request.url.replace(/^\/api\/v2/, ""), api);
-    const forwarded = httpRequest(target, {
+    const path = request.url.replace(/^\/api\/v2/, "") || "/";
+    const forwarded = httpRequest(api, {
+      path,
       method: request.method,
       headers: { ...request.headers, host: api.host },
       ...(upgradedSocket ? { timeout: 0 } : { timeout: 30_000 }),
@@ -39,6 +42,7 @@ export async function applicationServer(directory, endpoint, { port = 0 } = {}) 
   const server = createServer(async (request, response) => {
     if (/^\/api\/v2(?:\/|$)/.test(request.url)) {
       const forwarded = proxy(request);
+
       response.once("close", () => forwarded.destroy());
       forwarded.on("response", (upstream) => {
         response.writeHead(upstream.statusCode, upstream.headers);
@@ -56,17 +60,20 @@ export async function applicationServer(directory, endpoint, { port = 0 } = {}) 
       const pathname = decodeURIComponent(
         new URL(request.url, "http://localhost").pathname,
       );
-      let filename = resolve(root, "." + pathname);
-      if (!filename.startsWith(root + sep)) {
+      const filename = resolve(root, "." + pathname);
+      if (filename !== root && !filename.startsWith(root + sep)) {
         response.writeHead(404).end();
         return;
       }
-      if (!extname(pathname)) filename = resolve(root, "index.html");
-      const body = await readFile(filename);
+
+      const isAppRoute = !extname(pathname) &&
+        !/^\/(?:api|assets|pdfjs|office|drawio)(?:\/|$)/.test(pathname);
+      const file = isAppRoute ? resolve(root, "index.html") : filename;
+      const body = await readFile(file);
       response
         .writeHead(200, {
           "Content-Type":
-            types.get(extname(filename)) ?? "application/octet-stream",
+            types.get(extname(file)) ?? "application/octet-stream",
           "Cache-Control": "no-store",
         })
         .end(body);
