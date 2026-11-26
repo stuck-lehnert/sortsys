@@ -5169,6 +5169,42 @@ for (const [locale, theme, width] of [
   });
 }
 
+test("product price history reuses the loaded base unit on narrow screens", async () => {
+  api.respond("products.get", {
+    id: "p",
+    customId: 20,
+    name: "Reparaturmörtel",
+    baseUnit: "Sack",
+    categories: [],
+    otherUnits: {},
+  });
+  api.respond("products.priceRecords.list", [{
+    id: "r",
+    productId: "p",
+    vendorId: "v",
+    timestamp: new Date("2026-06-15T12:00:00.000Z"),
+    price: 8.5,
+    isRealPurchase: true,
+    comment: null,
+  }]);
+  api.respond("products.vendors.get", { id: "v", name: "Baustoffhandel Süd" });
+
+  await page.setViewportSize({ width: 440, height: 850 });
+  await openApplication("/products/p", "de");
+  await page.getByRole("button", { name: "Preisentwicklung", exact: true }).click();
+
+  const vendor = page.getByRole("link", { name: "Baustoffhandel Süd", exact: true });
+  await vendor.waitFor();
+  assert.equal(await vendor.getAttribute("href"), "/products/vendors/v");
+  assert.equal(await page.getByRole("grid").count(), 0, "Use the narrow price cards");
+  assert.equal(await page.getByText(/8,50\s*€ \/ Sack/).count(), 2);
+  assert.deepEqual(
+    api.requests.filter(({ path }) => path === "products.get").map(({ input }) => input),
+    [{ id: "p" }],
+    "Opening the price cards must not fetch the product again",
+  );
+});
+
 test("delivery note detail shows product costs when they arrive without pricing unpriced items", async () => {
   const noteId = "n";
   const date = new Date("2026-11-20T12:00:00Z");

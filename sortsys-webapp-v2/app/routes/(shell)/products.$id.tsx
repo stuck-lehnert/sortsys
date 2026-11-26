@@ -3,6 +3,7 @@ import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { client } from "~/lib/client";
 import { NotFound } from "./_404";
+import { Awaited } from "~/components/Awaited";
 import { MyHeader } from "~/components/MyHeader";
 import {
   formatCurrency,
@@ -28,10 +29,22 @@ import { useTitle } from "~/hooks/useTitle";
 import { useShortcut } from "~/hooks/useShortcut";
 import { MyTable } from "~/components/MyTable";
 import { MyLink } from "~/components/MyLink";
-import { ProductPriceRecordTile } from "~/lib/tiles";
-import { Tag } from "@sortsys/react-components";
+import { Tag, Tile } from "@sortsys/react-components";
 
 const ProductPriceChart = lazy(() => import("~/components/ProductPriceChart"));
+
+async function vendorLink(id: string | null) {
+  if (!id) return;
+
+  const [vendor] = await client.query(
+    "products.vendors.get",
+    { id },
+    { strategy: "cache-first" },
+  );
+  if (!vendor) return uiText("Unbekannter Händler", "Unknown vendor");
+
+  return <MyLink to={`/products/vendors/${vendor.id}`}>{vendor.name}</MyLink>;
+}
 
 export default function ProductDetailPage() {
     const { id } = useParams();
@@ -81,6 +94,9 @@ export default function ProductDetailPage() {
 
     if (err) return <NotFound reason="resourceNotFound" />;
     if (!product) return;
+
+    const baseUnit = product.baseUnit;
+    const priceLabel = (price: number) => `${formatCurrency(price)} / ${baseUnit}`;
 
     return (
     <>
@@ -158,7 +174,7 @@ export default function ProductDetailPage() {
         {!!latestPriceRecord && (
           <AttrList.Attr
             name="Letzer EK-Preis"
-            value={`${formatCurrency(latestPriceRecord.price)} / ${product.baseUnit}`}
+            value={priceLabel(latestPriceRecord.price)}
           />
         )}
       </AttrList>
@@ -218,35 +234,38 @@ export default function ProductDetailPage() {
               },
               {
                 label: uiText("Preis"),
-                render: (row) =>
-                  `${formatCurrency(row.price)} / ${product.baseUnit}`,
+                render: (row) => priceLabel(row.price),
                 sortKey: (row) => row.price,
               },
               {
                 label: uiText("Händler"),
-                render: async (row) => {
-                  if (!row.vendorId) return;
-
-                  const [vendor] = await client.query(
-                    "products.vendors.get",
-                    { id: row.vendorId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!vendor)
-                    return uiText("Unbekannter Händler", "Unknown vendor");
-                  return (
-                    <MyLink to={`/products/vendors/${vendor.id}`}>
-                      {vendor.name}
-                    </MyLink>
-                  );
-                },
+                render: (row) => vendorLink(row.vendorId),
               },
             ]}
             renderSmallViewport={(priceRecord) => (
-              <ProductPriceRecordTile
-                priceRecord={priceRecord}
-                omit={["product"]}
-              />
+              <Tile className="w-full">
+                <AttrList>
+                  <AttrList.Attr
+                    name={uiText("Datum")}
+                    value={formatDate(priceRecord.timestamp)}
+                  />
+                  <AttrList.Attr
+                    name={uiText("Preis")}
+                    value={priceLabel(priceRecord.price)}
+                  />
+                  {!!priceRecord.vendorId && (
+                    <AttrList.Attr
+                      name={uiText("Händler")}
+                      value={
+                        <Awaited
+                          deps={[priceRecord.vendorId]}
+                          promise={() => vendorLink(priceRecord.vendorId)}
+                        />
+                      }
+                    />
+                  )}
+                </AttrList>
+              </Tile>
             )}
           />
         </MyExpandable>

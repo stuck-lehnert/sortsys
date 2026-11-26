@@ -14,6 +14,7 @@ import GlobalAdminLlmPage from "../../app/routes/(admin)/__admin.llm";
 import GlobalAdminTenantsPage from "../../app/routes/(admin)/__admin.tenants";
 import ClientScriptsPage from "../../app/routes/(shell)/scripts";
 import CustomerPage from "../../app/routes/(shell)/customers.$id";
+import ProductDetailPage from "../../app/routes/(shell)/products.$id";
 import DeliveryNoteDetailPage from "../../app/routes/(shell)/products.deliveryNotes.$id";
 import ToolDetailPage from "../../app/routes/(shell)/tools.$id";
 import ToolTransferRequestsPage from "../../app/routes/(shell)/tools.transferRequests";
@@ -267,6 +268,7 @@ export function ApplicationFixture() {
           <ApplicationFrame>
             <Routes>
               <Route path="/customers/:id" element={<CustomerPage />} />
+              <Route path="/products/:id" element={<ProductDetailPage />} />
               <Route path="/products/deliveryNotes/:id" element={<DeliveryNoteDetailPage />} />
               <Route path="/tools/:id" element={<ToolDetailPage />} />
               <Route path="/tools/transferRequests" element={<ToolTransferRequestsPage />} />

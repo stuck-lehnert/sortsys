@@ -12,7 +12,6 @@ import { client } from "~/lib/client";
 import {
   contactName,
   customerName,
-  formatCurrency,
   formatDate,
   productTitle,
   toolStatus,
@@ -21,6 +20,7 @@ import {
   userFullName,
 } from "~/lib/format";
 import { nowrap } from "~/lib/primitives";
+import { projectLink } from "~/lib/recordLinks";
 import {
   dayInIsoWeek,
   isoWeekLabel,
@@ -32,7 +32,6 @@ import {
   type Contact,
   type Customer,
   type Product,
-  type ProductPriceRecord,
   type Project,
   type Tool,
   type ToolTracking,
@@ -263,23 +262,7 @@ export function RegieReportTile({
         {!omit.includes("project") && (
           <AttrList.Attr
             name={uiText("Projekt")}
-            value={
-              <Awaited
-                promise={async () => {
-                  const [project] = await client.query(
-                    "projects.get",
-                    { id: report.projectId },
-                    { strategy: "cache-first" },
-                  );
-                  if (!project) return "Unbekannt";
-                  return (
-                    <MyLink to={`/projects/${project.id}`}>
-                      {project.title}
-                    </MyLink>
-                  );
-                }}
-              />
-            }
+            value={<Awaited promise={() => projectLink(report.projectId)} />}
           />
         )}
 
@@ -566,86 +549,6 @@ export function TrackingTile({
               />
             )}
           </>
-        )}
-      </AttrList>
-    </Tile>
-  );
-}
-
-export function ProductPriceRecordTile({
-  priceRecord,
-  omit,
-}: {
-  priceRecord: ProductPriceRecord;
-  omit?: ("product" | "vendor")[];
-}) {
-  omit ??= [];
-
-  return (
-    <Tile key={priceRecord.id} className="w-full">
-      <AttrList>
-        <AttrList.Attr
-          name={uiText("Datum")}
-          value={formatDate(priceRecord.timestamp)}
-        />
-        <AttrList.Attr
-          name="Preis"
-          value={
-            <>
-              {formatCurrency(priceRecord.price)} /{" "}
-              <Awaited
-                promise={async () => {
-                  const [product] = await client.query("products.get", {
-                    id: priceRecord.productId,
-                  });
-                  if (!product) return "???";
-                  return product.baseUnit;
-                }}
-              />
-            </>
-          }
-        />
-
-        {!omit.includes("product") && (
-          <AttrList.Attr
-            name="Produkt"
-            value={
-              <Awaited
-                promise={async () => {
-                  const [product] = await client.query("products.get", {
-                    id: priceRecord.productId,
-                  });
-                  if (!product) return "Unbekannt";
-                  return (
-                    <MyLink to={`/products/${product.id}`}>
-                      {product.customId} {productTitle(product)}
-                    </MyLink>
-                  );
-                }}
-              />
-            }
-          />
-        )}
-
-        {!omit.includes("vendor") && !!priceRecord.vendorId && (
-          <AttrList.Attr
-            name={uiText("Händler")}
-            value={
-              <Awaited
-                promise={async () => {
-                  const [vendor] = await client.query("products.vendors.get", {
-                    id: priceRecord.vendorId!,
-                  });
-                  if (!vendor) return "Unbekannt";
-                  return (
-                    <MyLink to={`/products/vendors/${vendor.id}`}>
-                      {vendor.name}
-                    </MyLink>
-                  );
-                }}
-              />
-            }
-          />
         )}
       </AttrList>
     </Tile>
