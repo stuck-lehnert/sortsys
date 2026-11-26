@@ -8582,6 +8582,43 @@ test("project regie reports read only the separately granted project scope", asy
   assert.deepEqual(reports.map(({ input }) => input), [{ projectId: "c" }]);
 });
 
+test("the first project regie PDF export produces a PDF in Chromium", async () => {
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("regieReports.list", [{
+    id: "r",
+    projectId: "c",
+    autoId: "7",
+    day: "2026-06-15",
+    summary: "Fenster abgedichtet",
+    workHours: [],
+    products: [],
+    specialRecords: [],
+  }]);
+
+  // Headless Chromium cannot display PDFs in a new tab. Observe the actual
+  // bytes handed to the existing preview action without replacing the renderer.
+  await page.addInitScript(() => {
+    const createObjectURL = URL.createObjectURL.bind(URL);
+    URL.createObjectURL = (object) => {
+      if (object instanceof Blob && object.type === "application/pdf") {
+        window.__sortsysExportedPdf = object;
+      }
+      return createObjectURL(object);
+    };
+  });
+
+  await openApplication("/projects/c/regieReports");
+  await page.getByRole("link", { name: "Time-and-material report #7" }).waitFor();
+  await page.getByRole("button", { name: "Actions", exact: true }).click();
+  await page.getByRole("menuitem", { name: "Time-and-material reports: PDF" }).click();
+  const dialog = page.getByRole("dialog", { name: "Export time-and-material reports as PDF" });
+  await dialog.getByRole("button", { name: "Export", exact: true }).click();
+
+  await page.waitForFunction(() => window.__sortsysExportedPdf instanceof Blob);
+  assert.equal(await page.evaluate(() => window.__sortsysExportedPdf.slice(0, 5).text()), "%PDF-");
+  await dialog.waitFor({ state: "hidden" });
+});
+
 test("project cost actions hide the delivery export when there are no notes", async () => {
   api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
   api.respond("deliveryNotes.list", []);

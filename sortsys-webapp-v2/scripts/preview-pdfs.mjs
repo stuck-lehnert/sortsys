@@ -5,7 +5,8 @@ import { resolve } from 'node:path';
 import { pdfFixtures, pdfFixtureNames, weeklyProjectCostsFixture } from './pdf-fixtures.mjs';
 
 mock.module('../app/lib/client.ts', () => ({ client: { query: async () => [null, null] } }));
-const { buildPdfBatchDocument, buildPdfProductSection } = await import('../app/lib/pdf.ts');
+const { buildPdfProductSection } = await import('../app/lib/pdf.ts');
+const { buildPdfBatchDocument } = await import('../app/lib/pdfRenderer.ts');
 const { buildRegieReportPdfDocument } = await import('../app/lib/regieReportPdf.ts');
 const { buildTablePdfDocument } = await import('../app/lib/pdfTableExport.ts');
 const { buildWeeklyProjectCostsPdfDocument } = await import('../app/lib/projectCostsPdf.ts');

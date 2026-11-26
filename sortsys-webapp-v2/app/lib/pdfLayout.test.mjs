@@ -35,12 +35,8 @@ mock.module("./client", () => ({
     },
   },
 }));
-const {
-  buildPdfBatchDocument,
-  buildPdfProductSection,
-  renderStructuredPdf,
-  withOrganizationSender,
-} = await import("./pdf.ts");
+const { buildPdfProductSection, renderStructuredPdf } = await import("./pdf.ts");
+const { buildPdfBatchDocument, withOrganizationSender } = await import("./pdfRenderer.ts");
 const { buildRegieReportPdfDocument } = await import("./regieReportPdf.ts");
 const { buildTablePdfDocument } = await import("./pdfTableExport.ts");
 const { buildWeeklyProjectCostsPdfDocument, workCostPdfSections } =
