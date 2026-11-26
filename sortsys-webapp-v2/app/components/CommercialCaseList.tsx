@@ -215,13 +215,23 @@ export function CommercialCaseList({
           })
         }
         columns={[
+          ...(kind === "offer"
+            ? [
+                {
+                  label: uiText("Angebotsnummer", "Offer number"),
+                  render: (row: OverviewRow) => row.reference,
+                  sortKey: (row: OverviewRow) => row.reference,
+                },
+              ]
+            : []),
           {
             label: uiText("Vorgang", "Workflow"),
             render: (row) => (
               <div>
                 <strong>{row.title}</strong>
                 <p className="text-xs text-muted">
-                  {row.reference} · {kindLabel(row.kind)}
+                  {kind !== "offer" && `${row.reference} · `}
+                  {kindLabel(row.kind)}
                 </p>
               </div>
             ),

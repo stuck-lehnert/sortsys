@@ -7174,7 +7174,9 @@ function seedOverlayOffers(count = 1, canManage = false) {
               : row.kind === input.kind)) &&
           (!input?.status || row.status === input.status) &&
           (!input?.search ||
-            row.title.toLowerCase().includes(input.search.toLowerCase())),
+            [row.title, row.reference].some((value) =>
+              value.toLowerCase().includes(input.search.toLowerCase()),
+            )),
       )
       .slice(
         Number(input?.offset ?? 0),
@@ -7184,6 +7186,38 @@ function seedOverlayOffers(count = 1, canManage = false) {
   api.respond("commercial.cases.overview", caseRows);
   return state;
 }
+
+test("offers list shows each number once and supports sorting and searching by number", async () => {
+  seedOverlayOffers(2);
+  await page.setViewportSize({ width: 1400, height: 900 });
+  await openApplication("/offers", "de");
+
+  const list = page.getByRole("region", { name: "Angebotsübersicht" });
+  const header = list.getByRole("columnheader", { name: /Angebotsnummer/ });
+  const secondOffer = list.getByRole("row").filter({
+    has: page.getByText("Offer 1", { exact: true }),
+  });
+
+  await secondOffer
+    .getByRole("rowheader", { name: "ANG-1", exact: true })
+    .waitFor();
+  assert.equal((await secondOffer.innerText()).match(/ANG-1/g)?.length, 1);
+
+  await header.click();
+  const firstRow = list.getByRole("row").nth(1);
+  await firstRow.getByText("ANG-0", { exact: true }).waitFor();
+
+  await header.click();
+  await firstRow.getByText("ANG-1", { exact: true }).waitFor();
+
+  await list.getByRole("textbox", { name: "Suchen", exact: true }).fill("ANG-0");
+  await secondOffer.waitFor({ state: "hidden" });
+  await firstRow.getByText("ANG-0", { exact: true }).waitFor();
+  assert.ok(api.requests.some(
+    ({ path, input }) =>
+      path === "commercial.cases.overview" && input?.search === "ANG-0",
+  ));
+});
 
 test("offer overlay preserves the current route, filters, loaded pages, focus and scroll position", async () => {
   seedOverlayOffers(60);
