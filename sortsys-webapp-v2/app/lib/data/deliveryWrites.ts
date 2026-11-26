@@ -1,4 +1,5 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
+import { arrayBatches } from "@sortsys/zerotrust";
 import {
   frame,
   InvalidProtectedData,
@@ -456,10 +457,10 @@ export async function writeDeliveryNote(
     const check = await createBusinessDatabase(await driver?.());
     try {
       const rows = [value.note, ...value.records, ...value.specialRecords];
-      for (let offset = 0; offset < rows.length; offset += 10000) {
+      for (const batch of arrayBatches(rows, 10000)) {
         await projectFacetRows(
           check,
-          rows.slice(offset, offset + 10000),
+          batch,
           new Set(["projects", "users", "products"]),
         );
       }

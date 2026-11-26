@@ -1,3 +1,4 @@
+import { arrayBatches } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase, BusinessTransaction } from "../database";
 import { insertTableRows } from "../rowInsert";
@@ -52,8 +53,7 @@ async function validateConstraint(
   }
   const keys = primaryColumns(table);
   const batchSize = Math.min(128, Math.max(1, Math.floor(4096 / keys.length)));
-  for (let offset = 0; offset < rows.length; offset += batchSize) {
-    const selected = rows.slice(offset, offset + batchSize);
+  for (const selected of arrayBatches(rows, batchSize)) {
     const parameters = selected.flatMap((row) =>
       keys.map((key) => row.values[key]),
     );

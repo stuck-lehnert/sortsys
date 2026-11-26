@@ -1,4 +1,5 @@
 import type { Client, MutateInput } from "@sortsys/v2-client";
+import { arrayBatches } from "@sortsys/zerotrust";
 import {
   encryptedObject,
   InvalidProtectedData,
@@ -58,11 +59,11 @@ export function encryptedDataStorage(client: Client): DataStorage {
       };
       const verified = new Set<string>(),
         stock = packets.filter((packet) => packet.references);
-      for (let offset = 0; offset < stock.length; offset += 64) {
-        const part = stock.slice(offset, offset + 64),
-          expected = new Map(
-            part.map((packet) => [packet.envelope.object, packet]),
-          );
+
+      for (const part of arrayBatches(stock, 64)) {
+        const expected = new Map(
+          part.map((packet) => [packet.envelope.object, packet]),
+        );
         const states = await required(
           client.query(
             "zerotrust.stock.references",

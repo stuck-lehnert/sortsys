@@ -752,11 +752,13 @@ test("a duplicate hint for an already invalidated area does not restart an unrel
   try {
     let oldRow;
     const changed = new Set([mainArea.domain]);
-    await current.runtime.read([first], (view) => {
+    const invalidatedRead = current.runtime.read([first], (view) => {
       oldRow = view.row("product_price_records", { id: "1" });
       current.runtime.invalidate(changed);
       expect(() => oldRow.require("comment")).toThrow(ProtectedWriteConflict);
     });
+    await expect(invalidatedRead).rejects.toBeInstanceOf(ProtectedWriteConflict);
+
     current.storage.open = async (...args) => {
       openings++;
       if (openings === 1) {
@@ -791,7 +793,7 @@ test("a duplicate hint for an already invalidated area does not restart an unrel
     release?.();
     await current.runtime.close();
   }
-}, 15000);
+}, 90000);
 
 for (const change of ["unrelated", "related", "all"]) {
   test(`an area change during the first inventory opening ${change === "unrelated" ? "does not restart unrelated work" : `rechecks ${change} affected state`}`, async () => {

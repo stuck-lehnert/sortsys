@@ -34,6 +34,7 @@ import {
   type MutateInput,
   type QueryResult,
 } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import { verifiedAccessContext } from "../crypto/accessContext";
 import { createObjectAuthorVerifier } from "../crypto/objectAuthors";
 import type { trustedHistory, unlockedAccount } from "../crypto/session";
@@ -51,7 +52,6 @@ import {
   schedulePayload,
   type SchedulePayload,
 } from "./projectScheduleData";
-import { mapConcurrent } from "./runtime/concurrentReads";
 import { planningTitleReader } from "./planningTitles";
 import { projectCollection, projectPayload } from "./projectData";
 
@@ -337,9 +337,8 @@ export async function checkPlanningRecipients(
     (known.size !== selected.length || states!.length !== selected.length)
   )
     throw new InvalidProtectedData();
-  const chunks: OpenedObject[][] = [];
-  for (let offset = 0; offset < selected.length; offset += 64)
-    chunks.push(selected.slice(offset, offset + 64));
+
+  const chunks = [...arrayBatches(selected, 64)];
   await mapConcurrent(chunks, 4, async (chunk) => {
     live();
     const values = known

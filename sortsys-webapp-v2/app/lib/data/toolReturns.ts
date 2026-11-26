@@ -1,4 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
   resourceCommandBinding,
@@ -8,7 +9,6 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import { required } from "./protectedObjects";
-import { mapConcurrent } from "./runtime/concurrentReads";
 import type { DataDocument } from "./runtime/model";
 import type { RowProjection } from "./runtime/rows";
 import { TOOL_MODEL, type ToolPart } from "./toolData";
@@ -43,10 +43,8 @@ export async function loadToolReturns(
     result.set(key, command);
     return false;
   });
-  const groups: string[][] = [];
-  for (let offset = 0; offset < missing.length; offset += 64) {
-    groups.push(missing.slice(offset, offset + 64));
-  }
+  const groups = [...arrayBatches(missing, 64)];
+
   await mapConcurrent(groups, 4, async (verificationKeys) => {
     live();
     const commands = await required(

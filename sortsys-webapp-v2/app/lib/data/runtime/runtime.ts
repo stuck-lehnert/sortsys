@@ -1,4 +1,4 @@
-import { createSerialQueue } from "@sortsys/zerotrust";
+import { arrayBatches, createSerialQueue } from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
   TOMBSTONE_FORMAT,
@@ -1155,9 +1155,7 @@ export class DataRuntime {
       if (generation !== this.generation) throw new ProtectedWriteConflict();
       const grouped = new Map<string, PreparedWrites>();
       const allChanges = new Map([...changes, ...deletions]);
-      const changed = [...allChanges.values()];
-      for (let offset = 0; offset < changed.length; offset += 16) {
-        const part = changed.slice(offset, offset + 16);
+      for (const part of arrayBatches([...allChanges.values()], 16)) {
         const packets = await Promise.all(
           part.map((document) => {
             const read = reads.get(dataAreaKey(document.area))!;

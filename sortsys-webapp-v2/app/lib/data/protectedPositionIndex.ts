@@ -5,6 +5,7 @@ import {
   MAX_GAEB_BYTES,
   type GaebXmlProcessor,
 } from "@sortsys/gaeb";
+import { arrayBatches } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import { commercialCollection, commercialDomain } from "./commercialAreas";
@@ -183,8 +184,8 @@ export function createProtectedPositionIndex(
         collection.close();
       }
     }
-    for (let offset = 0; offset < selected.length; offset += 8) {
-      const requests = selected.slice(offset, offset + 8).map((area) => ({
+    for (const batch of arrayBatches(selected, 8)) {
+      const requests = batch.map((area) => ({
         area: {
           ...area,
           prefix: area.prefix + (area.facet === "attachment" ? "file:" : "case"),
