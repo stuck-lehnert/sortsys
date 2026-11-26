@@ -27,7 +27,7 @@ import {
   showModifyDailyProjectReportModal,
 } from "../../app/modals/dailyProjectReport";
 import { showCreateRegieReportModal, showModifyRegieReportModal } from "../../app/modals/regieReports";
-import { showCreateProductModal } from "../../app/modals/products";
+import { showCreateProductModal, showModifyProductModal } from "../../app/modals/products";
 import { showCreateDeliveryNoteModal, showModifyDeliveryNoteModal } from "../../app/modals/deliveryNotes";
 import { showCommandPaletteModal } from "../../app/modals/commandPalette";
 import { showPriceImportModal } from "../../app/modals/priceImports";
@@ -175,6 +175,18 @@ function FormEntrypoints() {
       </Button>
       <Button onClick={() => showCreateProductModal(modals)}>
         Create product
+      </Button>
+      <Button onClick={() => showModifyProductModal(modals, {
+        id: "7",
+        customId: 123,
+        name: "Schraube",
+        brand: "Fixture",
+        description: "Verzinkt",
+        regieReportName: "Befestigungsmaterial",
+        baseUnit: "Stk",
+        otherUnits: { Packung: 20, Karton: 120 },
+      })}>
+        Edit product
       </Button>
       <Button onClick={() => showCreateDeliveryNoteModal(modals)}>
         Create delivery note

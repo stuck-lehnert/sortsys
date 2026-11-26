@@ -8382,8 +8382,10 @@ test("project data sheet opens a PDF without an external connection", async () =
   assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
 });
 
-test("a newly added product unit focuses its name autocomplete", async () => {
+test("product creation focuses and saves a newly added unit", async () => {
   api.respond("products.units.list", ["kg", "m²", "Stk"]);
+  api.respond("products.create", { id: "7" });
+
   await openApplication("/fixtures/forms", "en");
   await page
     .getByRole("button", { name: "Create product", exact: true })
@@ -8398,6 +8400,59 @@ test("a newly added product unit focuses its name autocomplete", async () => {
     (node) => node === document.activeElement,
     await unit.elementHandle(),
   );
+
+  await dialog.locator('input[name="customId"]').fill("123");
+  await dialog.locator('input[name="name"]').fill("Schraube");
+  await dialog.locator('input[name="baseUnit"]').fill("Stk");
+  await unit.fill("Karton");
+  await dialog.locator('input[name^="unit:"][name$=":value"]').fill("24");
+
+  await dialog.getByRole("button", { name: "Create", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+
+  const creates = api.requests.filter(({ path }) => path === "products.create");
+  assert.equal(creates.length, 1);
+  assert.equal(creates[0].input.customId, 123);
+  assert.equal(creates[0].input.name, "Schraube");
+  assert.equal(creates[0].input.baseUnit, "Stk");
+  assert.deepEqual(creates[0].input.otherUnits, { Karton: 24 });
+});
+
+test("editing product units preserves the remaining conversion in the update", async () => {
+  api.respond("products.units.list", ["kg", "m²", "Stk"]);
+  api.respond("products.update", { id: "7" });
+  await openApplication("/fixtures/forms", "en");
+  await page.getByRole("button", { name: "Edit product", exact: true }).click();
+
+  const dialog = page.getByRole("dialog");
+  const names = dialog.locator('input[name^="unit:"][name$=":name"]');
+  const factors = dialog.locator('input[name^="unit:"][name$=":value"]');
+  assert.equal(await names.nth(0).inputValue(), "Packung");
+  assert.equal(await factors.nth(0).inputValue(), "20");
+  assert.equal(await names.nth(1).inputValue(), "Karton");
+  assert.equal(await factors.nth(1).inputValue(), "120");
+
+  await dialog.getByRole("button", { name: "Remove unit", exact: true }).first().click();
+  assert.equal(await names.count(), 1);
+  assert.equal(await names.first().inputValue(), "Karton");
+  await factors.first().fill("96");
+  await dialog.locator('input[name="regieReportName"]').fill("  Befestigung  ");
+  await dialog.getByRole("button", { name: "Save", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+
+  const updates = api.requests.filter(({ path }) => path === "products.update");
+  assert.equal(updates.length, 1);
+  assert.deepEqual(updates[0].input, {
+    id: "7",
+    data: {
+      name: "Schraube",
+      brand: "Fixture",
+      description: "Verzinkt",
+      regieReportName: "Befestigung",
+      baseUnit: "Stk",
+      otherUnits: { Karton: 96 },
+    },
+  });
 });
 
 for (const theme of ["light", "dark"])
