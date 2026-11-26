@@ -3,7 +3,6 @@ import { reactRouter } from "@react-router/dev/vite";
 import { defineConfig } from "vite";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { VitePWA } from "vite-plugin-pwa";
 import { pdfjsViewerPlugin } from "./scripts/pdfjsViewerPlugin";
 import { scriptClientTypesPlugin } from "./scripts/scriptClientTypesPlugin.mjs";
 import { gaebLicensePlugin } from "../sortsys-gaeb/scripts/licensePlugin";
@@ -116,9 +115,14 @@ export default defineConfig({
     },
   },
   ssr: {
-    // This local package exports TSX sources that Node cannot load directly
-    // while React Router prerenders the SPA shell.
-    noExternal: ["@sortsys/react-components"],
+    // Bundle the local TSX package and UI dependency graph for SPA prerendering.
+    // Keep React itself external so the renderer and UI share one instance.
+    noExternal: [
+      "@sortsys/react-components",
+      /^@heroui\//,
+      /^@react-(aria|stately|types)\//,
+      /^react-(aria|stately)(-components)?(?:\/|$)/,
+    ],
   },
   worker: { format: "es" },
   plugins: [
@@ -127,62 +131,5 @@ export default defineConfig({
     pdfjsViewerPlugin(),
     scriptClientTypesPlugin(),
     gaebLicensePlugin(),
-
-    VitePWA({
-      registerType: "autoUpdate",
-      workbox: {
-        navigateFallbackDenylist: [/^\/pdfjs\//],
-        globIgnores: [
-          "**/gaebValidation*.js",
-          "**/pdfjs/**",
-          "**/pdf.worker*.mjs",
-          "**/pdf-*.js",
-          "**/emailSanitizer*.js",
-          "**/openjpeg*.wasm",
-          "**/openjpeg_nowasm_fallback*.js",
-          "**/qcms*.wasm",
-          "**/jbig2*.wasm",
-          "**/jbig2_nowasm_fallback*.js",
-          "**/quickjs-eval*",
-          "**/PdfAttachmentViewer*.js",
-          "**/PdfAttachmentViewer*.css",
-          "**/EmailAttachmentViewer*.js",
-          "**/emailPreview.worker*.js",
-          "**/*.bcmap",
-          "**/*.ttf",
-          "**/*.pfb",
-          "**/exceljs*.js",
-          "**/jszip*.js",
-          "**/editor.main*.js",
-          "**/ts.worker*.js",
-          "**/sortsys-dwg-rust*.wasm",
-        ],
-      },
-      manifest: {
-        name: "sortsys",
-        short_name: "sortsys",
-        start_url: "/",
-        icons: [
-          {
-            src: "/android-chrome-192x192.png",
-            sizes: "192x192",
-            type: "image/png",
-          },
-          {
-            src: "/android-chrome-512x512.png",
-            sizes: "512x512",
-            type: "image/png",
-          },
-          {
-            src: "/icon.svg",
-            sizes: "any",
-            type: "image/svg",
-          },
-        ],
-        theme_color: "#ffffff",
-        background_color: "#ffffff",
-        display: "standalone",
-      },
-    }),
   ],
 });

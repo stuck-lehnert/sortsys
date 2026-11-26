@@ -85,6 +85,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
         {children}
         <ScrollRestoration />
         <Scripts />
+        {import.meta.env.PROD && <script src="/registerSW.js" defer />}
 
         <ThemeHandler />
       </body>
