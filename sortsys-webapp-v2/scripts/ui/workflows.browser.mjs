@@ -5163,6 +5163,75 @@ for (const [locale, theme, width] of [
   });
 }
 
+test("delivery note detail shows product costs when they arrive without pricing unpriced items", async () => {
+  const noteId = "n";
+  const date = new Date("2026-11-20T12:00:00Z");
+  const products = new Map([
+    ["p", { id: "p", customId: 1, name: "Spezialschraube" }],
+    ["q", { id: "q", customId: 2, name: "Bohrschablone" }],
+  ]);
+  api.respond("projects.get", { id: "c", title: "Baustelle Nord" });
+  api.respond("products.get", ({ id }) => ({
+    ...products.get(id),
+    brand: null,
+    description: null,
+    baseUnit: "Stk",
+    otherUnits: { Packung: 10 },
+    categories: [],
+  }));
+  api.respond("deliveryNotes.get", {
+    id: noteId,
+    autoId: 7,
+    projectId: "c",
+    comment: null,
+    createdByUserId: null,
+    createdAt: date,
+    effectiveTimestamp: date,
+    records: [
+      { id: "a", noteId, productId: "p", quantity: 20, unit: "Packung", comment: null },
+      { id: "b", noteId, productId: "q", quantity: 1, unit: "Stk", comment: null },
+    ],
+    specialRecords: [
+      { id: "d", noteId, name: "Gratisprobe", unit: "Stk", amount: 2, pricePerUnit: 0, comment: null },
+      { id: "e", noteId, name: "Abholbeleg", unit: "Stk", amount: 1, pricePerUnit: null, comment: null },
+    ],
+  });
+  api.respond("deliveryNotes.costs.get", {
+    noteId,
+    totalCost: 25,
+    records: [
+      {
+        recordId: "a",
+        productId: "p",
+        quantity: 20,
+        priceRecord: {
+          id: "v", productId: "p", vendorId: null, timestamp: date,
+          price: 1.25, isRealPurchase: true, comment: null,
+        },
+      },
+      { recordId: "b", productId: "q", quantity: 1, priceRecord: null },
+    ],
+    specialRecords: [],
+  });
+
+  await openApplication(`/products/deliveryNotes/${noteId}?holdStream=deliveryNotes.costs.get`, "de");
+  const priced = page.getByRole("row").filter({ hasText: "Spezialschraube" });
+  const unpriced = page.getByRole("row").filter({ hasText: "Bohrschablone" });
+  const total = priced.getByRole("gridcell", { name: /^25,00\s*€$/ });
+  await priced.waitFor();
+  await unpriced.waitFor();
+  assert.equal(await total.count(), 0);
+
+  await page.evaluate(() => window.__sortsysReleasePresentationStream());
+  await total.waitFor();
+  await priced.getByRole("gridcell", { name: /1,25\s*€\/Stk/ }).waitFor();
+  assert.equal(await unpriced.getByRole("gridcell", { name: /€/ }).count(), 0);
+  const free = page.getByRole("row").filter({ hasText: "Gratisprobe" });
+  const withoutPrice = page.getByRole("row").filter({ hasText: "Abholbeleg" });
+  assert.equal(await free.getByRole("gridcell", { name: /^0,00\s*€$/ }).count(), 2);
+  assert.equal(await withoutPrice.getByRole("gridcell", { name: /€/ }).count(), 0);
+});
+
 test("the delivery note form offers authorized project changes and keeps quantity-only edits available", async () => {
   const source = { id: "c", title: "Baustelle Nord", finishedAt: null };
   const target = { id: "f", title: "Werkstatt Süd", finishedAt: null };

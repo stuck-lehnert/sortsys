@@ -1,4 +1,5 @@
 import { uiText } from "~/lib/i18n";
+import type { QueryResult } from "@sortsys/v2-client";
 import { useParams } from "react-router";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useMyModals } from "~/hooks/useMyModals";
@@ -39,8 +40,13 @@ import {
 import { deliverBlob, type BlobTarget, upmatchUnit } from "~/lib/utils";
 import { prepareExcelExport } from "~/lib/officeExports";
 import { workbookSections } from "~/lib/workbookSections";
+import { readExportReferences } from "~/lib/exportReferences";
 
-function quantityInUnit(product: any, baseQuantity: number, unit: string | null | undefined): [number, string] {
+function quantityInUnit(
+  product: NonNullable<QueryResult<"products.get">>,
+  baseQuantity: number,
+  unit: string | null | undefined,
+): [number, string] {
   if (!unit) return upmatchUnit(product, baseQuantity);
   if (unit === product.baseUnit) return [baseQuantity, unit];
   const factor = product.otherUnits?.[unit];
@@ -48,11 +54,20 @@ function quantityInUnit(product: any, baseQuantity: number, unit: string | null 
   return [baseQuantity / factor, unit];
 }
 
-function deliveryRecordCost(costs: any, recordId: string) {
-  if (!costs) return null;
-  const costRecord = costs.records.find(({ recordId: id }: any) => id === recordId);
-  if (!costRecord || !costRecord.priceRecord) return null;
-  return Number(costRecord.quantity * costRecord.priceRecord.price);
+function indexProductCosts(costs: QueryResult<"deliveryNotes.costs.get"> | null | undefined) {
+  const byRecord = new Map<string, number | null>();
+  for (const { recordId, quantity, priceRecord } of costs?.records ?? []) {
+    if (!byRecord.has(recordId)) {
+      byRecord.set(recordId, priceRecord ? Number(quantity * priceRecord.price) : null);
+    }
+  }
+  return byRecord;
+}
+
+type SpecialItem = NonNullable<QueryResult<"deliveryNotes.get">>["specialRecords"][number];
+
+function specialItemCost({ amount, pricePerUnit }: SpecialItem) {
+  return pricePerUnit == null ? null : Number(amount * pricePerUnit);
 }
 
 export default function DeliveryNoteDetailPage() {
@@ -66,9 +81,7 @@ export default function DeliveryNoteDetailPage() {
   const [isPdfExporting, setIsPdfExporting] = useState(false);
   const [pdfExportErr, setPdfExportErr] = useState<string | null>(null);
 
-  const tableRecords = useMemo(() => {
-    return note?.records.map(record => ({ ...record, costs }));
-  }, [note, costs]);
+  const costByRecord = useMemo(() => indexProductCosts(costs), [costs]);
 
   useTitle(() => note ? uiText(`Lieferschein #${note.autoId}`, `Delivery note #${note.autoId}`) : null, [note?.autoId]);
 
@@ -86,12 +99,11 @@ export default function DeliveryNoteDetailPage() {
         ? await client.query('customers.get', { id: project.customerId }, { strategy: 'cache-first' })
         : [null];
 
-      const productIds = [...new Set(currentNote.records.map((record) => record.productId))];
-      const productEntries = await Promise.all(productIds.map(async (productId) => {
-        const [product] = await client.query('products.get', { id: productId }, { strategy: 'cache-first' });
-        return [productId, product ?? null] as const;
-      }));
-      const productMap = new Map(productEntries);
+      const productMap = await readExportReferences(
+        client,
+        "products.get",
+        currentNote.records.map(({ productId }) => productId),
+      );
 
       const sortedRecords = [...currentNote.records].sort((left, right) => {
         const leftProduct = productMap.get(left.productId);
@@ -107,10 +119,7 @@ export default function DeliveryNoteDetailPage() {
         const baseQuantity = Number(record.quantity ?? 0);
         const [amount, unit] = product ? quantityInUnit(product, baseQuantity, record.unit) : [baseQuantity, ''];
         const baseUnit = product?.baseUnit ?? '';
-        const costRecord = costs?.records.find((entry) => entry.recordId === record.id);
-        const totalCost = costRecord?.priceRecord
-          ? Number(costRecord.quantity * costRecord.priceRecord.price)
-          : null;
+        const totalCost = costByRecord.get(record.id) ?? null;
         const avgUnitPrice = baseQuantity > 0 && totalCost != null
           ? `${formatCurrency(totalCost / baseQuantity)}${baseUnit ? `/${baseUnit}` : ''}`
           : '-';
@@ -130,7 +139,7 @@ export default function DeliveryNoteDetailPage() {
       });
 
       const specialRows = sortedSpecialRecords.map((record) => {
-        const totalCost = record.pricePerUnit != null ? Number(record.amount * record.pricePerUnit) : null;
+        const totalCost = specialItemCost(record);
         return [
           record.name,
           `${formatNumber(record.amount)} ${record.unit}`,
@@ -238,12 +247,11 @@ export default function DeliveryNoteDetailPage() {
 
     const [project] = await client.query('projects.get', { id: currentNote.projectId }, { strategy: 'cache-first' });
 
-    const productIds = [...new Set(currentNote.records.map(record => record.productId))];
-    const productEntries = await Promise.all(productIds.map(async productId => {
-      const [product] = await client.query('products.get', { id: productId }, { strategy: 'cache-first' });
-      return [productId, product ?? null] as const;
-    }));
-    const productMap = new Map(productEntries);
+    const productMap = await readExportReferences(
+      client,
+      "products.get",
+      currentNote.records.map(({ productId }) => productId),
+    );
 
     const wb = new ExcelJS.Workbook();
     wb.creator = 'exceljs';
@@ -278,10 +286,7 @@ export default function DeliveryNoteDetailPage() {
       const product = productMap.get(record.productId);
       const baseQuantity = Number(record.quantity ?? 0);
       const [amount, unit] = product ? quantityInUnit(product, baseQuantity, record.unit) : [baseQuantity, ''];
-      const costRecord = costs?.records.find(entry => entry.recordId === record.id);
-      const totalCost = costRecord?.priceRecord
-        ? Number(costRecord.quantity * costRecord.priceRecord.price)
-        : null;
+      const totalCost = costByRecord.get(record.id) ?? null;
       const baseUnit = product?.baseUnit ?? '';
       const avgUnitPrice = baseQuantity > 0 && totalCost != null
         ? totalCost / baseQuantity
@@ -312,7 +317,7 @@ export default function DeliveryNoteDetailPage() {
     }
 
     const specialRows = currentNote.specialRecords.map(record => {
-      const totalCost = record.pricePerUnit != null ? Number(record.amount * record.pricePerUnit) : null;
+      const totalCost = specialItemCost(record);
       return [
         record.name,
         Number(record.amount ?? 0),
@@ -447,7 +452,7 @@ export default function DeliveryNoteDetailPage() {
           <MyTable
             className="th-25rem"
             persistentId="Products"
-            rows={tableRecords ?? []}
+            rows={note.records}
             columns={[
               {
                 label: uiText("Bezeichnung"),
@@ -459,7 +464,7 @@ export default function DeliveryNoteDetailPage() {
               {
                 label: uiText("mittlerer EP"),
                 render: async (row) => {
-                  const recordCost = deliveryRecordCost(row.costs, row.id);
+                  const recordCost = costByRecord.get(row.id);
                   const baseQuantity = Number(row.quantity ?? 0);
                   if (!baseQuantity || typeof recordCost !== "number")
                     return "-";
@@ -472,7 +477,7 @@ export default function DeliveryNoteDetailPage() {
                   return `${formatCurrency(recordCost / baseQuantity)}${product?.baseUnit ? `/${product.baseUnit}` : ""}`;
                 },
                 sortKey: (row) => {
-                  const recordCost = deliveryRecordCost(row.costs, row.id);
+                  const recordCost = costByRecord.get(row.id);
                   const baseQuantity = Number(row.quantity ?? 0);
                   if (!baseQuantity || typeof recordCost !== "number") return 0;
                   return recordCost / baseQuantity;
@@ -481,14 +486,11 @@ export default function DeliveryNoteDetailPage() {
               {
                 label: uiText("Kosten"),
                 render: (row) => {
-                  const recordCost = deliveryRecordCost(row.costs, row.id);
+                  const recordCost = costByRecord.get(row.id);
                   if (typeof recordCost !== "number") return "";
                   return formatCurrency(recordCost);
                 },
-                sortKey: (row) => {
-                  const recordCost = deliveryRecordCost(row.costs, row.id);
-                  return typeof recordCost === "number" ? recordCost : 0;
-                },
+                sortKey: (row) => costByRecord.get(row.id) ?? 0,
               },
             ]}
             loadMore={{}}
@@ -523,12 +525,11 @@ export default function DeliveryNoteDetailPage() {
               },
               {
                 label: uiText("Gesamt"),
-                render: (row) =>
-                  row.pricePerUnit != null
-                    ? formatCurrency(row.amount * row.pricePerUnit)
-                    : "",
-                sortKey: (row) =>
-                  row.pricePerUnit != null ? row.amount * row.pricePerUnit : 0,
+                render: (row) => {
+                  const cost = specialItemCost(row);
+                  return cost == null ? "" : formatCurrency(cost);
+                },
+                sortKey: (row) => specialItemCost(row) ?? 0,
               },
             ]}
             loadMore={{}}
