@@ -254,6 +254,15 @@ test("creation proofs on later pages are verified and may not appear twice", asy
   expect(context.permissions.rules.length).toBeGreaterThan(
     context.rootPolicy.rules.length,
   );
+  expect(context.origins).toEqual([origin]);
+
+  // Callers cannot mutate the cached copy of a verified creation proof.
+  context.origins[0].capability.creator.user = "user:other";
+  fixture.changeHead((head) => unchanged(head));
+  const cached = await verifiedAccessContext(fixture.client, signal());
+  expect(cached.origins).toEqual([origin]);
+
+  fixture.changeHead((head) => head);
   fixture.change((page) => [{ ...page, origins: [origin] }, null]);
   await expect(
     verifiedAccessContext(fixture.client, signal()),

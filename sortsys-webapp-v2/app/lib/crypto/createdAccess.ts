@@ -4,6 +4,7 @@ import {
   creationRules,
   InvalidProtectedData,
   verifyCreationOrigin,
+  type CreationOrigin,
 } from "@sortsys/zerotrust/sortsys";
 import type { Policy } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
@@ -20,7 +21,14 @@ export async function createdAccess(
   domain?: string,
 ): Promise<Policy> {
   const origins = await readCreationOrigins(client, domain);
-  return verifyCreatedAccess(origins, permissions, history, signal, domain);
+  const checked = await verifyCreatedAccess(
+    origins,
+    permissions,
+    history,
+    signal,
+    domain,
+  );
+  return checked.permissions;
 }
 
 export async function readCreationOrigins(
@@ -54,10 +62,11 @@ export async function verifyCreatedAccess(
   history: Awaited<ReturnType<typeof trustedHistory>>,
   signal: AbortSignal,
   domains?: string | ReadonlySet<string>,
-): Promise<Policy> {
+): Promise<{ permissions: Policy; origins: CreationOrigin[] }> {
   if (!Array.isArray(origins)) throw new InvalidProtectedData();
   signal.throwIfAborted();
-  if (origins.length === 0) return permissions;
+  if (origins.length === 0) return { permissions, origins: [] };
+
   const checked = await mapConcurrent(
     origins.filter((origin) => origin !== null),
     8,
@@ -81,6 +90,10 @@ export async function verifyCreatedAccess(
     seen.add(origin.id);
     inherited.push(...creationRules(origin, permissions));
   }
+
   signal.throwIfAborted();
-  return { ...permissions, rules: [...permissions.rules, ...inherited] };
+  return {
+    permissions: { ...permissions, rules: [...permissions.rules, ...inherited] },
+    origins: checked,
+  };
 }

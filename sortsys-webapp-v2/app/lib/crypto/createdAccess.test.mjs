@@ -119,15 +119,16 @@ test("a selected batch accepts only unique creation proofs for the requested dom
   };
   const signal = new AbortController().signal;
   const selected = new Set([fixture.origin.id]);
-  const verified = await verifyCreatedAccess(
+  const { origins, permissions } = await verifyCreatedAccess(
     [fixture.origin],
     policy,
     history,
     signal,
     selected,
   );
+  expect(origins).toEqual([fixture.origin]);
   expect(
-    allows(verified, {
+    allows(permissions, {
       tenant: "test",
       version: "1",
       subjects: ["user:2"],

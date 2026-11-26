@@ -6,7 +6,7 @@ import {
 } from "@sortsys/v2-client";
 import { readSnapshotPages } from "@sortsys/zerotrust";
 import {
-  creationOrigin,
+  type CreationOrigin,
   InvalidProtectedData,
   record,
   revision,
@@ -20,11 +20,10 @@ import { verifyCreatedAccess } from "./createdAccess";
 type AccessOptions = Omit<QueryInput<"zerotrust.access.snapshot">, "known">;
 const MAX_ACCESS_PAGE_ITEMS = 128;
 const MAX_ORIGIN_PAGE_ITEMS = 640;
-type Inventory = Pick<
-  QueryResult<"zerotrust.access.snapshot">,
-  "domains" | "origins"
->;
-type CachedInventory = Inventory & {
+type Domains = QueryResult<"zerotrust.access.snapshot">["domains"];
+type CachedInventory = {
+  domains: Domains;
+  origins: CreationOrigin[];
   snapshot: string;
   subject: string;
   policySignature: string;
@@ -86,6 +85,7 @@ export async function verifiedAccessContext(
   }
 }
 
+type OriginPacket = QueryResult<"zerotrust.access.page">["origins"][number];
 type InventoryEntry =
   | {
       kind: "domain";
@@ -93,7 +93,7 @@ type InventoryEntry =
     }
   | {
       kind: "origin";
-      value: QueryResult<"zerotrust.access.page">["origins"][number];
+      value: OriginPacket;
     };
 
 async function readAccessContext(
@@ -182,8 +182,8 @@ async function readAccessContext(
       history,
       live,
     });
-  const domains: Inventory["domains"] = [];
-  const origins: Inventory["origins"] = [];
+  let domains: Domains = [];
+  let origins: CreationOrigin[];
   let permissions: Policy;
   if (input.unchanged) {
     if (
@@ -198,11 +198,10 @@ async function readAccessContext(
       input.after !== null
     )
       throw new InvalidProtectedData();
-    domains.push(...structuredClone(previous.domains));
-    origins.push(...structuredClone(previous.origins));
-    permissions = structuredClone(previous.permissions);
+    ({ domains, origins, permissions } = structuredClone(previous));
   } else {
     const returned = new Set<string>();
+    const originPackets: OriginPacket[] = [];
     for await (const page of readSnapshotPages<InventoryEntry>({
       maxItems: MAX_ACCESS_PAGE_ITEMS + originLimit,
       signal,
@@ -248,7 +247,7 @@ async function readAccessContext(
     })) {
       for (const entry of page) {
         if (entry.kind === "origin") {
-          origins.push(entry.value);
+          originPackets.push(entry.value);
           continue;
         }
         const domain = entry.value;
@@ -263,23 +262,22 @@ async function readAccessContext(
         domains.push(domain);
       }
     }
-    permissions = await verifyCreatedAccess(
-      origins,
+    ({ origins, permissions } = await verifyCreatedAccess(
+      originPackets,
       rootPolicy,
       history,
       signal,
       selected,
-    );
+    ));
   }
   live();
   if (!input.unchanged)
     cache?.set(includeDomains, {
-      ...structuredClone({ domains, origins }),
+      ...structuredClone({ domains, origins, permissions }),
       snapshot: input.snapshot,
       subject: input.subject,
       policySignature: input.policy.signature,
       authoritySignature: history.current.signature,
-      permissions: structuredClone(permissions),
     });
   return {
     account,
@@ -291,7 +289,7 @@ async function readAccessContext(
     contentEpoch: input.contentEpoch,
     permissions,
     domains,
-    origins: origins.filter((origin) => origin !== null).map(creationOrigin),
+    origins,
     pages: input.pages,
     live,
   };
