@@ -2242,6 +2242,70 @@ test(
   },
 );
 
+test("dashboard loads older activity only after expanding the preview", async () => {
+  const path = "personalization.activity.list";
+  const activities = Array.from({ length: 27 }, (_, index) => {
+    const number = index + 1;
+    return {
+      id: `event-${number}`,
+      action: "updated",
+      resourceType: "project",
+      resourceId: String(number),
+      resourceTitle: `Fixture project ${number}`,
+      title: `Fixture project ${number}`,
+      entityTable: "projects",
+      changedColumns: [],
+      occurredAt: new Date(Date.UTC(2026, 9, 27, 8, 0, -index)),
+    };
+  });
+
+  api.respond(path, ({ cursor, limit }) => {
+    const start = cursor
+      ? activities.findIndex(({ id }) => id === cursor) + 1
+      : 0;
+
+    return activities.slice(start, start + limit);
+  });
+  const activityRequests = () =>
+    api.requests
+      .filter((request) => request.path === path)
+      .map(({ input }) => [input.limit, input.cursor]);
+
+  await openApplication("/dashboard", "en");
+  const expand = page.getByRole("button", { name: "Show more", exact: true });
+  const collapse = page.getByRole("button", { name: "Show less", exact: true });
+  const older = page.getByRole("button", {
+    name: "Load older activities",
+    exact: true,
+  });
+  const rows = page.locator(".dashboard-activity-row");
+
+  await expand.waitFor();
+  assert.equal(await rows.count(), 6);
+  assert.deepEqual(activityRequests(), [[7, undefined]]);
+
+  await expand.click();
+  await rows.nth(24).waitFor();
+  assert.equal(await rows.count(), 25);
+  assert.deepEqual(activityRequests(), [[7, undefined], [18, "event-7"]]);
+
+  await collapse.click();
+  assert.equal(await rows.count(), 6);
+
+  await expand.click();
+  await rows.nth(24).waitFor();
+  assert.equal(activityRequests().length, 2);
+
+  await older.click();
+  await rows.nth(26).waitFor();
+  await older.waitFor({ state: "hidden" });
+  assert.deepEqual(activityRequests(), [
+    [7, undefined],
+    [18, "event-7"],
+    [25, "event-25"],
+  ]);
+});
+
 for (const locale of ["de", "en"]) {
   test(`dashboard wraps six quick actions on one wide row in ${locale}`, async () => {
     populateDashboard();

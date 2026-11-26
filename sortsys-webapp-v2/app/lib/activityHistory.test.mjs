@@ -73,6 +73,20 @@ describe("dashboard activity history", () => {
     expect(page).toEqual([item("2"), item("1")]);
   });
 
+  test("detects the end using the requested size, not the preview size", async () => {
+    const history = createActivityHistory([item("5"), item("4")], 2);
+    let request;
+
+    await history.loadOlder(async (cursor, limit) => {
+      request = { cursor, limit };
+      return [item("3"), item("2"), item("1")];
+    }, 4);
+
+    expect(request).toEqual({ cursor: "4", limit: 4 });
+    expect(history.getSnapshot().complete).toBe(true);
+    expect(history.getSnapshot().items).toHaveLength(5);
+  });
+
   test("suppresses simultaneous loads and notifies active subscribers", async () => {
     const history = createActivityHistory([item("4"), item("3")], 2);
     const response = deferred();

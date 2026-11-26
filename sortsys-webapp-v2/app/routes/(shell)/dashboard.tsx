@@ -24,6 +24,7 @@ import { visitLabel } from "~/lib/visitLabels";
 import { dailyReportDayKey } from "~/lib/tiles";
 import { useUserActions } from "~/lib/userActions";
 import {
+  useCallback,
   useEffect,
   useId,
   useMemo,
@@ -50,6 +51,7 @@ type VisitHistoryItem = {
 type ActivityItem = QueryResult<"personalization.activity.list">[number];
 
 const ACTIVITY_PAGE_SIZE = 25;
+const ACTIVITY_PREVIEW_SIZE = COLLAPSED_ACTIVITY_COUNT + 1;
 
 type PinnedVisit = Pick<VisitHistoryItem, "path" | "title" | "visitedAt">;
 
@@ -201,18 +203,21 @@ export default function DashboardPage() {
     any
   >(() => {
     return client.streamQuery("personalization.activity.list", {
-      limit: ACTIVITY_PAGE_SIZE,
+      limit: ACTIVITY_PREVIEW_SIZE,
       latestPerResource: true,
     });
-  }, []);
-  const [showAllActivity, setShowAllActivity] = useState(false);
+  }, [pinnedVisitsAccount]);
+  const [expandedActivityAccount, setExpandedActivityAccount] = useState<
+    string | null
+  >(null);
+  const showAllActivity = expandedActivityAccount === pinnedVisitsAccount;
   const activityId = useId();
   const activityRef = useRef<HTMLDivElement>(null);
   const activityHistory = useMemo(
     () =>
       createCursorHistory(
         activity ?? [],
-        ACTIVITY_PAGE_SIZE,
+        ACTIVITY_PREVIEW_SIZE,
         (item) => `${item.resourceType}:${item.resourceId}`,
       ),
     [activity, pinnedVisitsAccount],
@@ -245,41 +250,51 @@ export default function DashboardPage() {
     return groupActivity(visible);
   }, [activityState.items, showAllActivity, locale]);
 
+  const loadOlderActivity = useCallback(() => {
+    const pageSize =
+      activityHistory.getSnapshot().items.length === ACTIVITY_PREVIEW_SIZE
+        ? ACTIVITY_PAGE_SIZE - ACTIVITY_PREVIEW_SIZE
+        : ACTIVITY_PAGE_SIZE;
+
+    return activityHistory.loadOlder(
+      async (cursor, limit) => {
+        const [page, error] = await client.query(
+          "personalization.activity.list",
+          { limit, latestPerResource: true, cursor },
+        );
+
+        if (error || !page) {
+          throw error ?? new Error("Activity page is missing");
+        }
+
+        return page;
+      },
+      pageSize,
+    );
+  }, [activityHistory]);
+
   useEffect(() => {
-    setShowAllActivity(false);
-  }, [pinnedVisitsAccount]);
+    // Load the rest of the first page only when its details are visible.
+    if (
+      showAllActivity &&
+      activityHistory.getSnapshot().items.length === ACTIVITY_PREVIEW_SIZE
+    ) {
+      void loadOlderActivity();
+    }
+  }, [activityHistory, loadOlderActivity, showAllActivity]);
 
   function toggleActivityDetails() {
     const scrollBack =
       showAllActivity &&
       (activityRef.current?.getBoundingClientRect().top ?? 0) < 0;
 
-    setShowAllActivity((value) => !value);
+    setExpandedActivityAccount(showAllActivity ? null : pinnedVisitsAccount);
 
     if (scrollBack) {
       requestAnimationFrame(() =>
         activityRef.current?.scrollIntoView({ block: "start" }),
       );
     }
-  }
-
-  async function loadOlderActivity() {
-    await activityHistory.loadOlder(async (cursor) => {
-      const [page, error] = await client.query(
-        "personalization.activity.list",
-        {
-          limit: ACTIVITY_PAGE_SIZE,
-          latestPerResource: true,
-          cursor,
-        },
-      );
-
-      if (error || !page) {
-        throw error ?? new Error("Activity page is missing");
-      }
-
-      return page;
-    });
   }
 
   function isPinned(path: string) {

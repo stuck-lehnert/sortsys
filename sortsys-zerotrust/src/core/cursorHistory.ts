@@ -55,7 +55,10 @@ export function createCursorHistory<T extends { id: string }>(
         listeners.delete(listener);
       };
     },
-    async loadOlder(loadPage: (cursor: string) => Promise<readonly T[]>) {
+    async loadOlder(
+      loadPage: (cursor: string, limit: number) => Promise<readonly T[]>,
+      limit = pageSize,
+    ) {
       if (state.loading || state.complete || !cursor) {
         return;
       }
@@ -65,14 +68,14 @@ export function createCursorHistory<T extends { id: string }>(
       publish({ ...state, loading: true, error: false });
 
       try {
-        const page = await loadPage(requestedCursor);
+        const page = await loadPage(requestedCursor, limit);
 
         cursor = page.at(-1)?.id ?? requestedCursor;
 
         publish({
           items: uniqueBy([...state.items, ...page], keyOf),
           loading: false,
-          complete: page.length < pageSize || cursor === requestedCursor,
+          complete: page.length < limit || cursor === requestedCursor,
           error: false,
         });
       } catch {
