@@ -1,8 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
-import {
-  InvalidProtectedData,
-  verifyMigrationOrigin,
-} from "@sortsys/zerotrust/sortsys";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import type { BusinessDatabase } from "./database";
 import { readBusinessRows } from "./products";
@@ -15,7 +12,8 @@ import {
 } from "./legacyActivityData";
 import { prepareOwnerCollections } from "./prepareCollections";
 import { copyProtectedCollection } from "./copyCollection";
-import { protectedCollections, required } from "./protectedObjects";
+import { protectedCollections } from "./protectedObjects";
+import { verifyActivityCopies } from "./verifyActivityCopies";
 
 /** Convert the frozen original feed, including deleted entities and actors.
  * Ordinary source snapshots remain distinct from these actual past actions. */
@@ -59,10 +57,12 @@ export async function prepareActivities(
   const history = await trustedHistory(client);
   const open = await protectedCollections(client, signal);
   live();
-  for (const items of groups.values()) {
+  for (const [domain, items] of groups) {
+    live();
+
     const area = {
       ...items[0]!.area,
-      prefix: `${LEGACY_ACTIVITY_PREFIX}${items[0]!.area.domain}:`,
+      prefix: `${LEGACY_ACTIVITY_PREFIX}${domain}:`,
     };
     const byId = new Map(items.map((item) => [item.id, item]));
     await copyProtectedCollection(
@@ -79,34 +79,11 @@ export async function prepareActivities(
         return { source: item.source, occurredMicros: item.occurredMicros };
       },
     );
-    // A replayed migration must retain the same authority evidence, too. A
-    // matching body alone is insufficient when the API has omitted its origin.
-    for (let index = 0; index < items.length; index += 16)
-      await Promise.all(
-        items.slice(index, index + 16).map(async (item) => {
-          const stored = await required(
-            client.query(
-              "zerotrust.history.get",
-              { id: item.id, revision: "1" },
-              { strategy: "network-only" },
-            ),
-          );
-          live();
-          const proof = await verifyMigrationOrigin(
-            stored.envelope,
-            stored.migrationOrigin,
-            history.authority,
-          );
-          live();
-          if (
-            stored.domain !== area.domain ||
-            stored.envelope.object !== item.id ||
-            proof.history?.source !== item.source ||
-            proof.history.occurredMicros !== item.occurredMicros ||
-            stored.occurredMicros !== item.occurredMicros
-          )
-            throw new InvalidProtectedData();
-        }),
-      );
   }
+
+  live();
+  const copies = [...groups].flatMap(([domain, items]) =>
+    items.map((item) => ({ domain, item })),
+  );
+  await verifyActivityCopies(client, copies, history.authority, live);
 }
