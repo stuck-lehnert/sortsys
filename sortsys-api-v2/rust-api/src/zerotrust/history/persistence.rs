@@ -28,6 +28,20 @@ fn allowed(guard: &Security, area: &DomainDescriptor) -> RpcResult<()> {
     }
     Ok(())
 }
+
+fn initial_publication(row: ChangeRecord, stream: &str, object: &str) -> RpcResult<String> {
+    if row.object.object != object
+        || row.object.revision != "1"
+        || row.object.domain != stream
+        || row.deletion.is_some()
+        || row.previous.is_some()
+    {
+        return Err(invalid());
+    }
+
+    Ok(row.publication)
+}
+
 async fn first_publications(
     context: &MetadataContext,
     entries: &[JournalEntry],
@@ -56,16 +70,8 @@ async fn first_publications(
         .zip(first)
         .map(|((stream, object), first)| {
             let first = first.ok_or_else(invalid)?;
-            let value = recorded(&first)?;
-            if value.object.object != object
-                || value.object.revision != "1"
-                || value.object.domain != stream
-                || value.deletion.is_some()
-                || value.previous.is_some()
-            {
-                return Err(invalid());
-            }
-            Ok(((stream, object), value.publication))
+            let publication = initial_publication(recorded(&first)?, &stream, &object)?;
+            Ok(((stream, object), publication))
         })
         .collect()
 }
@@ -262,13 +268,32 @@ async fn get(
             .map(|message: String| metadata_journal_id(&message))
     };
     let result = if let Some(id) = id {
-        let entry = context
+        let origins = context
             .repository
-            .journal_get(&area.id, &id)
-            .await?
-            .ok_or_else(invalid)?;
+            .journal_origins(vec![key(&area.id, &input.id)])
+            .await?;
+        let [Some(origin)]: [Option<JournalEntry>; 1] =
+            origins.try_into().map_err(|_| invalid())?
+        else {
+            return Err(invalid());
+        };
+        let initial = initial_publication(recorded(&origin)?, &area.id, &input.id)?;
+
+        // A read of the creation event needs only the origin lookup. A
+        // different indexed publication must still use its own journal entry.
+        let entry = if origin.entry.id == id {
+            origin
+        } else {
+            context
+                .repository
+                .journal_get(&area.id, &id)
+                .await?
+                .ok_or_else(invalid)?
+        };
+
         let row = recorded(&entry)?;
-        if row.object.object != input.id
+        if entry.entry.id != id
+            || row.object.object != input.id
             || input
                 .revision
                 .as_ref()
@@ -276,11 +301,7 @@ async fn get(
         {
             return Err(invalid());
         }
-        let initial = first_publications(&context, std::slice::from_ref(&entry))
-            .await?
-            .into_values()
-            .next()
-            .ok_or_else(invalid)?;
+
         change(&mut context, &area, entry, initial).await?
     } else {
         None

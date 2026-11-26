@@ -535,6 +535,21 @@ export async function exerciseProjectAccess(
     const project = await required(ownerClient.mutate("projects.create", {
       title: projectTitle,
     }));
+    const id = projectCollection(project.id).prefix;
+    const first = await required(ownerClient.query(
+      "zerotrust.history.get", { id, revision: "1" }, fresh,
+    ));
+    const latest = await required(ownerClient.query(
+      "zerotrust.history.get", { id, revision: null }, fresh,
+    ));
+
+    assert.ok(first);
+    assert.equal(first.envelope.object, id);
+    assert.equal(first.envelope.revision, "1");
+    assert.equal(first.publication, first.initialPublication);
+    assert.equal(first.previous, null);
+    assert.deepEqual(latest, first);
+
     const user = await required(ownerClient.mutate("users.create", {
       username,
       firstName: "Projekt",
