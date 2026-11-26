@@ -5,9 +5,9 @@ import {
   type HistoryOrigin,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "./session";
-import { openAuthority } from "./setup";
+import { openVerifiedAuthority } from "./setup";
 import { required } from "../data/protectedObjects";
-import { readInitializationSource } from "./initializationSource";
+import { readVerifiedInitializationSource } from "./initializationSource";
 
 /** Shared by the ordinary source copier and conversions with atomic cross-area
  * publications. The authority key remains in the browser. */
@@ -22,18 +22,32 @@ export async function migrationOriginAttester(
     if (unlockedAccount() !== account || !client.loggedIn())
       throw new InvalidProtectedData();
   };
+  live();
   const history = await trustedHistory(client);
   live();
+
   const status = await required(
     client.query("zerotrust.status", undefined, { strategy: "network-only" }),
   );
   live();
-  const source = await readInitializationSource(client, signal);
+
+  const source = await readVerifiedInitializationSource(
+    client,
+    signal,
+    account,
+    history,
+  );
   live();
   if (!source?.source || source.completion || status.initialization)
     throw new InvalidProtectedData();
-  const authority = await openAuthority(client, status.profile);
+
+  const authority = await openVerifiedAuthority(
+    status.profile,
+    account,
+    history,
+  );
   live();
+
   return async (
     packet: MutateInput<"zerotrust.objects.save">,
     origin?: HistoryOrigin,

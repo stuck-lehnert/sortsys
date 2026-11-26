@@ -7,7 +7,7 @@ import {
   publicIdentity,
   type DomainDefinition,
 } from "@sortsys/zerotrust/sortsys";
-import { openAuthority } from "../crypto/setup";
+import { openVerifiedAuthority } from "../crypto/setup";
 import { trustedHistory, unlockedAccount } from "../crypto/session";
 import { publishVerifiedPolicy, readVerifiedPolicy } from "../crypto/policy";
 import { required } from "./protectedObjects";
@@ -52,7 +52,7 @@ export async function provisionOwnedCollections(
   if (subject !== `user:${session.user.id}`) throw new InvalidProtectedData();
   const history = await trustedHistory(client);
   live();
-  const authority = await openAuthority(client, status.profile);
+  const authority = await openVerifiedAuthority(status.profile, account, history);
   live();
   let { permissions } = await readVerifiedPolicy(client, {
     account,
