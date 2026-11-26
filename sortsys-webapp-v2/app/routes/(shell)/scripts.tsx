@@ -24,7 +24,7 @@ import { Icons } from "~/lib/icons";
 import {
   ScriptConsole,
   useClientScriptRunner,
-} from "~/lib/clientScriptRuntime";
+} from "~/lib/clientScriptConsole";
 import { NotFound } from "./_404";
 
 type ClientScriptSummary = QueryResult<"clientScripts.list">[number];

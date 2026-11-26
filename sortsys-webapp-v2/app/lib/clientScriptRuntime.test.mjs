@@ -1,5 +1,5 @@
 import { expect, spyOn, test } from "bun:test";
-import { lockCryptoSession } from "./crypto/session";
+import { lockCryptoSession, unlockedAccount } from "./crypto/session";
 import { protectedTenant } from "./data/testing/protectedTenant.mjs";
 
 globalThis.__SORTSYS_REVISION__ ??= "script-runtime-test";
@@ -56,11 +56,29 @@ test("a script does not create a worker while the account is locked", async () =
   });
 });
 
+test("execution cannot switch to an account unlocked while the runtime was loading", async () => {
+  await withScriptWorker(async (workers) => {
+    await protectedTenant([]);
+    const account = unlockedAccount();
+
+    await lockCryptoSession();
+    await protectedTenant([]);
+    expect(unlockedAccount()).not.toBe(account);
+
+    const result = await runClientScript({}, "const fixture = true;", { account });
+
+    expect(result).toMatchObject({ ok: false, error: { name: "AbortError" } });
+    expect(workers).toHaveLength(0);
+  });
+});
+
 test("locking ends the worker and drops a queued log from the previous unlock", async () => {
   await withScriptWorker(async (workers, listeners) => {
     await protectedTenant([]);
     const logs = [];
-    const running = runClientScript({}, "const fixture = true;", (entry) => logs.push(entry));
+    const running = runClientScript({}, "const fixture = true;", {
+      onLog: (entry) => logs.push(entry),
+    });
     const [worker] = workers;
     expect(worker.closed).toBe(false);
 

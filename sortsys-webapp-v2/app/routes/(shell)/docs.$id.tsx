@@ -10,7 +10,7 @@ import { ScriptEditor } from "~/components/ScriptEditor";
 import {
   ScriptConsole,
   useClientScriptRunner,
-} from "~/lib/clientScriptRuntime";
+} from "~/lib/clientScriptConsole";
 import {
   getDocArticle,
   getDocArticleSections,

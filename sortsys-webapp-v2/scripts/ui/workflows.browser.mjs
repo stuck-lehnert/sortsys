@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { once } from "node:events";
 import { after, afterEach, before, beforeEach, test } from "node:test";
 import { chromium } from "playwright";
 import AxeBuilder from "@axe-core/playwright";
@@ -4298,7 +4299,7 @@ test("client scripts do not render a draft editor for an empty listing", async (
   await checkPageLayout("client-scripts-empty");
 });
 
-test("a client script encodes binary data and logs its result in the worker", async () => {
+test("the client script worker is loaded on run and logs its binary encoding result", async () => {
   const code = `
 const { client } = await import("sortsys-client");
 const { log } = await import("sortsys-log");
@@ -4322,6 +4323,13 @@ if ("login" in client || "restoreSession" in client) {
 
 await log("Document encoding verified");`;
 
+  const runtimeRequests = [];
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname.includes("/bundle/clientScriptRuntime-")) {
+      runtimeRequests.push(request.url());
+    }
+  });
+
   await page.goto(`${server.origin}/crypto.html`);
   await page.waitForFunction(() => window.cryptoFixture);
   await page.evaluate(
@@ -4331,11 +4339,16 @@ await log("Document encoding verified");`;
   );
 
   await page.getByRole("button", { name: /Fixture script/ }).click();
-  await page.getByRole("button", { name: /^(Run|Ausführen)$/ }).click();
+  const run = page.getByRole("button", { name: /^(Run|Ausführen)$/ });
+  await run.waitFor();
+  assert.deepEqual(runtimeRequests, []);
+
+  await run.click();
   await page
     .getByRole("log", { name: "Script console" })
     .getByText("Document encoding verified", { exact: true })
     .waitFor();
+  assert.equal(runtimeRequests.length, 1);
 });
 
 test("locking the account stops a running client script worker", async () => {
