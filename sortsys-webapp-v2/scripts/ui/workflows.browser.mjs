@@ -8129,6 +8129,9 @@ for (const type of ["procurement", "calculation"]) {
     await page
       .getByRole("button", { name: "Create document", exact: true })
       .click();
+
+    const beforeChoices = api.requests.length;
+    api.hold("commercial.cases.headers");
     await page
       .getByRole("menuitem", {
         name: type === "procurement" ? "Price inquiry" : "Cost calculation",
@@ -8139,18 +8142,36 @@ for (const type of ["procurement", "calculation"]) {
       name: type === "procurement" ? "Price inquiry" : "Cost calculation",
       exact: true,
     });
-    await form
-      .getByRole("textbox", { name: /^Title/ })
-      .fill(type === "procurement" ? "Material order" : "Internal costing");
-    await form
-      .getByRole("button", {
-        name:
-          type === "procurement"
-            ? "Create price inquiry"
-            : "Create calculation",
-        exact: true,
-      })
-      .click();
+    const submit = form.getByRole("button", {
+      name: type === "procurement" ? "Create price inquiry" : "Create calculation",
+      exact: true,
+    });
+    try {
+      await form.getByText("Loading contracts …", { exact: true }).waitFor();
+      assert.equal(await form.getByText(/An accepted offer or variation/).count(), 0);
+      await form
+        .getByRole("textbox", { name: /^Title/ })
+        .fill(type === "procurement" ? "Material order" : "Internal costing");
+      assert.equal(await submit.isDisabled(), true);
+    } finally {
+      api.release("commercial.cases.headers");
+    }
+
+    await submit.and(page.locator(":enabled")).waitFor();
+    const choiceReads = api.requests.slice(beforeChoices);
+    assert.ok(
+      choiceReads.some(
+        ({ path, input }) =>
+          path === "commercial.cases.headers" && input?.projectId === "c",
+      ),
+    );
+    assert.equal(
+      choiceReads.some(({ path }) => path === "commercial.cases.list"),
+      false,
+      "Choosing an accepted contract must not load the paginated workflows",
+    );
+
+    await submit.click();
     const editor = page.getByRole("dialog", {
       name: type === "procurement" ? "Price inquiry" : "Cost calculation",
       exact: true,

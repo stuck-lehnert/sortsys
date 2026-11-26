@@ -2,11 +2,13 @@ import { useEffect, useState } from "react";
 import {
   Button,
   Checkbox,
+  InlineLoading,
   Select,
   SelectItem,
   TextInput,
 } from "@sortsys/react-components";
 import { GaebDocument } from "@sortsys/gaeb";
+import type { QueryResult } from "@sortsys/v2-client";
 import { client } from "~/lib/client";
 import { uiText } from "~/lib/i18n";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
@@ -16,10 +18,11 @@ import {
   deriveChecked,
   loadCommercialDocument,
   storeCommercialDocument,
-  type CommercialCase,
   type CommercialDocument,
 } from "~/lib/commercial";
 import { MyCallout } from "~/components/MyCallout";
+
+type ContractChoice = QueryResult<"commercial.cases.headers">[number];
 
 export function CommercialProjectForm({
   projectId,
@@ -34,7 +37,7 @@ export function CommercialProjectForm({
 }) {
   const session = useSessionInfo();
   const [title, setTitle] = useState("");
-  const [contracts, setContracts] = useState<CommercialCase[]>([]);
+  const [contracts, setContracts] = useState<ContractChoice[] | null>(null);
   const [parentId, setParentId] = useState("");
   const [source, setSource] = useState<{
     doc: CommercialDocument;
@@ -44,54 +47,74 @@ export function CommercialProjectForm({
   } | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [occupied, setOccupied] = useState(new Set<string>());
+  const [loadingSource, setLoadingSource] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [createdId, setCreatedId] = useState<string>();
   useEffect(() => {
     let active = true;
-    void client
-      .query(
-        "commercial.cases.list",
-        { projectId, limit: 200n },
-        { strategy: "network-only" },
-      )
-      .then(([values, error]) => {
-        if (!active) return;
-        if (error) {
-          setError(commercialError(error));
-          return;
-        }
-        const contracts = (values ?? []).filter(isAcceptedContract);
-        setContracts(contracts);
-        setParentId(contracts[0]?.id ?? "");
+
+    async function loadChoices() {
+      const options = { strategy: "network-only" } as const;
+      // Only subcontracting needs the positions that have already been assigned.
+      const subcontracts = kind === "subcontract";
+      const [values, failure] = subcontracts
+        ? await client.query(
+            "commercial.cases.list",
+            { projectId, limit: 200n },
+            options,
+          )
+        : await client.query("commercial.cases.headers", { projectId }, options);
+      if (!values) throw failure ?? new Error("load-failed");
+
+      if (!active) return;
+
+      const choices = values.filter(isAcceptedContract);
+      setContracts(choices);
+      setParentId(choices[0]?.id ?? "");
+
+      if (subcontracts) {
         setOccupied(
           new Set(
-            (values ?? [])
-              .filter(
-                (item) =>
-                  item.kind === "subcontract" &&
-                  ["awarded", "confirmed"].includes(item.status),
-              )
-              .flatMap((item) =>
-                Array.isArray(item.scopeItemIds)
-                  ? item.scopeItemIds
-                      .filter((id): id is string => typeof id === "string")
-                      .map((id) => `${item.parentCaseId}:${id}`)
-                  : [],
-              ),
+            values.flatMap((item) => {
+              if (
+                item.kind !== "subcontract" ||
+                !["awarded", "confirmed"].includes(item.status) ||
+                !("parentCaseId" in item) ||
+                typeof item.parentCaseId !== "string" ||
+                !("scopeItemIds" in item) ||
+                !Array.isArray(item.scopeItemIds)
+              ) {
+                return [];
+              }
+
+              const parentCaseId = item.parentCaseId;
+              return item.scopeItemIds
+                .filter((id): id is string => typeof id === "string")
+                .map((id) => `${parentCaseId}:${id}`);
+            }),
           ),
         );
-      });
+      }
+    }
+
+    void loadChoices().catch((failure) => {
+      if (active) setError(commercialError(failure));
+    });
+
     return () => {
       active = false;
     };
-  }, [projectId]);
+  }, [projectId, kind]);
+
   useEffect(() => {
     if (!parentId) return;
+
     let active = true;
-    setBusy(true);
+    setLoadingSource(true);
     setSource(null);
     setError("");
+
     void (async () => {
       const [value, error] = await client.query(
         "commercial.cases.get",
@@ -99,43 +122,47 @@ export function CommercialProjectForm({
         { strategy: "network-only" },
       );
       if (error || !value) throw error ?? new Error("load-failed");
+      if (!active) return;
+
       const doc =
         value.documents.find((doc) => doc.purpose === "order") ??
         value.documents.find((doc) => doc.purpose === "offer");
       if (!doc) throw new Error("workflow-reference-required");
       const loaded = await loadCommercialDocument(parentId, doc.id);
+      if (!active) return;
+
       const model = new GaebDocument(loaded.xml, doc.fileName);
       const scope =
         model.phase === "84" && loaded.referenceXml
           ? new GaebDocument(loaded.referenceXml, "reference.xml")
           : model;
-      if (active) {
-        setSource({
-          doc,
-          xml: loaded.xml,
-          referenceXml: loaded.referenceXml ?? undefined,
-          scope,
-        });
-        setSelected(
-          kind !== "subcontract"
-            ? scope.items.map((item) => item.element.getAttribute("ID")!)
-            : [],
-        );
-      }
+      setSource({
+        doc,
+        xml: loaded.xml,
+        referenceXml: loaded.referenceXml ?? undefined,
+        scope,
+      });
+      setSelected(
+        kind !== "subcontract"
+          ? scope.items.map((item) => item.element.getAttribute("ID")!)
+          : [],
+      );
     })()
       .catch((error) => {
         if (active) setError(commercialError(error));
       })
       .finally(() => {
-        if (active) setBusy(false);
+        if (active) setLoadingSource(false);
       });
+
     return () => {
       active = false;
     };
   }, [parentId, kind]);
   const create = async (event: React.FormEvent) => {
     event.preventDefault();
-    if (!source) return;
+    if (!source || loadingSource || busy) return;
+
     setBusy(true);
     setError("");
     try {
@@ -230,12 +257,13 @@ export function CommercialProjectForm({
           "Related contract / variation",
         )}
         value={parentId}
-        disabled={busy || !!createdId}
-        onChange={(event: { target: { value: string } }) =>
-          setParentId(event.target.value)
-        }
+        disabled={!contracts?.length || busy || loadingSource || !!createdId}
+        onChange={(event: { target: { value: string } }) => {
+          setSource(null);
+          setParentId(event.target.value);
+        }}
       >
-        {contracts.map((item) => (
+        {contracts?.map((item) => (
           <SelectItem
             key={item.id}
             value={item.id}
@@ -243,7 +271,23 @@ export function CommercialProjectForm({
           />
         ))}
       </Select>
-      {!contracts.length && !busy && (
+      {!contracts && !error && (
+        <InlineLoading
+          description={uiText(
+            "Aufträge werden geladen …",
+            "Loading contracts …",
+          )}
+        />
+      )}
+      {loadingSource && (
+        <InlineLoading
+          description={uiText(
+            "Positionen werden geladen …",
+            "Loading contract items …",
+          )}
+        />
+      )}
+      {contracts?.length === 0 && (
         <p className="text-sm">
           {uiText(
             "Es wird zuerst ein angenommenes Angebot oder ein angenommener Nachtrag in diesem Projekt benötigt.",
@@ -317,7 +361,7 @@ export function CommercialProjectForm({
         <Button
           type="submit"
           loading={busy}
-          disabled={!title.trim() || !source || !selected.length}
+          disabled={!title.trim() || !source || loadingSource || !selected.length}
         >
           {kind === "subcontract"
             ? uiText("Leistungspaket anlegen", "Create work package")
