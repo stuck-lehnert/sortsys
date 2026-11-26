@@ -57,7 +57,9 @@ test("administration SQL is read locally and only the selected tenant's exact sc
   expect(archived).not.toContain("Private old credential");
   expect(archived).not.toContain("Other tenant secret");
   expect(archived).not.toContain("other-tenant");
-  expect(checkedImportHistory(JSON.parse(archived))).toEqual(selected);
+  expect(await checkedImportHistory(JSON.parse(archived), signal())).toEqual(
+    selected,
+  );
   await expect(
     selectImportHistory(dump, "missing-tenant", signal()),
   ).rejects.toThrow();
@@ -81,7 +83,12 @@ test("source validation rejects duplicate identities, foreign tenants, forged st
     { ...source, records: [] },
     { ...source, extra: "untrusted" },
   ])
-    expect(() => checkedImportHistory(invalid)).toThrow();
+    await expect(checkedImportHistory(invalid, signal())).rejects.toThrow();
+
+  const cancelled = new DOMException("Cancelled", "AbortError");
+  await expect(
+    checkedImportHistory(source, AbortSignal.abort(cancelled)),
+  ).rejects.toBe(cancelled);
   await expect(
     selectImportHistory(
       new Blob([scanSourceSql([oldScan(), oldScan()])]),

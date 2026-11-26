@@ -59,7 +59,6 @@ import {
 import { prepareToolReturnKeys, signToolReturn } from "./toolReturnKey";
 import { loadToolReturns, type ToolReturns } from "./toolReturns";
 import type { createProtectedProjects } from "./projects";
-import { createProtectedPersonnel } from "./personnel";
 import {
   deleteToolUsage,
   preparePriorToolUsage,
@@ -469,6 +468,10 @@ export function createProtectedTools(
     if (user == null) return null;
     addressId(user);
     if ((await actor()).user.id === user) return addressId(user);
+
+    const { createProtectedPersonnel } = await import("./personnel");
+    live();
+
     const personnel = createProtectedPersonnel(client, signal, driver);
     try {
       const reference = await personnel.reference(user as string);

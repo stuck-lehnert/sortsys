@@ -1,9 +1,5 @@
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { masterRecord, type MasterRecord } from "../crypto/masterRecord";
-import {
-  importHistoryOrigin,
-  legacyImportEntry,
-} from "../data/migrateImportHistory";
 import { readBusinessRows } from "../data/products";
 import type { BusinessDatabase } from "../data/database";
 import { uiText } from "../i18n";
@@ -60,7 +56,10 @@ export async function inspectImportHistory(file: Blob, signal: AbortSignal) {
   return [...tenants].map(([tenant, entries]) => ({ tenant, entries }));
 }
 
-export function checkedImportHistory(input: unknown): ImportHistorySource {
+export async function checkedImportHistory(
+  input: unknown,
+  signal: AbortSignal,
+): Promise<ImportHistorySource> {
   const value = record(input, ["format", "tenant", "records"]);
   const tenant = tenantName(value.tenant);
   if (
@@ -70,6 +69,12 @@ export function checkedImportHistory(input: unknown): ImportHistorySource {
     value.records.length > MAX_ENTRIES
   )
     throw new InvalidProtectedData();
+
+  signal.throwIfAborted();
+  const { importHistoryOrigin, legacyImportEntry } =
+    await import("../data/migrateImportHistory");
+  signal.throwIfAborted();
+
   const ids = new Set<string>();
   const records = value.records.map((input) => {
     const raw = record(input, ["format", "collection", "columns", "values"]);
@@ -84,7 +89,7 @@ export function checkedImportHistory(input: unknown): ImportHistorySource {
     ids.add(row);
     return source;
   });
-  if (ids.size !== records.length) throw new InvalidProtectedData();
+
   return { format: value.format, tenant, records };
 }
 
@@ -131,11 +136,10 @@ export async function selectImportHistory(
       );
     records.push(source);
   }
-  return checkedImportHistory({
-    format: "sortsys-import-history-source-v1",
-    tenant,
-    records,
-  });
+  return checkedImportHistory(
+    { format: "sortsys-import-history-source-v1", tenant, records },
+    signal,
+  );
 }
 
 export async function checkImportHistoryUsers(

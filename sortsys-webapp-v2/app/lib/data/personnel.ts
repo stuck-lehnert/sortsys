@@ -65,6 +65,22 @@ function comparePersonnel(a: User, b: User) {
     a.firstName.toLocaleLowerCase().localeCompare(b.firstName.toLocaleLowerCase());
 }
 
+export async function verifyPersonnelRecord(
+  client: Client,
+  signal: AbortSignal,
+  id: string,
+  driver?: () => Promise<DuckDriver>,
+) {
+  signal.throwIfAborted();
+  const personnel = createProtectedPersonnel(client, signal, driver);
+
+  try {
+    await personnel.query("users.get", { id });
+  } finally {
+    personnel.close();
+  }
+}
+
 export function createProtectedPersonnel(
   client: Client,
   signal: AbortSignal,

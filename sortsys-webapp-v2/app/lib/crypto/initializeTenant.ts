@@ -21,7 +21,6 @@ import {
 import { PRINT_OBJECT, printTemplatePayload } from "../data/printTemplateData";
 import { initializeDeliveryRegistry } from "../data/deliveryRegistry";
 import { TOOL_INDEX, TOOL_INDEX_MODEL } from "../data/toolData";
-import { createProtectedPersonnel } from "../data/personnel";
 import { PERSONNEL_FACETS, personnelCollection } from "../data/personnelData";
 import { openAuthority } from "./setup";
 import { trustedHistory, unlockedAccount } from "./session";
@@ -174,12 +173,8 @@ export async function initializeTenant(
     }
     live();
   }
-  const personnel = createProtectedPersonnel(client, signal, driver);
-  try {
-    await personnel.query("users.get", { id: session.user.id });
-  } finally {
-    personnel.close();
-  }
+  const { verifyPersonnelRecord } = await import("../data/personnel");
+  await verifyPersonnelRecord(client, signal, session.user.id, driver);
   for (const namespace of CREATION_NAMESPACES) {
     const [existing, error] = await client.query(
       "zerotrust.creations.capability",

@@ -433,7 +433,10 @@ export async function openBackupArchive(
           "application/json",
           signal,
         );
-        history = checkedImportHistory(JSON.parse(await blob.text()));
+        history = await checkedImportHistory(
+          JSON.parse(await blob.text()),
+          signal,
+        );
         await checkImportHistoryUsers(history, opened.database);
       }
       const objects = new Map<string, ArchivedObject>();

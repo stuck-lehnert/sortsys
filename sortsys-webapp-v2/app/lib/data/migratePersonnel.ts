@@ -10,7 +10,6 @@ import {
   personnelCollection,
   personnelPart,
 } from "./personnelData";
-import { createProtectedPersonnel } from "./personnel";
 import { required } from "./protectedObjects";
 
 export async function preparePersonnel(
@@ -43,12 +42,8 @@ export async function preparePersonnel(
       );
     }
   const account = await required(
-      client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-    ),
-    personnel = createProtectedPersonnel(client, signal, driver);
-  try {
-    await personnel.query("users.get", { id: account.user.id });
-  } finally {
-    personnel.close();
-  }
+    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
+  );
+  const { verifyPersonnelRecord } = await import("./personnel");
+  await verifyPersonnelRecord(client, signal, account.user.id, driver);
 }

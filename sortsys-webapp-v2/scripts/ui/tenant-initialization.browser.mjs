@@ -8,7 +8,9 @@ let server;
 before(async () => {
   server = await createFixtureServer();
   try {
-    browser = await chromium.launch();
+    browser = await chromium.launch({
+      executablePath: process.env.SORTSYS_E2E_CHROMIUM,
+    });
   } catch (error) {
     await server.close();
     throw error;
