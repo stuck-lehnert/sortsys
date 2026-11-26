@@ -58,6 +58,7 @@ import {
 } from "./toolResponsibility";
 import { prepareToolReturnKeys, signToolReturn } from "./toolReturnKey";
 import { loadToolReturns, type ToolReturns } from "./toolReturns";
+import { timestampMicros } from "./timestamps";
 import type { createProtectedProjects } from "./projects";
 import {
   deleteToolUsage,
@@ -135,6 +136,19 @@ function cost(
   if (!request) return null;
   return values(view, request)[column] as number | null;
 }
+function describeTool(
+  value: ToolPart,
+  fields: ToolPart["rows"][number]["values"],
+): ToolChoice {
+  return {
+    id: value.id,
+    customId: Number(fields.custom_id),
+    brand: fields.brand as string,
+    category: fields.category as string,
+    label: fields.label as string | null,
+  };
+}
+
 function wireTool(
   view: DataView,
   request: PartRequest,
@@ -145,11 +159,7 @@ function wireTool(
   const p = values(view, request);
   const activeTrackingId = activeToolBooking(view, value, returned);
   return {
-    id: value.id,
-    customId: Number(p.custom_id),
-    brand: p.brand as string,
-    category: p.category as string,
-    label: p.label as string | null,
+    ...describeTool(value, p),
     purchasePrice: cost(view, requests, "tool", value.id, "purchase_price"),
     usageCostPerDay: cost(
       view,
@@ -514,15 +524,7 @@ export function createProtectedTools(
     throw new InvalidProtectedData();
   };
   function toolChoice(view: DataView, request: PartRequest): ToolChoice {
-    const value = document(view, request)!.value;
-    const record = values(view, request);
-    return {
-      id: value.id,
-      customId: Number(record.custom_id),
-      brand: record.brand as string,
-      category: record.category as string,
-      label: record.label as string | null,
-    };
+    return describeTool(document(view, request)!.value, values(view, request));
   }
   function active(view: DataView, request: PartRequest) {
     return !document(view, request)!.value.deleted;
@@ -842,7 +844,8 @@ export function createProtectedTools(
                 .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime()),
             );
           }
-          const inventories = matching(selected, "tool", "measurement").flatMap(
+          const measurements = matching(selected, "tool", "measurement");
+          const inventories = measurements.flatMap(
             (request) =>
               document(view, request)!.value.deleted
                 ? []
@@ -870,54 +873,71 @@ export function createProtectedTools(
             days > 3650
           )
             throw new InvalidProtectedData();
+
           const threshold = Date.now() - days * 86400000;
+          const measurementDomains = new Set(
+            measurements.map((request) => request.area.domain),
+          );
+          const latestInventory = new Map<string, Date>();
+          for (const { toolId, createdAt } of inventories) {
+            const previous = latestInventory.get(toolId);
+            if (!previous || createdAt > previous)
+              latestInventory.set(toolId, createdAt);
+          }
+
+          const latestTracking = new Map<
+            string,
+            {
+              started: bigint;
+              bookingId: bigint;
+              responsibleUserId: string | null;
+            }
+          >();
+          for (const request of trackingRequests) {
+            const row = values(view, request);
+            const toolId = publicId(row.tool_id);
+            const started = timestampMicros(row.started_at as string);
+            const bookingId = BigInt(row.id as string);
+            const previous = latestTracking.get(toolId);
+            if (
+              !previous ||
+              started > previous.started ||
+              (started === previous.started && bookingId > previous.bookingId)
+            ) {
+              latestTracking.set(toolId, {
+                started,
+                bookingId,
+                responsibleUserId: id(row.responsible_user_id),
+              });
+            }
+          }
+
           return tools
-            .filter((request) =>
-              selected.some(
-                (part) =>
-                  part.area.domain ===
-                  toolCollection(
-                    "tool",
-                    document(view, request)!.value.id,
-                    "measurement",
-                  ).domain,
-              ),
-            )
-            .map((request) => {
-              const tool = wireTool(view, request, selected, returned);
-              const recent = inventories
-                .filter((value) => value.toolId === tool.id)
-                .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
-              const tracking = trackingRequests
-                .filter(
-                  (request) =>
-                    values(view, request).tool_id === addressId(tool.id),
-                )
-                .map((request) => wireTracking(view, request, selected))
-                .sort(
-                  (a, b) => b.startedAt.getTime() - a.startedAt.getTime(),
-                )[0];
-              return {
-                id: tool.id,
-                customId: tool.customId,
-                brand: tool.brand,
-                category: tool.category,
-                label: tool.label,
-                status: tool.status,
-                available: tool.available,
-                archivedSince: tool.archivedSince,
-                lastInventoryAt: recent[0]?.createdAt ?? null,
-                lastResponsibleUserId: tracking?.responsibleUserId ?? null,
-                lastResponsibleFirstName: null,
-                lastResponsibleLastName: null,
-              };
+            .flatMap((request) => {
+              const value = document(view, request)!.value;
+              const measurement = toolCollection("tool", value.id, "measurement");
+              if (!measurementDomains.has(measurement.domain)) return [];
+
+              const lastInventoryAt = latestInventory.get(value.id) ?? null;
+              const hadInventory =
+                lastInventoryAt !== null && lastInventoryAt.getTime() >= threshold;
+              if (hadInventory !== p.hadInventory) return [];
+
+              const fields = values(view, request);
+              return [
+                {
+                  ...describeTool(value, fields),
+                  status: fields.status as "lost" | "broken" | null,
+                  available: activeToolBooking(view, value, returned) === null,
+                  archivedSince: date(fields.archived_since),
+                  lastInventoryAt,
+                  lastResponsibleUserId:
+                    latestTracking.get(value.id)?.responsibleUserId ?? null,
+                  lastResponsibleFirstName: null,
+                  lastResponsibleLastName: null,
+                },
+              ];
             })
-            .filter(
-              (tool) =>
-                (tool.lastInventoryAt !== null &&
-                  tool.lastInventoryAt.getTime() >= threshold) ===
-                p.hadInventory,
-            )
             .sort((a, b) => a.customId - b.customId);
         },
         (request) => {
