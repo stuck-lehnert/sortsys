@@ -1,5 +1,7 @@
 const encoder = new TextEncoder();
 const decoder = new TextDecoder("utf-8", { fatal: true });
+const base64urlAlphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
+const maxBase64Bytes = 24 * 1024 * 1024;
 
 export class InvalidProtectedData extends Error {
   constructor() {
@@ -27,26 +29,42 @@ export function base64(value: BufferSource): string {
   return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
 }
 
-export function unbase64(
+/** Validate canonical, unpadded base64url without allocating decoded bytes. */
+export function base64ByteLength(
   value: string,
-  maximum = 24 * 1024 * 1024,
-): Uint8Array<ArrayBuffer> {
+  maximum = maxBase64Bytes,
+): number {
+  if (typeof value !== "string") throw new InvalidProtectedData();
+
+  const bits = value.length * 6;
+  const length = Math.floor(bits / 8);
   if (
-    value.length > Math.ceil(maximum * 4 / 3) ||
-    !/^[A-Za-z0-9_-]*$/.test(value)
+    length > maximum ||
+    value.length % 4 === 1 ||
+    /[^A-Za-z0-9_-]/.test(value)
   ) {
     throw new InvalidProtectedData();
   }
 
+  // Unused bits in the last digit must be zero, even when atob accepts them.
+  const unusedBits = bits % 8;
+  if (unusedBits > 0) {
+    const lastDigit = base64urlAlphabet.indexOf(value[value.length - 1]!);
+    if (lastDigit % (1 << unusedBits) !== 0) throw new InvalidProtectedData();
+  }
+  return length;
+}
+
+export function unbase64(
+  value: string,
+  maximum = maxBase64Bytes,
+): Uint8Array<ArrayBuffer> {
+  const length = base64ByteLength(value, maximum);
   try {
     const binary = atob(value.replaceAll("-", "+").replaceAll("_", "/"));
-    const result = new Uint8Array(binary.length);
-    for (let i = 0; i < binary.length; i++) {
+    const result = new Uint8Array(length);
+    for (let i = 0; i < length; i++) {
       result[i] = binary.charCodeAt(i);
-    }
-
-    if (result.length > maximum || base64(result) !== value) {
-      throw new InvalidProtectedData();
     }
     return result;
   } catch {

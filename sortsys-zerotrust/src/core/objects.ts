@@ -1,5 +1,6 @@
 import {
   base64,
+  base64ByteLength,
   digest,
   frame,
   identifier,
@@ -132,14 +133,14 @@ export function createObjectCodec<const F extends string>(
     sized(obj.nonce as string, 12);
     sized(obj.wrappedKey as string, 40);
     sized(obj.signature as string, 64);
-    const ciphertext = unbase64(
+    const ciphertextLength = base64ByteLength(
       obj.ciphertext as string,
       MAX_CONTENT_BYTES + 16,
     );
     if (
-      ciphertext.length < 16 ||
+      ciphertextLength < 16 ||
       (obj.format === TOMBSTONE_FORMAT &&
-        (ciphertext.length !== 16 || obj.revision === "1"))
+        (ciphertextLength !== 16 || obj.revision === "1"))
     )
       throw new InvalidProtectedData();
     return { ...obj } as EncryptedObject<F>;
