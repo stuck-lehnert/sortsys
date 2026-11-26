@@ -112,6 +112,14 @@ const actionBits = new Map(
 );
 const areaKey = (scope: string, facet: string) => `${scope}\0${facet}`;
 
+function sameOrder<T>(left: readonly T[], right: readonly T[]): boolean {
+  if (left.length !== right.length) return false;
+  for (const [index, value] of left.entries()) {
+    if (value !== right[index]) return false;
+  }
+  return true;
+}
+
 export function createPolicyCodec<
   const F extends string,
   O extends string = never,
@@ -307,7 +315,14 @@ export function createPolicyCodec<
     transaction?: PolicyTransaction,
     administration?: PolicyAdministration<F, O>,
   ): Uint8Array<ArrayBuffer> {
-    const current = policy(input);
+    return parsedPolicyFrame(policy(input), transaction, administration);
+  }
+
+  function parsedPolicyFrame(
+    current: Policy<F, O>,
+    transaction?: PolicyTransaction,
+    administration?: PolicyAdministration<F, O>,
+  ): Uint8Array<ArrayBuffer> {
     const rules = current.rules.map(ruleFrame);
     const fields = [current.tenant, current.version];
     if (current.suspended !== undefined) {
@@ -419,10 +434,25 @@ export function createPolicyCodec<
         profiles,
         root.signature,
       );
+      // These are validated rule fields in their signed order. Comparing
+      // them does not require producing a second copy of either signed frame.
       if (
-        JSON.stringify(rules.map(ruleFrame)) !==
-          JSON.stringify(permissions.rules.map(ruleFrame)) ||
-        JSON.stringify(root.suspended) !== JSON.stringify(permissions.suspended)
+        rules.length !== permissions.rules.length ||
+        rules.some((rule, index) => {
+          const actual = permissions.rules[index];
+          return (
+            !actual ||
+            rule.subject !== actual.subject ||
+            rule.scope !== actual.scope ||
+            rule.facet !== actual.facet ||
+            rule.effect !== actual.effect ||
+            rule.origin !== actual.origin ||
+            !sameOrder(rule.actions, actual.actions)
+          );
+        }) ||
+        (root.suspended === undefined || permissions.suspended === undefined
+          ? root.suspended !== permissions.suspended
+          : !sameOrder(root.suspended, permissions.suspended))
       )
         throw new InvalidProtectedData();
       administration = {
@@ -459,7 +489,7 @@ export function createPolicyCodec<
       administration: ___,
       ...permissions
     } = input;
-    return policy(permissions);
+    return permissions;
   }
 
   function canAdminister(input: Policy<F, O>, subject: string): boolean {
@@ -503,7 +533,7 @@ export function createPolicyCodec<
     };
     const signature = await sign(
       key,
-      policyFrame(permissions, transaction, administration),
+      parsedPolicyFrame(permissions, transaction, administration),
     );
     return parseSigned({ ...candidate, signature });
   }
@@ -541,7 +571,7 @@ export function createPolicyCodec<
     const permissions = policy(input);
     return {
       ...permissions,
-      signature: await sign(authority, policyFrame(permissions)),
+      signature: await sign(authority, parsedPolicyFrame(permissions)),
     };
   }
 
@@ -559,6 +589,7 @@ export function createPolicyCodec<
       version: (BigInt(current.version) + 1n).toString(),
     };
     if (!current.administration) return signPolicy(permissions, authority);
+    revision(permissions.version);
     const administration = {
       ...current.administration,
       previousSignature: current.signature,
@@ -566,7 +597,7 @@ export function createPolicyCodec<
     };
     const signature = await sign(
       authority,
-      policyFrame(permissions, undefined, administration),
+      parsedPolicyFrame(permissions, undefined, administration),
     );
     return parseSigned({ ...permissions, administration, signature });
   }
@@ -581,7 +612,7 @@ export function createPolicyCodec<
     return {
       ...permissions,
       transaction,
-      signature: await sign(authority, policyFrame(permissions, transaction)),
+      signature: await sign(authority, parsedPolicyFrame(permissions, transaction)),
     };
   }
 
@@ -589,14 +620,20 @@ export function createPolicyCodec<
     input: unknown,
     expected: { tenant: string; authority: CryptoKey },
   ): Promise<VerifiedPolicy<F, O>> {
-    const value = parseSigned(input);
+    return verifyParsedPolicy(parseSigned(input), expected);
+  }
+
+  async function verifyParsedPolicy(
+    value: SignedPolicy<F, O>,
+    expected: { tenant: string; authority: CryptoKey },
+  ): Promise<VerifiedPolicy<F, O>> {
     const { signature, transaction, administration } = value;
     const permissions = unsignedPolicy(value);
-    if (permissions.tenant !== expected.tenant || typeof signature !== "string")
+    if (permissions.tenant !== expected.tenant)
       throw new InvalidProtectedData();
     let signer = expected.authority;
     if (administration) {
-      const root = await verifyPolicy(administration.root, expected);
+      const root = await verifyParsedPolicy(administration.root, expected);
       if (!canAdminister(root.permissions, administration.author.user))
         throw new InvalidProtectedData();
       await verify(
@@ -627,7 +664,7 @@ export function createPolicyCodec<
     await verify(
       signer,
       signature,
-      policyFrame(permissions, transaction, administration),
+      parsedPolicyFrame(permissions, transaction, administration),
     );
     return {
       permissions,

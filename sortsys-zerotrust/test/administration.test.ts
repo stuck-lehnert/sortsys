@@ -233,6 +233,25 @@ test("only the authority can continue delegated profiles at a new write version"
     ),
   ).toBe(true);
   await f.framework.policies.verifyPolicy(subsequent, expected);
+
+  const last = await f.framework.policies.signAdministrativePolicy(
+    {
+      root: f.root,
+      profiles: [await f.profile()],
+      author: f.manager.certificate,
+      previousSignature: continued.signature,
+      version: "9223372036854775807",
+    },
+    f.manager.identity.signingKey.privateKey,
+  );
+  await f.framework.policies.verifyPolicy(last, expected);
+  await expect(
+    f.framework.policies.signPolicyContinuation(
+      last,
+      binding,
+      f.authority.signingKey.privateKey,
+    ),
+  ).rejects.toThrow();
 });
 
 test("a delegated replacement must change at least one authorized profile", async () => {
@@ -330,6 +349,18 @@ test("tampering with profile, signer, generation, root or derived rules is rejec
   const attempts = [
     (value: typeof f.delegated) => {
       value.rules = [];
+    },
+    (value: typeof f.delegated) => {
+      value.rules.reverse();
+    },
+    (value: typeof f.delegated) => {
+      value.rules[0]!.actions.reverse();
+    },
+    (value: typeof f.delegated) => {
+      value.rules[0]!.effect = "deny";
+    },
+    (value: typeof f.delegated) => {
+      delete value.suspended;
     },
     (value: typeof f.delegated) => {
       value.suspended = ["researcher:ada"];
