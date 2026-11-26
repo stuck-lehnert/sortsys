@@ -118,13 +118,15 @@ function OrganizationAdministration() {
     );
   }, [selected]);
 
+  const hasOpened = (tab: string) => selected === tab || visited.has(tab);
+
   const [defaultSupervisorErr, setDefaultSupervisorErr] = useState<
     string | null
   >(null);
   const [isDefaultSupervisorClearing, setIsDefaultSupervisorClearing] =
     useState(false);
-  const staffRequested = selected === "staff" || visited.has("staff");
-  const usageRequested = selected === "usage" || visited.has("usage");
+  const staffRequested = hasOpened("staff");
+  const usageRequested = hasOpened("usage");
 
   const [users, usersError] = useClientStream(
     () => (staffRequested ? client.streamQuery("users.list", {}) : EMPTY),
@@ -219,14 +221,14 @@ function OrganizationAdministration() {
           shouldForceMount
           className={selected === "organization" ? "pt-4" : "hidden"}
         >
-          <OrganizationDetailsForm />
+          {hasOpened("organization") && <OrganizationDetailsForm />}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="security"
           shouldForceMount
           className={selected === "security" ? "pt-4" : "hidden"}
         >
-          {visited.has("security") && (
+          {hasOpened("security") && (
             <Suspense
               fallback={
                 <Loading active description={uiText("Lädt …", "Loading…")} />
@@ -255,23 +257,21 @@ function OrganizationAdministration() {
           shouldForceMount
           className={selected === "invoices" ? "pt-4" : "hidden"}
         >
-          <InvoiceNumberingForm />
+          {hasOpened("invoices") && <InvoiceNumberingForm />}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="offer-numbers"
           shouldForceMount
           className={selected === "offer-numbers" ? "pt-4" : "hidden"}
         >
-          {(selected === "offer-numbers" || visited.has("offer-numbers")) && (
-            <InvoiceNumberingForm forOffers />
-          )}
+          {hasOpened("offer-numbers") && <InvoiceNumberingForm forOffers />}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="templates"
           shouldForceMount
           className={selected === "templates" ? "pt-4" : "hidden"}
         >
-          {visited.has("templates") && (
+          {hasOpened("templates") && (
             <Suspense
               fallback={
                 <Loading
@@ -292,7 +292,7 @@ function OrganizationAdministration() {
           shouldForceMount
           className={selected === "logo" ? "pt-4" : "hidden"}
         >
-          {visited.has("logo") && <OrganizationLogoSettings />}
+          {hasOpened("logo") && <OrganizationLogoSettings />}
         </HeroTabs.Panel>
         <HeroTabs.Panel
           id="staff"

@@ -5566,6 +5566,31 @@ for (const [locale, width] of [
   });
 }
 
+test("administration opens settings on demand and keeps a draft when switching tabs", async () => {
+  await openApplication("/admin?tab=invoices");
+  const scheme = page.getByRole("button", { name: /Invoice numbering scheme/ });
+  const start = page.getByRole("textbox", { name: /^Global starting number/ });
+  await scheme.and(page.locator(":enabled")).waitFor();
+
+  const reads = (path) => api.requests.filter((request) => request.path === path).length;
+  assert.equal(reads("settings.invoiceNumbering.get"), 1);
+  assert.equal(reads("settings.organization.get"), 0);
+  await start.fill("9007199254740993");
+
+  await page.getByRole("tab", { name: "Company details", exact: true }).click();
+  const company = page.getByRole("textbox", { name: /^Company name/ });
+  await company.waitFor({ state: "visible" });
+  await page.waitForFunction(
+    () => document.querySelector('input[name="companyName"]')?.value === "Fixture Company",
+  );
+  assert.equal(reads("settings.organization.get"), 1);
+
+  await page.getByRole("tab", { name: "Invoice numbers", exact: true }).click();
+  assert.equal(await start.inputValue(), "9007199254740993");
+  assert.equal(reads("settings.invoiceNumbering.get"), 1);
+  assert.equal(reads("settings.invoiceNumbering.set"), 0);
+});
+
 async function createOfferInEditor(title) {
   const state = seedContractorWorkflows();
   await openApplication("/offers", "en");
