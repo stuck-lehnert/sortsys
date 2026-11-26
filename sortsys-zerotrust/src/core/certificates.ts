@@ -162,7 +162,12 @@ function checkedIdentityCertificateFrame(
  * A successful signature does not establish current membership or access. */
 export async function verifyIdentityCertificate(
   input: unknown,
-  expected: { tenant: string; user: string; generation?: string },
+  expected: {
+    tenant: string;
+    user: string;
+    generation?: string;
+    keys?: Pick<IdentityCertificate, "encryptionKey" | "signingKey">;
+  },
   authority: (generation: string) => CryptoKey,
 ): Promise<IdentityCertificate> {
   const certificate = identityCertificate(input);
@@ -170,7 +175,10 @@ export async function verifyIdentityCertificate(
     certificate.tenant !== expected.tenant ||
     certificate.user !== expected.user ||
     (expected.generation !== undefined &&
-      certificate.generation !== expected.generation)
+      certificate.generation !== expected.generation) ||
+    (expected.keys !== undefined &&
+      (certificate.encryptionKey !== expected.keys.encryptionKey ||
+        certificate.signingKey !== expected.keys.signingKey))
   ) {
     throw new InvalidProtectedData();
   }

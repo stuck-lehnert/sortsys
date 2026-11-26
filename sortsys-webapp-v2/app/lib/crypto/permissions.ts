@@ -10,11 +10,8 @@ import {
   creationScope,
   randomSecret,
   InvalidProtectedData,
-  identityCertificateFrame,
-  identityCertificate,
   record,
   replaceProjectRole,
-  verify,
 } from "@sortsys/zerotrust/sortsys";
 import type {
   CreationNamespace,
@@ -24,6 +21,7 @@ import type {
   Rule,
 } from "@sortsys/zerotrust/sortsys";
 import { publishVerifiedPolicy, readVerifiedPolicy } from "./policy";
+import { verifyDirectoryCertificate } from "./recipientCertificate";
 import { privateLlmCollection } from "../data/privateLlm";
 import { required } from "../data/protectedObjects";
 import type { Collection } from "../data/protectedObjects";
@@ -374,24 +372,11 @@ export async function changeCreationAccesses(
       }),
     );
     context.live();
-    const certificate = async (subject: string) => {
+    const certificate = (subject: string) => {
       const entry = identities.find((identity) => identity.subject === subject);
       if (!entry) throw new InvalidProtectedData();
-      const cert = identityCertificate(entry.certificate);
-      if (
-        cert.tenant !== context.account.tenant ||
-        cert.generation !== context.history.current.generation ||
-        cert.user !== subject ||
-        cert.encryptionKey !== entry.encryptionKey ||
-        cert.signingKey !== entry.signingKey
-      )
-        throw new InvalidProtectedData();
-      await verify(
-        context.history.authority(cert.generation),
-        cert.signature,
-        identityCertificateFrame(cert),
-      );
-      return cert;
+
+      return verifyDirectoryCertificate(entry, context);
     };
     const creator = await certificate(user);
     const owner = await certificate(`user:${context.session.user.id}`);
@@ -663,21 +648,9 @@ async function certifiedMember(
   context.live();
   const identity = identities.find((identity) => identity.subject === user);
   if (!identity) return false;
+
   try {
-    const cert = identityCertificate(identity.certificate);
-    if (
-      cert.tenant !== context.account.tenant ||
-      cert.generation !== context.history.current.generation ||
-      cert.user !== user ||
-      cert.encryptionKey !== identity.encryptionKey ||
-      cert.signingKey !== identity.signingKey
-    )
-      throw new InvalidProtectedData();
-    await verify(
-      context.history.authority(cert.generation),
-      cert.signature,
-      identityCertificateFrame(cert),
-    );
+    await verifyDirectoryCertificate(identity, context);
   } catch {
     return false;
   }

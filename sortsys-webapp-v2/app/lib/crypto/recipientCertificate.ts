@@ -1,5 +1,27 @@
-import type { Client } from "@sortsys/v2-client";
+import type { Client, QueryResult } from "@sortsys/v2-client";
 import { verifyIdentityCertificate } from "@sortsys/zerotrust";
+import type { administratorPolicyContext } from "./administration";
+
+type DirectoryContext = Pick<
+  Awaited<ReturnType<typeof administratorPolicyContext>>,
+  "account" | "history"
+>;
+
+export function verifyDirectoryCertificate(
+  entry: QueryResult<"zerotrust.identities.list">[number],
+  { account, history }: DirectoryContext,
+) {
+  return verifyIdentityCertificate(
+    entry.certificate,
+    {
+      tenant: account.tenant,
+      user: entry.subject,
+      generation: history.current.generation,
+      keys: entry,
+    },
+    history.authority,
+  );
+}
 
 export async function readRecipientCertificate(
   client: Client,

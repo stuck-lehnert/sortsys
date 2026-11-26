@@ -20,10 +20,11 @@ test("public certificate verification binds the identity and authority on every 
   for (const certificate of [f.initial, f.latest]) {
     const { tenant, user, generation } = certificate;
     const binding = { tenant, user, generation };
+    const boundKeys = { ...binding, keys: certificate };
 
-    expect(await verifyIdentityCertificate(certificate, binding, authority)).toEqual(
-      certificate,
-    );
+    expect(
+      await verifyIdentityCertificate(certificate, boundKeys, authority),
+    ).toEqual(certificate);
     expect(await verifyIdentityCertificate(certificate, { tenant, user }, authority)).toEqual(
       certificate,
     );
@@ -40,6 +41,14 @@ test("public certificate verification binds the identity and authority on every 
       { ...binding, tenant: "other" },
       { ...binding, user: "account:other" },
       { ...binding, generation: "2" },
+      {
+        ...binding,
+        keys: { ...certificate, encryptionKey: f.setup.owner.encryptionKey },
+      },
+      {
+        ...binding,
+        keys: { ...certificate, signingKey: f.setup.owner.signingKey },
+      },
     ]) {
       await expect(
         verifyIdentityCertificate(certificate, unexpected, authority),

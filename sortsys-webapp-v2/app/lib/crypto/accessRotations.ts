@@ -7,10 +7,7 @@ import {
   absenceDomain,
   compileReadership,
   createDomain,
-  identityCertificateFrame,
-  identityCertificate,
   InvalidProtectedData,
-  verify,
   verifyDomain,
   type Facet,
   type IdentityCertificate,
@@ -19,6 +16,7 @@ import { administratorPolicyContext } from "./administration";
 import { verifiedAccessContext } from "./accessContext";
 import { readVerifiedPolicy } from "./policy";
 import { prepareHistoricalKeyGrants } from "./historicalKeyGrants";
+import { verifyDirectoryCertificate } from "./recipientCertificate";
 import { MASTER_DATA_AREAS } from "./accessProfiles";
 import { ORGANIZATION_AREAS } from "../data/organizationData";
 import { commercialDomain } from "../data/commercialAreas";
@@ -56,21 +54,10 @@ async function memberDirectory(client: Client, context: Context) {
   context.live();
   const certificates = new Map<string, IdentityCertificate>();
   for (const identity of identities) {
-    const certificate = identityCertificate(identity.certificate);
-    if (
-      certificates.has(identity.subject) ||
-      certificate.tenant !== context.account.tenant ||
-      certificate.generation !== context.history.current.generation ||
-      certificate.user !== identity.subject ||
-      certificate.encryptionKey !== identity.encryptionKey ||
-      certificate.signingKey !== identity.signingKey
-    )
+    if (certificates.has(identity.subject))
       throw new InvalidProtectedData();
-    await verify(
-      context.history.authority(certificate.generation),
-      certificate.signature,
-      identityCertificateFrame(certificate),
-    );
+
+    const certificate = await verifyDirectoryCertificate(identity, context);
     context.live();
     certificates.set(identity.subject, certificate);
   }
