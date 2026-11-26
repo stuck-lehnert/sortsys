@@ -7,21 +7,33 @@ import { useMyModals, type MyModalsInterface } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { client } from "~/lib/client";
 import { Icons, type Icon } from "~/lib/icons";
-import { showManageCommonCostsModal } from "~/modals/commonCosts";
 import { showCreateContactModal } from "~/modals/contacts";
 import { showCreateCustomerModal } from "~/modals/customers";
-import {
-  showCreateDailyProjectReportModal,
-  showCreateWeeklyDailyProjectReportModal,
-} from "~/modals/dailyProjectReport";
-import { showCreateDeliveryNoteModal } from "~/modals/deliveryNotes";
 import { showCreateProductModal } from "~/modals/products";
 import { showCreateProductVendorModal } from "~/modals/productVendors";
 import { showCreateProjectModal } from "~/modals/projects";
-import { showCreateRegieReportModal } from "~/modals/regieReports";
 import { showCreateToolModal, showTrackToolsModal } from "~/modals/tools";
 import { showCreateUserModal } from "~/modals/users";
 import type { Role } from "~/type-helpers";
+import { deferredDialog } from "./deferredDialog";
+
+// These forms are not needed to read the action names, check their rights, or
+// open the search palette. Load only the workflow the user actually selects.
+const createDeliveryNote = deferredDialog(() =>
+  import("~/modals/deliveryNotes").then((module) => module.showCreateDeliveryNoteModal),
+);
+const createDailyReport = deferredDialog(() =>
+  import("~/modals/dailyProjectReport").then((module) => module.showCreateDailyProjectReportModal),
+);
+const createWeeklyReport = deferredDialog(() =>
+  import("~/modals/dailyProjectReport").then((module) => module.showCreateWeeklyDailyProjectReportModal),
+);
+const createRegieReport = deferredDialog(() =>
+  import("~/modals/regieReports").then((module) => module.showCreateRegieReportModal),
+);
+const manageCommonCosts = deferredDialog(() =>
+  import("~/modals/commonCosts").then((module) => module.showManageCommonCostsModal),
+);
 
 export type UserActionGroup = "work" | "create" | "navigate" | "admin";
 
@@ -69,7 +81,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         group: "work",
         icon: Icons.DeliveryNote,
         requiredRole: "manage:deliveryNotes",
-        run: () => showCreateDeliveryNoteModal(modals),
+        run: () => createDeliveryNote(modals, uiText("Lieferschein")),
       },
       {
         id: "deliveryNotes.scan",
@@ -97,7 +109,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         group: "work",
         icon: Icons.DailyReport,
         available: sessionInfo.canCreate("daily-report"),
-        run: () => showCreateDailyProjectReportModal(modals),
+        run: () => createDailyReport(modals, uiText("Bautagesbericht")),
       },
       {
         id: "dailyReports.weeklyCreate",
@@ -108,7 +120,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         group: "work",
         icon: Icons.DailyReport,
         available: sessionInfo.canCreate("daily-report"),
-        run: () => showCreateWeeklyDailyProjectReportModal(modals),
+        run: () => createWeeklyReport(modals, uiText("Bauwochenbericht")),
       },
       {
         id: "regieReports.create",
@@ -119,7 +131,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         group: "work",
         icon: Icons.RegieReport,
         available: sessionInfo.canCreate("regie-report"),
-        run: () => showCreateRegieReportModal(modals),
+        run: () => createRegieReport(modals, uiText("Regiebericht")),
       },
       {
         id: "projects.create",
@@ -232,7 +244,7 @@ export function useUserActions(modalsOverride?: MyModalsInterface) {
         group: "admin",
         icon: Icons.PriceRecord,
         available: sessionInfo.canAccess("organization", "calculation", "read"),
-        run: () => showManageCommonCostsModal(modals),
+        run: () => manageCommonCosts(modals, uiText("Gemeinkosten")),
       },
     ],
     [llmStatus, modals, navigate, sessionInfo],

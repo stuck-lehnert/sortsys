@@ -1342,6 +1342,91 @@ test(
   },
 );
 
+const overheadDialogChunk = "**/bundle/commonCosts-*.js";
+
+async function selectPaletteAction(label) {
+  await page.getByRole("button", { name: "Global search", exact: true }).click();
+  const palette = page.getByRole("dialog").filter({ has: page.getByRole("searchbox") });
+  await palette.getByRole("searchbox").fill(`> ${label}`);
+  await palette.getByRole("option").filter({
+    has: page.getByText(label, { exact: true }),
+  }).click();
+}
+
+test("the command palette loads the overhead dialog only when selected and allows cancellation", async () => {
+  const chunk = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let requests = 0;
+  await page.route(overheadDialogChunk, async (route) => {
+    requests++;
+    chunk.resolve();
+    await release.promise;
+    await route.continue();
+  });
+  api.respond("personalization.actions.append", true);
+  api.respond("settings.costs.get", { history: [] });
+
+  try {
+    await openApplication("/fixtures/forms", "de");
+    assert.equal(requests, 0);
+    await selectPaletteAction("Gemeinkosten");
+    const pending = page.getByRole("dialog", { name: "Gemeinkosten", exact: true });
+    await pending.getByRole("status").waitFor();
+    await chunk.promise;
+
+    await pending.getByRole("button", { name: "Abbrechen", exact: true }).click();
+    await pending.waitFor({ state: "hidden" });
+    const response = page.waitForResponse((value) => /\/commonCosts-[^/]+\.js$/.test(value.url()));
+    release.resolve();
+    await (await response).finished();
+    assert.equal(api.requests.some(({ path }) => path === "settings.costs.get"), false);
+
+    await selectPaletteAction("Gemeinkosten");
+    const form = page.getByRole("dialog", { name: "Gemeinkosten verwalten" });
+    await form.getByRole("button", { name: "Speichern" }).waitFor();
+    assert.equal(await page.getByRole("dialog").count(), 1);
+    assert.equal(requests, 1);
+  } finally {
+    release.resolve();
+  }
+});
+
+test("a failed deferred overhead dialog reports the failure without reading rates", async () => {
+  await page.route(overheadDialogChunk, (route) => route.fulfill({
+    contentType: "text/javascript",
+    body: 'throw new Error("Fixture module unavailable");',
+  }));
+  api.respond("personalization.actions.append", true);
+  await openApplication("/fixtures/forms", "de");
+  await selectPaletteAction("Gemeinkosten");
+
+  const pending = page.getByRole("dialog", { name: "Gemeinkosten", exact: true });
+  await pending.getByRole("alert").getByText("Dialog konnte nicht geladen werden").waitFor();
+  assert.equal(api.requests.some(({ path }) => path === "settings.costs.get"), false);
+  await pending.getByRole("button", { name: "Abbrechen", exact: true }).click();
+  await pending.waitFor({ state: "hidden" });
+});
+
+for (const [action, heading] of [
+  ["Lieferschein", "Lieferschein schreiben"],
+  ["Bautagesbericht", "Bautagesbericht erstellen"],
+  ["Bauwochenbericht", "Bauwochenbericht erstellen"],
+  ["Regiebericht", "Regiebericht erstellen"],
+]) {
+  test(`the command palette opens the deferred ${action} form`, async () => {
+    api.respond("personalization.actions.append", true);
+    await openApplication("/fixtures/forms", "de");
+    await selectPaletteAction(action);
+
+    const form = page.getByRole("dialog", { name: heading, exact: true });
+    await form.waitFor();
+    assert.equal(await page.getByRole("dialog").count(), 1);
+
+    await form.getByText("Abbrechen", { exact: true }).click();
+    await form.waitFor({ state: "hidden" });
+  });
+}
+
 for (const [layout, viewport] of [
   ["desktop", { width: 1400, height: 1000 }],
   ["mobile", { width: 390, height: 844 }],
