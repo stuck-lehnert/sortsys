@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { EventEmitter } from "node:events";
 import { createServer } from "node:http";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -53,6 +54,8 @@ test("browser diagnostics count batched calls and WebCrypto without keeping thei
   assert.equal(batch.started, 1);
   assert.equal(batch.finished, 1);
   assert.equal(batch.transportErrors, 0);
+  assert.equal(observed.rpcTiming.coveredMs, batch.elapsedMs);
+  assert.equal(observed.rpcTiming.peakConcurrent, 1);
   assert.equal(observed.crypto.importKey.finished, 1);
   assert.equal(observed.crypto.decrypt.finished, 1);
   assert.doesNotMatch(JSON.stringify(observed), /private/);
@@ -60,8 +63,52 @@ test("browser diagnostics count batched calls and WebCrypto without keeping thei
   const idle = await diagnostics.snapshot();
   assert.deepEqual(await diagnostics.since(idle), {
     routes: Object.create(null),
+    rpcTiming: { coveredMs: 0, peakConcurrent: 0 },
     crypto: {},
   });
   await page.reload();
   await assert.rejects(diagnostics.since(start), /full page navigation/);
+});
+
+test("overlapping requests cover time once and late completions stay outside the measurement", async () => {
+  const origin = "http://localhost:1234";
+  const page = new EventEmitter();
+  let afterBoundary = () => {};
+  page.evaluate = async () => {
+    afterBoundary();
+    return { timeOrigin: 0, operations: {} };
+  };
+
+  const startRequest = (procedure, startTime, responseEnd) => {
+    const request = {
+      url: () => `${origin}/api/v2/${procedure}`,
+      timing: () => ({ startTime, responseEnd }),
+    };
+    page.emit("request", request);
+    return request;
+  };
+
+  const context = { addInitScript: async () => {} };
+  const diagnostics = await interactionDiagnostics(context, page, origin);
+  const prior = startRequest("prior", 1, 24);
+  const start = await diagnostics.snapshot();
+
+  const first = startRequest("access.snapshot", 10, 20);
+  const second = startRequest("access.snapshot", 20, 30);
+  const third = startRequest("objects.list", 50, 10);
+  const failed = startRequest("objects.get", 51, -1);
+  const late = startRequest("access.snapshot", 60, 8);
+  for (const request of [prior, first, second, third]) {
+    page.emit("requestfinished", request);
+  }
+  page.emit("requestfailed", failed);
+  afterBoundary = () => page.emit("requestfinished", late);
+
+  const result = await diagnostics.since(start);
+  assert.deepEqual({ ...result.routes }, {
+    "access.snapshot": { started: 3, finished: 2, transportErrors: 0, elapsedMs: 50 },
+    "objects.list": { started: 1, finished: 1, transportErrors: 0, elapsedMs: 10 },
+    "objects.get": { started: 1, finished: 0, transportErrors: 1, elapsedMs: 0 },
+  });
+  assert.deepEqual(result.rpcTiming, { coveredMs: 50, peakConcurrent: 2 });
 });

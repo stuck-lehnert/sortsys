@@ -67,6 +67,13 @@ steht für einen gemeinsamen HTTP-Aufruf. Die Diagnose zählt Aufrufe und
 ihre bis zum Messpunkt beobachteten Abschlüsse sowie Transportfehler, ohne Parameter, Header oder Inhalte
 auszugeben.
 
+`elapsedMs` je HTTP-Route addiert die Dauer abgeschlossener Aufrufe.
+`rpcTiming.coveredMs` zählt überlappende Zeiträume nur einmal;
+`peakConcurrent` gibt die größte Anzahl gleichzeitig laufender Aufrufe an.
+Beide Werte berücksichtigen nur Aufrufe mit Zeitmessung, die im selben Schritt
+begonnen haben und bis zum Messpunkt ohne Transportfehler abgeschlossen wurden.
+Sie zeigen, wann RPCs liefen, nicht, welche Antworten die Ansicht aufhielten.
+
 Für WebCrypto zählt sie unter anderem Signaturprüfungen, Entschlüsselungen,
 Schlüsselimporte und -ableitungen im Hauptfenster. Arbeit in Workern und
 WebAssembly zählt nicht dazu. Bei WebCrypto können Aufrufe aus dem vorherigen
