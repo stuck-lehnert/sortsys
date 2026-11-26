@@ -56,6 +56,7 @@ import SettingsShell from "../../app/routes/(shell)/settings.shell";
 import OrganizationSettingsPage from "../../app/routes/(shell)/settings.organization";
 import AdminPage from "../../app/routes/(shell)/admin";
 import DeploymentsPage from "../../app/routes/(shell)/deployments";
+import ProjectDetailPage from "../../app/routes/(shell)/projects.$id.index";
 import ProjectFilesPage from "../../app/routes/(shell)/projects.$id.files";
 import ProjectRegieReportsPage from "../../app/routes/(shell)/projects.$id.regieReports";
 import RegieReportDetailPage from "../../app/routes/(shell)/regieReports.$id";
@@ -285,6 +286,7 @@ export function ApplicationFixture() {
               <Route path="/dashboard" element={<DashboardPage />} />
               <Route path="/deployments" element={<DeploymentsPage />} />
               <Route path="/projects/:id" element={<ProjectFixture />}>
+                <Route index element={<ProjectDetailPage />} />
                 <Route path="files/:fileId?" element={<ProjectFilesPage />} />
                 <Route path="contract" element={<ContractPage />} />
               </Route>

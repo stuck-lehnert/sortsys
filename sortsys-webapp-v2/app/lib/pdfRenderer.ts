@@ -38,7 +38,9 @@ type PreparedStructuredPdfDocument = Omit<
   imageSections?: PreparedPdfImageSection[];
 };
 
-type BuildPdfDocumentBodyOptions = PreparedStructuredPdfDocument;
+type TypstPdf = typeof import("@myriaddreamin/typst.ts").$typst;
+type PdfImageSource = Pick<PdfImage, "mimeType" | "fileName" | "url">;
+type MapPdfImage = (image: PdfImageSource, bytes: Uint8Array) => Promise<string>;
 
 let typstPdfRuntimeSetup: Promise<void> | null = null;
 let typstPdfFontSetup: Promise<void> | null = null;
@@ -46,23 +48,7 @@ const MAX_TENANT_FONT_BYTES = 4 * 1024 * 1024;
 const MAX_TENANT_LOGO_BYTES = 10 * 1024 * 1024;
 const MAX_PDF_IMAGE_BYTES = 14 * 1024 * 1024;
 
-function escapeTypstString(value: string) {
-  return `${value ?? ""}`
-    .replace(/\\/g, "\\\\")
-    .replace(/"/g, '\\"')
-    .replace(/\r?\n/g, " ")
-    .trim();
-}
-
-function buildTenantLogoShadowPath(mimeType: string) {
-  const nonce = Math.random().toString(36).slice(2, 10);
-  const extension = pdfImageExtension({ mimeType, url: "" });
-  return `/tmp/pdf-logo-${Date.now()}-${nonce}.${extension}`;
-}
-
-function pdfImageExtension(
-  image: Pick<PdfImage, "mimeType" | "fileName" | "url">,
-) {
+function pdfImageExtension(image: PdfImageSource) {
   const mimeType = `${image.mimeType ?? ""}`.toLowerCase();
   if (mimeType.includes("png")) return "png";
   if (mimeType.includes("webp")) return "webp";
@@ -82,9 +68,37 @@ function pdfImageExtension(
   return "jpg";
 }
 
-function buildPdfImageShadowPath(image: PdfImage, index: number) {
+function createPdfShadows(typst: TypstPdf) {
   const nonce = Math.random().toString(36).slice(2, 10);
-  return `/tmp/pdf-image-${Date.now()}-${index}-${nonce}.${pdfImageExtension(image)}`;
+  const prefix = `/tmp/pdf-${Date.now()}-${nonce}`;
+  const paths: string[] = [];
+
+  return {
+    async map(image: PdfImageSource, bytes: Uint8Array) {
+      const path = `${prefix}-${paths.length}.${pdfImageExtension(image)}`;
+      paths.push(path);
+      await typst.mapShadow(path, bytes);
+      return path;
+    },
+    async close() {
+      for (const path of paths) {
+        try {
+          await typst.unmapShadow(path);
+        } catch {
+          // Continue removing the remaining images after a failed unmap.
+        }
+      }
+    },
+  };
+}
+
+async function readImageBytes(response: Response, maximumBytes: number) {
+  if (!response.ok) return null;
+
+  const buffer = await response.arrayBuffer();
+  if (!buffer.byteLength || buffer.byteLength > maximumBytes) return null;
+
+  return new Uint8Array(buffer);
 }
 
 async function fetchTenantLogoBytes() {
@@ -97,18 +111,11 @@ async function fetchTenantLogoBytes() {
   if (!tenantLogo?.downloadUrl) return null;
 
   const response = await fetchFileResource(tenantLogo.downloadUrl);
-  if (!response.ok) return null;
-
-  const arrayBuffer = await response.arrayBuffer();
-  if (
-    !arrayBuffer.byteLength ||
-    arrayBuffer.byteLength > MAX_TENANT_LOGO_BYTES
-  ) {
-    return null;
-  }
+  const bytes = await readImageBytes(response, MAX_TENANT_LOGO_BYTES);
+  if (!bytes) return null;
 
   return {
-    bytes: new Uint8Array(arrayBuffer),
+    bytes,
     mimeType:
       response.headers.get("content-type") ??
       tenantLogo.mimeType ??
@@ -116,47 +123,21 @@ async function fetchTenantLogoBytes() {
   };
 }
 
-async function prepareTenantLogoShadow($typst: any) {
+async function prepareTenantLogoShadow(mapImage: MapPdfImage) {
   try {
     const logo = await fetchTenantLogoBytes();
-    if (!logo?.bytes.length) return null;
-
-    const shadowPath = buildTenantLogoShadowPath(logo.mimeType);
-    await $typst.mapShadow(shadowPath, logo.bytes);
-    return shadowPath;
+    return logo
+      ? await mapImage({ mimeType: logo.mimeType, url: "" }, logo.bytes)
+      : null;
   } catch {
     return null;
   }
-}
-
-async function cleanupTenantLogoShadow($typst: any, shadowPath: string | null) {
-  if (!shadowPath) return;
-
-  try {
-    await $typst.unmapShadow(shadowPath);
-  } catch {
-    // no-op
-  }
-}
-
-async function fetchPdfImageBytes(image: PdfImage) {
-  const response = await fetchFileResource(image.url);
-  if (!response.ok) return null;
-
-  const arrayBuffer = await response.arrayBuffer();
-  if (!arrayBuffer.byteLength || arrayBuffer.byteLength > MAX_PDF_IMAGE_BYTES) {
-    return null;
-  }
-
-  return new Uint8Array(arrayBuffer);
 }
 
 async function preparePdfImageSections(
-  $typst: any,
+  mapImage: MapPdfImage,
   documents: StructuredPdfDocument[],
 ) {
-  const shadowPaths: string[] = [];
-  let imageIndex = 0;
   const preparedDocuments: PreparedStructuredPdfDocument[] = [];
 
   for (const document of documents) {
@@ -167,13 +148,11 @@ async function preparePdfImageSections(
 
       for (const image of section.images) {
         let shadowPath: string | null = null;
+
         try {
-          const bytes = await fetchPdfImageBytes(image);
-          if (bytes?.length) {
-            shadowPath = buildPdfImageShadowPath(image, imageIndex++);
-            await $typst.mapShadow(shadowPath, bytes);
-            shadowPaths.push(shadowPath);
-          }
+          const response = await fetchFileResource(image.url);
+          const bytes = await readImageBytes(response, MAX_PDF_IMAGE_BYTES);
+          if (bytes) shadowPath = await mapImage(image, bytes);
         } catch {
           shadowPath = null;
         }
@@ -187,17 +166,7 @@ async function preparePdfImageSections(
     preparedDocuments.push({ ...document, imageSections });
   }
 
-  return { documents: preparedDocuments, shadowPaths };
-}
-
-async function cleanupPdfImageShadows($typst: any, shadowPaths: string[]) {
-  for (const shadowPath of shadowPaths) {
-    try {
-      await $typst.unmapShadow(shadowPath);
-    } catch {
-      // no-op
-    }
-  }
+  return preparedDocuments;
 }
 
 async function loadPdfFontBytes() {
@@ -653,7 +622,7 @@ function renderImageSection(section: PreparedPdfImageSection) {
     lines.push("  [");
     lines.push("    #block(width: 100%, breakable: false)[");
     lines.push(
-      `      #image("${escapeTypstString(image.shadowPath!)}", width: 100%, height: 55mm, fit: "contain")`,
+      `      #image(${typstString(image.shadowPath!)}, width: 100%, height: 55mm, fit: "contain")`,
     );
     if (caption) {
       lines.push("      #v(0.18em)");
@@ -684,7 +653,7 @@ function buildPdfDocumentBody(
     signatures,
     imageSections,
     paragraphs,
-  }: BuildPdfDocumentBodyOptions,
+  }: PreparedStructuredPdfDocument,
   groupPrefix: string,
 ) {
   const lines: string[] = [];
@@ -819,15 +788,16 @@ export async function renderStructuredPdfBatch(
   const { $typst } = await import("@myriaddreamin/typst.ts");
   await ensureTypstPdfRuntime($typst);
 
-  const logoShadowPath = await prepareTenantLogoShadow($typst);
-  const preparedImages = await preparePdfImageSections(
-    $typst,
-    options.documents,
-  );
-
+  const shadows = createPdfShadows($typst);
   try {
+    const logoShadowPath = await prepareTenantLogoShadow(shadows.map);
+    const preparedDocuments = await preparePdfImageSections(
+      shadows.map,
+      options.documents,
+    );
+
     const mainContent = buildPdfBatchDocument(
-      { documents: await withOrganizationSender(preparedImages.documents) },
+      { documents: await withOrganizationSender(preparedDocuments) },
       logoShadowPath,
     );
     const pdfData = await $typst.pdf({ mainContent });
@@ -837,7 +807,6 @@ export async function renderStructuredPdfBatch(
 
     return pdfData as Uint8Array;
   } finally {
-    await cleanupPdfImageShadows($typst, preparedImages.shadowPaths);
-    await cleanupTenantLogoShadow($typst, logoShadowPath);
+    await shadows.close();
   }
 }
