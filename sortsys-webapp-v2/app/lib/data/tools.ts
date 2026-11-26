@@ -121,21 +121,43 @@ function values(view: DataView, request: PartRequest) {
     throw new InvalidProtectedData();
   return value.rows[0]!.values;
 }
-function cost(
+
+function matching(
+  selected: readonly PartRequest[],
+  namespace: ToolNamespace,
+  facet: Facet,
+) {
+  return selected.filter((request) => {
+    const part = toolDomain(request.area.domain)!;
+    return part.namespace === namespace && part.facet === facet;
+  });
+}
+
+function trackingParts(
   view: DataView,
-  requests: PartRequest[],
+  requests: readonly PartRequest[],
+  tool: string,
+) {
+  const toolId = addressId(tool);
+  const candidates = matching(requests, "tool-tracking", "master-data");
+
+  return candidates.filter((request) => {
+    const part = document(view, request, true)?.value;
+    return !!part && !part.deleted && values(view, request).tool_id === toolId;
+  });
+}
+
+function procurementValues(
+  view: DataView,
+  byDomain: ReadonlyMap<string, PartRequest>,
   namespace: ToolNamespace,
   resource: string,
-  column: string,
-): number | null {
-  const request = requests.find(
-    (request) =>
-      request.area.domain ===
-      toolCollection(namespace, resource, "procurement").domain,
-  );
-  if (!request) return null;
-  return values(view, request)[column] as number | null;
+) {
+  const domain = toolCollection(namespace, resource, "procurement").domain;
+  const request = byDomain.get(domain);
+  return request ? values(view, request) : null;
 }
+
 function describeTool(
   value: ToolPart,
   fields: ToolPart["rows"][number]["values"],
@@ -152,22 +174,18 @@ function describeTool(
 function wireTool(
   view: DataView,
   request: PartRequest,
-  requests: PartRequest[],
+  byDomain: ReadonlyMap<string, PartRequest>,
   returned: ToolReturns,
 ) {
   const value = document(view, request)!.value;
   const p = values(view, request);
   const activeTrackingId = activeToolBooking(view, value, returned);
+  const procurement = procurementValues(view, byDomain, "tool", value.id);
+
   return {
     ...describeTool(value, p),
-    purchasePrice: cost(view, requests, "tool", value.id, "purchase_price"),
-    usageCostPerDay: cost(
-      view,
-      requests,
-      "tool",
-      value.id,
-      "usage_cost_per_day",
-    ),
+    purchasePrice: (procurement?.purchase_price ?? null) as number | null,
+    usageCostPerDay: (procurement?.usage_cost_per_day ?? null) as number | null,
     status: p.status as "lost" | "broken" | null,
     available: activeTrackingId === null,
     activeTrackingId,
@@ -180,7 +198,7 @@ function wireTool(
 function wireTracking(
   view: DataView,
   request: PartRequest,
-  requests: PartRequest[],
+  byDomain: ReadonlyMap<string, PartRequest>,
 ) {
   const p = values(view, request);
   const part = document(view, request)!.value;
@@ -194,6 +212,13 @@ function wireTracking(
   const canReturnOwn =
     endedAt === null && !!part.returnKey &&
     part.returnKey.recipient.recipient === unlockedAccount()?.vault.subject;
+  const procurement = procurementValues(
+    view,
+    byDomain,
+    "tool-tracking",
+    resource,
+  );
+
   return {
     id: resource,
     toolId: publicId(p.tool_id),
@@ -203,13 +228,9 @@ function wireTracking(
     responsibleUserId: id(p.responsible_user_id),
     startedByUserId: id(p.started_by_user_id),
     endedByUserId: id(endedBy),
-    toolUsageCostPerDay: cost(
-      view,
-      requests,
-      "tool-tracking",
-      resource,
-      "tool_usage_cost_per_day",
-    ),
+    toolUsageCostPerDay: (procurement?.tool_usage_cost_per_day ?? null) as
+      | number
+      | null,
     comment: p.comment as string | null,
     startedAt,
     endedAt,
@@ -492,15 +513,6 @@ export function createProtectedTools(
       personnel.close();
     }
   }
-  const matching = (
-    selected: PartRequest[],
-    namespace: ToolNamespace,
-    facet: Facet,
-  ) =>
-    selected.filter((request) => {
-      const part = toolDomain(request.area.domain)!;
-      return part.namespace === namespace && part.facet === facet;
-    });
   const lookupTransfer = (
     view: DataView,
     selected: PartRequest[],
@@ -637,6 +649,9 @@ export function createProtectedTools(
       }
       return readAll(
         (view, selected, returned) => {
+          const byDomain = new Map(
+            selected.map((request) => [request.area.domain, request]),
+          );
           const tools = matching(selected, "tool", "master-data").filter(
             (request) => !document(view, request)!.value.deleted,
           );
@@ -647,7 +662,7 @@ export function createProtectedTools(
               (request) => document(view, request)!.value.id === p.id,
             );
             if (!request) throw new InvalidProtectedData();
-            return wireTool(view, request, selected, returned);
+            return wireTool(view, request, byDomain, returned);
           }
           if (["tools.brands", "tools.categories"].includes(path)) {
             const field = path === "tools.brands" ? "brand" : "category";
@@ -682,7 +697,7 @@ export function createProtectedTools(
               if (p[key] != null && typeof p[key] !== "string")
                 throw new InvalidProtectedData();
             return tools
-              .map((request) => wireTool(view, request, selected, returned))
+              .map((request) => wireTool(view, request, byDomain, returned))
               .filter(
                 (tool) =>
                   (!brand || tool.brand === brand) &&
@@ -743,7 +758,7 @@ export function createProtectedTools(
             return pagination(
               p,
               trackingRequests
-                .map((request) => wireTracking(view, request, selected))
+                .map((request) => wireTracking(view, request, byDomain))
                 .filter(
                   (tracking) =>
                     (p.finished == null || !!tracking.endedAt === p.finished) &&
@@ -807,7 +822,7 @@ export function createProtectedTools(
                 (request) => document(view, request)!.value.id === value.id,
               );
               if (!tracking) return [];
-              const source = wireTracking(view, tracking, selected);
+              const source = wireTracking(view, tracking, byDomain);
               return value.rows.map((row) => {
                 const p = row.values;
                 return {
@@ -1092,16 +1107,7 @@ export function createProtectedTools(
         });
         const master = toolRequest("tool", resource, "master-data");
         const basis = await runtime.read(available, (view) => {
-          const trackingRequests = matching(
-            available,
-            "tool-tracking",
-            "master-data",
-          ).filter(
-            (request) =>
-              document(view, request, true) &&
-              !document(view, request)!.value.deleted &&
-              values(view, request).tool_id === addressId(resource),
-          );
+          const trackingRequests = trackingParts(view, available, resource);
           return {
             head: view.head(master),
             tracking: new Set(
@@ -1227,16 +1233,7 @@ export function createProtectedTools(
               request.area.facet === "master-data"),
         );
         const basis = await runtime.read(basisRequests, (view) => {
-          const trackingRequests = matching(
-            basisRequests,
-            "tool-tracking",
-            "master-data",
-          ).filter(
-            (request) =>
-              document(view, request, true) &&
-              !document(view, request)!.value.deleted &&
-              values(view, request).tool_id === addressId(resource),
-          );
+          const trackingRequests = trackingParts(view, basisRequests, resource);
           return {
             head: view.head(master),
             tracking: new Set(

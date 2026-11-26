@@ -73,6 +73,71 @@ test("one tool read checks its description, booking state and costs without pagi
   }
 });
 
+test("tool lists join costs by resource without opening an unshared cost area", async () => {
+  const own = toolCollection("tool", "34", "procurement");
+  const hidden = toolCollection("tool", "35", "procurement");
+  const master = ["34", "35"].map((id) =>
+    toolCollection("tool", id, "master-data"),
+  );
+  const tenant = await protectedTenant(
+    [...master, own, hidden],
+    (area) => area === hidden ? [] : [...ACTIONS],
+  );
+
+  for (const [index, area] of master.entries()) {
+    const source = row("tools", {
+      id: String(100 + index),
+      custom_id: String(73 + index),
+      brand: "Muster",
+      category: "Bohrhammer",
+      purchase_price: 100 + index,
+      usage_cost_per_day: 0,
+    });
+    const id = area.scope.split(":")[1];
+    const cost = index === 0 ? own : hidden;
+
+    await tenant.seed(
+      area,
+      area.prefix,
+      toolPart("tool", id, "master-data", [source]),
+    );
+    await tenant.seed(
+      cost,
+      cost.prefix,
+      toolPart("tool", id, "procurement", [source]),
+    );
+  }
+
+  const store = createProtectedTools(
+    tenant.client,
+    new AbortController().signal,
+    async () => {
+      throw new Error("A tool list must not open project data");
+    },
+    duckDriver,
+  );
+
+  try {
+    tenant.calls.length = 0;
+    const visible = await store.query("tools.list", {});
+
+    expect(visible.map(({ id, purchasePrice, usageCostPerDay }) => ({
+      id, purchasePrice, usageCostPerDay,
+    }))).toEqual([
+      { id: "34", purchasePrice: 100, usageCostPerDay: 0 },
+      { id: "35", purchasePrice: null, usageCostPerDay: null },
+    ]);
+
+    const selected = tenant.calls
+      .filter(({ path }) => path === "zerotrust.objects.pages")
+      .flatMap(({ input }) => input.selections.map(({ prefix }) => prefix));
+    expect(selected).toContain(own.prefix);
+    expect(selected).not.toContain(hidden.prefix);
+  } finally {
+    store.close();
+  }
+});
+
 test("tool and booking choices read only permitted master data and reuse one access snapshot per read", async () => {
   const master = toolCollection("tool", "34", "master-data");
   const cost = toolCollection("tool", "34", "procurement");
