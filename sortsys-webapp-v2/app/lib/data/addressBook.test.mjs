@@ -9,6 +9,8 @@ import {
   createProtectedAddressBook,
   CUSTOMER_COLLECTION,
 } from "./addressBook";
+import { projectCollection } from "./projectData";
+import { createProtectedProjects } from "./projects";
 import { row } from "./testing/businessRow.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
@@ -69,6 +71,65 @@ function fullPages(calls) {
 
   return selections.filter((page) => !page.headOnly);
 }
+
+test("unlinked projects and customers read their parent but do not open the contact area", async () => {
+  const projectArea = projectCollection("2");
+  const { client, seed, calls } = await protectedTenant(
+    [projectArea, CUSTOMER_COLLECTION, CONTACT_COLLECTION],
+    () => ["read"],
+  );
+  const signal = new AbortController().signal;
+  const directory = createProtectedAddressBook(client, signal, duckDriver);
+  const projects = createProtectedProjects(
+    client,
+    signal,
+    async () => directory,
+    duckDriver,
+  );
+
+  try {
+    await seed(CUSTOMER_COLLECTION, "customer:34", { ...customer(), links: [] });
+    await seed(projectArea, projectArea.prefix, {
+      format: "sortsys-project-v1",
+      project: row("projects", { id: "2", title: "Sanierung" }),
+      contacts: [],
+    });
+
+    const queries = [
+      {
+        area: CUSTOMER_COLLECTION,
+        list: () =>
+          directory.query("customers.contacts.list", { customerId: "34" }),
+      },
+      {
+        area: projectArea,
+        list: () =>
+          projects.query("projects.contacts.list", { projectId: "2" }),
+      },
+    ];
+    for (const { area, list } of queries) {
+      const start = calls.length;
+      expect(await list()).toEqual([]);
+
+      const reads = calls.slice(start);
+      const snapshots = reads.filter(
+        ({ path }) => path === "zerotrust.access.snapshot",
+      );
+      expect(snapshots).toHaveLength(1);
+      expect(snapshots[0].input.domains).toContain(area.domain);
+      expect(snapshots[0].input.domains).not.toContain(CONTACT_COLLECTION.domain);
+
+      const accessedContacts = objectReads(reads).filter((id) =>
+        id.startsWith(CONTACT_COLLECTION.prefix),
+      );
+      expect(accessedContacts).toEqual([]);
+    }
+  } finally {
+    projects.close();
+    directory.close();
+    lockCryptoSession();
+  }
+}, fixtureTimeout(30_000));
 
 test("address details and forward links open only the selected objects", async () => {
   const customerArea = CUSTOMER_COLLECTION;

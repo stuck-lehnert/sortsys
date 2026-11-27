@@ -335,6 +335,9 @@ export function readLinkedContacts(
   sequence: string,
   ids: readonly string[],
 ): Promise<Contact[]> {
+  // A verified parent with no links has no contact objects to authorize or read.
+  if (ids.length === 0) return Promise.resolve([]);
+
   const selected = addressObjects("contacts", ids);
 
   return runtime.read([parent, selected], (view) => {
