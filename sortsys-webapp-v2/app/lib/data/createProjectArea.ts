@@ -85,18 +85,21 @@ export async function createResourceAreas(
     signal.throwIfAborted();
     if (unlockedAccount() !== account) throw new InvalidProtectedData();
   };
-  const history = await trustedHistory(client);
-  const session = await required(
-    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-  );
+  const [history, session, capabilityResult] = await Promise.all([
+    trustedHistory(client),
+    required(
+      client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
+    ),
+    client.query(
+      "zerotrust.creations.capability",
+      { namespace },
+      { strategy: "network-only" },
+    ),
+  ]);
+
   live();
   const subject = `user:${session.user.id}`;
-  let [input, failure] = await client.query(
-    "zerotrust.creations.capability",
-    { namespace },
-    { strategy: "network-only" },
-  );
-  live();
+  let [input, failure] = capabilityResult;
   if (failure) throw failure;
   if (
     !input &&
@@ -196,49 +199,60 @@ export async function createResourceAreas(
     throw new InvalidProtectedData();
   }
 
+  const parents = new Map<string, CreationParent>();
+
   for (const area of areas) {
+    live();
     const resource = creationResource(area.scope)!;
     let parent: CreationParent | undefined;
     if (resource.module) {
       const scope = `project:${resource.id}`;
       const id = `${scope}:master-data`;
-      const original =
-        definitions.find((definition) => definition.id === id) ??
-        (await required(
-          client.query(
-            "zerotrust.domains.get",
-            { domain: id, generation: "1" },
-            { strategy: "network-only" },
-          ),
-        ));
-      live();
-      if (!original) throw new InvalidProtectedData();
-      const verified = await verifyDomain(
-        original,
-        {
-          tenant: account.tenant,
-          id,
-          scope,
-          facet: "master-data",
-          generation: "1",
-        },
-        history.authority,
-      );
-      live();
-      parent = verified.creation;
-      if (
-        !parent ||
-        parent.capability.generation !== capability.generation ||
-        parent.capability.creator.user !== subject ||
-        parent.capability.creator.signingKey !== identity.signingKey ||
-        parent.capability.creator.encryptionKey !== identity.encryptionKey
-      ) {
-        // A creation capability does not delegate authority over a recovered
-        // or authority-created project's remaining modules.
-        if (!session.roles.includes(":admin")) throw new InvalidProtectedData();
-        return provisionOwnedCollections(client, subject, [...areas], signal);
+      parent = parents.get(id);
+      if (!parent) {
+        const original =
+          definitions.find((definition) => definition.id === id) ??
+          (await required(
+            client.query(
+              "zerotrust.domains.get",
+              { domain: id, generation: "1" },
+              { strategy: "network-only" },
+            ),
+          ));
+        live();
+        if (!original) throw new InvalidProtectedData();
+
+        const verified = await verifyDomain(
+          original,
+          {
+            tenant: account.tenant,
+            id,
+            scope,
+            facet: "master-data",
+            generation: "1",
+          },
+          history.authority,
+        );
+        live();
+
+        parent = verified.creation;
+        if (
+          !parent ||
+          parent.capability.generation !== capability.generation ||
+          parent.capability.creator.user !== subject ||
+          parent.capability.creator.signingKey !== identity.signingKey ||
+          parent.capability.creator.encryptionKey !== identity.encryptionKey
+        ) {
+          // A creation capability does not delegate authority over a recovered
+          // or authority-created project's remaining modules.
+          if (!session.roles.includes(":admin")) throw new InvalidProtectedData();
+          return provisionOwnedCollections(client, subject, [...areas], signal);
+        }
+
+        parents.set(id, parent);
       }
     }
+
     const origin = await createOrigin(
       {
         tenant: account.tenant,
