@@ -6,8 +6,7 @@ import {
   assistantPayload,
   privateLlmCollection,
 } from "./privateLlm";
-import { copyProtectedCollection } from "./copyCollection";
-import { prepareOwnerCollections } from "./prepareCollections";
+import { copyOwnedAreas } from "./copyCollection";
 import { publicId } from "./products";
 import { legacyScanState, scanEntry } from "./scanHistoryData";
 import { validateScanResult, type ScanResult } from "./scanResult";
@@ -170,19 +169,11 @@ export async function prepareImportHistory(
     users.set(subject, entries);
   }
   if (!users.size) return;
-  await prepareOwnerCollections(
-    client,
-    owner,
-    [...users.keys()].map(importHistoryCollection),
-    signal,
-  );
-  for (const [subject, entries] of users) {
-    await copyProtectedCollection(
-      client,
-      importHistoryCollection(subject),
-      entries,
-      migratedImportPart,
-      signal,
-    );
-  }
+
+  const copies = Array.from(users, ([subject, rows]) => ({
+    area: importHistoryCollection(subject),
+    rows,
+    validate: migratedImportPart,
+  }));
+  await copyOwnedAreas(client, owner, copies, signal);
 }

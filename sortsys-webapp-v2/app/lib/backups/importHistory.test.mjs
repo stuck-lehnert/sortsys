@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { lockCryptoSession } from "../crypto/session";
 import {
   checkedImportHistory,
   checkImportHistoryUsers,
@@ -7,8 +8,10 @@ import {
   selectImportHistory,
 } from "./importHistory";
 import {
+  importHistoryCollection,
   importHistoryOrigin,
   legacyImportEntry,
+  prepareImportHistory,
 } from "../data/migrateImportHistory";
 import {
   oldScan,
@@ -18,6 +21,8 @@ import {
 import { openPostgresBackup } from "./business";
 import { row, sourceSql } from "../data/testing/businessRow.mjs";
 import { duckDriver } from "../data/testing/duckDriver.mjs";
+import { fixtureTimeout } from "../data/testing/fixtureTimeout.mjs";
+import { protectedTenant } from "../data/testing/protectedTenant.mjs";
 
 const signal = () => new AbortController().signal;
 
@@ -112,6 +117,66 @@ test("source validation rejects duplicate identities, foreign tenants, forged st
   ).rejects.toThrow("keinen Einleseverlauf");
 });
 
+test("copies short and long scan histories into their own areas without rewriting on retry", async () => {
+  const owners = ["user:1", "user:2"];
+  const areas = owners.map(importHistoryCollection);
+  const tenant = await protectedTenant(areas, undefined, { backup: true });
+
+  try {
+    const rows = [
+      oldScan({ user_id: "1" }),
+      ...["20", "21", "22"].map((id) => oldScan({ id, user_id: "2" })),
+    ];
+    const { records } = await selectImportHistory(
+      new Blob([scanSourceSql(rows)]),
+      "old-tenant",
+      signal(),
+    );
+    const context = tenant.setup.authority.context;
+    const copy = (source = records) =>
+      prepareImportHistory(tenant.client, source, owners[0], context, signal());
+
+    tenant.state.loseReply = true;
+    await copy();
+
+    for (const record of records) {
+      const { subject, id, entry } = legacyImportEntry(
+        record,
+        importHistoryOrigin(record),
+        context,
+      );
+      const object = `assistant:scan:${id}`;
+      const stored = await tenant.plain(importHistoryCollection(subject), object);
+      expect(stored).toEqual({
+        format: "sortsys-assistant-v1",
+        kind: "scan",
+        id,
+        value: entry,
+      });
+    }
+
+    const saved = structuredClone([...tenant.objects]);
+    expect(saved).toHaveLength(records.length);
+
+    const beforeReplay = tenant.calls.length;
+    await copy();
+    expect([...tenant.objects]).toEqual(saved);
+    const replay = tenant.calls.slice(beforeReplay);
+    expect(replay.some(({ path }) => path === "zerotrust.objects.batch")).toBe(false);
+
+    const [first, ...rest] = records;
+    const changed = {
+      ...first,
+      values: { ...first.values, file_name: "Andere Datei.png" },
+    };
+    await expect(copy([changed, ...rest])).rejects.toThrow();
+    expect([...tenant.objects]).toEqual(saved);
+    expect(JSON.stringify(tenant.calls)).not.toContain(rows[0].file_name);
+  } finally {
+    await lockCryptoSession();
+  }
+}, fixtureTimeout(20_000));
+
 test("scan owners must exist in the tenant source rather than silently creating unrelated user areas", async () => {
   const user = row("users", {
     id: "87",
@@ -140,4 +205,4 @@ test("scan owners must exist in the tenant source rather than silently creating 
   } finally {
     await opened.database.close();
   }
-});
+}, fixtureTimeout(5_000));
