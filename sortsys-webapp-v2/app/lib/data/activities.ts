@@ -16,6 +16,7 @@ import { captureAccountScope } from "../crypto/session";
 import { uiText } from "../i18n";
 import {
   ACTIVITY_PREFIXES,
+  PLANNING_ACTIVITY_PREFIXES,
   activityArea,
   activitySources,
 } from "./activityModels";
@@ -26,9 +27,11 @@ import {
   activityOrder,
   changedRows,
   selectActivity,
+  selectPlanningProjectActivity,
   type Activity,
   type ActivityCandidate,
   type ActivityPosition,
+  type PlanningProjectActivity,
   type ResourceType,
   type RowChange,
 } from "./activityData";
@@ -68,6 +71,7 @@ type ActivityOwner = {
   day: string | null;
 };
 type Candidate = ActivityCandidate;
+type ActivityScope = "all" | "tool" | "planning";
 type ActivityCache = {
   prefixes: string;
   head: string;
@@ -79,6 +83,15 @@ type ActivityCache = {
   actorNames: Map<string, string | null>;
   complete: boolean;
 };
+
+function createActivityLane() {
+  return {
+    queries: createSerialQueue(),
+    caches: new Map<ActivityScope, ActivityCache>(),
+    stamp: undefined as string | undefined,
+  };
+}
+
 class ChangedAccess extends Error {}
 const MAX_SEQUENCE = 9223372036854775807n;
 const HISTORY_PAGE_SIZE = 16;
@@ -221,34 +234,42 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
   const { live } = captureAccountScope(signal, client);
   let closed = false;
   let accessEpoch = 0;
-  let cacheStamp: string | undefined;
-  const caches = new Map<"all" | "tool", ActivityCache>();
-  const queries = createSerialQueue();
+  const timeline = createActivityLane();
+  // A calendar scan may need more pages than the dashboard's activity list.
+  const planning = createActivityLane();
+  const invalidate = () => {
+    accessEpoch++;
+    timeline.caches.clear();
+    planning.caches.clear();
+  };
   const assertActive = () => {
     live();
     if (closed) {
       throw new InvalidProtectedData();
     }
   };
-  async function query(input: unknown): Promise<Activity[]> {
-    const request = activityInput(input);
-    const scope = request.resourceType === "tool" ? "tool" : "all";
-    let prefixes = ACTIVITY_PREFIXES;
-    if (scope === "tool") {
-      prefixes = [
-        request.resourceId ? `tool:${request.resourceId}:` : "tool:",
-        // The tool reference is encrypted inside each booking. Keep these
-        // candidates and the copied history until their owners are decoded.
-        "tool-tracking:",
-        LEGACY_ACTIVITY_PREFIX,
-      ];
-    }
+  async function scan<T>(
+    lane: ReturnType<typeof createActivityLane>,
+    scope: ActivityScope,
+    prefixes: string[],
+    select: (
+      state: ActivityCache,
+      context: Awaited<ReturnType<typeof protectedCollections>>,
+      nameActors: (items: Activity[], state: ActivityCache) => Promise<void>,
+    ) => Promise<T | undefined> | T | undefined,
+    cancellation?: AbortSignal,
+  ): Promise<T> {
+    const { caches } = lane;
+    const readSignal = cancellation
+      ? AbortSignal.any([signal, cancellation])
+      : signal;
     const prefixKey = JSON.stringify(prefixes);
     const previous = caches.get(scope);
     const conditional = previous?.prefixes === prefixKey ? previous : null;
     const expectedAccessEpoch = accessEpoch;
     const assertCurrentAccess = () => {
       assertActive();
+      readSignal.throwIfAborted();
       if (accessEpoch !== expectedAccessEpoch) {
         throw new ChangedAccess();
       }
@@ -272,7 +293,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     // Fetch the opaque first page alongside access. Only use a conditional
     // reply once the freshly verified access stamp accepts its cached head.
     const [context, initialPage] = await Promise.all([
-      protectedCollections(client, signal),
+      protectedCollections(client, readSignal),
       readFirstPage(conditional),
     ]);
     assertCurrentAccess();
@@ -809,17 +830,17 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     }
     try {
       const stamp = context.activityStamp();
-      if (cacheStamp !== stamp) {
+      if (lane.stamp !== stamp) {
         caches.clear();
-        cacheStamp = stamp;
+        lane.stamp = stamp;
       }
 
-      // Keep the overview and one tool timeline warm, without holding on to a
-      // large paginated timeline after leaving it.
-      const inactive = scope === "tool" ? "all" : "tool";
-      const inactiveSize = caches.get(inactive)?.groups.size ?? 0;
-      if (inactiveSize > MAX_INACTIVE_ACTIVITY_GROUPS) {
-        caches.delete(inactive);
+      // A small overview can stay warm after switching views. Do not retain
+      // a large paginated result once a different view takes over.
+      for (const [key, value] of caches) {
+        if (key !== scope && value.groups.size > MAX_INACTIVE_ACTIVITY_GROUPS) {
+          caches.delete(key);
+        }
       }
 
       let state = caches.get(scope);
@@ -860,19 +881,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       }
 
       for (let pages = 0; pages < MAX_HISTORY_PAGES; pages++) {
-        const result = selectActivity(state.groups.values(), request);
-        const lastRequested = result.at(-1)?.item;
-        const endPosition = lastRequested
-          ? activityCursor(lastRequested.id)
-          : null;
-        const enoughEntries = result.length === request.limit;
-        const finishedBoundary = isCompleteBoundary(endPosition, state.edge);
-
-        if (state.complete || (enoughEntries && finishedBoundary)) {
-          const items = result.map(({ item }) => structuredClone(item));
-          await nameVisibleActors(items, state);
-          return items;
-        }
+        const result = await select(state, context, nameVisibleActors);
+        assertCurrentAccess();
+        if (result !== undefined) return result;
 
         const before = state.after;
         const page = await required(
@@ -906,42 +917,104 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       for (const value of collections.values()) {
         value.close();
       }
+      if (
+        scope === "planning" &&
+        (caches.get(scope)?.groups.size ?? 0) > MAX_INACTIVE_ACTIVITY_GROUPS
+      ) {
+        caches.delete(scope);
+      }
     }
   }
+
+  function run<T>(
+    lane: ReturnType<typeof createActivityLane>,
+    read: () => Promise<T>,
+  ) {
+    return lane.queries.run(async () => {
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          return await read();
+        } catch (error) {
+          if (!(error instanceof ChangedAccess)) throw error;
+
+          lane.caches.clear();
+          if (attempt === 2) throw error;
+        }
+      }
+
+      throw new InvalidProtectedData();
+    });
+  }
+
   return {
     close() {
       closed = true;
-      accessEpoch++;
-      caches.clear();
+      invalidate();
     },
     async refresh() {
       assertActive();
-      accessEpoch++;
-      caches.clear();
+      invalidate();
     },
     async mutate() {
       throw new InvalidProtectedData();
+    },
+    recentProjects(
+      projects: readonly PlanningProjectActivity[],
+      cancellation?: AbortSignal,
+    ) {
+      return run(planning, () => {
+        let readable: PlanningProjectActivity[] | undefined;
+        return scan(
+          planning,
+          "planning",
+          PLANNING_ACTIVITY_PREFIXES,
+          (state, context) => {
+            readable ??= projects.filter(({ id }) =>
+              context.readable(projectCollection(id)),
+            );
+
+            const { selected, complete } = selectPlanningProjectActivity(
+              readable,
+              state.groups.values(),
+              state.edge,
+            );
+
+            if (complete || state.complete) return selected.map(({ id }) => id);
+          },
+          cancellation,
+        );
+      });
     },
     query(path: string, input: unknown) {
       if (path !== "personalization.activity.list") {
         return Promise.reject(new InvalidProtectedData());
       }
-      return queries.run(async () => {
-        for (let attempt = 0; attempt < 3; attempt++) {
-          try {
-            return await query(input);
-          } catch (error) {
-            if (!(error instanceof ChangedAccess)) {
-              throw error;
-            }
-
-            caches.clear();
-            if (attempt === 2) {
-              throw error;
-            }
-          }
+      return run(timeline, () => {
+        const request = activityInput(input);
+        const scope = request.resourceType === "tool" ? "tool" : "all";
+        let prefixes = ACTIVITY_PREFIXES;
+        if (scope === "tool") {
+          prefixes = [
+            request.resourceId ? `tool:${request.resourceId}:` : "tool:",
+            // The booking's tool reference is encrypted, as is copied history.
+            "tool-tracking:",
+            LEGACY_ACTIVITY_PREFIX,
+          ];
         }
-        throw new InvalidProtectedData();
+
+        return scan(timeline, scope, prefixes, async (state, _context, nameActors) => {
+          const selected = selectActivity(state.groups.values(), request);
+          const last = selected.at(-1)?.item;
+          const position = last ? activityCursor(last.id) : null;
+          const enough = selected.length === request.limit;
+          if (!state.complete && !(enough && isCompleteBoundary(position, state.edge))) {
+            return undefined;
+          }
+
+          const items = selected.map(({ item }) => structuredClone(item));
+          await nameActors(items, state);
+          return items;
+        });
       });
     },
   };

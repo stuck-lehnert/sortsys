@@ -183,6 +183,41 @@ test("project change ordering keeps microseconds before applying the search limi
   }
 }, 60_000);
 
+test("planning excludes scheduled projects by their public project IDs", async () => {
+  const scheduled = projectCollection("12");
+  const eligible = projectCollection("13");
+  const tenant = await protectedTenant([scheduled, eligible], () => ["read"]);
+  const projects = createProtectedProjects(
+    tenant.client,
+    new AbortController().signal,
+    async () => {
+      throw new Error("Directory not needed");
+    },
+    duckDriver,
+  );
+
+  try {
+    for (const [area, id] of [[scheduled, "34"], [eligible, "35"]]) {
+      await tenant.seed(area, area.prefix, {
+        format: "sortsys-project-v1",
+        project: row("projects", {
+          id,
+          title: `Sanierung ${id}`,
+          created_at: "2026-01-01T12:00:00Z",
+          modified_at: "2026-01-01T12:00:00Z",
+        }),
+        contacts: [],
+      });
+    }
+
+    const candidates = await projects.planningCandidates(["12"]);
+    expect(candidates.map(({ id }) => id)).toEqual(["13"]);
+  } finally {
+    projects.close();
+    lockCryptoSession();
+  }
+});
+
 test("warm project reads, including offer labels, do not wait for another projection", async () => {
   const area = projectCollection("2");
   const { client, calls, seed } = await protectedTenant(

@@ -1867,6 +1867,37 @@ test("planning employee rows and occupied project rows use assignment titles whi
   assert.equal(await shownTitle.count(), 0);
 });
 
+test("planning shows assignments before its five recent suggestions", async () => {
+  const { project } = populatePlanning();
+  const unassigned = Array.from({ length: 7 }, (_, index) => ({
+    id: `spare-${index}`,
+    title: `Unassigned project ${index}`,
+    finishedAt: index === 6 ? new Date("2026-10-26T12:00:00Z") : null,
+  }));
+  const ranked = [unassigned[6], unassigned[5], ...unassigned.slice(0, 5)];
+  api.respond("projects.list", (input) =>
+    input?.orderBy === "activity" ? [project, ...ranked] : [project, ...unassigned],
+  );
+
+  await page.clock.setFixedTime(new Date("2026-10-27T12:00:00Z"));
+  await openApplication(
+    "/deployments?view=day&day=2026-10-27&holdStream=planningSuggestions",
+  );
+  const calendar = page.getByRole("region", { name: "Resource planning" });
+  const assignment = calendar.getByRole("button", { name: /Fixture deployment/ });
+  const projectRows = calendar.locator(".pep-day-user > span");
+  await assignment.waitFor();
+  assert.deepEqual(await projectRows.allTextContents(), [project.title]);
+
+  await page.evaluate(() => window.__sortsysReleasePresentationStream());
+  await calendar.getByText(unassigned[5].title, { exact: true }).waitFor();
+  assert.deepEqual(await projectRows.allTextContents(), [
+    project.title,
+    ...[5, 0, 1, 2, 3].map((index) => unassigned[index].title),
+  ]);
+  assert.equal(await assignment.isVisible(), true);
+});
+
 test("planning keeps the calendar visible while a saved assignment refreshes", async () => {
   const { deployments } = populatePlanning();
   const savedNote = "Extra material pickup";

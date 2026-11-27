@@ -18,6 +18,7 @@ export const gaebDocuments = businessClient.documents;
 export const toolResources = businessClient.toolResources;
 export const streamDirectorySearch = businessClient.streamDirectorySearch;
 export const streamPersonnelName = businessClient.streamPersonnelName;
+export const planningProjects = { stream: businessClient.streamPlanningProjects };
 export const organizationSettings = businessClient.organization;
 export const organizationLogo = businessClient.logo;
 export const protectedContent = businessClient.context;

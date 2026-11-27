@@ -43,6 +43,7 @@ import {
   projectCommercialCollection,
 } from "./projectCommercial";
 import { acquireDataRuntime } from "./runtime/session";
+import type { DataRequest, DataView } from "./runtime/runtime";
 import { announceDataChanges } from "./runtime/changes";
 import { attachPlanningTitles } from "./planningTitlePublication";
 import { timestampMicros } from "./timestamps";
@@ -116,6 +117,16 @@ function projectChangeTime(payload: ProjectPayload) {
   return modified > created ? modified : created;
 }
 
+function listedProjects(
+  view: DataView,
+  selected: readonly DataRequest<ProjectPayload>[],
+) {
+  return selected
+    .flatMap((item) => view.documents(item))
+    .map((document) => document.value)
+    .filter((project) => project.project);
+}
+
 function projectsByChangeTime(payloads: ProjectPayload[]) {
   return payloads
     .map((payload) => ({
@@ -138,6 +149,14 @@ export function createProtectedProjects(
   const lease = acquireDataRuntime(client, signal, driver),
     runtime = lease.runtime,
     live = lease.live;
+
+  async function projectRequests() {
+    live();
+    const areas = await readableProjectAreas(client, signal);
+    live();
+    return areas.map((area) => ({ model: PROJECT_MODEL, area }));
+  }
+
   async function read(id: string, fresh = false) {
     live();
     if (fresh) runtime.revalidate();
@@ -254,6 +273,27 @@ export function createProtectedProjects(
   return {
     close: lease.close,
     prepareCreate,
+    async planningCandidates(excluded: readonly string[]) {
+      const omitted = new Set(excluded);
+      const selected = await projectRequests();
+      const candidates = await runtime.read(
+        selected,
+        (view) => listedProjects(view, selected).flatMap((payload) => {
+          const project = wireProject(payload);
+          if (project.finishedAt || omitted.has(project.id)) return [];
+
+          return [{
+            id: project.id,
+            title: project.title,
+            instant: projectChangeTime(payload),
+          }];
+        }),
+        undefined,
+        { batchDirectory: true },
+      );
+      live();
+      return candidates;
+    },
     async getMany(ids: string[]) {
       live();
       if (ids.length > 2000 || new Set(ids).size !== ids.length)
@@ -345,9 +385,7 @@ export function createProtectedProjects(
         if (data.search != null && typeof data.search !== "string")
           throw new InvalidProtectedData();
       }
-      const areas = await readableProjectAreas(client, signal);
-      live();
-      const selected = areas.map((area) => ({ model: PROJECT_MODEL, area }));
+      const selected = await projectRequests();
       const linkedContact = forContact
         ? { ...contactRequest, ids: [CONTACT_COLLECTION.prefix + data.contactId] }
         : null;
@@ -355,15 +393,10 @@ export function createProtectedProjects(
       const values = await runtime.read(
         linkedContact ? [...selected, linkedContact] : selected,
         (view) => {
-          const projects = () =>
-            selected
-              .flatMap((request) => view.documents(request))
-              .map((document) => document.value)
-              .filter((project) => project.project);
           if (linkedContact) {
             if (!view.documents(linkedContact)[0]?.value.row)
               throw new InvalidProtectedData();
-            return projects()
+            return listedProjects(view, selected)
               .filter((project) =>
                 project.contacts.some(
                   (link) => publicId(link.values.contact_id) === data.contactId,
@@ -376,7 +409,7 @@ export function createProtectedProjects(
             byActivity ? projectChangeSearch : projectSearch,
             selected,
             () => {
-              const payloads = projects();
+              const payloads = listedProjects(view, selected);
               const ordered = byActivity
                 ? projectsByChangeTime(payloads)
                 : payloads.map(wireProject).sort(compareProjects);

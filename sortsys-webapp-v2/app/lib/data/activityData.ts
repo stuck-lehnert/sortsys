@@ -223,3 +223,47 @@ export function selectActivity(
 
   return output;
 }
+
+export type PlanningProjectActivity = {
+  id: string;
+  title: string;
+  instant: bigint;
+};
+
+/** Rank eligible projects by the newest visible event or project change.
+ * `edge` is the validated boundary of the newest-first journal scan. */
+export function selectPlanningProjectActivity(
+  projects: readonly PlanningProjectActivity[],
+  candidates: Iterable<ActivityCandidate>,
+  edge: ActivityPosition | null,
+) {
+  const ranked = new Map(projects.map((project) => [project.id, project]));
+  for (const { item, instant } of candidates) {
+    const id = item.contextId ??
+      (item.resourceType === "project" ? item.resourceId : null);
+    if (id === null) continue;
+
+    const previous = ranked.get(id);
+    if (previous && instant > previous.instant) {
+      ranked.set(id, { ...previous, instant });
+    }
+  }
+
+  const selected = [...ranked.values()]
+    .sort((left, right) => {
+      if (left.instant !== right.instant) {
+        return left.instant > right.instant ? -1 : 1;
+      }
+
+      return left.title.toLowerCase().localeCompare(right.title.toLowerCase()) ||
+        left.id.localeCompare(right.id);
+    })
+    .slice(0, 5);
+  const oldest = selected.at(-1);
+
+  // An unseen event at the cutoff can still change the title tie-break.
+  return {
+    selected,
+    complete: !oldest || !edge || edge.instant < oldest.instant,
+  };
+}

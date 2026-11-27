@@ -1,5 +1,5 @@
 import { createClient } from "@sortsys/v2-client";
-import { Observable } from "rxjs";
+import { map, Observable } from "rxjs";
 import { base64, createAccountVault, createIdentity } from "@sortsys/zerotrust";
 import { acceptVault } from "../../app/lib/crypto/session";
 import { errorHttpStatus } from "../../app/lib/errorTelemetry";
@@ -11,6 +11,7 @@ import {
   dashboardPreferences,
   gaebDocuments,
   organizationSettings,
+  planningProjects,
   templateAssets,
   reportClientError,
 } from "../../app/lib/client";
@@ -72,7 +73,10 @@ export async function installPresentationClient() {
       transport.streamQuery(...args).subscribe({
         next(reply) {
           report("client.streamQuery", reply[1]);
-          if (args[0] === heldStream) {
+          const planningSuggestions = args[0] === "projects.list" &&
+            args[1]?.orderBy === "activity";
+          if (args[0] === heldStream ||
+            (planningSuggestions && heldStream === "planningSuggestions")) {
             void streamReleased.then(() => {
               if (!subscriber.closed) subscriber.next(reply);
             });
@@ -85,6 +89,16 @@ export async function installPresentationClient() {
       }),
     );
   client.mutate = transport.mutate;
+  planningProjects.stream = (excluded) =>
+    client.streamQuery("projects.list", { orderBy: "activity" }).pipe(
+      map(([projects, error]) => {
+        const displayed = new Set(excluded);
+        const recent = projects?.filter(({ id, finishedAt }) =>
+          !finishedAt && !displayed.has(id),
+        );
+        return [recent?.map(({ id }) => id) ?? null, error];
+      }),
+    );
   assistant.sendWithProjectDocuments = async (input, signal) => {
     const [reply, error] = await transport.mutateDynamic(
       "llm.messages.send",

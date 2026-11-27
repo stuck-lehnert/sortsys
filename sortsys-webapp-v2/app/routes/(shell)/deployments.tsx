@@ -3,6 +3,7 @@ import { Input as UIInput } from "@heroui/react";
 import { currentLocaleTag, uiText } from "~/lib/i18n";
 import { InlineLoading, OperationalTag } from "@sortsys/react-components";
 import { useEffect, useId, useMemo, useState } from "react";
+import { EMPTY } from "rxjs";
 import type { Route } from "./+types/deployments";
 import { MyButton } from "~/components/MyButton";
 import { MyForm } from "~/components/MyForm";
@@ -14,7 +15,7 @@ import { useMyModals } from "~/hooks/useMyModals";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
 import { useShortcut } from "~/hooks/useShortcut";
 import { useBoolUrlParam, useStringUrlParam } from "~/hooks/useUrlParam";
-import { client } from "~/lib/client";
+import { client, planningProjects } from "~/lib/client";
 import { parseDateInputValue, startOfDay, toDateInputValue } from "~/lib/calendarDate";
 import { formatDate, userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
@@ -161,7 +162,7 @@ export default function DeploymentsPage() {
   }, [range.endExclusive, range.start, showWeekend, viewMode]);
 
   const [projects, projectsError] = useClientStream(
-    () => client.streamQuery("projects.list", { orderBy: "activity" }),
+    () => client.streamQuery("projects.list", {}),
     [],
   );
   const [users, usersError] = useClientStream(
@@ -300,7 +301,7 @@ export default function DeploymentsPage() {
     [projectUnavailability],
   );
 
-  const rowEntities = useMemo(() => {
+  const scheduledRows = useMemo(() => {
     const rows = new Map<string, { id: string; label: string }>();
 
     if (rowMode === "user") {
@@ -399,29 +400,6 @@ export default function DeploymentsPage() {
           )
         );
       });
-
-      if (rowMode === "project") {
-        values = addRecentPlanningProjects(values, projects ?? []);
-      }
-    }
-
-    if (normalizedSearch) {
-      values = values.filter((row) => {
-        if (
-          row.label
-            .toLocaleLowerCase(currentLocaleTag())
-            .includes(normalizedSearch)
-        )
-          return true;
-
-        return deploymentsForRow(row.id).some((item) => {
-          const searchable =
-            rowMode === "project" ? item.userLabel : item.projectLabel;
-          return searchable
-            .toLocaleLowerCase(currentLocaleTag())
-            .includes(normalizedSearch);
-        });
-      });
     }
 
     return values;
@@ -435,7 +413,6 @@ export default function DeploymentsPage() {
     projects,
     range.start,
     rowMode,
-    normalizedSearch,
     sessionInfo.user,
     showEmptyRows,
     unavailabilityByProjectId,
@@ -444,6 +421,50 @@ export default function DeploymentsPage() {
     vacations,
     vacationsByUserId,
     visibleRangeEndExclusive,
+  ]);
+
+  const showSuggestions = rowMode === "project" && !showEmptyRows;
+  const canLoadSuggestions = showSuggestions && !deploymentsLoading && !!projects &&
+    (unavailabilityRows !== null || !!projectUnavailabilityError);
+  const excludedProjects = canLoadSuggestions
+    ? JSON.stringify(scheduledRows.map(({ id }) => id).sort())
+    : null;
+  const [recentProjectIds, recentProjectsError] = useClientStream(
+    () => excludedProjects === null
+      ? EMPTY
+      : planningProjects.stream(JSON.parse(excludedProjects)),
+    [excludedProjects],
+  );
+
+  const rowEntities = useMemo(() => {
+    let values = scheduledRows;
+    if (showSuggestions && recentProjectIds) {
+      const recent = recentProjectIds.flatMap((id) => {
+        const project = projectMap.get(id);
+        return project ? [project] : [];
+      });
+      values = addRecentPlanningProjects(values, recent);
+    }
+
+    if (!normalizedSearch) return values;
+
+    const matches = (text: string) => text
+      .toLocaleLowerCase(currentLocaleTag())
+      .includes(normalizedSearch);
+    return values.filter((row) => matches(row.label) ||
+      deploymentsForRow(row.id).some((item) =>
+        matches(rowMode === "project" ? item.userLabel : item.projectLabel),
+      ),
+    );
+  }, [
+    scheduledRows,
+    showSuggestions,
+    recentProjectIds,
+    projectMap,
+    normalizedSearch,
+    rowMode,
+    deploymentsByProjectId,
+    deploymentsByUserId,
   ]);
 
   const rowHeading =
@@ -1205,7 +1226,8 @@ export default function DeploymentsPage() {
     projectsError ||
     usersError ||
     vacationsError ||
-    projectUnavailabilityError;
+    projectUnavailabilityError ||
+    recentProjectsError;
 
   const projectRowsPending = !projects && !projectsError && rowMode === "project";
   const needsProjectDirectory =

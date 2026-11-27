@@ -566,6 +566,83 @@ test("project finance history recognizes manual and permanent records without op
   }
 });
 
+test("dashboard activity does not wait for a cancelled planning scan", async () => {
+  const fixture = await createActivityFixture();
+  const planningStarted = Promise.withResolvers();
+  const releasePlanning = Promise.withResolvers();
+  const cancellation = new AbortController();
+  const query = fixture.client.query;
+  let pending;
+
+  try {
+    fixture.client.query = async (path, input, options) => {
+      if (
+        path === "zerotrust.history.list" &&
+        !input.prefixes.includes("personnel:")
+      ) {
+        planningStarted.resolve();
+        await releasePlanning.promise;
+      }
+
+      return query(path, input, options);
+    };
+
+    pending = fixture.store.recentProjects([], cancellation.signal);
+    void pending.catch(() => {});
+    await planningStarted.promise;
+    expect(
+      await fixture.store.query("personalization.activity.list", {}),
+    ).toEqual([]);
+
+    cancellation.abort();
+    releasePlanning.resolve();
+    await expect(pending).rejects.toMatchObject({ name: "AbortError" });
+  } finally {
+    cancellation.abort();
+    releasePlanning.resolve();
+    await pending?.catch(() => {});
+    fixture.close();
+  }
+});
+
+test("planning counts a related invoice only while that facet is readable", async () => {
+  const projects = [projectCollection("4"), projectCollection("5")];
+  const invoices = financialCollection("4", "invoice");
+  const fixture = await createActivityFixture([...projects, invoices]);
+  try {
+    for (const area of projects) {
+      await fixture.appendObject(area, area.prefix, {
+        format: "sortsys-project-v1",
+        project: row("projects", { id: area.scope.slice(8), title: "Projekt" }),
+        contacts: [],
+      }, true);
+    }
+    const invoice = row("project_financial_entries", {
+      id: "13",
+      project_id: "4",
+      type: "invoice",
+      amount: 134,
+    });
+    const written = await fixture.appendObject(invoices, financialObject(invoice), {
+      format: "sortsys-project-financial-v1",
+      row: invoice,
+      exactAmount: null,
+    });
+    const when = BigInt(written.occurredMicros);
+    const candidates = [
+      { id: "4", title: "Projekt 4", instant: when - 2n },
+      { id: "5", title: "Projekt 5", instant: when - 1n },
+    ];
+    expect(await fixture.store.recentProjects(candidates)).toEqual(["4", "5"]);
+    expect(await fixture.store.recentProjects(candidates)).toEqual(["4", "5"]);
+
+    await fixture.revokeArea(invoices.scope, invoices.facet);
+    expect(await fixture.store.recentProjects(candidates)).toEqual(["5", "4"]);
+  } finally {
+    fixture.close();
+  }
+});
+
 test("activity derives verified changes from separate personal facets and omits the source-copy publications", async () => {
   const tenant = await createActivityFixture();
   try {

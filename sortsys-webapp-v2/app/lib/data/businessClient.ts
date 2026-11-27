@@ -223,6 +223,7 @@ type DirectorySearchPath =
   | "contacts.list"
   | "products.vendors.list";
 const DIRECTORY_SEARCH_LIMIT = 8;
+const PLANNING_ACTIVITY_QUERY = "projects.planningRecent";
 
 export function createBusinessClient(
   base: Client,
@@ -531,14 +532,34 @@ export function createBusinessClient(
           ),
       },
       {
-        queries: new Set(["personalization.activity.list"]),
+        queries: new Set(["personalization.activity.list", PLANNING_ACTIVITY_QUERY]),
         mutations: new Set<string>(),
         affected: (domain) =>
           !domain.startsWith("assistant:") &&
           !domain.startsWith("preferences:") &&
           !domain.startsWith("migration:"),
-        open: async (signal) =>
-          (await import("./activities")).createProtectedActivity(base, signal),
+        open: async (signal) => {
+          const { createProtectedActivity } = await import("./activities");
+          const activity = createProtectedActivity(base, signal);
+
+          return {
+            ...activity,
+            async query(path, input) {
+              if (path !== PLANNING_ACTIVITY_QUERY) return activity.query(path, input);
+
+              const { excluded, cancellation } = input as {
+                excluded: readonly string[];
+                cancellation: AbortSignal;
+              };
+              cancellation.throwIfAborted();
+              const candidates = await (await projectStore()).planningCandidates(excluded);
+              cancellation.throwIfAborted();
+              return candidates.length < 2
+                ? candidates.map(({ id }) => id)
+                : activity.recentProjects(candidates, cancellation);
+            },
+          };
+        },
       },
       {
         queries: PERSONAL_HISTORY_QUERIES,
@@ -942,6 +963,7 @@ export function createBusinessClient(
   ): Promise<[unknown | null, RpcClientError | null]> {
     try {
       await synchronized();
+      if (path === PLANNING_ACTIVITY_QUERY) throw unsupportedOperation(path);
       if (adapters.owns(path))
         return [await adapters.query(path, input, limit), null];
       if (TOOL_QUERIES.has(path)) return await queryStore(toolStore, path, input);
@@ -1694,6 +1716,19 @@ export function createBusinessClient(
     });
   }
 
+  function streamPlanningProjects(excluded: readonly string[]) {
+    return watchQuery<string[]>(PLANNING_ACTIVITY_QUERY, async (signal) => {
+      const ids = await readResourceChoices(async () => {
+        const result = await adapters.query(PLANNING_ACTIVITY_QUERY, {
+          excluded,
+          cancellation: AbortSignal.any([signal, contentAccess.context()]),
+        });
+        return result as string[];
+      }, signal);
+      return [ids, null];
+    });
+  }
+
   async function documentFile(
     caseId: string,
     id: string,
@@ -2000,6 +2035,7 @@ export function createBusinessClient(
     toolResources: typeof toolResourceActions;
     streamDirectorySearch: typeof streamDirectorySearch;
     streamPersonnelName: typeof streamPersonnelName;
+    streamPlanningProjects: typeof streamPlanningProjects;
     organization: typeof organizationActions;
     logo: typeof logoActions;
     templates: typeof templateActions;
@@ -2017,6 +2053,7 @@ export function createBusinessClient(
     toolResources: toolResourceActions,
     streamDirectorySearch,
     streamPersonnelName,
+    streamPlanningProjects,
     organization: organizationActions,
     logo: logoActions,
     templates: templateActions,

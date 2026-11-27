@@ -62,7 +62,7 @@ export function addRecentPlanningProjects(
   const displayedIds = new Set(rows.map((row) => row.id));
   let added = 0;
 
-  // Keep the order supplied by projects.list({ orderBy: "activity" }).
+  // Keep the activity order supplied by the caller.
   for (const project of orderedProjects) {
     if (project.finishedAt || displayedIds.has(project.id)) {
       continue;

@@ -79,31 +79,37 @@ import {
   FINANCIAL_MODEL,
 } from "./projectFinancialData";
 
+const activityPrefixes: [prefix: string, relatesToProjects?: true][] = [
+  ["product:"],
+  ["product-price:"],
+  ["vendor:"],
+  ["customer:"],
+  ["contact:"],
+  ["personnel:"],
+  ["project:", true],
+  ["financial:", true],
+  ["immutable:project:", true],
+  ["project-files:", true],
+  ["tool:"],
+  ["tool-tracking:"],
+  ["daily-report:", true],
+  ["daily-costs:", true],
+  ["regie-report:", true],
+  ["regie-hours:", true],
+  ["delivery-note:", true],
+  ["delivery-price:", true],
+  ["schedule:", true],
+  ["absence:"],
+  ["legacy-activity:", true],
+];
+
+export const ACTIVITY_PREFIXES = activityPrefixes.map(([prefix]) => prefix);
+export const PLANNING_ACTIVITY_PREFIXES = activityPrefixes
+  .filter(([, relatesToProjects]) => relatesToProjects)
+  .map(([prefix]) => prefix);
+
 /** Canonical source decoders are shared with the editing adapters. A valid
  * signature alone must not turn an arbitrary JSON row into a history event. */
-export const ACTIVITY_PREFIXES = [
-  "product:",
-  "product-price:",
-  "vendor:",
-  "customer:",
-  "contact:",
-  "personnel:",
-  "project:",
-  "financial:",
-  "immutable:project:",
-  "project-files:",
-  "tool:",
-  "tool-tracking:",
-  "daily-report:",
-  "daily-costs:",
-  "regie-report:",
-  "regie-hours:",
-  "delivery-note:",
-  "delivery-price:",
-  "schedule:",
-  "absence:",
-  "legacy-activity:",
-];
 export function activityArea(
   domain: string,
   object?: string,
