@@ -1695,6 +1695,24 @@ export function createBusinessClient(
       return [rows, null];
     });
   }
+
+  function streamPersonnelName(id: string) {
+    return watchQuery<string>("users.get", async (cancellation) => {
+      const name = await readResourceChoices(async () => {
+        assertDataSession();
+        const signal = AbortSignal.any([cancellation, contentAccess.context()]);
+        const { loadPersonnelNames } = await import("./personnelNames");
+        signal.throwIfAborted();
+
+        const names = await loadPersonnelNames(base, [id], signal);
+        signal.throwIfAborted();
+        return names.get(id) ?? null;
+      }, cancellation);
+
+      return [name, null];
+    });
+  }
+
   async function documentFile(
     caseId: string,
     id: string,
@@ -2000,6 +2018,7 @@ export function createBusinessClient(
     documents: typeof documentActions;
     toolResources: typeof toolResourceActions;
     streamDirectorySearch: typeof streamDirectorySearch;
+    streamPersonnelName: typeof streamPersonnelName;
     organization: typeof organizationActions;
     logo: typeof logoActions;
     templates: typeof templateActions;
@@ -2016,6 +2035,7 @@ export function createBusinessClient(
     documents: documentActions,
     toolResources: toolResourceActions,
     streamDirectorySearch,
+    streamPersonnelName,
     organization: organizationActions,
     logo: logoActions,
     templates: templateActions,

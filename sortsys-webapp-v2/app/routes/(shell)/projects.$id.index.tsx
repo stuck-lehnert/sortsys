@@ -20,7 +20,7 @@ import {
   formatDate,
   userFullName,
 } from "~/lib/format";
-import { client } from "~/lib/client";
+import { client, streamPersonnelName } from "~/lib/client";
 import { Icons } from "~/lib/icons";
 import {
   renderStructuredPdf,
@@ -96,16 +96,15 @@ export default function ProjectDetailPage() {
 
     return client.streamQuery("customers.get", { id: project.customerId });
   }, [project.customerId]);
-  const [responsibleProjectLeader, responsibleProjectLeaderError] =
+  const leaderId = project.responsibleProjectLeaderUserId;
+  const [leaderName, leaderNameError] =
     useClientStream(() => {
-      if (!project.responsibleProjectLeaderUserId || !canViewUsers) {
+      if (!leaderId || !canViewUsers) {
         return from([[null, null] as [null, null]]);
       }
 
-      return client.streamQuery("users.get", {
-        id: project.responsibleProjectLeaderUserId,
-      });
-    }, [project.responsibleProjectLeaderUserId, canViewUsers]);
+      return streamPersonnelName(leaderId);
+    }, [leaderId, canViewUsers]);
   const [contacts, contactsError] = useClientStream(
     () =>
       client.streamQuery("projects.contacts.list", { projectId: project.id! }),
@@ -327,7 +326,7 @@ export default function ProjectDetailPage() {
         </MyCallout>
       )}
 
-      {!!(customerError || responsibleProjectLeaderError || contactsError) && (
+      {!!(customerError || leaderNameError || contactsError) && (
         <MyCallout
           kind="error"
           title={uiText(
@@ -366,14 +365,12 @@ export default function ProjectDetailPage() {
                 value={formatDate(project.orderReceivedAt, "long")}
               />
             )}
-            {!!project.responsibleProjectLeaderUserId && (
+            {!!leaderId && (
               <AttrList.Attr
                 name={uiText("Verantwortlicher Projektleiter")}
                 value={
-                  !!responsibleProjectLeader ? (
-                    <MyLink to={`/users/${responsibleProjectLeader.id}`}>
-                      {userFullName(responsibleProjectLeader)}
-                    </MyLink>
+                  leaderName ? (
+                    <MyLink to={`/users/${leaderId}`}>{leaderName}</MyLink>
                   ) : canViewUsers ? (
                     "Unbekannt"
                   ) : (
