@@ -504,7 +504,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     );
     async function readCandidates(
       change: Change,
-      page: readonly Change[],
+      findChange: (id: string) => Change | undefined,
       readRows: typeof readSourceRows,
     ): Promise<Candidate[]> {
       verifyAccessVersion(change.access);
@@ -517,7 +517,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         throw new InvalidProtectedData();
       }
       if (change.envelope.object.startsWith(LEGACY_ACTIVITY_PREFIX)) {
-        return legacy(change, page);
+        return legacy(change, findChange);
       }
       if (change.orderId !== change.sequence) {
         throw new InvalidProtectedData();
@@ -692,6 +692,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       }
     >;
     let preceding: Openings | undefined;
+    let precedingChanges: readonly Change[] = [];
 
     async function readPage(changes: Page["changes"]) {
       // A page's oldest event can already contain the next page's first
@@ -723,12 +724,19 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         return rows;
       };
 
+      // Copied events and their name facets share a timestamp and order ID.
+      // Retain the previous page from this snapshot for a split group.
+      const findChange = (id: string) =>
+        changes.find((change) => change.envelope.object === id) ??
+        precedingChanges.find((change) => change.envelope.object === id);
+
       const candidates = (
         await Promise.all(
-          changes.map((change) => readCandidates(change, changes, readRows)),
+          changes.map((change) => readCandidates(change, findChange, readRows)),
         )
       ).flat();
       preceding = opened;
+      precedingChanges = changes;
       return candidates;
     }
 

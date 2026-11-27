@@ -647,6 +647,51 @@ test("a cold activity read overlaps history with access, but discards a page fro
   }
 });
 
+test("copied history reuses verified name facets from the preceding page", async () => {
+  const tenant = await createActivityFixture();
+  const query = () =>
+    tenant.store.query("personalization.activity.list", { limit: 5 });
+
+  try {
+    // Four newer copied events have three facets apiece. Together with the
+    // two native copy publications they leave just enough room for the older
+    // event's names, but not the event itself, on the first page.
+    for (let id = 101; id <= 104; id++) {
+      await tenant.legacy(
+        legacyRow(String(id), "2026-11-13T12:00:00Z", {
+          changed_columns: ["first_name"],
+        }),
+      );
+    }
+    await tenant.legacy(
+      legacyRow("100", "2026-11-11T12:00:00Z", {
+        changed_columns: ["first_name"],
+        actor_name: "Bearbeiterin vor der Übernahme",
+        resource_title: "Name vor der Übernahme",
+      }),
+    );
+
+    tenant.calls.length = 0;
+    const items = await query();
+    expect(items).toHaveLength(5);
+    expect(items.at(-1)).toMatchObject({
+      actorName: "Bearbeiterin vor der Übernahme",
+      resourceTitle: "Name vor der Übernahme",
+    });
+    const count = (route) => tenant.calls.filter(({ path }) => path === route);
+    expect(count("zerotrust.history.list")).toHaveLength(2);
+    expect(count("zerotrust.history.get")).toHaveLength(0);
+
+    await tenant.revokeArea("personnel:1", "master-data");
+    expect((await query()).at(-1)).toMatchObject({
+      actorName: null,
+      resourceTitle: "Name vor der Übernahme",
+    });
+  } finally {
+    tenant.close();
+  }
+});
+
 test("adjacent history pages open each signed revision only once", async () => {
   const tenant = await createActivityFixture();
   const names = Array.from({ length: 34 }, (_, index) => `Vorname ${index + 1}`);

@@ -23,6 +23,7 @@ import { timestampMicros } from "./timestamps";
 type Change = NonNullable<QueryResult<"zerotrust.history.get">>;
 type Context = Awaited<ReturnType<typeof protectedCollections>>;
 type Store = ReturnType<Context>;
+type FindChange = (id: string) => Change | undefined;
 /** The authority vouches for copied history, not for its original author's
  * identity. Current name keys remain necessary even for old labels. */
 export function legacyActivityReader(
@@ -122,7 +123,7 @@ export function legacyActivityReader(
     values: Record<string, unknown>,
     part: LegacyName["part"],
     instant: string,
-    page: readonly Change[],
+    findChange: FindChange,
   ): Promise<LegacyName | null> {
     const area = legacyNameArea(values, part);
     if (!area || !context.readable(area)) {
@@ -130,10 +131,7 @@ export function legacyActivityReader(
     }
 
     const id = legacyActivityObject(area, values.id as string, part);
-    // Name facets often share this page with their event. Across a page
-    // boundary, read the exact revision as before.
-    const included = page.find((change) => change.envelope.object === id);
-    const change = included ?? (await fetchName(id));
+    const change = findChange(id) ?? (await fetchName(id));
     live();
     if (!change) {
       return null;
@@ -158,7 +156,7 @@ export function legacyActivityReader(
 
   return async (
     change: Change,
-    page: readonly Change[],
+    findChange: FindChange,
   ): Promise<ActivityCandidate[]> => {
     const value = await openOnce(change);
     live();
@@ -168,9 +166,9 @@ export function legacyActivityReader(
     const values = value.row.values;
     const instant = change.occurredMicros;
     const [resource, actor, project] = await Promise.all([
-      name(values, "resource", instant, page),
-      name(values, "actor", instant, page),
-      name(values, "context", instant, page),
+      name(values, "resource", instant, findChange),
+      name(values, "actor", instant, findChange),
+      name(values, "context", instant, findChange),
     ]);
     live();
     const position = {
