@@ -24,6 +24,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import type { PrivateIdentity, TenantSetup } from "@sortsys/zerotrust/sortsys";
 import { currentLocale, uiText } from "../i18n";
+import { required } from "../protectedResult";
 import {
   acceptVault,
   passwordWorker,
@@ -85,15 +86,6 @@ export function readTenantSetupLink(hash: string): TenantSetupLink {
     throw new InvalidProtectedData();
   sized(value.secret, 32);
   return { tenant: value.tenant, secret: value.secret };
-}
-
-async function required<T>(
-  result: Promise<[T | null, Error | null]>,
-): Promise<T> {
-  const [value, error] = await result;
-  if (error) throw error;
-  if (value === null) throw new InvalidProtectedData();
-  return value;
 }
 
 export async function prepareOwner(

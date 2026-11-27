@@ -1,6 +1,6 @@
 import type { Client, QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 
 const MAX_MEMBERS = 10_000;
 

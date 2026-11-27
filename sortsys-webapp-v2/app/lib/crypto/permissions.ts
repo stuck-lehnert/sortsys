@@ -23,7 +23,7 @@ import type {
 import { publishVerifiedPolicy, readVerifiedPolicy } from "./policy";
 import { verifyDirectoryCertificate } from "./recipientCertificate";
 import { privateLlmCollection } from "../data/privateLlm";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import type { Collection } from "../data/protectedObjects";
 import {
   MASTER_DATA_AREAS,

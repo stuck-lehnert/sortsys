@@ -13,7 +13,7 @@ import {
   sealedBox,
   sized,
 } from "@sortsys/zerotrust/sortsys";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { unlockedAccount, type trustedHistory } from "./session";
 
 const certificates = createWeakPairCache<

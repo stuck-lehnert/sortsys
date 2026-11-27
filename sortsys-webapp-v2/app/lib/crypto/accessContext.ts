@@ -13,7 +13,7 @@ import {
   revision,
   type Policy,
 } from "@sortsys/zerotrust/sortsys";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { captureAccountScope, verifyAccountHistory } from "./session";
 import { verifyPolicySnapshot } from "./policy";
 import { verifyCreatedAccess } from "./createdAccess";

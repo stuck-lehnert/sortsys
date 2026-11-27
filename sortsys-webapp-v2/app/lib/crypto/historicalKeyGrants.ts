@@ -7,7 +7,7 @@ import {
   rewrapDomainKey,
   verifyDomain,
 } from "@sortsys/zerotrust/sortsys";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { readBoxKeyAuthority } from "./keyAuthorities";
 
 type Rewrap = Parameters<typeof rewrapDomainKey>[0];

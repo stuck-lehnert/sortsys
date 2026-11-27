@@ -17,7 +17,7 @@ import {
   type IdentityCertificate,
 } from "@sortsys/zerotrust/sortsys";
 import { addressId } from "../data/addressBook";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { administratorContext } from "./administration";
 import {
   enrollPasswordAccount,

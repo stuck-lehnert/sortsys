@@ -9,7 +9,7 @@ import {
 import { verifiedAccessContext } from "./accessContext";
 import { readVerifiedPolicy } from "./policy";
 import { ProtectedWriteConflict } from "../data/atomicWrites";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import {
   accessValue,
   compileManagedAccess,

@@ -1,6 +1,6 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { captureAccountScope, trustedHistory } from "./session";
 import { openVerifiedAuthority } from "./setup";
 import { verifiedAccessContext } from "./accessContext";

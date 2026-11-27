@@ -15,7 +15,7 @@ import type { DuckDriver } from "../data/database";
 import { publicId } from "../data/products";
 import { acquireDataRuntime } from "../data/runtime/session";
 import { toolDomain, toolRequest } from "../data/toolData";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 
 /** Recovery invalidates old grants. A current administrator can confirm the
  * existing resource anew; this step itself gives no responsible member keys. */

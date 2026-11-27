@@ -27,7 +27,7 @@ import { preferenceDomain } from "../data/preferenceData";
 import { PRICE_COLLECTION } from "../data/products";
 import { projectAccessDomain } from "../data/projectScope";
 import { TOOL_INDEX, toolDomain } from "../data/toolData";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
 import {
   publishAccessRotations,

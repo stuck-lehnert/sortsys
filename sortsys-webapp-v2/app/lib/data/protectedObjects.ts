@@ -40,6 +40,7 @@ import {
   requiredMessageProof,
   StaleMessageProof,
 } from "../crypto/messageProofs";
+import { required } from "../protectedResult";
 import { isStagedObject } from "./stagedObjects";
 import {
   checkStockObjects,
@@ -61,14 +62,7 @@ import {
   planningRecipientWriter,
 } from "./planningRecipients";
 
-export async function required<T>(
-  request: Promise<[T | null, Error | null]>,
-): Promise<T> {
-  const [result, error] = await request;
-  if (error) throw error;
-  if (result === null) throw new InvalidProtectedData();
-  return result;
-}
+export { required } from "../protectedResult";
 
 export type Collection = {
   domain: string;

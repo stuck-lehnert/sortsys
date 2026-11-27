@@ -6,7 +6,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { captureAccountScope, trustedHistory } from "./session";
 import { openVerifiedAuthority } from "./setup";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { readVerifiedInitializationSource } from "./initializationSource";
 
 /** Shared by the ordinary source copier and conversions with atomic cross-area

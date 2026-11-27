@@ -4,7 +4,7 @@ import {
   validateBackupContext,
   verifyInitializationSource,
 } from "@sortsys/zerotrust/sortsys";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import {
   trustedHistory,
   unlockedAccount,

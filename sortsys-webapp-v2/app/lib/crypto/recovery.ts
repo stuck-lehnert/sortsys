@@ -31,7 +31,7 @@ import type {
 } from "@sortsys/zerotrust/sortsys";
 import { passwordWorker } from "./session";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 
 export type RecoveryDraft = {
   tenant: string;

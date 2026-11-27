@@ -23,7 +23,8 @@ import { prepareHistoricalKeyGrants } from "./historicalKeyGrants";
 import { publishSignedPolicy, readVerifiedPolicy } from "./policy";
 import { publishAccessRotations } from "../data/accessPublication";
 import { isWriteConflict, ProtectedWriteConflict } from "../data/atomicWrites";
-import { required, type Collection } from "../data/protectedObjects";
+import type { Collection } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { mapConcurrent } from "../data/runtime/concurrentReads";
 
 type Change = { area: Collection; patch: ActionPatch };

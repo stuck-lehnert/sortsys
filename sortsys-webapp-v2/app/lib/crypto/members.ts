@@ -15,7 +15,7 @@ import { administratorContext } from "./administration";
 import { readVerifiedPolicy } from "./policy";
 import { timestampFromMicros, timestampMicros } from "../data/timestamps";
 import type { MemberPublication } from "../data/atomicWrites";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 
 type Creation = MutateInput<"zerotrust.members.create">;
 type MemberChange = NonNullable<

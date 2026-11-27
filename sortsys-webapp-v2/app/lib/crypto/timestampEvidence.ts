@@ -24,7 +24,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory, unlockedAccount } from "./session";
 import { createObjectAuthorVerifier } from "./objectAuthors";
-import { required } from "../data/protectedObjects";
+import { required } from "../protectedResult";
 import { listenDataChanges } from "../data/runtime/changes";
 
 type Evidence = NonNullable<QueryResult<"zerotrust.timestamps.get">>;
