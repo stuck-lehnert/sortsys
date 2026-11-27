@@ -508,6 +508,53 @@ test("activity derives verified changes from separate personal facets and omits 
   }
 });
 
+test("a cold activity read overlaps history with access, but discards a page from before revocation", async () => {
+  const tenant = await createActivityFixture();
+  const area = personnelCollection("2", "master-data");
+  const accessRequested = Promise.withResolvers();
+  const releaseAccess = Promise.withResolvers();
+  const query = tenant.client.query;
+  let firstPage;
+  let pending;
+
+  try {
+    await tenant.append("master-data", { first_name: "Vertrauliche Änderung" });
+    tenant.client.query = async (path, input, options) => {
+      if (path === "zerotrust.access.snapshot") {
+        accessRequested.resolve();
+        await releaseAccess.promise;
+      }
+      const response = query(path, input, options);
+      if (path === "zerotrust.history.list") firstPage ??= response;
+      return response;
+    };
+
+    pending = tenant.store.query("personalization.activity.list", {});
+    await accessRequested.promise;
+    expect(firstPage).toBeDefined();
+    const [stale] = await firstPage;
+    expect(stale.changes.some(({ domain }) => domain === area.domain)).toBe(true);
+
+    await tenant.revokeArea(area.scope, area.facet);
+    releaseAccess.resolve();
+
+    expect(await pending).toEqual([]);
+    expect(
+      tenant.calls.filter(({ path }) => path === "zerotrust.history.list"),
+    ).toHaveLength(2);
+    expect(
+      tenant.calls.filter(
+        ({ path, input }) =>
+          path === "zerotrust.keys.history" && input.domain === area.domain,
+      ),
+    ).toHaveLength(0);
+  } finally {
+    releaseAccess.resolve();
+    await pending?.catch(() => {});
+    tenant.close();
+  }
+});
+
 test("adjacent history entries reuse an identical signed object from the same page", async () => {
   const tenant = await createActivityFixture();
   const names = Array.from({ length: 8 }, (_, index) => `Vorname ${index + 1}`);

@@ -252,9 +252,30 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         throw new ChangedAccess();
       }
     };
+    const readFirstPage = (known: ActivityCache | null) =>
+      required(
+        client.query(
+          "zerotrust.history.list",
+          {
+            prefixes,
+            before: null,
+            snapshot: null,
+            known: known?.head ?? null,
+            knownTotal: known?.total ?? null,
+          },
+          { strategy: "network-only" },
+        ),
+      );
+
     assertCurrentAccess();
-    const context = await protectedCollections(client, signal);
+    // Cold history needs no cached head. Fetch ciphertext alongside access,
+    // but verify the page's access version before any packet can be opened.
+    const [context, coldPage] = await Promise.all([
+      protectedCollections(client, signal),
+      cache?.prefixes === prefixKey ? null : readFirstPage(null),
+    ]);
     assertCurrentAccess();
+
     const collections = new Map<string, ReturnType<Context>>();
     const nodes = new Map<string, Promise<HistoryNode | null>>();
     const verifyAccessVersion = (value: Change["access"]) => {
@@ -774,19 +795,8 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       if (cache?.stamp !== stamp || cache.prefixes !== prefixKey) {
         cache = null;
       }
-      const first = await required(
-        client.query(
-          "zerotrust.history.list",
-          {
-            prefixes,
-            before: null,
-            snapshot: null,
-            known: cache?.head ?? null,
-            knownTotal: cache?.total ?? null,
-          },
-          { strategy: "network-only" },
-        ),
-      );
+
+      const first = coldPage ?? (await readFirstPage(cache));
       assertCurrentAccess();
       const firstEdge = validatePage(first, null, null);
       if (!first.unchanged) {
