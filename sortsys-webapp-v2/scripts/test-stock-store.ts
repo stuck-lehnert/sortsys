@@ -10,6 +10,7 @@ import {
   signStockDeletion,
   stockBinding,
   verifyPolicy,
+  objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
 import type { Facet } from "@sortsys/zerotrust/sortsys";
 import type { OwnerDraft } from "../app/lib/crypto/tenantSetup";
@@ -18,7 +19,6 @@ import { trustedHistory } from "../app/lib/crypto/session";
 import {
   checkStockObjects,
   effectivePrice,
-  stockEnvelopeHash,
   stockPacket,
 } from "../app/lib/data/stockObjects";
 import { row } from "../app/lib/data/testing/businessRow.mjs";
@@ -230,7 +230,7 @@ export async function exerciseStockStore(
       stockBinding(
         input.envelope,
         "1",
-        await stockEnvelopeHash(input.envelope),
+        await objectPacketHash(input.envelope),
       ),
       draft.identity.signingKey.privateKey,
     );

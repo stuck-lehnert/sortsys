@@ -11,11 +11,11 @@ import {
   signStockReferences,
   stockBinding,
   verify,
+  objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
 import {
   checkStockObjects,
   effectivePrice,
-  stockEnvelopeHash,
   stockPacket,
   stockReferenceData,
 } from "./stockObjects";
@@ -314,7 +314,7 @@ test("supplier removal changes the effective link only after a matching certifie
     facet: "master-data",
   };
   f.state.vendorDeletion = await signStockDeletion(
-    stockBinding(vendorEnvelope, "2", await stockEnvelopeHash(vendorEnvelope)),
+    stockBinding(vendorEnvelope, "2", await objectPacketHash(vendorEnvelope)),
     f.identity.signingKey.privateKey,
   );
   const object = { envelope: f.envelope, value: f.value };

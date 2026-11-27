@@ -1,12 +1,9 @@
 import type { Client, QueryInput } from "@sortsys/v2-client";
 import {
-  digest,
   InvalidProtectedData,
-  objectFrame,
   record,
   signStockDeletion,
   signStockReferences,
-  signedPacketFrame,
   stockBinding,
   stockDeletion,
   stockDeletionFrame,
@@ -16,6 +13,7 @@ import {
   verify,
   verifyStockDeletion,
   verifyStockReferences,
+  objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
 import type {
   EncryptedObject,
@@ -39,8 +37,6 @@ const required = async <T>(response: Promise<[T | null, Error | null]>) => {
   if (value === null) throw new InvalidProtectedData();
   return value;
 };
-export const stockEnvelopeHash = (envelope: EncryptedObject) =>
-  digest(signedPacketFrame(objectFrame(envelope), envelope.signature));
 function id(input: unknown) {
   if (
     typeof input !== "string" ||
@@ -96,7 +92,7 @@ export async function stockPacket(
 ) {
   return signStockReferences(
     {
-      ...stockBinding(envelope, generation, await stockEnvelopeHash(envelope)),
+      ...stockBinding(envelope, generation, await objectPacketHash(envelope)),
       ...stockReferenceData(envelope.object, value),
     },
     signingKey,
@@ -284,7 +280,7 @@ export async function deleteStockObject(
       (expected && proof.signature !== expected.signature) ||
       (previous &&
         (reference.revision !== previous.revision ||
-          reference.envelopeHash !== (await stockEnvelopeHash(previous)))) ||
+          reference.envelopeHash !== (await objectPacketHash(previous)))) ||
       (proof.object === object &&
         (proof.revision !== reference.revision ||
           proof.envelopeHash !== reference.envelopeHash))
@@ -302,7 +298,7 @@ export async function deleteStockObject(
       ...stockBinding(
         previous,
         history.current.generation,
-        await stockEnvelopeHash(previous),
+        await objectPacketHash(previous),
       ),
       author: subject,
       policyVersion,

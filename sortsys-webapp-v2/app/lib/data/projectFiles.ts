@@ -8,6 +8,7 @@ import { createSerialQueue } from "@sortsys/zerotrust";
 import {
   encryptedObject,
   InvalidProtectedData,
+  objectPacketHash,
   record,
   TOMBSTONE_FORMAT,
 } from "@sortsys/zerotrust/sortsys";
@@ -21,8 +22,8 @@ import {
   type CollectionPageRequest,
   type OpenedObject,
 } from "./protectedObjects";
-import { businessSchema, tableDefinition } from "./schema";
-import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
+import { tableDefinition } from "./schema";
+import { createBusinessRow, type BusinessRow } from "./rowCodec";
 import { newProductRowId, publicId } from "./products";
 import { projectFacetRows } from "./projection";
 import { readableFileAreas } from "./readableFileAreas";
@@ -37,7 +38,6 @@ import {
   type LiveReplay,
 } from "./liveCheckpoints";
 import { prepareProjectGaebReplay } from "./projectGaebReplay";
-import { stockEnvelopeHash } from "./stockObjects";
 import { projectCollection, projectPayload } from "./projectData";
 import {
   loadFileContent,
@@ -105,17 +105,15 @@ function uuid() {
   return crypto.randomUUID().replaceAll("-", "");
 }
 function row(table: string, values: Record<string, unknown>): BusinessRow {
-  return decodeBusinessRow({
-    format: "sortsys-row-v2",
-    schema: businessSchema.fingerprint,
+  return createBusinessRow(
     table,
-    values: Object.fromEntries(
+    Object.fromEntries(
       tableDefinition(table).columns.map((column) => [
         column.name,
         values[column.name] ?? null,
       ]),
     ),
-  });
+  );
 }
 export function createProtectedProjectFiles(
   client: Client,
@@ -416,8 +414,8 @@ export function createProtectedProjectFiles(
       const publication = await prepareFilePublication(
         projectId,
         fileId,
-        await stockEnvelopeHash(envelope),
-        await stockEnvelopeHash(previous),
+        await objectPacketHash(envelope),
+        await objectPacketHash(previous),
         replayPackets,
         liveSaves.get(fileId),
       );
@@ -782,7 +780,7 @@ export function createProtectedProjectFiles(
           const envelope = store.objects.get(
             fileObject(projectId, fileId),
           )!.envelope;
-          const target = await stockEnvelopeHash(envelope);
+          const target = await objectPacketHash(envelope);
           const replayPackets: ObjectPacket[] = [];
           const publication = await prepareFilePublication(
             projectId,
@@ -806,7 +804,7 @@ export function createProtectedProjectFiles(
                   async verify() {
                     const current = await get(projectId, true);
                     const saved = current.objects.get(envelope.object)?.envelope;
-                    return !!saved && (await stockEnvelopeHash(saved)) === target;
+                    return !!saved && (await objectPacketHash(saved)) === target;
                   },
                   close() {},
                 }],
@@ -1338,7 +1336,7 @@ export function createProtectedProjectFiles(
           xml,
           async liveTarget() {
             live();
-            const target = await stockEnvelopeHash(envelope);
+            const target = await objectPacketHash(envelope);
             live();
             return target;
           },

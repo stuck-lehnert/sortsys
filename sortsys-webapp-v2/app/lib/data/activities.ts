@@ -10,8 +10,8 @@ import {
   verifyMigrationOrigin,
   verifyStockDeletion,
   verifyStockReferences,
+  objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
-import { stockEnvelopeHash } from "./stockObjects";
 import { unlockedAccount } from "../crypto/session";
 import { uiText } from "../i18n";
 import {
@@ -579,7 +579,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         if (deletesThisObject) {
           const sameRevision = proof.revision === envelope.revision;
           const sameEnvelope =
-            proof.envelopeHash === (await stockEnvelopeHash(envelope));
+            proof.envelopeHash === (await objectPacketHash(envelope));
           if (!sameRevision || !sameEnvelope) {
             throw new InvalidProtectedData();
           }

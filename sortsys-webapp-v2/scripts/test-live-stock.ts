@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import type { Client, MutateInput, QueryResult } from "@sortsys/v2-client";
-import { areaKey, base64, bytes, domainBoxSigner, encryptObject, openBox, randomSecret, signStockDeletion, stockBinding, verifyDomain } from "@sortsys/zerotrust/sortsys";
+import { areaKey, base64, bytes, domainBoxSigner, encryptObject, openBox, randomSecret, signStockDeletion, stockBinding, verifyDomain, objectPacketHash } from "@sortsys/zerotrust/sortsys";
 import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
 import { createBusinessClient } from "../app/lib/data/businessClient";
 import { prepareProductCatalog } from "../app/lib/data/migrateProducts";
 import { newProductRowId, PRICE_COLLECTION, pricePayload, PRODUCT_COLLECTION, publicId } from "../app/lib/data/products";
 import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 import { VENDOR_COLLECTION } from "../app/lib/data/vendorData";
-import { effectivePrice, stockEnvelopeHash } from "../app/lib/data/stockObjects";
+import { effectivePrice } from "../app/lib/data/stockObjects";
 import { acceptVaultWithKey, trustedHistory, type UnlockedAccount } from "../app/lib/crypto/session";
 import { changeMemberAccess, memberAccess } from "../app/lib/crypto/permissions";
 
@@ -52,7 +52,7 @@ async function assertNativeReadonlyPrice(client: Client, account: UnlockedAccoun
         assert.ok(stageDenied && "code" in stageDenied); assert.equal(stageDenied.code, "FORBIDDEN", "Staging must not bypass a reader's lack of write permission");
       } finally { plain.fill(0); }
     }
-    const proof = await signStockDeletion({ ...stockBinding(existing.envelope, history.current.generation, await stockEnvelopeHash(existing.envelope)), author: subject,
+    const proof = await signStockDeletion({ ...stockBinding(existing.envelope, history.current.generation, await objectPacketHash(existing.envelope)), author: subject,
       policyVersion: authorization.policyVersion }, account.identity.signingKey.privateKey);
     const [, denied] = await client.mutate("zerotrust.stock.delete", proof);
     assert.ok(denied && "code" in denied); assert.equal(denied.code, "FORBIDDEN", "An authentic reader signature may not delete a price");

@@ -4,11 +4,11 @@ import {
   InvalidProtectedData,
   projectReplayObject,
   type DocumentPart,
+  objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
 import { liveReplay, MAX_LIVE_REPLAY, type LiveReplay } from "./liveCheckpoints";
 import { protectedCollection } from "./protectedObjects";
 import { projectFacetArea } from "./projectScope";
-import { stockEnvelopeHash } from "./stockObjects";
 
 export function projectGaebReplayArea(project: string) {
   const area = projectFacetArea(project, "attachment");
@@ -41,7 +41,7 @@ export async function prepareProjectGaebReplay(
     const part: DocumentPart = {
       facet: "attachment",
       object,
-      hash: await stockEnvelopeHash(encryptedObject(packet.envelope)),
+      hash: await objectPacketHash(encryptedObject(packet.envelope)),
       keys: [{ facet: "attachment", generation: packet.envelope.generation }],
     };
     return { packet, part };
@@ -57,7 +57,7 @@ export async function readProjectGaebReplay(
   const { envelope, value } = await collection.get(part.object);
   if (
     envelope.generation !== part.keys[0]?.generation ||
-    (await stockEnvelopeHash(envelope)) !== part.hash
+    (await objectPacketHash(envelope)) !== part.hash
   ) {
     throw new InvalidProtectedData();
   }

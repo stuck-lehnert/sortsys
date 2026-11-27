@@ -17,6 +17,7 @@ import {
   signPolicy,
   sized,
   verifyPolicy,
+  objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
 import { trustedHistory } from "../app/lib/crypto/session";
 import { changeAreaActionAccesses } from "../app/lib/crypto/permissions";
@@ -53,7 +54,6 @@ import {
   RestorePlanningConflict,
 } from "../app/lib/backups/contentRestore";
 import { RestoreProjectFileConflict } from "../app/lib/backups/projectFileReview";
-import { stockEnvelopeHash } from "../app/lib/data/stockObjects";
 import { tenantSetupRequest } from "../app/lib/crypto/tenantSetup";
 import { adoptGaebOrder } from "./lib/adoptGaebOrder";
 import { gaebWorkflowXml } from "./test-live-gaeb-workflows";
@@ -811,7 +811,7 @@ async function holdEditorPackets(
   const old = await openDocumentMessages(client, room, signal);
   await old.post("update", { text: "Vor dem Sicherungsstand aufgenommen" });
   await old.post("presence", { name: "Alter Editor" });
-  const target = await stockEnvelopeHash(
+  const target = await objectPacketHash(
     encryptedObject(
       await required(
         client.query(
