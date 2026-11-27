@@ -1,4 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
+import { createWeakPairCache } from "@sortsys/zerotrust";
 import {
   absenceRecord,
   objectWriteAction,
@@ -46,10 +47,11 @@ type BirthProof = Pick<
 >;
 type WriterDefinition = BirthProof &
   Pick<DomainDefinition, "tenant" | "scope" | "facet" | "generation">;
-const proofCaches = new WeakMap<
+const proofCaches = createWeakPairCache<
   Client,
-  WeakMap<object, Map<string, BirthProof>>
->();
+  object,
+  Map<string, BirthProof>
+>(() => new Map());
 const MAX_BIRTH_PROOFS = 2048;
 
 /** A certified reader is not necessarily a writer. Check each envelope against
@@ -60,17 +62,7 @@ export function createObjectAuthorVerifier(
   context: Context,
   current?: Policy,
 ) {
-  let accounts = proofCaches.get(client);
-  if (!accounts) {
-    accounts = new WeakMap();
-    proofCaches.set(client, accounts);
-  }
-  let sharedProofs = accounts.get(context.account);
-  if (!sharedProofs) {
-    sharedProofs = new Map();
-    accounts.set(context.account, sharedProofs);
-  }
-  const proofCache = sharedProofs;
+  const proofCache = proofCaches.getOrCreate(client, context.account);
   function proofKey(id: string, generation: string): string {
     return `${context.history.current.generation}/${context.history.current.authoritySigningKey}/${id}/${generation}`;
   }

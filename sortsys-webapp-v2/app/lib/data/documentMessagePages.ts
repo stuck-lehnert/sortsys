@@ -1,5 +1,10 @@
 import type { Client, QueryInput, QueryResult } from "@sortsys/v2-client";
-import { arrayBatches, mapConcurrent, splitBatchOn } from "@sortsys/zerotrust";
+import {
+  arrayBatches,
+  createWeakPairCache,
+  mapConcurrent,
+  splitBatchOn,
+} from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { exceedsResponseBudget, required } from "./protectedObjects";
 
@@ -13,7 +18,11 @@ type Request = {
   reject(error: unknown): void;
 };
 type Queue = { pending: Request[]; running: boolean; scheduled: boolean };
-const queues = new WeakMap<Client, WeakMap<object, Queue>>();
+const queues = createWeakPairCache<Client, object, Queue>(() => ({
+  pending: [],
+  running: false,
+  scheduled: false,
+}));
 
 async function pages(
   client: Client,
@@ -78,17 +87,7 @@ export function readDocumentMessagePage(
   live: () => void,
   identity: object = client,
 ): Promise<Page> {
-  let contexts = queues.get(client);
-  if (!contexts) {
-    contexts = new WeakMap();
-    queues.set(client, contexts);
-  }
-  let queue = contexts.get(identity);
-  if (!queue) {
-    queue = { pending: [], running: false, scheduled: false };
-    contexts.set(identity, queue);
-  }
-  const current = queue;
+  const current = queues.getOrCreate(client, identity);
   return new Promise((resolve, reject) => {
     current.pending.push({
       selection: structuredClone(selection),

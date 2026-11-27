@@ -1,22 +1,11 @@
 import type { Client } from "@sortsys/v2-client";
+import { createWeakPairCache } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { listenCryptoSession, unlockedAccount } from "./session";
 
-const commands = new WeakMap<Client, WeakMap<object, Set<Promise<unknown>>>>();
-
-function accountCommands(client: Client, account: object) {
-  let accounts = commands.get(client);
-  if (!accounts) {
-    accounts = new WeakMap();
-    commands.set(client, accounts);
-  }
-  let pending = accounts.get(account);
-  if (!pending) {
-    pending = new Set();
-    accounts.set(account, pending);
-  }
-  return pending;
-}
+const commands = createWeakPairCache<Client, object, Set<Promise<unknown>>>(
+  () => new Set(),
+);
 
 /** A published policy must finish distributing keys even if React replaces its
  * view while checking new permissions. Signing out still cancels the command. */
@@ -27,11 +16,10 @@ export async function runAccountCommand<T>(
   const account = unlockedAccount();
   if (!account || !client.loggedIn()) throw new InvalidProtectedData();
   const controller = new AbortController();
-  const pending = accountCommands(client, account);
+  const pending = commands.getOrCreate(client, account);
   const retire = () => {
     controller.abort();
-    const accounts = commands.get(client);
-    if (accounts?.get(account) === pending) accounts.delete(account);
+    commands.deleteIfCurrent(client, account, pending);
   };
   const live = () => {
     controller.signal.throwIfAborted();
@@ -66,7 +54,7 @@ export async function waitForAccountCommands(
 ): Promise<void> {
   const account = unlockedAccount();
   if (!account || !client.loggedIn()) throw new InvalidProtectedData();
-  const pending = accountCommands(client, account);
+  const pending = commands.getOrCreate(client, account);
   signal.throwIfAborted();
   while (pending.size) {
     const results = await Promise.allSettled([...pending]);

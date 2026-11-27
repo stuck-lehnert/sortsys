@@ -1,5 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
-import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
+import { arrayBatches, createWeakPairCache, mapConcurrent } from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
   keyAuthority,
@@ -16,10 +16,11 @@ import {
 import { required } from "../data/protectedObjects";
 import { unlockedAccount, type trustedHistory } from "./session";
 
-const certificates = new WeakMap<
+const certificates = createWeakPairCache<
   Client,
-  WeakMap<object, Map<string, Promise<KeyAuthority>>>
->();
+  object,
+  Map<string, Promise<KeyAuthority>>
+>(() => new Map());
 
 /** Issue only for explicitly edited areas. Ordinary read/write changes do not
  * create certificates or scan unrelated members and domains. */
@@ -157,16 +158,7 @@ export async function readBoxKeyAuthority(
   if (!certificate) {
     const account = unlockedAccount();
     if (!account) throw new InvalidProtectedData();
-    let accounts = certificates.get(client);
-    if (!accounts) {
-      accounts = new WeakMap();
-      certificates.set(client, accounts);
-    }
-    let cache = accounts.get(account);
-    if (!cache) {
-      cache = new Map();
-      accounts.set(account, cache);
-    }
+    const cache = certificates.getOrCreate(client, account);
     let pending = cache.get(signature);
     if (!pending) {
       pending = (async () => {

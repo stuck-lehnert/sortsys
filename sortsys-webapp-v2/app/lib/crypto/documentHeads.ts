@@ -1,4 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
+import { createWeakPairCache } from "@sortsys/zerotrust";
 import {
   CREATION_FACETS,
   type DocumentHead,
@@ -30,10 +31,9 @@ type VerifiedHeads = {
   byHash: Map<string, DocumentHead>;
   bySignature: Map<string, DocumentHead>;
 };
-const verifiedHeadsByAccount = new WeakMap<
-  object,
-  WeakMap<Client, VerifiedHeads>
->();
+const verifiedHeads = createWeakPairCache<object, Client, VerifiedHeads>(
+  () => ({ byHash: new Map(), bySignature: new Map() }),
+);
 const CACHE_SIZE = 1024;
 const PAGE_SIZE = 32;
 
@@ -42,23 +42,6 @@ const writeAlternatives: AuthorRequirement[] =
     { facet, action: "update" },
     { facet, action: "create" },
   ]);
-
-function headCacheFor(account: object, client: Client) {
-  let accountCache = verifiedHeadsByAccount.get(account);
-  if (!accountCache) {
-    accountCache = new WeakMap();
-    verifiedHeadsByAccount.set(account, accountCache);
-  }
-
-  const existingHeads = accountCache.get(client);
-  if (existingHeads) {
-    return existingHeads;
-  }
-
-  const heads: VerifiedHeads = { byHash: new Map(), bySignature: new Map() };
-  accountCache.set(client, heads);
-  return heads;
-}
 
 type DocumentPart = DocumentHead["parts"][number];
 
@@ -146,7 +129,10 @@ function assertTransition(current: DocumentHead, previous: DocumentHead) {
 /** Check the complete signed ancestry once, then reuse verified immutable heads
  * within this account. History pages contain public headers, never old XML. */
 export function createDocumentHeadVerifier(client: Client, context: Context) {
-  const { byHash, bySignature } = headCacheFor(context.account, client);
+  const { byHash, bySignature } = verifiedHeads.getOrCreate(
+    context.account,
+    client,
+  );
 
   function remember(hash: string, value: DocumentHead) {
     const snapshot = structuredClone(value);

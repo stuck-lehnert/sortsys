@@ -37,6 +37,7 @@ export { pendingReads } from "./core/pendingReads";
 export { createScopedResource } from "./core/scopedResource";
 export { createSerialQueue } from "./core/serialQueue";
 export { splitBatchOn } from "./core/splitBatchOn";
+export { createWeakPairCache } from "./core/weakPairCache";
 export * from "./core/trustHistory";
 export * from "./core/domains";
 export * from "./core/setup";
