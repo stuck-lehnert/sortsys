@@ -97,3 +97,37 @@ Chromium-Probe mit 32 synthetischen Datensätzen Signaturprüfungen (kalt
 64 → 40, warm 64 → 16). Die Dauer des Ablaufs aus Autorensuche und Öffnen
 sank dabei aber nicht: Erneutes Framing und Hashing kosten ebenfalls Zeit.
 Die Probe lief in der CPU-emulierten VM und ersetzt keinen App-Vergleich.
+
+## Erste Aktivität auf dem Dashboard
+
+Die kalte Aktivitätsabfrage liest den verschlüsselten Verlauf parallel zum
+aktuellen Berechtigungsstand. Sie öffnet die Einträge erst nach der Prüfung.
+Innerhalb derselben Seite öffnet sie identische, signierte Objektpakete nur
+einmal. Ein verändertes Paket oder ein entzogener Zugriff darf das frühere
+Ergebnis nicht wiederverwenden.
+
+Ein Chromium-157-Vergleich in der emulierten VM prüfte die Produktionsbuilds
+von `355e663` und `de869ef` auf demselben kleinen Zero-Trust-Testmandanten.
+Nur der Aktivitätslesepfad unterscheidet die beiden Versionen. Jedes der zehn
+Paare verwendete frische Browserkontexte und wechselte die Reihenfolge.
+Beide Versionen zeigten dieselben drei Aktivitätseinträge.
+
+| Messpunkt bis zum sichtbaren Eintrag | p50 vorher → nachher | Median der gepaarten Differenzen | Schnellere Paare |
+| --- | ---: | ---: | ---: |
+| Ab Dashboard-Adresse | 3.923 → 3.414 ms | −299 ms | 9 von 10 |
+| Ab Klick auf Anmelden | 9.387 → 8.791 ms | −363 ms | 8 von 10 |
+
+Der erste Messpunkt beginnt, sobald der Test die Dashboard-Adresse erkennt,
+nicht zwingend beim ersten Request der Ansicht. Die Messung zeigt die Wirkung
+beider Änderungen zusammen, keinen Geschwindigkeitsvergleich mit Master.
+In zwei getrennten Diagnosepaaren blieben die WebCrypto-Zähler im Hauptfenster
+gleich (je 53 Signaturprüfungen und 17 Entschlüsselungen). Die Beschleunigung
+belegt daher für dieses kleine Beispiel nicht weniger Kryptografie.
+
+Für eine Wiederholung in `sortsys-webapp-v2` die beiden `build/client`-Ordner
+an `node scripts/e2e/activityLatency.browser.mjs` übergeben. Der Test erwartet
+eine isolierte API und ein Testkonto (`SORTSYS_DISPOSABLE_AUTH_TEST=1`,
+`SORTSYS_AUTH_E2E_API`, `SORTSYS_AUTH_E2E_USERNAME`, `SORTSYS_AUTH_E2E_PASSWORD`).
+`SORTSYS_LATENCY_PROJECT` bezeichnet den erwarteten Aktivitätstitel. Für die
+Messung `SORTSYS_LATENCY_SAMPLES` setzen; mit `SORTSYS_LATENCY_DIAGNOSTICS=1`
+in einem getrennten Lauf nur RPC- und WebCrypto-Zähler ermitteln.
