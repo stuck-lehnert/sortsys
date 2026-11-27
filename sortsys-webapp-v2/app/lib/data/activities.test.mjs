@@ -647,9 +647,9 @@ test("a cold activity read overlaps history with access, but discards a page fro
   }
 });
 
-test("adjacent revisions and the owner head reuse identical signed packets within the page", async () => {
+test("adjacent history pages open each signed revision only once", async () => {
   const tenant = await createActivityFixture();
-  const names = Array.from({ length: 8 }, (_, index) => `Vorname ${index + 1}`);
+  const names = Array.from({ length: 34 }, (_, index) => `Vorname ${index + 1}`);
 
   try {
     for (const first_name of names) {
@@ -658,9 +658,23 @@ test("adjacent revisions and the owner head reuse identical signed packets withi
 
     const decrypt = spyOn(crypto.subtle, "decrypt");
     try {
-      const result = await tenant.store.query("personalization.activity.list", {});
+      const result = await tenant.store.query("personalization.activity.list", {
+        limit: 50,
+      });
       expect(result.map(({ title }) => title)).toEqual(names.toReversed());
-      expect(decrypt.mock.calls.length).toBeLessThanOrEqual(12);
+      const pages = tenant.calls.filter(
+        ({ path }) => path === "zerotrust.history.list",
+      );
+      expect(pages).toHaveLength(3);
+
+      const revisionNonces = new Set(
+        tenant.history.map(({ envelope }) => envelope.nonce),
+      );
+      const openedRevisions = decrypt.mock.calls
+        .map(([algorithm]) => Buffer.from(algorithm.iv).toString("base64url"))
+        .filter((nonce) => revisionNonces.has(nonce));
+      expect(openedRevisions).toHaveLength(revisionNonces.size);
+      expect(new Set(openedRevisions)).toEqual(revisionNonces);
     } finally {
       decrypt.mockRestore();
     }
@@ -669,21 +683,29 @@ test("adjacent revisions and the owner head reuse identical signed packets withi
   }
 });
 
-test("a changed history packet cannot reuse the opening of its signed revision", async () => {
+test("a different packet on the next page cannot reuse a verified opening", async () => {
   const tenant = await createActivityFixture();
   try {
-    await tenant.append("master-data", { first_name: "Johanna" });
-    const change = tenant.history.at(-1);
-    const previous = change.previous;
-    const first = previous.ciphertext.startsWith("A") ? "B" : "A";
-    change.previous = {
-      ...previous,
-      ciphertext: first + previous.ciphertext.slice(1),
+    for (let index = 0; index < 17; index++) {
+      await tenant.append("master-data", { first_name: `Vorname ${index}` });
+    }
+
+    // Keep the previous revision on page one intact, but change the packet
+    // for that same signed revision at the start of page two.
+    const change = tenant.history.at(-17);
+    const { envelope } = change;
+    expect(tenant.history.at(-16).previous).toEqual(envelope);
+    const first = envelope.ciphertext.startsWith("A") ? "B" : "A";
+    change.envelope = {
+      ...envelope,
+      ciphertext: first + envelope.ciphertext.slice(1),
     };
 
     await expect(
-      tenant.store.query("personalization.activity.list", {}),
+      tenant.store.query("personalization.activity.list", { limit: 50 }),
     ).rejects.toThrow();
+    expect(tenant.calls.filter(({ path }) => path === "zerotrust.history.list"))
+      .toHaveLength(2);
   } finally {
     tenant.close();
   }

@@ -12,7 +12,7 @@ import {
   verifyStockReferences,
   objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import { uiText } from "../i18n";
 import {
   ACTIVITY_PREFIXES,
@@ -218,18 +218,15 @@ function isCompleteBoundary(
 /** Reads only accepted ciphertext. Pagination is shared across timeline and
  * dashboard queries, while every query rechecks the current signed access view. */
 export function createProtectedActivity(client: Client, signal: AbortSignal) {
-  const account = unlockedAccount();
-  if (!account) {
-    throw new InvalidProtectedData();
-  }
+  const { live } = captureAccountScope(signal, client);
   let closed = false;
   let accessEpoch = 0;
   let cacheStamp: string | undefined;
   const caches = new Map<"all" | "tool", ActivityCache>();
   const queries = createSerialQueue();
   const assertActive = () => {
-    signal.throwIfAborted();
-    if (closed || unlockedAccount() !== account || !client.loggedIn()) {
+    live();
+    if (closed) {
       throw new InvalidProtectedData();
     }
   };
@@ -687,17 +684,19 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       return output;
     }
 
+    type Openings = Map<
+      string,
+      {
+        packet: Change["envelope"];
+        rows: ReturnType<typeof readSourceRows>;
+      }
+    >;
+    let preceding: Openings | undefined;
+
     async function readPage(changes: Page["changes"]) {
-      // Adjacent revisions and a separately read owner head can repeat a
-      // packet. Share its verified opening only on this page, under the same
-      // readable collection, and only when every field matches.
-      const opened = new Map<
-        string,
-        {
-          packet: Change["envelope"];
-          rows: ReturnType<typeof readSourceRows>;
-        }
-      >();
+      // A page's oldest event can already contain the next page's first
+      // revision. Retain one preceding page within this access check only.
+      const opened: Openings = new Map();
       const readRows: typeof readSourceRows = async (area, packet) => {
         const key = JSON.stringify([
           area.domain,
@@ -706,13 +705,14 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           area.prefix,
           packet.signature,
         ]);
-        const existing = opened.get(key);
+        const existing = opened.get(key) ?? preceding?.get(key);
         if (
           existing &&
           Object.entries(existing.packet).every(
             ([field, value]) => packet[field as keyof typeof packet] === value,
           )
         ) {
+          opened.set(key, existing);
           const rows = await existing.rows;
           assertCurrentAccess();
           return rows;
@@ -723,11 +723,13 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         return rows;
       };
 
-      return (
+      const candidates = (
         await Promise.all(
           changes.map((change) => readCandidates(change, changes, readRows)),
         )
       ).flat();
+      preceding = opened;
+      return candidates;
     }
 
     function validatePage(
