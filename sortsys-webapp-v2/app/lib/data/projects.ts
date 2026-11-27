@@ -28,6 +28,7 @@ import {
   wireProject,
   PROJECT_MUTATIONS,
   PROJECT_QUERIES,
+  type ProjectPayload,
 } from "./projectData";
 import { readableProjectAreas } from "./projectAreas";
 import { PROJECT_ACCESS_KEYS, projectAccessArea } from "./projectScope";
@@ -44,6 +45,7 @@ import {
 import { acquireDataRuntime } from "./runtime/session";
 import { announceDataChanges } from "./runtime/changes";
 import { attachPlanningTitles } from "./planningTitlePublication";
+import { timestampMicros } from "./timestamps";
 import {
   certifyProjectLeader,
   projectContactLinks,
@@ -97,11 +99,34 @@ export async function deleteProtectedProject(
 }
 
 const projectSearch = Symbol("project search");
+const projectChangeSearch = Symbol("project change search");
 type Project = ReturnType<typeof wireProject>;
 
 function compareProjects(a: Project, b: Project) {
   return a.title.toLowerCase().localeCompare(b.title.toLowerCase()) ||
     a.id.localeCompare(b.id);
+}
+
+function projectChangeTime(payload: ProjectPayload) {
+  if (!payload.project) throw new InvalidProtectedData();
+
+  const { created_at, modified_at } = payload.project.values;
+  const created = timestampMicros(created_at as string);
+  const modified = timestampMicros(modified_at as string);
+  return modified > created ? modified : created;
+}
+
+function projectsByChangeTime(payloads: ProjectPayload[]) {
+  return payloads
+    .map((payload) => ({
+      project: wireProject(payload),
+      changedAt: projectChangeTime(payload),
+    }))
+    .sort((a, b) => {
+      if (a.changedAt !== b.changedAt) return a.changedAt > b.changedAt ? -1 : 1;
+      return compareProjects(a.project, b.project);
+    })
+    .map(({ project }) => project);
 }
 
 export function createProtectedProjects(
@@ -233,12 +258,16 @@ export function createProtectedProjects(
       live();
       if (ids.length > 2000 || new Set(ids).size !== ids.length)
         throw new InvalidProtectedData();
-      const selected = ids.map(request),
-        values = await runtime.read(selected, (view) =>
-          selected.map((selected) =>
-            wireProject(document(view, selected).value),
-          ),
-        );
+
+      const selected = ids.map(request);
+      const values = await runtime.read(
+        selected,
+        (view) =>
+          selected.map((item) => wireProject(document(view, item).value)),
+        undefined,
+        { batchDirectory: true },
+      );
+
       live();
       return values;
     },
@@ -322,6 +351,7 @@ export function createProtectedProjects(
       const linkedContact = forContact
         ? { ...contactRequest, ids: [CONTACT_COLLECTION.prefix + data.contactId] }
         : null;
+      const byActivity = data.orderBy === "activity";
       const values = await runtime.read(
         linkedContact ? [...selected, linkedContact] : selected,
         (view) => {
@@ -342,11 +372,16 @@ export function createProtectedProjects(
               .map(wireProject)
               .sort(compareProjects);
           }
-          const search = view.derive(projectSearch, selected, () =>
-            buildPrefixSearch(
-              projects().map(wireProject).sort(compareProjects),
-              projectSearchFields,
-            ),
+          const search = view.derive(
+            byActivity ? projectChangeSearch : projectSearch,
+            selected,
+            () => {
+              const payloads = projects();
+              const ordered = byActivity
+                ? projectsByChangeTime(payloads)
+                : payloads.map(wireProject).sort(compareProjects);
+              return buildPrefixSearch(ordered, projectSearchFields);
+            },
           );
           return search(
             data.search as string | undefined,
@@ -360,12 +395,6 @@ export function createProtectedProjects(
         { batchDirectory: !linkedContact || limit !== undefined },
       );
       live();
-      if (data.orderBy === "activity")
-        values.sort(
-          (a, b) =>
-            Math.max(b.modifiedAt.getTime(), b.createdAt.getTime()) -
-            Math.max(a.modifiedAt.getTime(), a.createdAt.getTime()),
-        );
       return values;
     },
     async mutate(path: string, input: unknown): Promise<unknown> {

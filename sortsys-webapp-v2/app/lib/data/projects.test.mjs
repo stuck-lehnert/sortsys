@@ -123,7 +123,67 @@ test("project contacts load by signed link and do not return stale selections", 
   }
 }, 120_000);
 
-test("the warm project directory, detail and signed contact selection do not wait for another projection", async () => {
+test("project change ordering keeps microseconds before applying the search limit", async () => {
+  const entries = [
+    { id: "2", title: "Sanierung A", modified_at: "2026-01-02T12:00:00Z" },
+    {
+      id: "3",
+      title: "Sanierung B",
+      modified_at: "2026-01-03T12:00:00.123123Z",
+    },
+    {
+      id: "4",
+      title: "Sanierung Y",
+      modified_at: "2026-01-03T13:00:00.123124+01:00",
+    },
+    { id: "5", title: "Neubau", modified_at: "2026-01-04T12:00:00Z" },
+    {
+      id: "6",
+      title: "Sanierung Z",
+      modified_at: "2026-01-03T12:00:00.123124Z",
+    },
+  ];
+  const areas = entries.map(({ id }) => projectCollection(id));
+  const tenant = await protectedTenant(areas, () => ["read"]);
+  const projects = createProtectedProjects(
+    tenant.client,
+    new AbortController().signal,
+    async () => {
+      throw new Error("Directory not needed");
+    },
+    duckDriver,
+  );
+
+  try {
+    for (const [index, entry] of entries.entries()) {
+      const area = areas[index];
+      await tenant.seed(area, area.prefix, {
+        format: "sortsys-project-v1",
+        project: row("projects", {
+          ...entry,
+          created_at: "2026-01-01T12:00:00Z",
+        }),
+        contacts: [],
+      });
+    }
+
+    const search = { search: "Sanierung" };
+    const visibleIds = async (input) =>
+      (await projects.query("projects.list", input, 2)).map(({ id }) => id);
+
+    expect(await visibleIds(search)).toEqual(["2", "3"]);
+    expect(await visibleIds({ ...search, orderBy: "activity" })).toEqual([
+      "4",
+      "6",
+    ]);
+    expect(await visibleIds(search)).toEqual(["2", "3"]);
+  } finally {
+    projects.close();
+    lockCryptoSession();
+  }
+}, 60_000);
+
+test("warm project reads, including offer labels, do not wait for another projection", async () => {
   const area = projectCollection("2");
   const { client, calls, seed } = await protectedTenant(
     [area, CONTACT_COLLECTION],
@@ -185,6 +245,10 @@ test("the warm project directory, detail and signed contact selection do not wai
     expect(await Promise.race([visible, deadline])).toEqual(expectedContacts);
     expect(calls.slice(rpcCount).map(({ path }) => path)).toEqual([]);
 
+    visible = projects.getMany(["2"]);
+    expect(await Promise.race([visible, deadline])).toEqual(expected);
+    expect(calls.slice(rpcCount).map(({ path }) => path)).toEqual([]);
+
     visible = Promise.all([
       list(),
       projects.query("projects.get", { id: "2" }),
@@ -192,6 +256,20 @@ test("the warm project directory, detail and signed contact selection do not wai
     expect(await Promise.race([visible, deadline])).toEqual([
       expected,
       expected[0],
+    ]);
+
+    release.resolve();
+    await holder;
+
+    await seed(area, area.prefix, {
+      format: "sortsys-project-v1",
+      project: row("projects", { id: "2", title: "Sanierung Nord" }),
+      contacts: [],
+    });
+    announceDataChanges(client, new Set([area.domain]));
+
+    expect((await projects.getMany(["2"])).map(({ title }) => title)).toEqual([
+      "Sanierung Nord",
     ]);
   } finally {
     clearTimeout(timeout);
