@@ -555,7 +555,7 @@ test("a cold activity read overlaps history with access, but discards a page fro
   }
 });
 
-test("adjacent history entries reuse an identical signed object from the same page", async () => {
+test("adjacent revisions and the owner head reuse identical signed packets within the page", async () => {
   const tenant = await createActivityFixture();
   const names = Array.from({ length: 8 }, (_, index) => `Vorname ${index + 1}`);
 
@@ -568,7 +568,7 @@ test("adjacent history entries reuse an identical signed object from the same pa
     try {
       const result = await tenant.store.query("personalization.activity.list", {});
       expect(result.map(({ title }) => title)).toEqual(names.toReversed());
-      expect(decrypt.mock.calls.length).toBeLessThanOrEqual(13);
+      expect(decrypt.mock.calls.length).toBeLessThanOrEqual(12);
     } finally {
       decrypt.mockRestore();
     }

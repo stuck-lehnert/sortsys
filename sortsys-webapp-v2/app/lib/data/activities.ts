@@ -318,6 +318,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     async function loadHistoryNode(
       area: Collection,
       object: string,
+      readRows = readSourceRows,
     ): Promise<HistoryNode | null> {
       if (!context.readable(area)) {
         return null;
@@ -345,9 +346,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           ) {
             throw new InvalidProtectedData();
           }
-          let rows = await readSourceRows(area, value.envelope);
+          let rows = await readRows(area, encryptedObject(value.envelope));
           if (!rows.length && value.previous) {
-            rows = await readSourceRows(area, value.previous);
+            rows = await readRows(area, encryptedObject(value.previous));
           }
           return { rows, initial: value.initialPublication };
         })();
@@ -355,12 +356,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       }
       return result;
     }
-    const projectNode = (id: string) =>
-      loadHistoryNode(projectCollection(id), `project:${id}`);
     async function resolveOwner(
       area: Collection,
       value: RowChange,
       change: Change,
+      readNode: (area: Collection, object: string) => Promise<HistoryNode | null>,
     ): Promise<ActivityOwner | null> {
       const fields = (value.after ?? value.before)!.values;
       let type: ResourceType;
@@ -383,13 +383,13 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         id = person?.id ?? area.scope.slice(8);
         table = "users";
         const selected = personnelCollection(id, "master-data");
-        base = loadHistoryNode(selected, selected.prefix);
+        base = readNode(selected, selected.prefix);
       } else if (root) {
         type = "project";
         id = root;
         table = "projects";
         project = root;
-        base = projectNode(root);
+        base = readNode(projectCollection(root), `project:${root}`);
       } else if (tool) {
         type = "tool";
         table = "tools";
@@ -402,7 +402,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
             "master-data",
           );
           const tracking = findRowValues(
-            await loadHistoryNode(selected, selected.prefix),
+            await readNode(selected, selected.prefix),
             "tool_trackings",
           );
           if (!tracking) {
@@ -411,7 +411,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           id = publicId(tracking.tool_id);
         }
         const selected = toolCollection("tool", id, "master-data");
-        base = loadHistoryNode(selected, selected.prefix);
+        base = readNode(selected, selected.prefix);
       } else if (daily || regie || delivery) {
         const part = daily ?? regie ?? delivery!;
         project = part.projectId;
@@ -430,7 +430,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           selected = deliveryCollection(project);
         }
         id = change.envelope.object.slice(area.prefix.length);
-        base = loadHistoryNode(selected, selected.prefix + id);
+        base = readNode(selected, selected.prefix + id);
       } else if (
         area.domain === PRODUCT_COLLECTION.domain ||
         area.scope === "catalog:products"
@@ -440,24 +440,24 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         id = publicId(
           value.table === "products" ? fields.id : fields.product_id,
         );
-        base = loadHistoryNode(PRODUCT_COLLECTION, `product:${id}`);
+        base = readNode(PRODUCT_COLLECTION, `product:${id}`);
       } else if (area.domain === CUSTOMER_COLLECTION.domain) {
         type = "customer";
         table = "customers";
         id = publicId(
           value.table === "customers" ? fields.id : fields.customer_id,
         );
-        base = loadHistoryNode(CUSTOMER_COLLECTION, `customer:${id}`);
+        base = readNode(CUSTOMER_COLLECTION, `customer:${id}`);
       } else if (area.domain === CONTACT_COLLECTION.domain) {
         type = "contact";
         table = "contacts";
         id = publicId(fields.id);
-        base = loadHistoryNode(CONTACT_COLLECTION, `contact:${id}`);
+        base = readNode(CONTACT_COLLECTION, `contact:${id}`);
       } else if (area.domain === VENDOR_COLLECTION.domain) {
         type = "productVendor";
         table = "product_vendors";
         id = publicId(fields.id);
-        base = loadHistoryNode(VENDOR_COLLECTION, `vendor:${id}`);
+        base = readNode(VENDOR_COLLECTION, `vendor:${id}`);
       } else {
         return null;
       }
@@ -600,9 +600,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         removed ? [] : after,
       );
       const actorUserId = author.startsWith("user:") ? author.slice(5) : null;
+      const readNode = (area: Collection, object: string) =>
+        loadHistoryNode(area, object, readRows);
       const output: Candidate[] = [];
       for (const [ordinal, value] of changes.entries()) {
-        const parent = await resolveOwner(area, value, change);
+        const parent = await resolveOwner(area, value, change, readNode);
         assertCurrentAccess();
         if (!parent) {
           continue;
@@ -619,8 +621,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           change.publication,
           unknownPrevious,
         );
-        const project = parent.project
-          ? await projectNode(parent.project)
+        const projectId = parent.project;
+        const project = projectId
+          ? await readNode(projectCollection(projectId), `project:${projectId}`)
           : null;
         const projectTitle = resourceLabel(
           findRowValues(project, "projects"),
@@ -681,9 +684,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     }
 
     async function readPage(changes: Page["changes"]) {
-      // Adjacent revisions repeat the previous packet as another entry's
-      // current packet. Share its verified opening only on this page, under
-      // the same readable collection, and only when every field matches.
+      // Adjacent revisions and a separately read owner head can repeat a
+      // packet. Share its verified opening only on this page, under the same
+      // readable collection, and only when every field matches.
       const opened = new Map<
         string,
         {
