@@ -11,7 +11,12 @@ use crate::{auth::AuthService, control::key};
 use sortsys_zerotrust::journal::{JournalEntry, JournalQuery};
 use std::collections::{BTreeMap, BTreeSet};
 
-fn recorded(entry: &JournalEntry) -> RpcResult<ChangeRecord> {
+struct RecordedChange {
+    journal: JournalEntry,
+    row: ChangeRecord,
+}
+
+fn recorded(entry: JournalEntry) -> RpcResult<RecordedChange> {
     let change: ChangeRecord = serde_json::from_str(&entry.entry.value).map_err(|_| invalid())?;
     if entry.entry.stream != change.object.domain
         || entry.entry.object != change.object.object
@@ -20,7 +25,10 @@ fn recorded(entry: &JournalEntry) -> RpcResult<ChangeRecord> {
     {
         return Err(invalid());
     }
-    Ok(change)
+    Ok(RecordedChange {
+        journal: entry,
+        row: change,
+    })
 }
 fn allowed(guard: &Security, area: &DomainDescriptor) -> RpcResult<()> {
     if !guard.allows(&guard.subject, &area.scope, area.facet, Action::Read) {
@@ -29,7 +37,9 @@ fn allowed(guard: &Security, area: &DomainDescriptor) -> RpcResult<()> {
     Ok(())
 }
 
-fn initial_publication(row: ChangeRecord, stream: &str, object: &str) -> RpcResult<String> {
+fn recorded_origin(entry: JournalEntry, stream: &str, object: &str) -> RpcResult<RecordedChange> {
+    let record = recorded(entry)?;
+    let row = &record.row;
     if row.object.object != object
         || row.object.revision != "1"
         || row.object.domain != stream
@@ -39,7 +49,7 @@ fn initial_publication(row: ChangeRecord, stream: &str, object: &str) -> RpcResu
         return Err(invalid());
     }
 
-    Ok(row.publication)
+    Ok(record)
 }
 
 async fn first_publications(
@@ -69,20 +79,22 @@ async fn first_publications(
         .into_iter()
         .zip(first)
         .map(|((stream, object), first)| {
-            let first = first.ok_or_else(invalid)?;
-            let publication = initial_publication(recorded(&first)?, &stream, &object)?;
-            Ok(((stream, object), publication))
+            let first = recorded_origin(first.ok_or_else(invalid)?, &stream, &object)?;
+            Ok(((stream, object), first.row.publication))
         })
         .collect()
 }
 async fn change(
     context: &mut MetadataContext,
     area: &DomainDescriptor,
-    entry: JournalEntry,
+    record: RecordedChange,
     initial_publication: String,
 ) -> RpcResult<Option<Change>> {
     allowed(&context.security, area)?;
-    let row = recorded(&entry)?;
+    let RecordedChange {
+        journal: entry,
+        row,
+    } = record;
     if row.object.domain != area.id {
         return Err(invalid());
     }
@@ -191,7 +203,7 @@ async fn list(service: &AuthService, request: &RequestContext, input: List) -> R
         let initial = first
             .get(&(entry.entry.stream.clone(), entry.entry.object.clone()))
             .ok_or_else(invalid)?;
-        if let Some(value) = change(&mut context, area, entry, initial.clone()).await? {
+        if let Some(value) = change(&mut context, area, recorded(entry)?, initial.clone()).await? {
             let size = value.envelope.ciphertext.len()
                 + value
                     .previous
@@ -277,32 +289,32 @@ async fn get(
         else {
             return Err(invalid());
         };
-        let initial = initial_publication(recorded(&origin)?, &area.id, &input.id)?;
+        let origin = recorded_origin(origin, &area.id, &input.id)?;
+        let initial = origin.row.publication.clone();
 
         // A read of the creation event needs only the origin lookup. A
         // different indexed publication must still use its own journal entry.
-        let entry = if origin.entry.id == id {
+        let record = if origin.journal.entry.id == id {
             origin
         } else {
-            context
+            let entry = context
                 .repository
                 .journal_get(&area.id, &id)
                 .await?
-                .ok_or_else(invalid)?
+                .ok_or_else(invalid)?;
+            recorded(entry)?
         };
 
-        let row = recorded(&entry)?;
-        if entry.entry.id != id
-            || row.object.object != input.id
-            || input
-                .revision
-                .as_ref()
-                .is_some_and(|revision| *revision != row.object.revision || row.deletion.is_some())
-        {
+        let row = &record.row;
+        let wrong_revision = input
+            .revision
+            .as_ref()
+            .is_some_and(|revision| *revision != row.object.revision || row.deletion.is_some());
+        if record.journal.entry.id != id || row.object.object != input.id || wrong_revision {
             return Err(invalid());
         }
 
-        change(&mut context, &area, entry, initial).await?
+        change(&mut context, &area, record, initial).await?
     } else {
         None
     };
