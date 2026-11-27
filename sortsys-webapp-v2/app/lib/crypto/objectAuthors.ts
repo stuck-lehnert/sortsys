@@ -112,6 +112,30 @@ export function createObjectAuthorVerifier(
   const accessViews = new Map<string, ReturnType<typeof compilePolicy>>();
   const publicDefinitions = new Map<string, Promise<BirthProof>>();
 
+  // Within one verified context, readers can share work for the same proof.
+  // A failure is not cached, and even a warm read must check the lifetime.
+  async function readProof<T>(
+    cache: Map<string, Promise<T>>,
+    key: string,
+    load: () => Promise<T>,
+  ): Promise<T> {
+    context.live();
+    let pending = cache.get(key);
+    if (!pending) {
+      pending = load();
+      cache.set(key, pending);
+    }
+
+    try {
+      const proof = await pending;
+      context.live();
+      return proof;
+    } catch (error) {
+      if (cache.get(key) === pending) cache.delete(key);
+      throw error;
+    }
+  }
+
   function accessView(
     { generation, permissions }: CheckedPolicy,
     subject: string,
@@ -162,50 +186,32 @@ export function createObjectAuthorVerifier(
   async function policy(version: string): Promise<CheckedPolicy> {
     context.live();
     revision(version);
-    let pending = policies.get(version);
-    if (!pending) {
-      pending = (async () => {
-        const [value, error] = await client.query(
-          "zerotrust.policy.getVersion",
-          { version },
-          { strategy: "network-only" },
-        );
-        context.live();
-        if (error) {
-          throw error;
-        }
-        if (
-          !value ||
-          Object.keys(value).sort().join(",") !== "generation,policy"
-        ) {
-          throw new InvalidProtectedData();
-        }
-        revision(value.generation);
-        const checked = await verifyPolicy(value.policy, {
-          tenant: context.account.tenant,
-          authority: context.history.authority(value.generation),
-        });
-        context.live();
-        if (checked.permissions.version !== version) {
-          throw new InvalidProtectedData();
-        }
-        return {
-          generation: value.generation,
-          permissions: checked.permissions,
-        };
-      })();
-      policies.set(version, pending);
-    }
-    try {
-      const value = await pending;
+
+    return readProof(policies, version, async () => {
+      const [value, error] = await client.query(
+        "zerotrust.policy.getVersion",
+        { version },
+        { strategy: "network-only" },
+      );
       context.live();
-      return value;
-    } catch (error) {
-      if (policies.get(version) === pending) {
-        policies.delete(version);
+      if (error) throw error;
+
+      if (!value || Object.keys(value).sort().join(",") !== "generation,policy") {
+        throw new InvalidProtectedData();
       }
-      throw error;
-    }
+      revision(value.generation);
+      const checked = await verifyPolicy(value.policy, {
+        tenant: context.account.tenant,
+        authority: context.history.authority(value.generation),
+      });
+      context.live();
+
+      if (checked.permissions.version !== version) {
+        throw new InvalidProtectedData();
+      }
+
+      return { generation: value.generation, permissions: checked.permissions };
+    });
   }
   async function initial(
     definition: DomainDefinition,
@@ -213,46 +219,32 @@ export function createObjectAuthorVerifier(
     if (definition.generation === "1") {
       return definition;
     }
-    let pending = origins.get(definition.id);
-    if (!pending) {
-      pending = (async () => {
-        const [value, error] = await client.query(
-          "zerotrust.domains.get",
-          { domain: definition.id, generation: "1" },
-          { strategy: "network-only" },
-        );
-        context.live();
-        if (error) {
-          throw error;
-        }
-        const checked = await verifyDomain(
-          value,
-          {
-            tenant: context.account.tenant,
-            id: definition.id,
-            scope: definition.scope,
-            facet: definition.facet,
-            generation: "1",
-          },
-          context.history.authority,
-        );
-        await verifyKeyManagement(checked, definition.scope, definition.facet);
-        context.live();
-        rememberProof(checked.id, checked.generation, checked);
-        return checked;
-      })();
-      origins.set(definition.id, pending);
-    }
-    try {
-      const value = await pending;
+
+    return readProof(origins, definition.id, async () => {
+      const [value, error] = await client.query(
+        "zerotrust.domains.get",
+        { domain: definition.id, generation: "1" },
+        { strategy: "network-only" },
+      );
       context.live();
-      return value;
-    } catch (error) {
-      if (origins.get(definition.id) === pending) {
-        origins.delete(definition.id);
-      }
-      throw error;
-    }
+      if (error) throw error;
+
+      const checked = await verifyDomain(
+        value,
+        {
+          tenant: context.account.tenant,
+          id: definition.id,
+          scope: definition.scope,
+          facet: definition.facet,
+          generation: "1",
+        },
+        context.history.authority,
+      );
+      await verifyKeyManagement(checked, definition.scope, definition.facet);
+      context.live();
+      rememberProof(checked.id, checked.generation, checked);
+      return checked;
+    });
   }
   async function signer(
     author: string,
@@ -308,33 +300,18 @@ export function createObjectAuthorVerifier(
     context.live();
     const shared = proofCache.get(proofKey(id, generation));
     if (shared) return shared;
-    const cacheKey = `${id}/${generation}`;
-    let pending = publicDefinitions.get(cacheKey);
-    if (!pending) {
-      pending = (async () => {
-        const [value, error] = await client.query(
-          "zerotrust.domains.proof",
-          { domain: id, generation },
-          { strategy: "network-only" },
-        );
-        context.live();
-        if (error) {
-          throw error;
-        }
-        return verifyPublicDefinition(value, scope, facet, generation);
-      })();
-      publicDefinitions.set(cacheKey, pending);
-    }
-    try {
-      const proof = await pending;
+
+    return readProof(publicDefinitions, `${id}/${generation}`, async () => {
+      const [value, error] = await client.query(
+        "zerotrust.domains.proof",
+        { domain: id, generation },
+        { strategy: "network-only" },
+      );
       context.live();
-      return proof;
-    } catch (error) {
-      if (publicDefinitions.get(cacheKey) === pending) {
-        publicDefinitions.delete(cacheKey);
-      }
-      throw error;
-    }
+      if (error) throw error;
+
+      return verifyPublicDefinition(value, scope, facet, generation);
+    });
   }
   async function objectAuthorGeneration(
     envelope: EncryptedObject,
