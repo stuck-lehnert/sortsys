@@ -20,6 +20,7 @@ import {
   type BoxContext,
   type SealedBox,
 } from "../boxes";
+import { createPublicProofVerifier } from "../publicProofs";
 import { facetVocabulary } from "./vocabulary";
 
 export const TOMBSTONE_FORMAT = "sortsys-object-tombstone-v1";
@@ -79,6 +80,9 @@ export function createObjectCodec<const F extends string>(
   facets: readonly F[],
 ) {
   const allowedFacets = facetVocabulary(facets);
+  // Keep ciphertext traffic separate from the authority and identity proofs.
+  const objectProofs = createPublicProofVerifier({ capacity: 1024 });
+
   function objectContext(value: unknown): ObjectContext<F> {
     const obj = record(value, contextKeys);
     for (const key of ["tenant", "scope", "object", "author"] as const) {
@@ -253,9 +257,24 @@ export function createObjectCodec<const F extends string>(
       throw new InvalidProtectedData();
     }
 
-    const keys = "candidates" in author ? author.candidates : [author];
-    await verifyWithSigningKeys(keys, obj.signature, objectFrame(obj));
+    await verifyObjectSignature(obj, author);
     return obj;
+  }
+
+  async function verifyObjectSignature(
+    object: EncryptedObject<F>,
+    author: ObjectSigningKeys,
+  ): Promise<CryptoKey> {
+    const keys = "candidates" in author ? author.candidates : [author];
+    const message = objectFrame(object);
+    if (keys.length !== 1)
+      return verifyWithSigningKeys(keys, object.signature, message);
+
+    // Only cache the mathematical proof over ciphertext. The caller still
+    // supplies the signer and checks context; each payload is opened anew.
+    const key = keys[0]!;
+    await objectProofs.verify(key, object.signature, message);
+    return key;
   }
 
   async function openPayload(
@@ -389,6 +408,7 @@ export function createObjectCodec<const F extends string>(
     objectFrame,
     objectPacketHash,
     encryptedObject,
+    verifyObjectSignature,
     encryptObject,
     encryptTombstone,
     decryptObject,

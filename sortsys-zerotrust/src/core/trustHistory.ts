@@ -213,12 +213,12 @@ export function createTrustHistoryVerifier<F extends string>(
         await proofSigner(subject, generation, proof, message);
       },
       signer: async (envelope) => {
-        if (envelope.tenant !== pinned.tenant) throw new InvalidProtectedData();
-        return verifyWithSigningKeys(
-          signingKeys(envelope.author),
-          envelope.signature,
-          objects.objectFrame(objects.encryptedObject(envelope)),
-        );
+        const object = objects.encryptedObject(envelope);
+        if (object.tenant !== pinned.tenant) throw new InvalidProtectedData();
+
+        return objects.verifyObjectSignature(object, {
+          candidates: signingKeys(object.author),
+        });
       },
     };
   }

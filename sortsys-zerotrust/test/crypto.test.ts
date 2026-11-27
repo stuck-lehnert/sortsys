@@ -47,6 +47,70 @@ describe("protected objects", () => {
     await expect(decryptObject(encrypted, context, old, identity.signingKey.publicKey)).rejects.toBeInstanceOf(InvalidProtectedData);
     expect(utf8(await decryptObject(encrypted, context, current, identity.signingKey.publicKey))).toBe("future price");
   });
+
+  test("repeated openings reuse only the exact ciphertext signature proof", async () => {
+    const identity = await createIdentity();
+    const signer = identity.signingKey.publicKey;
+    const area = await areaKey();
+    const plain = bytes("Sanierung der Halle");
+    const encrypted = await encryptObject(
+      object,
+      plain,
+      area,
+      identity.signingKey.privateKey,
+    );
+    const verify = crypto.subtle.verify;
+    const decrypt = crypto.subtle.decrypt;
+    let signatureChecks = 0;
+    let decryptions = 0;
+
+    crypto.subtle.verify = (...args) => {
+      signatureChecks++;
+      return verify.apply(crypto.subtle, args);
+    };
+    crypto.subtle.decrypt = (...args) => {
+      decryptions++;
+      return decrypt.apply(crypto.subtle, args);
+    };
+
+    try {
+      const results = await Promise.all([
+        decryptObject(encrypted, object, area, signer),
+        decryptObject({ ...encrypted }, object, area, { candidates: [signer] }),
+      ]);
+      expect(results).toEqual([plain, plain]);
+      expect(signatureChecks).toBe(1);
+      expect(decryptions).toBe(2);
+
+      const tampered = unbase64(encrypted.ciphertext);
+      tampered[0] = tampered[0]! ^ 1;
+      const changed = { ...encrypted, ciphertext: base64(tampered) };
+      await expect(
+        decryptObject(changed, object, area, signer),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+      expect(signatureChecks).toBe(2);
+      expect(decryptions).toBe(2);
+
+      const otherSigner = (await createIdentity()).signingKey.publicKey;
+      const differentContext = { ...object, generation: "2" };
+      await expect(
+        decryptObject(encrypted, object, area, { candidates: [otherSigner] }),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+      await expect(
+        decryptObject(encrypted, differentContext, area, signer),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+      await expect(
+        decryptObject(encrypted, object, await areaKey(), signer),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+
+      expect(await decryptObject(encrypted, object, area, signer)).toEqual(plain);
+      expect(signatureChecks).toBe(3);
+      expect(decryptions).toBe(3);
+    } finally {
+      crypto.subtle.verify = verify;
+      crypto.subtle.decrypt = decrypt;
+    }
+  });
 });
 
 describe("public-key envelopes", () => {
