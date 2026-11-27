@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { verifyDocumentHead } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "./session";
 import { createDocumentHeadFixture } from "../data/testing/documentHeads.mjs";
@@ -81,6 +81,23 @@ test("history pages preserve a legacy initial version and verified ancestors mak
   await expect(current.verifier.check(next)).rejects.toThrow(
     "Replaced account",
   );
+});
+
+test("a known public document head needs no WebCrypto digests but still binds its parts", async () => {
+  const current = await createDocumentHeadFixture();
+  const head = await current.head();
+  expect(await current.verifier.check(head)).toEqual(head);
+
+  const digest = spyOn(crypto.subtle, "digest");
+  try {
+    expect(await current.verifier.check(structuredClone(head))).toEqual(head);
+    expect(digest).not.toHaveBeenCalled();
+  } finally {
+    digest.mockRestore();
+  }
+
+  const altered = { ...head, parts: await current.changedPart(head, "scope") };
+  await expect(current.verifier.check(altered)).rejects.toThrow();
 });
 
 test("historical writer rights remain valid after revocation while regrant never legitimizes a denied publication", async () => {

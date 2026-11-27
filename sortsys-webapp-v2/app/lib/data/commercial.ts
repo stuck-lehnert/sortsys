@@ -649,47 +649,21 @@ export function createProtectedCommercial(
     return visible.has(CUSTOMER_COLLECTION.domain) ? customerId : null;
   }
 
-  async function labels(
+  function labels(
     current: ReturnType<typeof wireCommercialCase>,
     visible: ReadonlySet<string>,
-    projectTitles?: Map<string, string>,
-    customerNames?: ReadonlyMap<string, string>,
+    projectTitles: ReadonlyMap<string, string>,
+    customerNames: ReadonlyMap<string, string>,
   ) {
-    let customerName: string | null = null;
     const customerId = visibleCustomerId(current.customerId, visible);
+    const customerName = customerId ? customerNames.get(customerId) : null;
+    if (customerName === undefined) throw new InvalidProtectedData();
 
-    if (customerId) {
-      if (customerNames) {
-        const name = customerNames.get(customerId);
-        if (name === undefined) throw new InvalidProtectedData();
-
-        customerName = name;
-      } else {
-        const customer = (await (
-          await directory()
-        ).query("customers.get", {
-          id: customerId,
-        })) as QueryResult<"customers.get">;
-        customerName = customer.name;
-      }
-    }
-
-    let projectTitle: string | null = null;
-
-    if (
-      current.projectId &&
-      visible.has(projectCollection(current.projectId).domain)
-    ) {
-      if (projectTitles) {
-        projectTitle = projectTitles.get(current.projectId) ?? null;
-      } else {
-        const store = await projects();
-        const project = (await store.query("projects.get", {
-          id: current.projectId,
-        })) as QueryResult<"projects.get">;
-        projectTitle = project.title;
-      }
-    }
+    const projectId = current.projectId;
+    const projectTitle =
+      projectId && visible.has(projectCollection(projectId).domain)
+        ? (projectTitles.get(projectId) ?? null)
+        : null;
 
     return {
       ...current,
@@ -2760,12 +2734,7 @@ export function createProtectedCommercial(
           return (await stores)(scope);
         };
         return mapConcurrent(page, 4, async ({ basis, current }) => {
-          const value = await labels(
-            current,
-            basis.visible,
-            titles,
-            customerNames,
-          );
+          const value = labels(current, basis.visible, titles, customerNames);
           const calculated = await calculatedCaseRows(
             basis,
             openStore,
@@ -2814,20 +2783,23 @@ export function createProtectedCommercial(
           documentStore.close();
         }
       }
-      const values = await calculatedCaseRows(
-        basis,
-        openStore,
-        "all",
-        documentHeads,
+      const cases = [{ basis, current: wireCommercialCase(basis.values) }];
+      const [values, versions, customerNames, titles] = await Promise.all([
+        calculatedCaseRows(basis, openStore, "all", documentHeads),
+        sourceVersions(documentRows, documentHeads, openStore),
+        listCustomerNames(cases),
+        listProjectTitles(cases),
+      ]);
+      live();
+
+      const current = labels(
+        wireCommercialCase(values),
+        basis.visible,
+        titles,
+        customerNames,
       );
-      const current = await labels(wireCommercialCase(values), basis.visible);
       const currentDocuments = values.filter(
         (row) => row.table === "commercial_documents",
-      );
-      const versions = await sourceVersions(
-        currentDocuments,
-        documentHeads,
-        openStore,
       );
       const documents = currentDocuments
         .map((row) => {

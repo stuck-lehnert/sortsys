@@ -1,12 +1,12 @@
 import type { Client } from "@sortsys/v2-client";
 import {
   CREATION_FACETS,
-  digest,
   type DocumentHead,
   documentHead,
   documentHeadFrame,
   documentHeadHash,
   InvalidProtectedData,
+  publicProofDigest,
   signedPacketFrame,
 } from "@sortsys/zerotrust/sortsys";
 import type {
@@ -151,7 +151,9 @@ export function createDocumentHeadVerifier(client: Client, context: Context) {
     while (true) {
       context.live();
       const frame = await documentHeadFrame(current);
-      const hash = await digest(signedPacketFrame(frame, current.signature));
+      const hash = await publicProofDigest(
+        signedPacketFrame(frame, current.signature),
+      );
       if (expectedHash !== undefined && hash !== expectedHash) {
         throw new InvalidProtectedData();
       }

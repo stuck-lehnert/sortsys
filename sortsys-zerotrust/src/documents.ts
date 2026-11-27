@@ -11,6 +11,7 @@ import {
 import { sign, verify } from "./identity";
 import { CREATION_FACETS } from "./creation";
 import type { Facet } from "./objects";
+import { publicProofDigest } from "./publicProofs";
 
 export const DOCUMENT_FACETS = [
   "scope",
@@ -290,7 +291,9 @@ export async function documentHeadFrame(
   const head = documentHead({ ...input, signature: "" });
   const partHashes = await Promise.all(
     head.parts.map((part) =>
-      digest(frame("sortsys/document-part/v1", documentPartFields(part))),
+      publicProofDigest(
+        frame("sortsys/document-part/v1", documentPartFields(part)),
+      ),
     ),
   );
   return frame("sortsys/document-head/v1", [
@@ -336,7 +339,7 @@ export async function verifyDocumentHead(
   return head;
 }
 export async function documentHeadHash(head: DocumentHead): Promise<string> {
-  return digest(
+  return publicProofDigest(
     signedPacketFrame(await documentHeadFrame(head), head.signature),
   );
 }

@@ -14,6 +14,8 @@ import { commercialCollection } from "./commercialAreas";
 import { splitCommercialRows } from "./commercialData";
 import { row } from "./testing/businessRow.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { publicId } from "./products";
+import { projectCollection } from "./projectData";
 import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { announceDataChanges } from "./runtime/changes";
@@ -25,6 +27,69 @@ afterEach(() => lockCryptoSession());
 async function unusedDependency() {
   throw new Error("A document choice must not load related business records");
 }
+
+test("case detail loads only its related names without a sequential lookup", async () => {
+  const caseArea = commercialCollection("34", "master-data");
+  const customerId = publicId("201");
+  const projectId = publicId("200");
+  const tenant = await protectedTenant([
+    caseArea,
+    CUSTOMER_COLLECTION,
+    projectCollection(projectId),
+  ]);
+  const values = splitCommercialRows("34", [
+    row("commercial_cases", {
+      id: "100",
+      customer_id: "201",
+      project_id: "200",
+      title: "Innenausbau",
+      kind: "offer",
+      status: "draft",
+      scope_item_ids: "[]",
+    }),
+  ]);
+  await tenant.seed(caseArea, `${caseArea.prefix}case`, values.get("master-data"));
+
+  const query = tenant.client.query;
+  tenant.client.query = (path, input, options) =>
+    path === "zerotrust.documents.registrations"
+      ? Promise.resolve([{ documents: [], after: null }, null])
+      : query(path, input, options);
+
+  const projectStarted = Promise.withResolvers();
+  let namesPending = false;
+  const store = createProtectedCommercial(
+    tenant.client,
+    new AbortController().signal,
+    async () => ({
+      async customerNames(ids) {
+        expect(ids).toEqual([customerId]);
+        namesPending = true;
+        await projectStarted.promise;
+        namesPending = false;
+        return new Map([[customerId, "Verwaltung Süd"]]);
+      },
+    }),
+    async () => ({
+      async getMany(ids) {
+        expect(ids).toEqual([projectId]);
+        expect(namesPending).toBe(true);
+        projectStarted.resolve();
+        return [{ id: projectId, title: "Halle West" }];
+      },
+    }),
+    duckDriver,
+  );
+  try {
+    const detail = await store.query("commercial.cases.get", { id: "34" });
+    expect(detail.case).toMatchObject({
+      customerName: "Verwaltung Süd",
+      projectTitle: "Halle West",
+    });
+  } finally {
+    store.close();
+  }
+}, fixtureTimeout(45_000));
 
 test("case detail checks the version of a shared GAEB source in another case", async () => {
   const target = commercialCollection("34", "master-data");
@@ -505,9 +570,17 @@ test("offer overview opens only linked customer records and still searches by th
     }, tenant.authorityKey.privateKey);
     const query = tenant.client.query;
     tenant.client.query = (path, input, options) =>
+      path === "zerotrust.documents.registrations"
+        ? Promise.resolve([{ documents: [], after: null }, null])
+        : query(path, input, options);
+    const detail = () => store.query("commercial.cases.get", { id: "34" });
+    expect((await detail()).case.customerName).toBe("Hausverwaltung Nord");
+
+    const visibleQuery = tenant.client.query;
+    tenant.client.query = (path, input, options) =>
       path === "zerotrust.policy.get"
         ? Promise.resolve([revoked, null])
-        : query(path, input, options);
+        : visibleQuery(path, input, options);
 
     tenant.calls.length = 0;
     announceDataChanges(tenant.client, new Set([CUSTOMER_COLLECTION.domain]), {
@@ -518,6 +591,7 @@ test("offer overview opens only linked customer records and still searches by th
     expect(remaining.map(({ id, customerName }) => [id, customerName])).toEqual([
       ["34", null],
     ]);
+    expect((await detail()).case.customerName).toBeNull();
     expect(customerSelections()).toEqual([]);
   } finally {
     store.close();
