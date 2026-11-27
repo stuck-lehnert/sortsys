@@ -1,6 +1,6 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "../crypto/session";
+import { captureAccountScope, trustedHistory } from "../crypto/session";
 import type { BusinessDatabase } from "./database";
 import { readBusinessRows } from "./products";
 import { RESOURCE_TYPES } from "./activityData";
@@ -24,12 +24,8 @@ export async function prepareActivities(
   signal: AbortSignal,
   progress?: (phase: "provision" | "copy" | "verify") => void,
 ) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account) throw new InvalidProtectedData();
-  };
+  const { live } = captureAccountScope(signal);
+
   const groups = new Map<string, LegacyActivityPart[]>();
   for (const row of await readBusinessRows(source, "entity_changes")) {
     live();

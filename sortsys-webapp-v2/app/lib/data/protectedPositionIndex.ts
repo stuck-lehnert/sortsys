@@ -7,7 +7,7 @@ import {
 } from "@sortsys/gaeb";
 import { arrayBatches } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import { commercialCollection, commercialDomain } from "./commercialAreas";
 import { joinCommercialFacets } from "./commercialData";
 import { commercialDocumentStore } from "./commercialDocumentContent";
@@ -24,8 +24,8 @@ export function createProtectedPositionIndex(
   signal: AbortSignal,
   processor: GaebXmlProcessor = browserGaebXml,
 ) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
+  const { live: assertAccount } = captureAccountScope(signal);
+
   type Store = {
     head: string;
     sources: PositionSource[];
@@ -35,9 +35,8 @@ export function createProtectedPositionIndex(
   let snapshot: PositionSource[] | null = null,
     generation = 0;
   const live = () => {
-    signal.throwIfAborted();
-    if (closed || unlockedAccount() !== account)
-      throw new InvalidProtectedData();
+    assertAccount();
+    if (closed) throw new InvalidProtectedData();
   };
   async function sources() {
     live();

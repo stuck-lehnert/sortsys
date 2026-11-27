@@ -19,7 +19,7 @@ import {
   type Facet,
   type DocumentChannel,
 } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import { commercialCollection } from "./commercialAreas";
 import { commercialDocumentStore } from "./commercialDocumentContent";
 import { MAX_LIVE_REPLAY } from "./liveCheckpoints";
@@ -85,17 +85,14 @@ export async function openDocumentMessages(
   signal: AbortSignal,
 ) {
   const room = documentChannel(input);
-  const account = unlockedAccount();
-  if (!account) {
-    throw new InvalidProtectedData();
-  }
-  signal.throwIfAborted();
+  const { account, live: assertAccount } = captureAccountScope(signal);
+  assertAccount();
   const state = await required(
     client.query("zerotrust.documents.messages.state", room, {
       strategy: "network-only",
     }),
   );
-  if (unlockedAccount() !== account) throw new InvalidProtectedData();
+  assertAccount();
   const content = state.content ?? null;
   if (content !== null) sized(content, 32);
   const commercial = room.scope.startsWith("commercial:");
@@ -117,10 +114,8 @@ export async function openDocumentMessages(
   )!;
   let closed = false;
   function live() {
-    signal.throwIfAborted();
-    if (closed || unlockedAccount() !== account) {
-      throw new InvalidProtectedData();
-    }
+    assertAccount();
+    if (closed) throw new InvalidProtectedData();
   }
 
   async function post(
@@ -328,7 +323,7 @@ export async function openDocumentMessages(
       if (!replay) return;
       liveSequence(state.current);
       if (
-        proof.tenant !== account!.tenant ||
+        proof.tenant !== account.tenant ||
         proof.scope !== room.scope ||
         proof.document !== room.document ||
         proof.facet !== room.facet ||

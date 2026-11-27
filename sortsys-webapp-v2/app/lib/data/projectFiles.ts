@@ -12,7 +12,7 @@ import {
   record,
   TOMBSTONE_FORMAT,
 } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import type { FileInspection } from "../fileInspection";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import { createBusinessDatabase, type DuckDriver } from "./database";
@@ -121,10 +121,8 @@ export function createProtectedProjectFiles(
   projects: (ids: string[]) => Promise<Project[]>,
   driver?: () => Promise<DuckDriver>,
 ) {
-  const account = unlockedAccount();
-  if (!account) {
-    throw new InvalidProtectedData();
-  }
+  const { account, live: assertAccount } = captureAccountScope(signal);
+
   let stores = new Map<string, Store>();
   let closing: Promise<void> | undefined;
   let validationDatabase: ReturnType<typeof createBusinessDatabase> | undefined;
@@ -135,10 +133,8 @@ export function createProtectedProjectFiles(
   let filePolicy: Collections["root"] | undefined;
   const urls = new Set<string>();
   const live = () => {
-    signal.throwIfAborted();
-    if (closing || unlockedAccount() !== account) {
-      throw new InvalidProtectedData();
-    }
+    assertAccount();
+    if (closing) throw new InvalidProtectedData();
   };
   const { run: queue } = createSerialQueue(live);
   function close() {
@@ -572,12 +568,12 @@ export function createProtectedProjectFiles(
     const keys =
       capsule && canEdit
         ? await openOfficeSession(
-            account!.tenant,
+            account.tenant,
             projectId,
             fileId,
             capsule,
             `user:${session.user.id}`,
-            account!.identity,
+            account.identity,
           )
         : null;
     live();
@@ -1270,7 +1266,7 @@ export function createProtectedProjectFiles(
             throw new ProtectedWriteConflict();
           }
           const capsule = await sealOfficeSession(
-            account!.tenant,
+            account.tenant,
             projectId,
             fileId,
             current.authorization,

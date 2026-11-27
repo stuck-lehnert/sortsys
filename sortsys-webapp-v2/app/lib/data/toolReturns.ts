@@ -7,14 +7,13 @@ import {
   verifyResourceCommand,
   type ResourceCommand,
 } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope, type UnlockedAccount } from "../crypto/session";
 import { required } from "./protectedObjects";
 import type { DataDocument } from "./runtime/model";
 import type { RowProjection } from "./runtime/rows";
 import { TOOL_MODEL, type ToolPart } from "./toolData";
 
 export type ToolReturns = ReadonlyMap<string, ResourceCommand>;
-type UnlockedAccount = NonNullable<ReturnType<typeof unlockedAccount>>;
 const verifiedReturns = new WeakMap<UnlockedAccount, Map<string, ResourceCommand>>();
 
 /** Only the already opened booking, pointer or project projection supplies a
@@ -28,12 +27,8 @@ export async function loadToolReturns(
     (key): key is string => key !== undefined,
   );
   if (selected.length === 0) return new Map();
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  function live() {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account) throw new InvalidProtectedData();
-  }
+
+  const { account, live } = captureAccountScope(signal);
   const cached = verifiedReturns.get(account) ?? new Map<string, ResourceCommand>();
   verifiedReturns.set(account, cached);
   const result = new Map<string, ResourceCommand>();

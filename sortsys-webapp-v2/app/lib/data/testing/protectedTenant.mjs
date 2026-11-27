@@ -19,6 +19,7 @@ import {
   stockKind,
   verifyPolicy,
 } from "@sortsys/zerotrust/sortsys";
+import { ciphertextReference } from "../ciphertextReference";
 import { stockPacket } from "../stockObjects";
 import { accessSnapshotFixture } from "./accessSnapshot.mjs";
 import {
@@ -149,7 +150,7 @@ export async function protectedTenant(
       code: "CONFLICT",
     }),
   ];
-  function objectPage(input) {
+  async function objectPage(input) {
     const domain = domains.get(input.domain);
     const head = String(domain.head);
     if (input.snapshot != null && input.snapshot !== head) {
@@ -176,19 +177,32 @@ export async function protectedTenant(
           (input.after == null || item.object > input.after),
       )
       .sort((left, right) => compareText(left.object, right.object));
+    const entries = values.slice(0, 32);
+    const page = {
+      snapshot: head,
+      keyGeneration: "1",
+      after: values.length > entries.length ? entries.at(-1).object : null,
+    };
+
+    if (input.indexOnly) {
+      const index = await Promise.all(
+        entries.map(async (envelope) => ({
+          object: envelope.object,
+          reference: await ciphertextReference(envelope),
+        })),
+      );
+      return [{ ...page, objects: [], recipientAccess: [], index }, null];
+    }
+
     return [
       {
-        snapshot: head,
-        keyGeneration: "1",
-        after: values.length > 32 ? values[31].object : null,
-        objects: structuredClone(values.slice(0, 32)),
-        recipientAccess: values
-          .slice(0, 32)
-          .flatMap((value) =>
-            recipients.has(value.object)
-              ? [structuredClone(recipients.get(value.object))]
-              : [],
-          ),
+        ...page,
+        objects: structuredClone(entries),
+        recipientAccess: entries.flatMap((value) =>
+          recipients.has(value.object)
+            ? [structuredClone(recipients.get(value.object))]
+            : [],
+        ),
       },
       null,
     ];
@@ -196,7 +210,7 @@ export async function protectedTenant(
   async function readPages(input) {
     const pages = [];
     for (const selection of input.selections) {
-      const [page, error] = objectPage(selection);
+      const [page, error] = await objectPage(selection);
       if (error) return [null, error];
       pages.push(page);
     }
@@ -366,6 +380,12 @@ export async function protectedTenant(
                 Object.assign(new Error("Missing"), { code: "NOT_FOUND" }),
               ];
         case "zerotrust.objects.getMany":
+          if (
+            input.snapshot != null &&
+            input.snapshot !== String(domains.get(input.domain)?.head)
+          ) {
+            return conflict();
+          }
           return [
             input.ids.map((id) => {
               const object = objects.get(id);
