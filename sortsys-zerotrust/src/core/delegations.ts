@@ -130,11 +130,11 @@ export function createDelegationCodec<const N extends string>(
     return { ...value, signature };
   }
 
-  async function verify(
+  async function verifyProof(
     input: unknown,
     expected: DelegationContext<N>,
     authority: CryptoKey,
-  ): Promise<DelegationCertificate<N>> {
+  ) {
     const value = parse(input);
     if (
       value.tenant !== expected.tenant ||
@@ -144,11 +144,8 @@ export function createDelegationCodec<const N extends string>(
     ) {
       throw new InvalidProtectedData();
     }
-    await verifyPublicProof(
-      authority,
-      value.signature,
-      await signedFrame(value),
-    );
+    const message = await signedFrame(value);
+    await verifyPublicProof(authority, value.signature, message);
     for (const member of [value.creator, ...value.readers]) {
       await verifyPublicProof(
         authority,
@@ -156,8 +153,23 @@ export function createDelegationCodec<const N extends string>(
         identityCertificateFrame(member),
       );
     }
-    return value;
+
+    return { certificate: value, frame: message };
   }
 
-  return Object.freeze({ parse, frame: capabilityFrame, certify, verify });
+  async function verify(
+    input: unknown,
+    expected: DelegationContext<N>,
+    authority: CryptoKey,
+  ): Promise<DelegationCertificate<N>> {
+    return (await verifyProof(input, expected, authority)).certificate;
+  }
+
+  return Object.freeze({
+    parse,
+    frame: capabilityFrame,
+    certify,
+    verify,
+    verifyProof,
+  });
 }

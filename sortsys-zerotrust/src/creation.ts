@@ -140,8 +140,13 @@ export async function verifyCreationCapability(
   input: unknown,
   authority: CryptoKey,
 ): Promise<CreationCapability> {
+  return (await verifyCapabilityProof(input, authority)).certificate;
+}
+
+function verifyCapabilityProof(input: unknown, authority: CryptoKey) {
   const value = creationCapability(input);
-  return delegations.verify(
+
+  return delegations.verifyProof(
     value,
     {
       tenant: value.tenant,
@@ -272,25 +277,25 @@ export async function creationOriginFrame(
 
 async function originFrame(
   value: CreationOrigin,
-  parentFrame?: Uint8Array<ArrayBuffer>,
+  checked?: {
+    capability: Uint8Array<ArrayBuffer>;
+    parent: Uint8Array<ArrayBuffer> | undefined;
+  },
 ): Promise<Uint8Array<ArrayBuffer>> {
+  const capabilityFrame =
+    checked?.capability ?? (await creationCapabilityFrame(value.capability));
   const fields = [
     value.tenant,
     value.id,
     value.scope,
     value.facet,
-    await digest(
-      signedPacketFrame(
-        await creationCapabilityFrame(value.capability),
-        value.capability.signature,
-      ),
-    ),
+    await digest(signedPacketFrame(capabilityFrame, value.capability.signature)),
   ];
   if (value.parent)
     fields.push(
       await digest(
         signedPacketFrame(
-          parentFrame ?? (await originFrame(value.parent)),
+          checked?.parent ?? (await originFrame(value.parent)),
           value.parent.signature,
         ),
       ),
@@ -392,12 +397,11 @@ async function verifyOriginFrame(
   value: CreationOrigin,
   authority: (generation: string) => CryptoKey,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  await verifyCreationCapability(
+  const { frame: capabilityFrame } = await verifyCapabilityProof(
     value.capability,
     authority(value.capability.generation),
   );
-  // Use the exact signed parent frame checked by this verification, not
-  // a second reconstruction of its capability and identity proofs.
+
   const parentFrame = value.parent
     ? await verifyOriginFrame(value.parent, authority)
     : undefined;
@@ -409,7 +413,11 @@ async function verifyOriginFrame(
       identityCertificateFrame(value.assignee),
     );
 
-  const message = await originFrame(value, parentFrame);
+  // Bind the exact verified frames rather than rebuilding their proofs.
+  const message = await originFrame(value, {
+    capability: capabilityFrame,
+    parent: parentFrame,
+  });
   await verify(
     await importSigningKey(value.capability.creator.signingKey),
     value.signature,

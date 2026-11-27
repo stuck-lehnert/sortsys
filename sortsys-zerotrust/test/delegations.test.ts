@@ -61,6 +61,25 @@ test("an unrelated application verifies a delegation against its own account and
   );
 });
 
+test("a verified delegation supplies the exact signed frame to a containing proof", async () => {
+  const f = await fixture();
+  const { certificate, frame } = await f.codec.verifyProof(
+    f.signed,
+    f.expected,
+    f.authority.signingKey.publicKey,
+  );
+
+  expect(certificate).toEqual(f.signed);
+  expect(frame).toEqual(await f.codec.frame(f.unsigned));
+  await expect(
+    f.codec.verifyProof(
+      f.signed,
+      { ...f.expected, generation: "2" },
+      f.authority.signingKey.publicKey,
+    ),
+  ).rejects.toBeInstanceOf(InvalidProtectedData);
+});
+
 test("a valid certificate cannot cross tenant, generation, namespace or account boundaries", async () => {
   const f = await fixture();
   for (const expected of [
