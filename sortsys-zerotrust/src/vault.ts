@@ -10,7 +10,7 @@ import {
   unbase64,
   utf8,
 } from "./encoding";
-import { deriveSecret, hpke, publicIdentity } from "./identity";
+import { deriveSecret, hpke, importSigningKey, publicIdentity } from "./identity";
 import type { PrivateIdentity, PublicIdentity } from "./identity";
 
 export type AccountVault = PublicIdentity & {
@@ -266,11 +266,7 @@ export async function openAccountVaultWithKey(
     if (exported.x !== vault.signingKey) {
       throw new InvalidProtectedData();
     }
-    const encryptionJwk = await hpke.kem.importKey(
-      "raw",
-      sized(bundle.encryptionPrivateKey, 32).buffer,
-      false,
-    );
+
     const publicEncryptionKey = await hpke.kem.deserializePublicKey(
       sized(vault.encryptionKey, 32),
     );
@@ -285,7 +281,7 @@ export async function openAccountVaultWithKey(
       );
       opened = new Uint8Array(
         await hpke.open(
-          { recipientKey: encryptionJwk, enc: sealed.enc },
+          { recipientKey: encryptionKey, enc: sealed.enc },
           sealed.ct,
         ),
       );
@@ -299,6 +295,7 @@ export async function openAccountVaultWithKey(
       challenge.fill(0);
       opened?.fill(0);
     }
+
     return {
       identity: {
         encryptionKey: {
@@ -307,13 +304,7 @@ export async function openAccountVaultWithKey(
         },
         signingKey: {
           privateKey: signingKey,
-          publicKey: await crypto.subtle.importKey(
-            "raw",
-            sized(vault.signingKey, 32),
-            "Ed25519",
-            true,
-            ["verify"],
-          ),
+          publicKey: await importSigningKey(vault.signingKey),
         },
       },
       pins,
