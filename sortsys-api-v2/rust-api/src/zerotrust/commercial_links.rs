@@ -124,6 +124,12 @@ struct Attestation {
 }
 
 impl Attestation {
+    fn applies_to(&self, reference: &str) -> bool {
+        self.reference
+            .as_deref()
+            .is_none_or(|saved| saved == reference)
+    }
+
     fn acknowledges(
         &self,
         address: &LinkAddress<'_>,
@@ -132,11 +138,7 @@ impl Attestation {
     ) -> RpcResult<bool> {
         let (_, saved_statement) = self.links.statement(address, &self.packet_hash)?;
 
-        Ok(saved_statement == statement
-            && self
-                .reference
-                .as_deref()
-                .is_none_or(|saved| saved == reference))
+        Ok(saved_statement == statement && self.applies_to(reference))
     }
 }
 

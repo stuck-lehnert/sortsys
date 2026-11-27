@@ -275,7 +275,12 @@ async fn current_links(
     }
 
     let address = LinkAddress::at(domain, object).ok_or_else(conflict)?;
-    let stored = transaction.read::<Attestation>(address.record()).await?;
+    // The live proof is not part of a restore. A different reference still
+    // needs its own exact review; the live proof cannot cover that packet.
+    let stored = transaction
+        .read::<Attestation>(address.record())
+        .await?
+        .filter(|proof| proof.applies_to(&record.reference));
     let proof = match stored {
         Some(proof) if proof.reference.is_some() => proof,
         legacy => {
@@ -867,6 +872,76 @@ mod tests {
                 .await
                 .unwrap();
         }
+    }
+
+    #[tokio::test]
+    #[ignore = "scripts/test-native-auth provides a disposable DuckDB store"]
+    async fn coverage_uses_only_the_review_for_the_selected_packet() {
+        use crate::error::ErrorCode;
+
+        let (first, _) = fixture_repositories("commercial-review-coverage").await;
+        let domain = "commercial:7:master-data";
+        let object = "commercial:7:master-data:case";
+        let address = LinkAddress::at(domain, object).unwrap();
+        let links = CommercialLinks::Case(CaseLinks {
+            standalone_offer: true,
+            parent_case: None,
+            documents: Vec::new(),
+            signature: "fixture".into(),
+        });
+        let mut setup = first.transaction().unwrap();
+        put_fixture(&mut setup, domain, object, None).await;
+        let newer = Attestation {
+            packet_hash: "newer-packet".into(),
+            reference: Some("newer-reference".into()),
+            links: links.clone(),
+        };
+        setup.put(address.record(), &newer).await.unwrap();
+        setup
+            .put(
+                reconciliation::reviewed_key(domain, object, "newer-reference"),
+                &newer,
+            )
+            .await
+            .unwrap();
+        setup.commit().await.unwrap();
+
+        let mut before_review = first.transaction().unwrap();
+        assert_eq!(
+            current_links(&mut before_review, domain, object)
+                .await
+                .unwrap_err()
+                .code,
+            ErrorCode::Conflict,
+        );
+
+        let mut review = first.transaction().unwrap();
+        let selected = Attestation {
+            packet_hash: "fixture-packet".into(),
+            reference: Some("fixture-reference".into()),
+            links,
+        };
+        review
+            .put(
+                reconciliation::reviewed_key(domain, object, "fixture-reference"),
+                &selected,
+            )
+            .await
+            .unwrap();
+        review.commit().await.unwrap();
+
+        let mut after_review = first.transaction().unwrap();
+        assert!(matches!(
+            current_links(&mut after_review, domain, object)
+                .await
+                .unwrap(),
+            Some(CommercialLinks::Case(CaseLinks {
+                standalone_offer: true,
+                ..
+            })),
+        ));
+        let primary: Attestation = after_review.read(address.record()).await.unwrap().unwrap();
+        assert_eq!(primary.reference, newer.reference);
     }
 
     #[test]

@@ -172,8 +172,13 @@ async fn stage(
         .transaction
         .read::<Attestation>(record.clone())
         .await?;
-    if let Some(saved) = saved
-        && !requires_binding(&saved, address, &statement, &object.reference)?
+    // A prepared packet can predate the primary proof. Keep that proof for
+    // its own packet and record the reviewed packet under its exact reference.
+    let applicable = saved
+        .as_ref()
+        .filter(|proof| proof.applies_to(&object.reference));
+    if let Some(proof) = applicable
+        && !requires_binding(proof, address, &statement, &object.reference)?
     {
         return Ok(());
     }
@@ -190,6 +195,10 @@ async fn stage(
             return Err(conflict());
         }
         return Ok(());
+    }
+
+    if !sealed_view && saved.is_some() && applicable.is_none() {
+        return Err(conflict());
     }
 
     retirement::check_publication(&mut context.transaction, Some(&proof.links)).await?;
