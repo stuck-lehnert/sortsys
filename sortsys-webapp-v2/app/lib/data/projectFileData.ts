@@ -4,6 +4,7 @@ import {
   InvalidProtectedData,
   record,
   sized,
+  validateBackupContext,
   revision as checkedRevision,
 } from "@sortsys/zerotrust/sortsys";
 import { addressId, addressText } from "./addressBook";
@@ -81,7 +82,7 @@ export function folderObject(project: string, folder: string): string {
 /** The organization namespace holds print assets, never project metadata. */
 export function chunkCollection(project: string): Collection {
   if (project.startsWith("backup:")) {
-    identifier(project.slice("backup:".length));
+    validateBackupContext(project);
     return {
       domain: `${project}:attachment`,
       scope: project,
@@ -118,14 +119,12 @@ export function contentId(
   version: string,
   index: number,
 ): string {
-  if (
-    project !== "organization" &&
-    !project.startsWith("backup:") &&
-    archiveNamespace(project) === null
-  )
+  if (project.startsWith("backup:")) {
+    validateBackupContext(project);
+  } else if (project !== "organization" && archiveNamespace(project) === null) {
     addressId(project);
-  if (project.startsWith("backup:"))
-    identifier(project.slice("backup:".length));
+  }
+
   addressId(file);
   if (
     !/^(?:legacy(?:-thumbnail)?|[a-f0-9]{32})$/.test(version) ||

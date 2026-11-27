@@ -1,4 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
+import { arrayBatches } from "@sortsys/zerotrust";
 import {
   digest,
   frame,
@@ -44,6 +45,7 @@ import {
 const SOURCE_VERSION = "00000000000000000000000000000001";
 const HISTORY_SOURCE_VERSION = "00000000000000000000000000000002";
 const PAGE_SIZE = 32;
+const PAGE_READ_BATCH = 16;
 const ARCHIVE_FILE_BATCH = 4;
 type ArchivedObject = BackupObject & { id: string; content: FileContent };
 type SelectedOriginal = { object: BackupObject; blob: Blob };
@@ -58,6 +60,60 @@ type BackupManifest = {
   history: FileContent | null;
   files: PageReference[];
 };
+
+export async function readArchiveFileIndex(
+  context: string,
+  references: readonly PageReference[],
+  collection: Pick<Awaited<ReturnType<typeof protectedCollection>>, "selected">,
+) {
+  const objects = new Map<string, ArchivedObject>();
+  for (const pages of arrayBatches(references, PAGE_READ_BATCH)) {
+    const entries = await collection.selected(pages.map(({ id }) => id));
+    if (entries.length !== pages.length) throw new InvalidProtectedData();
+
+    for (const [index, page] of pages.entries()) {
+      const entry = entries[index]!;
+      if (
+        entry.envelope.object !== page.id ||
+        entry.envelope.signature !== page.signature
+      )
+        throw new InvalidProtectedData();
+
+      const value = record(entry.value, ["format", "entries"]);
+      if (
+        value.format !== "sortsys-backup-files-v1" ||
+        !Array.isArray(value.entries) ||
+        value.entries.length > PAGE_SIZE
+      )
+        throw new InvalidProtectedData();
+
+      for (const input of value.entries) {
+        const raw = record(input, ["bucket", "key", "size", "id", "content"]);
+        if (
+          (raw.bucket !== null && typeof raw.bucket !== "string") ||
+          typeof raw.key !== "string" ||
+          typeof raw.id !== "string" ||
+          (raw.size !== null &&
+            (typeof raw.size !== "number" ||
+              !Number.isSafeInteger(raw.size) ||
+              raw.size < 0))
+        )
+          throw new InvalidProtectedData();
+
+        const key = JSON.stringify([raw.bucket, raw.key]);
+        if (objects.has(key)) throw new InvalidProtectedData();
+        objects.set(key, {
+          bucket: raw.bucket,
+          key: raw.key,
+          size: raw.size,
+          id: raw.id,
+          content: content(raw.content, context, raw.id),
+        });
+      }
+    }
+  }
+  return objects;
+}
 
 export class BackupSelectionMismatch extends Error {
   constructor() {
@@ -439,44 +495,11 @@ export async function openBackupArchive(
         );
         await checkImportHistoryUsers(history, opened.database);
       }
-      const objects = new Map<string, ArchivedObject>();
-      for (const page of manifest.files) {
-        const entries = await collection.selected([page.id]);
-        if (
-          entries.length !== 1 ||
-          entries[0]!.envelope.signature !== page.signature
-        )
-          throw new InvalidProtectedData();
-        const value = record(entries[0]!.value, ["format", "entries"]);
-        if (
-          value.format !== "sortsys-backup-files-v1" ||
-          !Array.isArray(value.entries) ||
-          value.entries.length > PAGE_SIZE
-        )
-          throw new InvalidProtectedData();
-        for (const input of value.entries) {
-          const raw = record(input, ["bucket", "key", "size", "id", "content"]);
-          if (
-            (raw.bucket !== null && typeof raw.bucket !== "string") ||
-            typeof raw.key !== "string" ||
-            typeof raw.id !== "string" ||
-            (raw.size !== null &&
-              (typeof raw.size !== "number" ||
-                !Number.isSafeInteger(raw.size) ||
-                raw.size < 0))
-          )
-            throw new InvalidProtectedData();
-          const key = JSON.stringify([raw.bucket, raw.key]);
-          if (objects.has(key)) throw new InvalidProtectedData();
-          objects.set(key, {
-            bucket: raw.bucket,
-            key: raw.key,
-            size: raw.size,
-            id: raw.id,
-            content: content(raw.content, state.context, raw.id),
-          });
-        }
-      }
+      const objects = await readArchiveFileIndex(
+        state.context,
+        manifest.files,
+        collection,
+      );
       const expected = await backupObjects(opened.database);
       if (
         objects.size !== expected.length ||

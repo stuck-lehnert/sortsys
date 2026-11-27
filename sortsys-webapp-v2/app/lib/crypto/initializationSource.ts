@@ -1,7 +1,7 @@
 import type { Client } from "@sortsys/v2-client";
 import {
   InvalidProtectedData,
-  unbase64,
+  validateBackupContext,
   verifyInitializationSource,
 } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
@@ -40,11 +40,7 @@ export async function readVerifiedInitializationSource(
   const context = history.current.context;
   if (context === undefined) return null;
 
-  if (
-    !context.startsWith("backup:") ||
-    unbase64(context.slice(7), 32).length !== 32
-  )
-    throw new InvalidProtectedData();
+  validateBackupContext(context);
   const state = await required(
     client.query("zerotrust.setup.backup.status", undefined, {
       strategy: "network-only",

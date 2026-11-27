@@ -17,6 +17,27 @@ import { row } from "./testing/businessRow.mjs";
 
 const version = "a".repeat(32),
   hash = base64(new Uint8Array(32));
+
+test("backup chunks accept the full canonical base64url alphabet in the source context", () => {
+  for (const byte of [248, 252]) {
+    const context = `backup:${base64(new Uint8Array(32).fill(byte))}`;
+    expect(chunkCollection(context)).toEqual({
+      domain: `${context}:attachment`,
+      scope: context,
+      facet: "attachment",
+      prefix: `file-data:${context}:`,
+    });
+    expect(contentId(context, "5", version, 0)).toBe(
+      `file-data:${context}:5:${version}:0`,
+    );
+  }
+
+  for (const context of ["backup:", "backup:example", `backup:${hash}=`]) {
+    expect(() => chunkCollection(context)).toThrow();
+    expect(() => contentId(context, "5", version, 0)).toThrow();
+  }
+});
+
 test("migration archives bind their own domain and source ID, including empty originals", () => {
   const namespace = "archive:migration:test";
   expect(chunkCollection(namespace)).toEqual({

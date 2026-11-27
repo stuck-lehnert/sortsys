@@ -8,6 +8,13 @@ import {
 } from "./encoding";
 import { sign, verify } from "./identity";
 
+export function validateBackupContext(context: string): void {
+  const prefix = "backup:";
+  if (!context.startsWith(prefix)) throw new InvalidProtectedData();
+
+  sized(context.slice(prefix.length), 32);
+}
+
 export type OwnerRegistration = {
   tenant: string;
   subject: string;
