@@ -115,7 +115,46 @@ test("module proofs reject absent, substituted, nested, foreign-creator and fore
   const scope = "project:abc:daily-reports", input = { ...f.origin, id: `${scope}:master-data`, scope, parent: f.origin };
   const signed = await createOrigin(input, f.creator.signingKey.privateKey);
   await verifyCreationOrigin(signed, authority);
+
+  const alternativeCapability = await certifyCreationCapability(
+    { ...f.origin.capability, id: "create_alternative" },
+    f.authorityKey.privateKey,
+  );
+  const alternativeParent = await createOrigin(
+    { ...f.origin, capability: alternativeCapability },
+    f.creator.signingKey.privateKey,
+  );
+  await verifyCreationOrigin(alternativeParent, authority);
+
+  const alternativeModule = await createOrigin(
+    { ...input, parent: alternativeParent },
+    f.creator.signingKey.privateKey,
+  );
+  await verifyCreationOrigin(alternativeModule, authority);
+
+  const { definition } = await createDelegatedDomain({
+    origin: signed,
+    creatorKey: f.creator.signingKey.privateKey,
+    policyVersion: "1",
+    recovery: {
+      encryptionKey: f.setup.authority.recoveryEncryptionKey,
+      signingKey: f.setup.authority.recoverySigningKey,
+    },
+  });
+  const expected = {
+    tenant: "test",
+    id: signed.id,
+    scope,
+    facet: signed.facet,
+    generation: "1",
+  };
+  await verifyDomain(definition, expected, authority);
+  await expect(
+    verifyDomain({ ...definition, creation: alternativeModule }, expected, authority),
+  ).rejects.toThrow();
+
   for (const change of [
+    { ...signed, parent: alternativeParent },
     { ...signed, parent: undefined }, { ...signed, parent: { ...f.origin, parent: f.origin } },
     { ...signed, parent: { ...f.origin, scope: "project:def", id: "project:def:master-data" } },
     { ...signed, parent: { ...f.origin, facet: "attachment", id: "project:abc:attachment" } },

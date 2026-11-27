@@ -10,7 +10,7 @@ import {
   type CreationOrigin,
   creationOrigin,
   creationOriginFrame,
-  verifyCreationOrigin,
+  verifyCreationProof,
 } from "./creation";
 
 export type DomainDefinition = CoreDomainDefinition<Facet, CreationOrigin>;
@@ -18,7 +18,7 @@ export const sortsysDomainCodec = createDomainCodec<Facet, CreationOrigin>(
   FACETS,
   {
     parse: creationOrigin,
-    verify: verifyCreationOrigin,
+    verify: verifyCreationProof,
     frame: creationOriginFrame,
     author: creationAuthor,
     authorityGeneration: (origin) => origin.capability.generation,

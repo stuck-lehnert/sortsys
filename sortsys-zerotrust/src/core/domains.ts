@@ -35,10 +35,11 @@ export type DomainCreationCodec<
   C extends DomainCreation<F>,
 > = {
   parse: (input: unknown) => C;
+  /** The frame is the exact unsigned message whose origin signature was verified. */
   verify: (
     input: unknown,
     authority: (generation: string) => CryptoKey,
-  ) => Promise<C>;
+  ) => Promise<{ origin: C; frame: Uint8Array<ArrayBuffer> }>;
   frame: (origin: C) => Promise<Uint8Array<ArrayBuffer>>;
   author: (origin: C) => string;
   authorityGeneration: (origin: C) => string;
@@ -121,10 +122,12 @@ export function createDomainCodec<
       throw new InvalidProtectedData();
     }
     const recoveryEnvelope = sealedBox(raw.recoveryEnvelope);
-    const origin =
+    const creationProof =
       raw.creation === undefined
         ? undefined
         : await requiredCreation().verify(raw.creation, authority);
+    const origin = creationProof?.origin;
+
     let keyAuthority: KeyAuthority<F> | undefined;
     if (raw.keyAuthority !== undefined) {
       const parsed = keyAuthorities.parse(raw.keyAuthority);
@@ -176,7 +179,9 @@ export function createDomainCodec<
       key = await keyAuthorities.signer(keyAuthority);
       author = keyAuthorities.author(keyAuthority);
     }
-    await verify(key, definition.proof, await domainFrame(definition));
+    const message = await buildDomainFrame(definition, creationProof?.frame);
+    await verify(key, definition.proof, message);
+
     for (const box of [...definition.envelopes, definition.recoveryEnvelope]) {
       if (
         box.tenant !== definition.tenant ||
@@ -195,8 +200,15 @@ export function createDomainCodec<
     return definition;
   }
 
-  async function domainFrame(
+  function domainFrame(
     input: Omit<DomainDefinition<F, C>, "proof">,
+  ): Promise<Uint8Array<ArrayBuffer>> {
+    return buildDomainFrame(input);
+  }
+
+  async function buildDomainFrame(
+    input: Omit<DomainDefinition<F, C>, "proof">,
+    verifiedOriginFrame?: Uint8Array<ArrayBuffer>,
   ): Promise<Uint8Array<ArrayBuffer>> {
     if (
       !allowedFacets.has(input.facet) ||
@@ -211,23 +223,26 @@ export function createDomainCodec<
         digest(boxPacketFrame(box)),
       ),
     );
-    return domainFrameFromHashes(input, hashes);
+    return buildDomainFrameFromHashes(input, hashes, verifiedOriginFrame);
   }
 
+  type DomainHeader = Omit<
+    DomainDefinition<F, C>,
+    "envelopes" | "recoveryEnvelope" | "proof"
+  >;
+
   /** The public proof uses the same signed frame without exposing user key boxes. */
-  async function domainFrameFromHashes(
-    input: Pick<
-      DomainDefinition<F, C>,
-      | "tenant"
-      | "id"
-      | "scope"
-      | "facet"
-      | "generation"
-      | "policyVersion"
-      | "creation"
-      | "keyAuthority"
-    >,
+  function domainFrameFromHashes(
+    input: DomainHeader,
     packetHashes: readonly string[],
+  ): Promise<Uint8Array<ArrayBuffer>> {
+    return buildDomainFrameFromHashes(input, packetHashes);
+  }
+
+  async function buildDomainFrameFromHashes(
+    input: DomainHeader,
+    packetHashes: readonly string[],
+    verifiedOriginFrame?: Uint8Array<ArrayBuffer>,
   ): Promise<Uint8Array<ArrayBuffer>> {
     for (const value of [input.tenant, input.id, input.scope]) {
       identifier(value);
@@ -256,14 +271,10 @@ export function createDomainCodec<
       ) {
         throw new InvalidProtectedData();
       }
-      hashes.push(
-        await digest(
-          signedPacketFrame(
-            await requiredCreation().frame(input.creation),
-            input.creation.signature,
-          ),
-        ),
-      );
+      const originMessage =
+        verifiedOriginFrame ?? (await requiredCreation().frame(input.creation));
+      const packet = signedPacketFrame(originMessage, input.creation.signature);
+      hashes.push(await digest(packet));
     }
     if (input.keyAuthority) {
       const { signature, ...certificate } = keyAuthorities.parse(

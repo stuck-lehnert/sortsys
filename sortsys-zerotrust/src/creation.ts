@@ -267,7 +267,13 @@ export function creationOrigin(input: unknown): CreationOrigin {
 export async function creationOriginFrame(
   input: Omit<CreationOrigin, "signature">,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const value = creationOrigin({ ...input, signature: "" });
+  return originFrame(creationOrigin({ ...input, signature: "" }));
+}
+
+async function originFrame(
+  value: CreationOrigin,
+  parentFrame?: Uint8Array<ArrayBuffer>,
+): Promise<Uint8Array<ArrayBuffer>> {
   const fields = [
     value.tenant,
     value.id,
@@ -284,7 +290,7 @@ export async function creationOriginFrame(
     fields.push(
       await digest(
         signedPacketFrame(
-          await creationOriginFrame(value.parent),
+          parentFrame ?? (await originFrame(value.parent)),
           value.parent.signature,
         ),
       ),
@@ -307,9 +313,10 @@ export async function createOrigin(
   input: Omit<CreationOrigin, "signature">,
   creator: CryptoKey,
 ): Promise<CreationOrigin> {
+  const value = creationOrigin({ ...input, signature: "" });
   return {
-    ...creationOrigin({ ...input, signature: "" }),
-    signature: await sign(creator, await creationOriginFrame(input)),
+    ...value,
+    signature: await sign(creator, await originFrame(value)),
   };
 }
 
@@ -368,23 +375,47 @@ export async function verifyCreationOrigin(
   input: unknown,
   authority: (generation: string) => CryptoKey,
 ): Promise<CreationOrigin> {
-  const value = creationOrigin(input);
+  return (await verifyCreationProof(input, authority)).origin;
+}
+
+export async function verifyCreationProof(
+  input: unknown,
+  authority: (generation: string) => CryptoKey,
+) {
+  const origin = creationOrigin(input);
+  const frame = await verifyOriginFrame(origin, authority);
+
+  return { origin, frame };
+}
+
+async function verifyOriginFrame(
+  value: CreationOrigin,
+  authority: (generation: string) => CryptoKey,
+): Promise<Uint8Array<ArrayBuffer>> {
   await verifyCreationCapability(
     value.capability,
     authority(value.capability.generation),
   );
-  if (value.parent) await verifyCreationOrigin(value.parent, authority);
+  // Use the exact signed parent frame checked by this verification, not
+  // a second reconstruction of its capability and identity proofs.
+  const parentFrame = value.parent
+    ? await verifyOriginFrame(value.parent, authority)
+    : undefined;
+
   if (value.assignee)
     await verify(
       authority(value.capability.generation),
       value.assignee.signature,
       identityCertificateFrame(value.assignee),
     );
+
+  const message = await originFrame(value, parentFrame);
   await verify(
     await importSigningKey(value.capability.creator.signingKey),
     value.signature,
-    await creationOriginFrame(value),
+    message,
   );
+
   if (value.access)
     await verifyResourceAccess(
       value.access,
@@ -397,6 +428,7 @@ export async function verifyCreationOrigin(
       },
       authority,
     );
+
   if (value.returned) {
     const binding = value.access?.commandBinding;
     if (!binding) throw new InvalidProtectedData();
@@ -406,7 +438,8 @@ export async function verifyCreationOrigin(
       binding,
     });
   }
-  return value;
+
+  return message;
 }
 
 export function isActiveToolBookingOrigin(origin: CreationOrigin): boolean {
