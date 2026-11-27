@@ -483,6 +483,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     async function readCandidates(
       change: Change,
       page: readonly Change[],
+      readRows: typeof readSourceRows,
     ): Promise<Candidate[]> {
       verifyAccessVersion(change.access);
       parseHistoryCounter(change.sequence);
@@ -510,9 +511,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       if (!context.readable(area)) {
         throw new ChangedAccess();
       }
-      const after = await readSourceRows(area, change.envelope);
+      const after = await readRows(area, envelope);
       const before = change.previous
-        ? await readSourceRows(area, change.previous)
+        ? await readRows(area, encryptedObject(change.previous))
         : [];
       if (change.migrationOrigin) {
         await verifyMigrationOrigin(
@@ -659,8 +660,45 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     }
 
     async function readPage(changes: Page["changes"]) {
+      // Adjacent revisions repeat the previous packet as another entry's
+      // current packet. Share its verified opening only on this page, under
+      // the same readable collection, and only when every field matches.
+      const opened = new Map<
+        string,
+        {
+          packet: Change["envelope"];
+          rows: ReturnType<typeof readSourceRows>;
+        }
+      >();
+      const readRows: typeof readSourceRows = async (area, packet) => {
+        const key = JSON.stringify([
+          area.domain,
+          area.scope,
+          area.facet,
+          area.prefix,
+          packet.signature,
+        ]);
+        const existing = opened.get(key);
+        if (
+          existing &&
+          Object.entries(existing.packet).every(
+            ([field, value]) => packet[field as keyof typeof packet] === value,
+          )
+        ) {
+          const rows = await existing.rows;
+          assertCurrentAccess();
+          return rows;
+        }
+
+        const rows = readSourceRows(area, packet);
+        opened.set(key, { packet, rows });
+        return rows;
+      };
+
       return (
-        await Promise.all(changes.map((change) => readCandidates(change, changes)))
+        await Promise.all(
+          changes.map((change) => readCandidates(change, changes, readRows)),
+        )
       ).flat();
     }
 

@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import {
   attestMigrationOrigin,
   compilePolicy,
@@ -507,6 +507,49 @@ test("activity derives verified changes from separate personal facets and omits 
     tenant.close();
   }
 });
+
+test("adjacent history entries reuse an identical signed object from the same page", async () => {
+  const tenant = await createActivityFixture();
+  const names = Array.from({ length: 8 }, (_, index) => `Vorname ${index + 1}`);
+
+  try {
+    for (const first_name of names) {
+      await tenant.append("master-data", { first_name });
+    }
+
+    const decrypt = spyOn(crypto.subtle, "decrypt");
+    try {
+      const result = await tenant.store.query("personalization.activity.list", {});
+      expect(result.map(({ title }) => title)).toEqual(names.toReversed());
+      expect(decrypt.mock.calls.length).toBeLessThanOrEqual(13);
+    } finally {
+      decrypt.mockRestore();
+    }
+  } finally {
+    tenant.close();
+  }
+});
+
+test("a changed history packet cannot reuse the opening of its signed revision", async () => {
+  const tenant = await createActivityFixture();
+  try {
+    await tenant.append("master-data", { first_name: "Johanna" });
+    const change = tenant.history.at(-1);
+    const previous = change.previous;
+    const first = previous.ciphertext.startsWith("A") ? "B" : "A";
+    change.previous = {
+      ...previous,
+      ciphertext: first + previous.ciphertext.slice(1),
+    };
+
+    await expect(
+      tenant.store.query("personalization.activity.list", {}),
+    ).rejects.toThrow();
+  } finally {
+    tenant.close();
+  }
+});
+
 test("unchanged pages reuse verified data; a signed revocation drops old price metadata even when the maximum sequence is unchanged", async () => {
   const tenant = await createActivityFixture();
   try {
