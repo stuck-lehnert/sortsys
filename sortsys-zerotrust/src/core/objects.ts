@@ -11,6 +11,7 @@ import {
   signedPacketFrame,
   sized,
   unbase64,
+  validateBase64Size,
 } from "../encoding";
 import { sign, verifyWithSigningKeys } from "../identity";
 import {
@@ -126,19 +127,11 @@ export function createObjectCodec<const F extends string>(
     if (obj.format !== "sortsys-object-v1" && obj.format !== TOMBSTONE_FORMAT) {
       throw new InvalidProtectedData();
     }
-    for (const key of [
-      "nonce",
-      "ciphertext",
-      "wrappedKey",
-      "signature",
-    ] as const) {
-      if (typeof obj[key] !== "string") throw new InvalidProtectedData();
-    }
-    sized(obj.nonce as string, 12);
-    sized(obj.wrappedKey as string, 40);
-    sized(obj.signature as string, 64);
+    validateBase64Size(obj.nonce, 12);
+    validateBase64Size(obj.wrappedKey, 40);
+    validateBase64Size(obj.signature, 64);
     const ciphertextLength = base64ByteLength(
-      obj.ciphertext as string,
+      obj.ciphertext,
       MAX_CONTENT_BYTES + 16,
     );
     if (

@@ -31,7 +31,7 @@ export function base64(value: BufferSource): string {
 
 /** Validate canonical, unpadded base64url without allocating decoded bytes. */
 export function base64ByteLength(
-  value: string,
+  value: unknown,
   maximum = maxBase64Bytes,
 ): number {
   if (typeof value !== "string") throw new InvalidProtectedData();
@@ -53,6 +53,16 @@ export function base64ByteLength(
     if (lastDigit % (1 << unusedBits) !== 0) throw new InvalidProtectedData();
   }
   return length;
+}
+
+/** Check a fixed-size wire field without making a decoded copy. */
+export function validateBase64Size(
+  value: unknown,
+  length: number,
+): asserts value is string {
+  if (base64ByteLength(value, length) !== length) {
+    throw new InvalidProtectedData();
+  }
 }
 
 export function unbase64(

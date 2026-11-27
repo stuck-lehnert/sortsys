@@ -4,6 +4,7 @@ import {
   base64ByteLength,
   InvalidProtectedData,
   unbase64,
+  validateBase64Size,
 } from "../src/encoding";
 
 test("length validation and decoding agree on canonical base64url", () => {
@@ -13,12 +14,19 @@ test("length validation and decoding agree on canonical base64url", () => {
 
     expect(base64ByteLength(encoded, length)).toBe(length);
     expect(unbase64(encoded, length)).toEqual(bytes);
+    validateBase64Size(encoded, length);
+    expect(() => validateBase64Size(encoded, length + 1)).toThrow(
+      InvalidProtectedData,
+    );
 
     if (length > 0) {
       expect(() => base64ByteLength(encoded, length - 1)).toThrow(
         InvalidProtectedData,
       );
       expect(() => unbase64(encoded, length - 1)).toThrow(InvalidProtectedData);
+      expect(() => validateBase64Size(encoded, length - 1)).toThrow(
+        InvalidProtectedData,
+      );
     }
   }
 });
@@ -36,6 +44,9 @@ test("only canonical final digits are allowed in partial quartets", () => {
         expect(unbase64(encoded)).toEqual(Uint8Array.from(decoded));
       } else {
         expect(() => base64ByteLength(encoded)).toThrow(InvalidProtectedData);
+        expect(() => validateBase64Size(encoded, decoded.length)).toThrow(
+          InvalidProtectedData,
+        );
         expect(() => unbase64(encoded)).toThrow(InvalidProtectedData);
       }
     }

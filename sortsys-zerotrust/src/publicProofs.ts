@@ -1,5 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2.js";
-import { base64, digest, sized } from "./encoding";
+import { base64, digest, validateBase64Size } from "./encoding";
 import { verify } from "./identity";
 
 const SMALL_PUBLIC_FRAME = 64 * 1024;
@@ -34,7 +34,7 @@ export function createPublicProofVerifier(options: { capacity?: number } = {}) {
       signature: string,
       message: Uint8Array<ArrayBuffer>,
     ): Promise<void> {
-      sized(signature, 64);
+      validateBase64Size(signature, 64);
       if (capacity === 0 || message.byteLength > SMALL_PUBLIC_FRAME)
         return verify(key, signature, message);
       let keyId = keys.get(key);

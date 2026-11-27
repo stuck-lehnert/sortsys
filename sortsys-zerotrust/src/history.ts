@@ -4,7 +4,7 @@ import {
   InvalidProtectedData,
   record,
   revision,
-  sized,
+  validateBase64Size,
 } from "./encoding";
 import { sign, verify } from "./identity";
 import { encryptedObject } from "./objects";
@@ -40,10 +40,10 @@ export function migrationOrigin(input: unknown): MigrationOrigin {
     ...(withHistory ? ["history"] : []),
   ]);
   revision(value.generation);
-  sized(value.signature as string, 64);
+  validateBase64Size(value.signature, 64);
   return {
     generation: value.generation as string,
-    signature: value.signature as string,
+    signature: value.signature,
     ...(withHistory ? { history: historyOrigin(value.history) } : {}),
   };
 }
