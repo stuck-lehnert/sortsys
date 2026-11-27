@@ -1,6 +1,7 @@
-import { describe, expect, test } from "bun:test";
+import { describe, expect, spyOn, test } from "bun:test";
 import { areaKey, base64, bytes, createIdentity, createRecoveryPhrase, decryptObject, encryptObject, fingerprint, frame, importSigningKey, InvalidProtectedData, normalizeRecoveryPhrase, openBox, publicIdentity, randomSecret, recoveryIdentity, sealBox, unbase64, utf8, verify } from "../src/sortsys";
 import type { BoxContext, ObjectContext } from "../src/sortsys";
+import { hpke } from "../src/identity";
 
 const object: ObjectContext = { tenant: "test", scope: "project:123", facet: "calculation", object: "line:456", revision: "1", generation: "1", policyVersion: "1", author: "user:1" };
 
@@ -125,6 +126,66 @@ describe("public-key envelopes", () => {
     await expect(openBox(encrypted, context, other.encryptionKey.privateKey, sender.signingKey.publicKey)).rejects.toBeInstanceOf(InvalidProtectedData);
     await expect(openBox(encrypted, { ...context, purpose: "live-llm-context" }, recipient.encryptionKey.privateKey, sender.signingKey.publicKey)).rejects.toBeInstanceOf(InvalidProtectedData);
     await expect(openBox({ ...encrypted, recipient: "user:3" }, context, recipient.encryptionKey.privateKey, sender.signingKey.publicKey)).rejects.toBeInstanceOf(InvalidProtectedData);
+  });
+
+  test("a repeated area-key envelope shares authentication but not HPKE opening", async () => {
+    const sender = await createIdentity();
+    const recipient = await createIdentity();
+    const other = await createIdentity();
+    const context: BoxContext = {
+      tenant: "test",
+      purpose: "area-key",
+      object: "project:123:calculation",
+      generation: "1",
+      recipient: "user:2",
+      author: "user:1",
+    };
+    const secret = randomSecret();
+    const encrypted = await sealBox(
+      context,
+      secret,
+      recipient.encryptionKey.publicKey,
+      sender.signingKey.privateKey,
+    );
+
+    const checks = spyOn(crypto.subtle, "verify");
+    const openings = spyOn(hpke, "open");
+    const open = (
+      packet = encrypted,
+      key = recipient.encryptionKey.privateKey,
+      signer = sender.signingKey.publicKey,
+    ) => openBox(packet, context, key, signer);
+
+    try {
+      expect(await Promise.all([open(), open({ ...encrypted })])).toEqual([
+        secret,
+        secret,
+      ]);
+      expect(checks).toHaveBeenCalledTimes(1);
+      expect(openings).toHaveBeenCalledTimes(2);
+
+      const tampered = unbase64(encrypted.ciphertext);
+      tampered[0] = tampered[0]! ^ 1;
+      await expect(
+        open({ ...encrypted, ciphertext: base64(tampered) }),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+      await expect(
+        open(
+          encrypted,
+          recipient.encryptionKey.privateKey,
+          other.signingKey.publicKey,
+        ),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+      expect(openings).toHaveBeenCalledTimes(2);
+
+      await expect(
+        open(encrypted, other.encryptionKey.privateKey),
+      ).rejects.toBeInstanceOf(InvalidProtectedData);
+      expect(openings).toHaveBeenCalledTimes(3);
+    } finally {
+      checks.mockRestore();
+      openings.mockRestore();
+    }
   });
 });
 

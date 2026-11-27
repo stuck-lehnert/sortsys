@@ -12,6 +12,7 @@ import {
   validateBase64Size,
 } from "./encoding";
 import { hpke, sign, verify } from "./identity";
+import { verifyPublicProof } from "./publicProofs";
 
 export const BOX_PURPOSES = [
   "area-key",
@@ -130,7 +131,12 @@ export async function openBox(
     const ctx = context(expected);
     if (contextKeys.some((key) => box[key] !== ctx[key]))
       throw new InvalidProtectedData();
-    await verify(author, box.signature, boxFrame(box));
+
+    // A fresh area grant can return the same signed ciphertext again. Only
+    // share its public signature check; HPKE still uses this call's recipient.
+    const verifySignature =
+      box.purpose === "area-key" ? verifyPublicProof : verify;
+    await verifySignature(author, box.signature, boxFrame(box));
 
     const aad = info(ctx);
     return new Uint8Array(
