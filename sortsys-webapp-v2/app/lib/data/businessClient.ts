@@ -920,6 +920,21 @@ export function createBusinessClient(
       return [null, RpcClientError.from(error)];
     }
   }
+  async function queryStore(
+    open: () => Promise<{
+      query(path: string, input: unknown, limit?: number): Promise<unknown>;
+    }>,
+    path: string,
+    input: unknown,
+    limit?: number,
+  ): Promise<[unknown, null]> {
+    const signal = controller.signal;
+    const store = await open();
+    const value = await store.query(path, input, limit);
+
+    if (closed || signal.aborted) throw unavailable();
+    return [value, null];
+  }
   async function readQuery(
     path: string,
     input: unknown,
@@ -929,24 +944,11 @@ export function createBusinessClient(
       await synchronized();
       if (adapters.owns(path))
         return [await adapters.query(path, input, limit), null];
-      if (TOOL_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await toolStore()).query(path, input);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
-      if (DELIVERY_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await deliveryStore()).query(path, input);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
-      if (VENDOR_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await vendorStore()).query(path, input, limit);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
+      if (TOOL_QUERIES.has(path)) return await queryStore(toolStore, path, input);
+      if (DELIVERY_QUERIES.has(path))
+        return await queryStore(deliveryStore, path, input);
+      if (VENDOR_QUERIES.has(path))
+        return await queryStore(vendorStore, path, input, limit);
       if (PREFERENCE_QUERIES.has(path)) {
         if (input !== undefined && input !== null) throw unavailable();
         const signal = controller.signal,
@@ -974,24 +976,11 @@ export function createBusinessClient(
         if (closed || signal.aborted || editor.aborted) throw unavailable();
         return [value, null];
       }
-      if (ORGANIZATION_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await organizationStore()).query(path, input);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
-      if (COMMERCIAL_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await commercialStore()).query(path, input);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
-      if (FILE_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await fileStore()).query(path, input);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
+      if (ORGANIZATION_QUERIES.has(path))
+        return await queryStore(organizationStore, path, input);
+      if (COMMERCIAL_QUERIES.has(path))
+        return await queryStore(commercialStore, path, input);
+      if (FILE_QUERIES.has(path)) return await queryStore(fileStore, path, input);
       if (path === "projects.files.xmlContent") {
         const data = object(input, ["projectId", "fileId"]),
           signal = controller.signal;
@@ -1001,18 +990,10 @@ export function createBusinessClient(
         if (closed || signal.aborted) throw unavailable();
         return [value, null];
       }
-      if (PROJECT_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await projectStore()).query(path, input, limit);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
-      if (ADDRESS_QUERIES.has(path)) {
-        const signal = controller.signal,
-          value = await (await directory()).query(path, input, limit);
-        if (closed || signal.aborted) throw unavailable();
-        return [value, null];
-      }
+      if (PROJECT_QUERIES.has(path))
+        return await queryStore(projectStore, path, input, limit);
+      if (ADDRESS_QUERIES.has(path))
+        return await queryStore(directory, path, input, limit);
       if (["llm.chats.list", "llm.chats.get"].includes(path)) {
         const request = object(input, path.endsWith(".get") ? ["chatId"] : []);
         const signal = AbortSignal.any([

@@ -10,7 +10,7 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import { createProtectedCommercial } from "./commercial";
-import { commercialCollection } from "./commercialAreas";
+import { COMMERCIAL_FACETS, commercialCollection } from "./commercialAreas";
 import { splitCommercialRows } from "./commercialData";
 import { row } from "./testing/businessRow.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
@@ -403,7 +403,8 @@ test("the offers table reads checked totals without opening private notes or att
     "attachment",
     "contract-quantities",
   ].map((facet) => commercialCollection(id, facet));
-  const tenant = await protectedTenant(areas);
+  const unrelated = commercialCollection("35", "master-data");
+  const tenant = await protectedTenant([...areas, unrelated]);
   const rows = splitCommercialRows(id, [
     row("commercial_cases", {
       id: "100",
@@ -417,11 +418,51 @@ test("the offers table reads checked totals without opening private notes or att
       project_id: "43",
       scope_item_ids: "[]",
     }),
+    row("commercial_documents", {
+      id: "101",
+      case_id: "100",
+      purpose: "offer",
+      phase: "84",
+      net_amount: "123456.78",
+    }),
   ]);
   for (const area of areas) {
     const value = rows.get(area.facet);
     await tenant.seed(area, `${area.prefix}case`, value);
   }
+
+  const scope = areas[0].scope;
+  const documentId = publicId("101");
+  const manifest = documentObject(scope, documentId, "scope", "a".repeat(32), "manifest");
+  const head = await signDocumentHead({
+    tenant: "test",
+    scope,
+    id: documentId,
+    version: "1",
+    previous: "",
+    generation: "1",
+    policyVersion: "2",
+    author: "user:1",
+    modifiedMicros: "1794484800000000",
+    readOnly: false,
+    locked: false,
+    parts: [{
+      facet: "scope",
+      object: manifest,
+      hash: await digest(bytes("Protected offer manifest")),
+      keys: [{ facet: "scope", generation: "1" }],
+    }],
+  }, tenant.identity.signingKey.privateKey);
+
+  const documentReads = [];
+  const query = tenant.client.query;
+  tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.documents.get") {
+      documentReads.push(input);
+      return [structuredClone(head), null];
+    }
+    return query(path, input, options);
+  };
   const store = createProtectedCommercial(
     tenant.client,
     new AbortController().signal,
@@ -450,11 +491,22 @@ test("the offers table reads checked totals without opening private notes or att
         netAmount: "123456.78",
       },
     ]);
+    expect(documentReads).toEqual([{ id: documentId, scope }]);
+    const accessSelections = tenant.calls
+      .filter(({ path, input }) =>
+        path === "zerotrust.access.snapshot" && input.domains,
+      )
+      .map(({ input }) => input.domains);
+    expect(accessSelections).toContainEqual(
+      COMMERCIAL_FACETS.map((facet) => commercialCollection(id, facet).domain),
+    );
+
     const reads = tenant.calls
       .filter((call) => call.path === "zerotrust.objects.pages")
       .flatMap((call) => call.input.selections.map(({ domain }) => domain));
+    // Discovering table rows still reads headers outside the document scope.
     expect(new Set(reads)).toEqual(
-      new Set(areas.slice(0, 3).map((area) => area.domain)),
+      new Set([unrelated, ...areas.slice(0, 3)].map((area) => area.domain)),
     );
     expect(JSON.stringify(tenant.calls)).not.toContain("Kalkulationsansatz");
   } finally {

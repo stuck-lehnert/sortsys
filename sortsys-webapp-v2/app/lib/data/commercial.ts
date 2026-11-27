@@ -2728,9 +2728,16 @@ export function createProtectedCommercial(
         ]);
         live();
 
+        // One case fits in a scoped access snapshot. Keep sharing a single
+        // snapshot for wider pages instead of requesting one per case.
+        const onlyCase = page.length === 1 ? page[0] : undefined;
         let stores: ReturnType<typeof commercialDocumentStores> | undefined;
         const openStore = async (scope: string) => {
-          stores ??= commercialDocumentStores(client, signal);
+          stores ??= commercialDocumentStores(
+            client,
+            signal,
+            onlyCase ? [`commercial:${onlyCase.basis.id}`] : undefined,
+          );
           return (await stores)(scope);
         };
         return mapConcurrent(page, 4, async ({ basis, current }) => {
