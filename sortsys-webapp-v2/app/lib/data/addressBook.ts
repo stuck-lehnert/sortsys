@@ -1,5 +1,6 @@
-import type { Client, QueryResult } from "@sortsys/v2-client";
+import { RpcClientError, type Client, type QueryResult } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
+import { uiText } from "../i18n";
 import { buildPrefixSearch, createPrefixMatcher } from "../search/prefixQuery";
 import { ProtectedWriteConflict } from "./atomicWrites";
 import type { DuckDriver } from "./database";
@@ -324,7 +325,17 @@ function addressObjects(kind: Kind, ids: readonly unknown[]): DataRequest<Addres
 
 function selectedAddress(view: DataView, selection: DataRequest<AddressPayload>) {
   const address = view.documents(selection)[0]?.value;
-  if (!address?.row) throw new InvalidProtectedData();
+  if (!address?.row) {
+    throw new RpcClientError({
+      code: -32004,
+      data: { code: "NOT_FOUND", httpCode: 404 },
+      message: uiText(
+        "Der Adresseintrag wurde nicht gefunden.",
+        "The address record could not be found.",
+      ),
+    });
+  }
+
   return { ...address, row: address.row };
 }
 

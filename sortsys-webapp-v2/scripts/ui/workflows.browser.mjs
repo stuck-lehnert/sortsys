@@ -162,7 +162,7 @@ function createWorkflowApi() {
   function result(path, input) {
     requests.push({ path, input });
     if (failures.has(path)) {
-      throw new Error(failures.get(path));
+      throw failures.get(path);
     }
 
     if (responses.has(path)) {
@@ -479,8 +479,8 @@ function createWorkflowApi() {
     setRoles(nextRoles) {
       roles = nextRoles;
     },
-    fail(path, message) {
-      failures.set(path, message);
+    fail(path, message, code = "BAD_REQUEST") {
+      failures.set(path, Object.assign(new Error(message), { code }));
       injectedErrors.add(message);
     },
     recover(path) {
@@ -546,7 +546,7 @@ function createWorkflowApi() {
           return {
             error: superjson.serialize({
               message: error.message,
-              data: { code: "BAD_REQUEST" },
+              data: { code: error.code ?? "BAD_REQUEST" },
             }),
           };
         }
@@ -9312,6 +9312,36 @@ test("project data sheet opens a PDF without an external connection", async () =
   const bytes = await readFile(await file.path());
   assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
 });
+
+for (const code of ["NOT_FOUND", "FORBIDDEN"]) {
+  test(`project overview distinguishes a ${code} customer read`, async () => {
+    api.respond("projects.contacts.list", [existingContact]);
+    api.respond("tools.trackings.list", []);
+    api.fail("customers.get", "Synthetic customer read error", code);
+
+    await openApplication("/projects/c?customerId=b", "de");
+    const banner = page.getByText(
+      "Verknüpfte Projektdaten konnten nicht geladen werden",
+      { exact: true },
+    );
+    if (code === "FORBIDDEN") {
+      await banner.waitFor();
+      return;
+    }
+
+    const [file] = await Promise.all([
+      page.waitForEvent("download", { timeout: 30000 }),
+      page.getByRole("button", { name: "Datenblatt", exact: true }).click(),
+    ]);
+    const bytes = await readFile(await file.path());
+
+    assert.equal(bytes.subarray(0, 5).toString(), "%PDF-");
+    assert.ok(
+      api.requests.some(({ path, input }) => path === "customers.get" && input.id === "b"),
+    );
+    assert.equal(await banner.count(), 0);
+  });
+}
 
 test("product creation focuses and saves a newly added unit", async () => {
   api.respond("products.units.list", ["kg", "m²", "Stk"]);

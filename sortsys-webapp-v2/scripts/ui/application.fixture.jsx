@@ -226,7 +226,9 @@ function FormEntrypoints() {
 }
 
 function ProjectFixture() {
-  const project = { id: "c", title: "Fixture project" };
+  const { search } = useLocation();
+  const customerId = new URLSearchParams(search).get("customerId");
+  const project = { id: "c", title: "Fixture project", customerId };
 
   return (
     <>

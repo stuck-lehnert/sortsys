@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import {
   addressChanges,
@@ -214,9 +215,13 @@ test("address details and forward links open only the selected objects", async (
       phoneNumbers: [{ number: "+49 12345", name: null }],
       emailAddresses: [{ email: "office@example.test", name: "Büro" }],
     });
-    for (const id of ["36", "37", "035"]) {
-      await expect(store.query("contacts.get", { id })).rejects.toThrow();
+    for (const id of ["36", "37"]) {
+      await expect(store.query("contacts.get", { id })).rejects.toMatchObject({
+        code: "NOT_FOUND",
+      });
     }
+    await expect(store.query("contacts.get", { id: "035" }))
+      .rejects.toBeInstanceOf(InvalidProtectedData);
 
     expect(fullPages(calls)).toEqual([]);
     expect(objectReads(calls)).toEqual([
@@ -237,6 +242,12 @@ test("address details and forward links open only the selected objects", async (
 
     expect(await store.query("contacts.customers.list", { contactId: "35" }))
       .toMatchObject([{ id: "34", name: "Bauherr" }]);
+
+    await seed(customerArea, "customer:34", { ...customer(), row: null, links: [] });
+    await store.refresh();
+    await expect(store.query("customers.get", { id: "34" })).rejects.toMatchObject({
+      code: "NOT_FOUND",
+    });
   } finally {
     store.close();
     lockCryptoSession();

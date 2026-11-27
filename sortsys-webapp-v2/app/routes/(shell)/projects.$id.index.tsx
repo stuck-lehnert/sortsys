@@ -96,6 +96,8 @@ export default function ProjectDetailPage() {
 
     return client.streamQuery("customers.get", { id: project.customerId });
   }, [project.customerId]);
+  const customerLoadFailed = customerError && customerError.code !== "NOT_FOUND";
+
   const leaderId = project.responsibleProjectLeaderUserId;
   const [leaderName, leaderNameError] =
     useClientStream(() => {
@@ -148,7 +150,7 @@ export default function ProjectDetailPage() {
       const [
         [freshContacts, contactsErr],
         [projectRemarks, projectRemarksErr],
-        [currentCustomer],
+        [currentCustomer, currentCustomerError],
         [projectLeader],
       ] = await Promise.all([
         client.query(
@@ -188,7 +190,7 @@ export default function ProjectDetailPage() {
           "Auftrag erhalten am",
           formatDate(project.orderReceivedAt, "long"),
         ]);
-      if (project.customerId || currentCustomer) {
+      if (project.customerId && currentCustomerError?.code !== "NOT_FOUND") {
         projectRows.push([
           uiText("Kunde"),
           currentCustomer ? customerName(currentCustomer) : "Unbekannt",
@@ -326,7 +328,7 @@ export default function ProjectDetailPage() {
         </MyCallout>
       )}
 
-      {!!(customerError || leaderNameError || contactsError) && (
+      {!!(customerLoadFailed || leaderNameError || contactsError) && (
         <MyCallout
           kind="error"
           title={uiText(
