@@ -445,15 +445,18 @@ async function bindCollections(
         if (selected.length > 2000) throw new InvalidProtectedData();
         return selected;
       },
-      stamp: JSON.stringify([
-        context.history.current.generation,
-        context.permissions,
-        Array.from(context.domains.values(), (domain) => [
-          domain.id,
-          domain.generation,
-          domain.rotationRequired,
-        ]),
-      ]),
+      activityStamp() {
+        live();
+        return JSON.stringify([
+          context.history.current.generation,
+          context.permissions,
+          Array.from(context.domains.values(), (domain) => [
+            domain.id,
+            domain.generation,
+            domain.rotationRequired,
+          ]),
+        ]);
+      },
       tenant: context.account.tenant,
       authority: context.history.authority,
       identityCertificate: context.history.identityCertificate,

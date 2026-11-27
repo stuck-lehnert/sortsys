@@ -114,9 +114,20 @@ export function projectMenuAccess(
   subject: string,
   managementPolicy = permissions,
 ) {
+  return menuAccessFromCompiled(
+    compilePolicy(permissions, [subject]),
+    subject,
+    managementPolicy,
+  );
+}
+
+function menuAccessFromCompiled(
+  access: ReturnType<typeof compilePolicy>,
+  subject: string,
+  managementPolicy: Policy,
+) {
   if (!subject.startsWith("user:")) throw new InvalidProtectedData();
   addressId(subject.slice(5));
-  const access = compilePolicy(permissions, [subject]);
   const managesPermissions = hasScopedManagement(managementPolicy, subject);
   const has = access.allows;
   const can = (scope: string, facet: Facet, action: DataAction) =>
@@ -285,8 +296,8 @@ export async function readMenuAccess(
   const context = await verifiedAccessContext(client, signal, {
     includeDomains: false,
   });
-  return projectMenuAccess(
-    context.permissions,
+  return menuAccessFromCompiled(
+    context.compiledAccess(),
     context.subject,
     context.rootPolicy,
   );

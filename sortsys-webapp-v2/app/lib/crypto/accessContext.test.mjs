@@ -1,4 +1,4 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { RpcClientError } from "@sortsys/v2-client";
 import {
   certifyCreationCapability,
@@ -112,6 +112,37 @@ test("a fresh unchanged response reuses only verified metadata and keeps returne
 
   lockCryptoSession();
   expect(() => first.compiledAccess()).toThrow();
+});
+
+test("a warm policy projection copies no inventory until the caller requests it", async () => {
+  const fixture = await inventory();
+  const first = await verifiedAccessContext(fixture.client, signal());
+  const access = first.compiledAccess();
+  fixture.changeHead(unchanged);
+
+  const clone = spyOn(globalThis, "structuredClone");
+  try {
+    const warm = await verifiedAccessContext(fixture.client, signal());
+    expect(warm.compiledAccess()).toBe(access);
+
+    const domain = fixture.areas[0].domain;
+    const inventoryCopies = () => clone.mock.calls.filter(([value]) => {
+      const domains = Array.isArray(value) ? value : value?.domains;
+      return domains?.some((row) => row?.id === domain);
+    });
+    expect(inventoryCopies()).toHaveLength(0);
+
+    const view = warm.domains;
+    expect(view[0].id).toBe(domain);
+    expect(warm.domains).toBe(view);
+    expect(inventoryCopies()).toHaveLength(1);
+
+    view[0].id = "a different domain";
+    const later = await verifiedAccessContext(fixture.client, signal());
+    expect(later.domains[0].id).toBe(domain);
+  } finally {
+    clone.mockRestore();
+  }
 });
 
 test("unchanged claims need a matching verified cache and cannot carry content or a different subject", async () => {

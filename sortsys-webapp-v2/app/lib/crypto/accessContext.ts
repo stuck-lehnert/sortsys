@@ -22,12 +22,13 @@ type AccessOptions = Omit<QueryInput<"zerotrust.access.snapshot">, "known">;
 const MAX_ACCESS_PAGE_ITEMS = 128;
 const MAX_ORIGIN_PAGE_ITEMS = 640;
 type Domains = QueryResult<"zerotrust.access.snapshot">["domains"];
+type InventoryData = {
+  domains: Domains;
+  origins: CreationOrigin[];
+  permissions: Policy;
+};
 type CachedInventory = {
-  data: {
-    domains: Domains;
-    origins: CreationOrigin[];
-    permissions: Policy;
-  };
+  data: InventoryData;
   snapshot: string;
   subject: string;
   policySignature: string;
@@ -186,9 +187,7 @@ async function readAccessContext(
       history,
       live,
     });
-  let domains: Domains = [];
-  let origins: CreationOrigin[];
-  let permissions: Policy;
+  let data: InventoryData;
   if (input.unchanged) {
     if (
       !previous ||
@@ -202,8 +201,9 @@ async function readAccessContext(
       input.after !== null
     )
       throw new InvalidProtectedData();
-    ({ domains, origins, permissions } = structuredClone(previous.data));
+    data = previous.data;
   } else {
+    const domains: Domains = [];
     const returned = new Set<string>();
     const originPackets: OriginPacket[] = [];
     for await (const page of readSnapshotPages<InventoryEntry>({
@@ -266,13 +266,14 @@ async function readAccessContext(
         domains.push(domain);
       }
     }
-    ({ origins, permissions } = await verifyCreatedAccess(
+    const { origins, permissions } = await verifyCreatedAccess(
       originPackets,
       rootPolicy,
       history,
       signal,
       selected,
-    ));
+    );
+    data = { domains, origins, permissions };
   }
 
   live();
@@ -280,7 +281,7 @@ async function readAccessContext(
   let inventory = input.unchanged ? previous : undefined;
   if (cache && !input.unchanged) {
     inventory = {
-      data: structuredClone({ domains, origins, permissions }),
+      data: structuredClone(data),
       snapshot: input.snapshot,
       subject,
       policySignature: input.policy.signature,
@@ -289,6 +290,9 @@ async function readAccessContext(
     cache.set(includeDomains, inventory);
   }
 
+  // Callers can mutate their own copy, but a warm projection need not clone
+  // origins, domains or rules that it does not use.
+  const detached: Partial<InventoryData> = input.unchanged ? {} : data;
   let selectedAccess: ReturnType<typeof compilePolicy> | undefined;
   return {
     account,
@@ -298,9 +302,15 @@ async function readAccessContext(
     rootPolicySignature,
     snapshot: input.snapshot,
     contentEpoch: input.contentEpoch,
-    permissions,
-    domains,
-    origins,
+    get permissions() {
+      return (detached.permissions ??= structuredClone(data.permissions));
+    },
+    get domains() {
+      return (detached.domains ??= structuredClone(data.domains));
+    },
+    get origins() {
+      return (detached.origins ??= structuredClone(data.origins));
+    },
     pages: input.pages,
     compiledAccess() {
       live();
@@ -310,7 +320,7 @@ async function readAccessContext(
         inventory.access ??= compilePolicy(inventory.data.permissions, [subject]);
         return inventory.access;
       }
-      selectedAccess ??= compilePolicy(permissions, [subject]);
+      selectedAccess ??= compilePolicy(data.permissions, [subject]);
       return selectedAccess;
     },
     live,

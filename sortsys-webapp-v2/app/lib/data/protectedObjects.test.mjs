@@ -414,6 +414,12 @@ test("parallel object decryption shares one combined opening request across page
 async function pagedFixture() {
   const { state, client, collection } = await fixture();
   const areas = [AREA, { ...AREA, prefix: "item:0" }];
+
+  // Visibility can leave an entire page empty. Both readers reach the next
+  // cursor without waiting on different WebCrypto jobs in the first page.
+  state.transformPage = (page) =>
+    page.after === null ? page : { ...page, objects: [] };
+
   const open = await protectedCollections(client, new AbortController().signal);
   await open.prefetch(areas.map((area) => ({ area })));
   const readers = areas.map(open);
@@ -434,7 +440,7 @@ test("parallel collection walks batch their next pages and retain each snapshot"
     const results = await read();
     for (const rows of results) {
       expect(rows.map(({ value }) => value.index)).toEqual(
-        Array.from({ length: 48 }, (_, index) => index),
+        Array.from({ length: 16 }, (_, index) => index + 32),
       );
     }
     expect(state.pageBatches.map((pages) => pages.length)).toEqual([2, 2]);
@@ -470,7 +476,7 @@ test("a continuation conflict keeps every single retry bound to its cursor and s
 
   try {
     const results = await read();
-    expect(results.map((rows) => rows.length)).toEqual([48, 48]);
+    expect(results.map((rows) => rows.length)).toEqual([16, 16]);
     expect(state.pageBatches.map((pages) => pages.length)).toEqual([2, 2]);
     expect(state.pageRequests.slice(2)).toEqual(state.pageBatches[1]);
   } finally {
@@ -490,7 +496,7 @@ test("an oversized continuation batch splits without changing any cursor", async
   };
 
   try {
-    expect((await read()).map((rows) => rows.length)).toEqual([48, 48]);
+    expect((await read()).map((rows) => rows.length)).toEqual([16, 16]);
     expect(state.pageBatches.map((pages) => pages.length)).toEqual([2, 2, 1, 1]);
     expect(state.pageRequests.slice(2)).toEqual(state.pageBatches[1]);
   } finally {

@@ -732,7 +732,8 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       return boundary;
     }
     try {
-      if (cache?.stamp !== context.stamp || cache.prefixes !== prefixKey) {
+      const stamp = context.activityStamp();
+      if (cache?.stamp !== stamp || cache.prefixes !== prefixKey) {
         cache = null;
       }
       const first = await required(
@@ -757,7 +758,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         const groups = new Map<string, Candidate>();
         appendActivityFacets(groups, initial);
         cache = {
-          stamp: context.stamp,
+          stamp,
           prefixes: prefixKey,
           head: first.current,
           total: first.total,
