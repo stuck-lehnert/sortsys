@@ -328,6 +328,69 @@ const legacyRow = (id, time, changes = {}) =>
     ...changes,
   });
 
+test("a warm activity head starts while the fresh access check is pending", async () => {
+  const f = await createActivityFixture();
+  const path = "personalization.activity.list";
+  const request = { limit: 5 };
+
+  try {
+    await f.append("master-data", { first_name: "Sichtbare Aktivität" });
+    const expected = await f.store.query(path, request);
+    expect(expected).not.toHaveLength(0);
+
+    const accessRequested = Promise.withResolvers();
+    const releaseAccess = Promise.withResolvers();
+    const original = f.client.query;
+    let warmHead;
+    f.client.query = async (route, input, options) => {
+      if (route === "zerotrust.access.snapshot") {
+        accessRequested.resolve();
+        await releaseAccess.promise;
+      }
+      if (route === "zerotrust.history.list") warmHead = input.known;
+
+      return original(route, input, options);
+    };
+
+    const response = f.store.query(path, request);
+    try {
+      await accessRequested.promise;
+      expect(warmHead).toMatch(/^[1-9][0-9]*$/);
+    } finally {
+      releaseAccess.resolve();
+      expect(await response).toEqual(expected);
+    }
+  } finally {
+    f.close();
+  }
+});
+
+test("a changed access stamp re-reads a warm history head even when its counters stay the same", async () => {
+  const unused = toolCollection("tool", "34", "master-data");
+  const f = await createActivityFixture([unused]);
+  const path = "personalization.activity.list";
+  const request = { limit: 5 };
+
+  try {
+    await f.append("master-data", { first_name: "Unveränderte Aktivität" });
+    const expected = await f.store.query(path, request);
+    expect(expected).not.toHaveLength(0);
+
+    await f.revokeArea(unused.scope, unused.facet);
+    const start = f.calls.length;
+    expect(await f.store.query(path, request)).toEqual(expected);
+
+    const heads = f.calls
+      .slice(start)
+      .filter(({ path }) => path === "zerotrust.history.list");
+    expect(heads).toHaveLength(2);
+    expect(heads[0].input.known).toMatch(/^[1-9][0-9]*$/);
+    expect(heads[1].input).toMatchObject({ known: null, knownTotal: null });
+  } finally {
+    f.close();
+  }
+});
+
 test("a tool timeline excludes unrelated history and keeps its cache separate from the complete activity list", async () => {
   const master = toolCollection("tool", "34", "master-data");
   const booking = toolCollection("tool-tracking", "35", "master-data");

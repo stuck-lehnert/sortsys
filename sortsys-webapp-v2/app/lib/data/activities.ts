@@ -248,6 +248,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     }
     const prefixKey = JSON.stringify(prefixes);
     const previous = caches.get(scope);
+    const conditional = previous?.prefixes === prefixKey ? previous : null;
     const expectedAccessEpoch = accessEpoch;
     const assertCurrentAccess = () => {
       assertActive();
@@ -271,11 +272,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       );
 
     assertCurrentAccess();
-    // Cold history needs no cached head. Fetch ciphertext alongside access,
-    // but verify the page's access version before any packet can be opened.
-    const [context, coldPage] = await Promise.all([
+    // Fetch the opaque first page alongside access. Only use a conditional
+    // reply once the freshly verified access stamp accepts its cached head.
+    const [context, initialPage] = await Promise.all([
       protectedCollections(client, signal),
-      previous?.prefixes === prefixKey ? null : readFirstPage(null),
+      readFirstPage(conditional),
     ]);
     assertCurrentAccess();
 
@@ -817,7 +818,8 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         state = undefined;
       }
 
-      const first = coldPage ?? (await readFirstPage(state ?? null));
+      const first =
+        conditional && !state ? await readFirstPage(null) : initialPage;
       assertCurrentAccess();
       const firstEdge = validatePage(first, null, null);
       if (!first.unchanged) {
