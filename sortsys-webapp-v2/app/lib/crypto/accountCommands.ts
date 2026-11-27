@@ -1,7 +1,10 @@
 import type { Client } from "@sortsys/v2-client";
 import { createWeakPairCache } from "@sortsys/zerotrust";
-import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import { listenCryptoSession, unlockedAccount } from "./session";
+import {
+  captureAccountScope,
+  listenCryptoSession,
+  unlockedAccount,
+} from "./session";
 
 const commands = createWeakPairCache<Client, object, Set<Promise<unknown>>>(
   () => new Set(),
@@ -13,28 +16,26 @@ export async function runAccountCommand<T>(
   client: Client,
   work: (signal: AbortSignal) => Promise<T>,
 ): Promise<T> {
-  const account = unlockedAccount();
-  if (!account || !client.loggedIn()) throw new InvalidProtectedData();
   const controller = new AbortController();
+  const { account, live } = captureAccountScope(controller.signal, client);
+  live();
+
   const pending = commands.getOrCreate(client, account);
   const retire = () => {
     controller.abort();
     commands.deleteIfCurrent(client, account, pending);
   };
-  const live = () => {
-    controller.signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
   const stopAccount = listenCryptoSession(() => {
     if (unlockedAccount() !== account) retire();
   });
   const stopAuth = client.listenAuthState(retire);
+
   const command = Promise.resolve().then(() => {
     live();
     return work(controller.signal);
   });
   pending.add(command);
+
   try {
     const result = await command;
     live();
@@ -52,15 +53,14 @@ export async function waitForAccountCommands(
   client: Client,
   signal: AbortSignal,
 ): Promise<void> {
-  const account = unlockedAccount();
-  if (!account || !client.loggedIn()) throw new InvalidProtectedData();
+  const { account, live } = captureAccountScope(signal, client);
+  live();
+
   const pending = commands.getOrCreate(client, account);
-  signal.throwIfAborted();
   while (pending.size) {
     const results = await Promise.allSettled([...pending]);
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
+    live();
+
     for (const result of results) {
       if (result.status === "rejected") throw result.reason;
     }

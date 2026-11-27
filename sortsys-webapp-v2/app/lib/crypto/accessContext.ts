@@ -4,7 +4,7 @@ import {
   type QueryInput,
   type QueryResult,
 } from "@sortsys/v2-client";
-import { readSnapshotPages } from "@sortsys/zerotrust";
+import { createWeakPairCache, readSnapshotPages } from "@sortsys/zerotrust";
 import {
   compilePolicy,
   type CreationOrigin,
@@ -38,24 +38,11 @@ type CachedInventory = {
 
 // Only public, fully verified metadata is retained. Weak account keys prevent
 // this cache from retaining an unlocked vault after its session is discarded.
-const inventories = new WeakMap<
+const inventories = createWeakPairCache<
   Client,
-  WeakMap<object, Map<boolean, CachedInventory>>
->();
-
-function accountInventories(client: Client, account: object) {
-  let accounts = inventories.get(client);
-  if (!accounts) {
-    accounts = new WeakMap();
-    inventories.set(client, accounts);
-  }
-  let cache = accounts.get(account);
-  if (!cache) {
-    cache = new Map();
-    accounts.set(account, cache);
-  }
-  return cache;
-}
+  object,
+  Map<boolean, CachedInventory>
+>(() => new Map());
 
 /** Each page rechecks authorization in its own transaction and belongs to one
  * security snapshot. The browser verifies pins, identity, policy and creation
@@ -110,7 +97,7 @@ async function readAccessContext(
     : MAX_ORIGIN_PAGE_ITEMS;
   const cache =
     options.domain === undefined && options.domains === undefined
-      ? accountInventories(client, account)
+      ? inventories.getOrCreate(client, account)
       : undefined;
   const previous = cache?.get(includeDomains);
   const { pages, ...selection } = options;
