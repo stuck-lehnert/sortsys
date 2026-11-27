@@ -1,4 +1,4 @@
-import type { Client, QueryResult } from "@sortsys/v2-client";
+import type { Client } from "@sortsys/v2-client";
 import {
   ACTIONS,
   allows,
@@ -63,6 +63,7 @@ import {
   administratorPolicyContext as administrator,
 } from "./administration";
 import { finishAccessChanges } from "./accessRotations";
+import { readMemberPages } from "./memberDirectory";
 export { finishAccessChanges };
 import { canUseAssistant } from "../data/assistantArea";
 import { provisionMemberKeyAuthorities } from "./keyAuthorities";
@@ -87,26 +88,14 @@ export async function shareNewPersonnelName(
   person: string,
   signal: AbortSignal,
 ) {
-  const context = await administratorContext(client, signal),
-    area = personnelCollection(person, "master-data");
+  const context = await administratorContext(client, signal);
+  const area = personnelCollection(person, "master-data");
   const { permissions } = await readVerifiedPolicy(client, context);
-  let after: string | null = null;
   const seen = new Set<string>();
-  do {
-    const page: QueryResult<"zerotrust.members.list"> = await required(
-      client.query(
-        "zerotrust.members.list",
-        { after },
-        { strategy: "network-only" },
-      ),
-    );
+
+  for await (const rows of readMemberPages(client, context.live)) {
     context.live();
-    if (
-      (page.after !== null && page.after === after) ||
-      seen.size + page.rows.length > 10000
-    )
-      throw new InvalidProtectedData();
-    for (const member of page.rows) {
+    for (const member of rows) {
       if (seen.has(member.id)) throw new InvalidProtectedData();
       seen.add(member.id);
       const subject = `user:${member.id}`;
@@ -137,8 +126,7 @@ export async function shareNewPersonnelName(
       );
       context.live();
     }
-    after = page.after;
-  } while (after);
+  }
 }
 
 function readers(

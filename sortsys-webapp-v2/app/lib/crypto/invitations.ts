@@ -40,6 +40,7 @@ import {
 import { publishVerifiedPolicy, readVerifiedPolicy } from "./policy";
 import { personnelCollection, personnelDomain } from "../data/personnelData";
 import { administratorContext as admin } from "./administration";
+import { readMemberPages } from "./memberDirectory";
 import { privateLlmCollection } from "../data/privateLlm";
 import { preferenceCollection } from "../data/preferenceData";
 import { provisionOwnedCollections } from "../data/prepareCollections";
@@ -110,26 +111,14 @@ function savedInvitation(input: unknown): AdminInvitation {
   };
 }
 export async function invitationMembers(client: Client, signal: AbortSignal) {
-  const context = await admin(client, signal),
-    result: QueryResult<"zerotrust.members.list">["rows"] = [];
-  let after: string | null = null;
-  do {
-    const page: QueryResult<"zerotrust.members.list"> = await required(
-      client.query(
-        "zerotrust.members.list",
-        { after },
-        { strategy: "network-only" },
-      ),
-    );
-    context.live();
-    if (
-      (page.after && page.after === after) ||
-      result.length + page.rows.length > 10000
-    )
-      throw new InvalidProtectedData();
-    result.push(...page.rows);
-    after = page.after;
-  } while (after);
+  const context = await admin(client, signal);
+  const result: QueryResult<"zerotrust.members.list">["rows"] = [];
+
+  for await (const rows of readMemberPages(client, context.live)) {
+    result.push(...rows);
+  }
+
+  context.live();
   return result.filter((member) => member.id !== context.session.user.id);
 }
 async function invitationCollection(
@@ -517,24 +506,12 @@ async function grantInvitationAccess(
   context.live();
   if (directory.length) {
     const active = new Set<string>();
-    let after: string | null = null;
-    do {
-      const page: QueryResult<"zerotrust.members.list"> = await required(
-        client.query(
-          "zerotrust.members.list",
-          { after },
-          { strategy: "network-only" },
-        ),
-      );
-      context.live();
-      if (
-        (page.after !== null && page.after === after) ||
-        active.size + page.rows.length > 10000
-      )
-        throw new InvalidProtectedData();
-      for (const member of page.rows) active.add(member.id);
-      after = page.after;
-    } while (after);
+
+    for await (const rows of readMemberPages(client, context.live)) {
+      for (const member of rows) active.add(member.id);
+    }
+
+    context.live();
     for (const domain of directory) {
       const part = personnelDomain(domain.id)!;
       if (!active.has(part.id)) continue;
