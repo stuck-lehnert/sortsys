@@ -9,9 +9,8 @@ import {
   messagePrefix,
   proposalPrefix,
 } from "./chatData";
-import { copyProtectedCollection } from "./copyCollection";
+import { copyOwnedAreas, copyProtectedAreas } from "./copyCollection";
 import { legacyChatDate, legacyProposalPayload } from "./legacyChatProposals";
-import { prepareOwnerCollections } from "./prepareCollections";
 import { privateLlmCollection } from "./privateLlm";
 import { publicId, readBusinessRows } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
@@ -128,22 +127,20 @@ export function chatSources(input: ChatSource) {
   return users;
 }
 
+function chatCopies(source: ChatSource) {
+  return Array.from(chatSources(source), ([subject, rows]) => ({
+    area: chatCollection(subject),
+    rows,
+    validate: migratedChatPart,
+  }));
+}
+
 export async function copyChats(
   client: Client,
   source: ChatSource,
   signal: AbortSignal,
 ) {
-  const users = chatSources(source);
-  for (const [subject, entries] of users) {
-    signal.throwIfAborted();
-    await copyProtectedCollection(
-      client,
-      chatCollection(subject),
-      entries,
-      migratedChatPart,
-      signal,
-    );
-  }
+  return copyProtectedAreas(client, chatCopies(source), signal);
 }
 
 export async function prepareChats(
@@ -157,12 +154,5 @@ export async function prepareChats(
     messages: await readBusinessRows(database, "llm_messages"),
     proposals: await readBusinessRows(database, "llm_change_proposals"),
   };
-  const users = chatSources(source);
-  await prepareOwnerCollections(
-    client,
-    owner,
-    [...users.keys()].map(chatCollection),
-    signal,
-  );
-  await copyChats(client, source, signal);
+  await copyOwnedAreas(client, owner, chatCopies(source), signal);
 }

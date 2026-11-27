@@ -2,7 +2,7 @@ import type { Client } from "@sortsys/v2-client";
 import type { BusinessDatabase } from "./database";
 import { readBusinessRows, publicId } from "./products";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { copyProtectedCollection } from "./copyCollection";
+import { copySmallProtectedCollections } from "./copyCollection";
 import {
   historyCollection,
   historyObject,
@@ -53,7 +53,7 @@ export async function copyPersonalHistory(
   values: ReadonlyMap<string, Record<HistoryKind, BusinessRow[]>>,
   signal: AbortSignal,
 ) {
-  for (const [subject, rows] of values) {
+  const copies = Array.from(values, ([subject, rows]) => {
     const area = historyCollection(subject);
     const entries = (["visits", "actions"] as const).map((kind) => ({
       id: historyObject(subject, kind),
@@ -64,13 +64,14 @@ export async function copyPersonalHistory(
         rows: recentHistory(rows[kind], kind),
       } satisfies PersonalPayload,
     }));
-    await copyProtectedCollection(
-      client,
+    return {
       area,
-      entries,
-      (value, id) => PERSONAL_HISTORY_MODEL.decode(value, id, area),
-      signal,
-      true,
-    );
-  }
+      rows: entries,
+      validate: (value: unknown, id: string) =>
+        PERSONAL_HISTORY_MODEL.decode(value, id, area),
+      partial: true,
+    };
+  });
+
+  await copySmallProtectedCollections(client, copies, signal);
 }

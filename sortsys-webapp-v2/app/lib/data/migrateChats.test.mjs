@@ -18,6 +18,7 @@ import {
   CHAT_PRIVATE_TITLE,
 } from "./testing/chatSources.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
 
 afterEach(() => lockCryptoSession());
 
@@ -84,11 +85,24 @@ test("confirmed encrypted migration resumes exactly and rejects changed source d
     tenant.state.loseReply = true;
     await copyChats(tenant.client, source, tenant.signal);
     const saved = structuredClone([...tenant.objects]);
+    const beforeReplay = tenant.calls.length;
     await copyChats(tenant.client, source, tenant.signal);
+    const replay = tenant.calls.slice(beforeReplay);
+
     expect([...tenant.objects]).toEqual(saved);
-    expect((await tenant.plain(area, object("30"))).source).toEqual(
-      source.proposals[0],
+    const accessReads = replay.filter(
+      ({ path }) => path === "zerotrust.access.snapshot",
     );
+    expect(accessReads).toHaveLength(1);
+    expect(replay.some(({ path }) => path === "zerotrust.objects.batch")).toBe(
+      false,
+    );
+    for (const [subject, entries] of chatSources(source)) {
+      for (const { id, value } of entries) {
+        expect(await tenant.plain(chatCollection(subject), id)).toEqual(value);
+      }
+    }
+
     const store = await openChatStore(tenant.client, tenant.signal);
     try {
       expect(await store.list()).toHaveLength(1);
@@ -268,7 +282,7 @@ test("accepting a migrated pending product change commits its current result and
     business.dispose();
     tenant.controller.abort();
   }
-}, 15000);
+}, fixtureTimeout(15000));
 
 test("a false migration acknowledgement never confirms missing source rows", async () => {
   const tenant = await fixture();
@@ -323,4 +337,4 @@ test("private chat keys and update rights are enforced even when the account has
       tenant.controller.abort();
     }
   }
-}, 15000);
+}, fixtureTimeout(15000));

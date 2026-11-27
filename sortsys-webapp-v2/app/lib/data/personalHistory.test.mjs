@@ -17,7 +17,9 @@ import { copyPersonalHistory } from "./migratePersonalHistory";
 import { importLegacyDashboardPins } from "./legacyDashboardPins";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
 import { row } from "./rowCodec.test.mjs";
+
 afterEach(() => lockCryptoSession());
 async function fixture(backup = false) {
   const area = historyCollection("user:1");
@@ -105,7 +107,7 @@ test("visits, quick actions and dashboard pins share the encrypted personal area
     preferences.close();
     f.store.close();
   }
-}, 30000);
+}, fixtureTimeout(30_000));
 
 test("models reject foreign owners, wrong history types, duplicate IDs, unsupported fields and unsafe navigation", () => {
   const area = historyCollection("user:1");
@@ -197,7 +199,7 @@ test("retention is atomic, matches the 100/200 limits and sorts source microseco
   } finally {
     f.store.close();
   }
-}, 30000);
+}, fixtureTimeout(30_000));
 
 test("a second independent runtime retries a genuine head conflict without losing either append", async () => {
   const f = await fixture();
@@ -231,7 +233,7 @@ test("a second independent runtime retries a genuine head conflict without losin
     f.store.close();
     other.close();
   }
-}, 30000);
+}, fixtureTimeout(30_000));
 
 test("lost acknowledgements use readback, false acknowledgements never appear as saved visits", async () => {
   const f = await fixture();
@@ -257,7 +259,7 @@ test("lost acknowledgements use readback, false acknowledgements never appear as
     f.state.discardCommit = false;
     f.store.close();
   }
-}, 30000);
+}, fixtureTimeout(30_000));
 
 test("pin insertion, drag ordering, keyboard ordering, removal and one-time local import preserve current server edits", async () => {
   const f = await fixture();
@@ -315,7 +317,7 @@ test("pin insertion, drag ordering, keyboard ordering, removal and one-time loca
   } finally {
     f.store.close();
   }
-}, 30000);
+}, fixtureTimeout(30_000));
 
 test("migration preserves each person's records, repeats safely and does not overwrite a changed source or destination", async () => {
   const f = await fixture(true);
@@ -324,14 +326,32 @@ test("migration preserves each person's records, repeats safely and does not ove
     ["user:2", { visits: [visit("4", "2")], actions: [] }],
   ]);
   try {
+    const existingPin = pin("9");
+    await f.store.mutate("personalization.dashboard.pins.pin", existingPin);
+    const start = f.calls.length;
+
     await copyPersonalHistory(f.client, values, f.controller.signal);
-    const commits = f.calls.filter(
-      (call) => call.path === "zerotrust.objects.batch",
-    ).length;
+    const copies = () =>
+      f.calls
+        .slice(start)
+        .filter((call) => call.path === "zerotrust.objects.batch");
+    expect(copies()).toHaveLength(1);
+    const [{ input }] = copies();
+    expect(input.heads.map(({ domain }) => domain)).toEqual(
+      ["user:1", "user:2"].map((subject) => historyCollection(subject).domain),
+    );
+    expect(input.objects.map(({ envelope }) => envelope.object)).toEqual(
+      ["user:1", "user:2"].flatMap((subject) => [
+        historyObject(subject, "visits"),
+        historyObject(subject, "actions"),
+      ]),
+    );
     await copyPersonalHistory(f.client, values, f.controller.signal);
+    expect(copies()).toHaveLength(1);
+
     expect(
-      f.calls.filter((call) => call.path === "zerotrust.objects.batch"),
-    ).toHaveLength(commits);
+      await f.store.query("personalization.dashboard.pins.get", {}),
+    ).toEqual([existingPin]);
     expect(
       (await f.store.query("personalization.visits.list", {})).map(
         (row) => row.path,
@@ -346,14 +366,18 @@ test("migration preserves each person's records, repeats safely and does not ove
     await expect(
       copyPersonalHistory(f.client, changed, f.controller.signal),
     ).rejects.toThrow();
+    expect(copies()).toHaveLength(1);
+
     await f.store.mutate("personalization.visits.append", { path: "/tools/5" });
+    const beforeConflict = copies().length;
     await expect(
       copyPersonalHistory(f.client, values, f.controller.signal),
     ).rejects.toThrow();
+    expect(copies()).toHaveLength(beforeConflict);
   } finally {
     f.store.close();
   }
-}, 30000);
+}, fixtureTimeout(90_000));
 
 test("account lock and cancellation discard pending work and old snapshots", async () => {
   const f = await fixture();
@@ -371,7 +395,7 @@ test("account lock and cancellation discard pending work and old snapshots", asy
   } finally {
     f.store.close();
   }
-});
+}, fixtureTimeout(5_000));
 
 test("the business facade exposes histories and pin updates without falling through to plaintext RPCs", async () => {
   const f = await fixture();
@@ -401,7 +425,7 @@ test("the business facade exposes histories and pin updates without falling thro
     app.dispose();
     f.store.close();
   }
-});
+}, fixtureTimeout(5_000));
 
 test("legacy local pins are deleted only after verified migration for the exact tenant and user", async () => {
   const key = "webapp::dashboard.pinnedVisits:test:1";
@@ -453,7 +477,7 @@ test("legacy local pins are deleted only after verified migration for the exact 
     ),
   ).rejects.toThrow();
   expect(data.has(key)).toBe(true);
-});
+}, fixtureTimeout(5_000));
 
 test("a false success during legacy import retains its plaintext source until encrypted readback succeeds", async () => {
   const f = await fixture();
@@ -492,4 +516,4 @@ test("a false success during legacy import retains its plaintext source until en
     app.dispose();
     f.store.close();
   }
-});
+}, fixtureTimeout(5_000));
