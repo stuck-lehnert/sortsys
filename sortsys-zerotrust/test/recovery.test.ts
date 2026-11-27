@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import { recoveryFixture } from "./support/recoveryFixture";
 import { createRecoveryCodec } from "../src/core/recovery";
 import { sortsysDomainCodec } from "../src/domains";
@@ -620,6 +620,27 @@ test("a second recovery preserves both historical key generations and verifies o
     recoverySigningKey: second.transition.nextRecoverySigningKey,
   };
   const trust = await verifyTrustHistory(history, pinned);
+
+  const verifies = spyOn(crypto.subtle, "verify");
+  const digests = spyOn(crypto.subtle, "digest");
+  try {
+    const warm = await verifyTrustHistory(structuredClone(history), pinned);
+    expect(warm.current).toEqual(trust.current);
+    expect(warm.identityCertificate(f.setup.owner.user, "1")).toEqual(
+      f.setup.owner,
+    );
+    expect(verifies).toHaveBeenCalledTimes(0);
+    expect(digests).toHaveBeenCalledTimes(0);
+
+    const modified = structuredClone(history);
+    modified.authorities[2]!.transition!.transition.operation = "other-operation";
+    await expect(verifyTrustHistory(modified, pinned)).rejects.toThrow();
+    expect(verifies).toHaveBeenCalledTimes(1);
+  } finally {
+    verifies.mockRestore();
+    digests.mockRestore();
+  }
+
   const context = {
     tenant: "test",
     scope: "tenant:test",

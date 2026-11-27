@@ -8,14 +8,13 @@ import {
 } from "./certificates";
 import type { AuthorityCertificate, IdentityCertificate } from "./certificates";
 import {
-  digest,
   InvalidProtectedData,
   record,
   revision,
   signedPacketFrame,
 } from "../encoding";
-import { importSigningKey, verify, verifyWithSigningKeys } from "../identity";
-import { verifyPublicProof } from "../publicProofs";
+import { importSigningKey, verifyWithSigningKeys } from "../identity";
+import { publicProofDigest, verifyPublicProof } from "../publicProofs";
 import type { ObjectCodec } from "./objects";
 import type { EncryptedObject } from "./objects";
 import { recoveryTransitionFrame } from "../recovery";
@@ -95,10 +94,10 @@ export function createTrustHistoryVerifier<F extends string>(
         ]) as Link;
         const t = link.transition;
         if (
-          (await digest(
+          (await publicProofDigest(
             signedPacketFrame(authorityFrame(previous), previous.signature),
           )) !== t.previousAuthorityCertificateHash ||
-          (await digest(
+          (await publicProofDigest(
             signedPacketFrame(
               authorityFrame(link.sourceAuthority),
               link.sourceAuthority.signature,
@@ -112,13 +111,16 @@ export function createTrustHistoryVerifier<F extends string>(
           t.nextAuthoritySigningKey !== certificate.authoritySigningKey
         )
           throw new InvalidProtectedData();
+
+        // Cache only the two public signature checks, never the history or
+        // its binding to this response and the current vault's pin.
         const message = recoveryTransitionFrame(t);
-        await verify(
+        await verifyPublicProof(
           await importSigningKey(previous.recoverySigningKey),
           link.proof,
           message,
         );
-        await verify(
+        await verifyPublicProof(
           await importSigningKey(certificate.recoverySigningKey),
           link.nextProof,
           message,
