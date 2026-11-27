@@ -97,9 +97,9 @@ export async function fingerprint(identity: PublicIdentity): Promise<string> {
 
 const signingKeys = new Map<string, Promise<CryptoKey>>();
 export async function importSigningKey(key: string): Promise<CryptoKey> {
-  const raw = sized(key, 32);
   let pending = signingKeys.get(key);
   if (!pending) {
+    const raw = sized(key, 32);
     pending = crypto.subtle.importKey("raw", raw, "Ed25519", true, ["verify"]);
     signingKeys.set(key, pending);
     if (signingKeys.size > 512)

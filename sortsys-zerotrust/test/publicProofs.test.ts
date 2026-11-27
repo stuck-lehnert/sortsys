@@ -72,6 +72,32 @@ test("warm trust history reuses public signature checks but reads the current id
       InvalidProtectedData,
     );
     expect(math).toHaveBeenCalledTimes(1);
+
+    const original = identities[51]!;
+    const successor = await certifyIdentity(
+      {
+        ...(await publicIdentity(await createIdentity())),
+        tenant: original.tenant,
+        generation: original.generation,
+        user: original.user,
+        previousSignature: original.signature,
+      },
+      authority.signingKey.privateKey,
+    );
+    const renewed = { ...history, identities: [successor, ...identities] };
+    const withRenewal = await verifyTrustHistory(renewed, pin);
+    expect(withRenewal.identityCertificate(original.user)).toEqual(successor);
+    expect(withRenewal.signingKeys(original.user, original.generation))
+      .toHaveLength(2);
+
+    // A warm, valid signature does not make its predecessor optional.
+    const missingOriginal = {
+      ...fewerIdentities,
+      identities: [successor, ...fewerIdentities.identities],
+    };
+    await expect(verifyTrustHistory(missingOriginal, pin)).rejects.toThrow(
+      InvalidProtectedData,
+    );
   } finally {
     math.mockRestore();
   }

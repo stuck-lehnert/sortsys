@@ -1,10 +1,8 @@
 import {
   authorityCertificate,
   authorityFrame,
-  identityCertificateFrame,
-  identityCertificate,
-  identityCertificateHeads,
   verifyAuthority,
+  verifyIdentityCertificateHistory,
 } from "./certificates";
 import type { AuthorityCertificate, IdentityCertificate } from "./certificates";
 import {
@@ -138,25 +136,22 @@ export function createTrustHistoryVerifier<F extends string>(
         pinned.recoverySigningKey
     )
       throw new InvalidProtectedData();
+    function authority(generation: string) {
+      const root = authorities.get(generation);
+      if (!root) throw new InvalidProtectedData();
+      return root.key;
+    }
+
+    const { certificates, heads } = await verifyIdentityCertificateHistory(
+      data.identities,
+      pinned.tenant,
+      authority,
+    );
     const identities = new Map<
       string,
       { generation: string; key: CryptoKey }[]
     >();
-    const certificates: IdentityCertificate[] = [];
-    for (const value of data.identities) {
-      const cert = identityCertificate(value);
-      const root = authorities.get(cert.generation);
-      if (!root || cert.tenant !== pinned.tenant) {
-        throw new InvalidProtectedData();
-      }
-
-      // Reuse the signature check, not the identity set from an older response.
-      await verifyPublicProof(
-        root.key,
-        cert.signature,
-        identityCertificateFrame(cert),
-      );
-      certificates.push({ ...cert });
+    for (const cert of certificates) {
       const signers = identities.get(cert.user) ?? [];
       signers.push({
         generation: cert.generation,
@@ -164,7 +159,6 @@ export function createTrustHistoryVerifier<F extends string>(
       });
       identities.set(cert.user, signers);
     }
-    const heads = identityCertificateHeads(certificates);
     function signingKeys(subject: string, generation?: string) {
       if (generation !== undefined) revision(generation);
 
@@ -199,11 +193,7 @@ export function createTrustHistoryVerifier<F extends string>(
         if (matches.length !== 1) throw new InvalidProtectedData();
         return { ...matches[0]! };
       },
-      authority: (generation) => {
-        const root = authorities.get(generation);
-        if (!root) throw new InvalidProtectedData();
-        return root.key;
-      },
+      authority,
       authorityCertificate: (generation) => {
         const root = authorities.get(generation);
         if (!root) throw new InvalidProtectedData();

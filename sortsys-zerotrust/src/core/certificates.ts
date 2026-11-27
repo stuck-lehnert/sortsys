@@ -109,18 +109,20 @@ export function identityCertificate(input: unknown): IdentityCertificate {
     !!input &&
     typeof input === "object" &&
     Object.hasOwn(input, "previousSignature");
-  const value = record(input, [
-    "tenant",
-    "generation",
-    "user",
-    "encryptionKey",
-    "signingKey",
-    "signature",
-    ...(hasPrevious ? ["previousSignature"] : []),
-  ]) as IdentityCertificate;
+  const value = {
+    ...record(input, [
+      "tenant",
+      "generation",
+      "user",
+      "encryptionKey",
+      "signingKey",
+      "signature",
+      ...(hasPrevious ? ["previousSignature"] : []),
+    ]),
+  } as IdentityCertificate;
   validateIdentityCertificateFields(value);
   sized(value.signature, 64);
-  return { ...value };
+  return value;
 }
 
 function validateIdentityCertificateFields(
@@ -196,9 +198,40 @@ export async function verifyIdentityCertificate(
 export function identityCertificateHeads(
   input: readonly IdentityCertificate[],
 ): IdentityCertificate[] {
+  return checkedIdentityCertificateHeads(input.map(identityCertificate));
+}
+
+/** Read the identities in this response, reusing only exact public signature
+ * checks. The detached, validated fields also feed the chain check. */
+export async function verifyIdentityCertificateHistory(
+  input: readonly unknown[],
+  tenant: string,
+  authority: (generation: string) => CryptoKey,
+) {
+  const certificates: IdentityCertificate[] = [];
+  for (const value of input) {
+    const certificate = identityCertificate(value);
+    if (certificate.tenant !== tenant) throw new InvalidProtectedData();
+
+    await verify(
+      authority(certificate.generation),
+      certificate.signature,
+      checkedIdentityCertificateFrame(certificate),
+    );
+    certificates.push(certificate);
+  }
+
+  return {
+    certificates,
+    heads: checkedIdentityCertificateHeads(certificates),
+  };
+}
+
+function checkedIdentityCertificateHeads(
+  certificates: readonly IdentityCertificate[],
+): IdentityCertificate[] {
   const groups = new Map<string, Map<string, IdentityCertificate>>();
-  for (const raw of input) {
-    const certificate = identityCertificate(raw);
+  for (const certificate of certificates) {
     const key = `${certificate.tenant}\0${certificate.generation}\0${certificate.user}`;
     let group = groups.get(key);
     if (!group) {
