@@ -365,6 +365,46 @@ test("small files fill shared upload groups and retain their own block order", a
   }
 }, 15_000);
 
+test("the first encrypted file batch starts while fresh access is pending", async () => {
+  const tenant = await fixture(1);
+  const accessRequested = deferred();
+  const releaseAccess = deferred();
+  const original = tenant.client.query.bind(tenant.client);
+  const reads = [];
+
+  tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.access.snapshot") {
+      accessRequested.resolve();
+      await releaseAccess.promise;
+    }
+    if (path === "zerotrust.fileChunks.getMany") reads.push(...input.ids);
+
+    return original(path, input, options);
+  };
+
+  const pending = loadFileContent(
+    tenant.client,
+    namespace,
+    file,
+    tenant.manifest,
+    tenant.blob.type,
+    tenant.signal,
+  );
+
+  try {
+    await accessRequested.promise;
+    expect(reads).toEqual(tenant.manifest.parts.map(({ id }) => id));
+  } finally {
+    releaseAccess.resolve();
+    try {
+      const loaded = await pending;
+      expect(await loaded.arrayBuffer()).toEqual(await tenant.blob.arrayBuffer());
+    } finally {
+      tenant.close();
+    }
+  }
+});
+
 test("a failed block batch stops the download before requesting the next group", async () => {
   const tenant = await fixture();
   const original = tenant.client.query.bind(tenant.client);

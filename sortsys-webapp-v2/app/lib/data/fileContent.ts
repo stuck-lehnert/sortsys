@@ -8,6 +8,7 @@ import {
   record,
   unbase64,
 } from "@sortsys/zerotrust/sortsys";
+import { captureAccountScope } from "../crypto/session";
 import {
   protectedCollection,
   required,
@@ -351,20 +352,42 @@ async function readFileBlocks<T>(
   consume: (raw: Uint8Array<ArrayBuffer>, index: number) => Promise<T>,
   view?: PreparedRead,
 ): Promise<T[]> {
+  const { live } = captureAccountScope(signal, client);
+  live();
+
   const area = chunkCollection(namespace);
-  const collection = view
-    ? view.openCiphertext(area)
-    : await protectedCollection(client, area, signal);
+  const groups = manifestBlockGroups(manifests);
+  let next = groups.next();
+  const fetchGroup = (group: ReadableBlock[]) =>
+    fetchFileBlocks(
+      client,
+      area.domain,
+      group.map(({ part }) => part.id),
+      signal,
+      view?.prepared,
+    );
+
+  // The API checks access on the ciphertext request, too. Overlap only the
+  // first group; wait for verified access before opening anything, and drain
+  // both results so a failed first request cannot leave a collection open.
+  const [access, initial] = await Promise.allSettled([
+    view ? view.openCiphertext(area) : protectedCollection(client, area, signal),
+    next.done ? undefined : fetchGroup(next.value),
+  ]);
+  if (access.status === "rejected") throw access.reason;
+
+  const collection = access.value;
   try {
+    live();
+    if (initial.status === "rejected") throw initial.reason;
+
     const result: T[] = [];
-    for (const group of manifestBlockGroups(manifests)) {
-      const packets = await fetchFileBlocks(
-        client,
-        area.domain,
-        group.map(({ part }) => part.id),
-        signal,
-        view?.prepared,
-      );
+    let prefetched = initial.value;
+    for (; !next.done; next = groups.next()) {
+      const group = next.value;
+      const packets = prefetched ?? (await fetchGroup(group));
+      prefetched = undefined;
+
       const consumed = await mapConcurrent(
         group,
         CONCURRENT_FILE_BLOCKS,
@@ -386,7 +409,7 @@ async function readFileBlocks<T>(
       );
       result.push(...consumed);
     }
-    signal.throwIfAborted();
+    live();
     if (!collection.can("read")) throw new InvalidProtectedData();
     return result;
   } finally {
