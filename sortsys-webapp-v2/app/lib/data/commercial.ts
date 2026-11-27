@@ -740,6 +740,36 @@ export function createProtectedCommercial(
     return new Map(related.map(({ id, title }) => [id, title]));
   }
 
+  async function readCaseDocuments(
+    basis: CaseSnapshot,
+    openStore: (scope: string) => Promise<DocumentStore>,
+  ) {
+    const rows = basis.values.filter(
+      (row) => row.table === "commercial_documents",
+    );
+    const heads = new Map<string, DocumentHead>();
+
+    if (rows.length) {
+      const store = await openStore(`commercial:${basis.id}`);
+      try {
+        const results = await mapConcurrent(rows, 8, (row) =>
+          store.head(publicId(row.values.id)),
+        );
+        for (const head of results) {
+          if (head) heads.set(head.id, head);
+        }
+      } finally {
+        store.close();
+      }
+    }
+
+    const [values, versions] = await Promise.all([
+      calculatedCaseRows(basis, openStore, "all", heads),
+      sourceVersions(rows, heads, openStore),
+    ]);
+    return { values, versions, heads };
+  }
+
   async function listView(filter: ListScope) {
     // Search/status changes need the same verified rows. Share only work that
     // is still running; the next completed-query cycle reads fresh snapshots.
@@ -2780,34 +2810,18 @@ export function createProtectedCommercial(
       const data = record(input, ["id"]);
       const id = data.id as string;
       const { basis, collections } = await readCaseView(id);
+      const cases = [{ basis, current: wireCommercialCase(basis.values) }];
       const openStore = (scope: string) =>
         commercialDocumentStore(client, scope, signal, collections);
-      const documentHeads = new Map<string, DocumentHead>();
-      const documentRows = basis.values.filter(
-        (row) => row.table === "commercial_documents",
-      );
-      if (documentRows.length) {
-        const documentStore = await openStore(`commercial:${id}`);
-        try {
-          const heads = await mapConcurrent(documentRows, 8, (row) =>
-            documentStore.head(publicId(row.values.id)),
-          );
-          for (const head of heads) {
-            if (head) documentHeads.set(head.id, head);
-          }
-        } finally {
-          documentStore.close();
-        }
-      }
-      const cases = [{ basis, current: wireCommercialCase(basis.values) }];
-      const [values, versions, customerNames, titles] = await Promise.all([
-        calculatedCaseRows(basis, openStore, "all", documentHeads),
-        sourceVersions(documentRows, documentHeads, openStore),
+
+      const [documentsView, customerNames, titles] = await Promise.all([
+        readCaseDocuments(basis, openStore),
         listCustomerNames(cases),
         listProjectTitles(cases),
       ]);
       live();
 
+      const { values, versions, heads } = documentsView;
       const current = labels(
         wireCommercialCase(values),
         basis.visible,
@@ -2824,7 +2838,7 @@ export function createProtectedCommercial(
             p.source_document_id === null
               ? null
               : publicId(p.source_document_id);
-          const head = documentHeads.get(publicId(p.id));
+          const head = heads.get(publicId(p.id));
           return {
             id: publicId(p.id),
             caseId: id,

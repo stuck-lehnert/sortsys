@@ -28,7 +28,7 @@ async function unusedDependency() {
   throw new Error("A document choice must not load related business records");
 }
 
-test("case detail loads only its related names without a sequential lookup", async () => {
+test("case detail loads its related names without waiting for the GAEB head", async () => {
   const caseArea = commercialCollection("34", "master-data");
   const customerId = publicId("201");
   const projectId = publicId("200");
@@ -47,29 +47,46 @@ test("case detail loads only its related names without a sequential lookup", asy
       status: "draft",
       scope_item_ids: "[]",
     }),
+    row("commercial_documents", {
+      id: "103",
+      case_id: "100",
+      purpose: "inquiry",
+      phase: "83",
+    }),
   ]);
   await tenant.seed(caseArea, `${caseArea.prefix}case`, values.get("master-data"));
 
   const query = tenant.client.query;
-  tenant.client.query = (path, input, options) =>
-    path === "zerotrust.documents.registrations"
-      ? Promise.resolve([{ documents: [], after: null }, null])
-      : query(path, input, options);
-
   const projectStarted = Promise.withResolvers();
+  let namesStarted = false;
   let namesPending = false;
+  let headReads = 0;
+  tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.documents.registrations") {
+      return [{ documents: [], after: null }, null];
+    }
+    if (path !== "zerotrust.documents.get") return query(path, input, options);
+
+    expect(input).toEqual({ scope: caseArea.scope, id: publicId("103") });
+    expect(namesStarted).toBe(true);
+    headReads++;
+    return [null, null];
+  };
   const store = createProtectedCommercial(
     tenant.client,
     new AbortController().signal,
-    async () => ({
-      async customerNames(ids) {
-        expect(ids).toEqual([customerId]);
-        namesPending = true;
-        await projectStarted.promise;
-        namesPending = false;
-        return new Map([[customerId, "Verwaltung Süd"]]);
-      },
-    }),
+    async () => {
+      namesStarted = true;
+      return {
+        async customerNames(ids) {
+          expect(ids).toEqual([customerId]);
+          namesPending = true;
+          await projectStarted.promise;
+          namesPending = false;
+          return new Map([[customerId, "Verwaltung Süd"]]);
+        },
+      };
+    },
     async () => ({
       async getMany(ids) {
         expect(ids).toEqual([projectId]);
@@ -86,6 +103,7 @@ test("case detail loads only its related names without a sequential lookup", asy
       customerName: "Verwaltung Süd",
       projectTitle: "Halle West",
     });
+    expect(headReads).toBe(1);
   } finally {
     store.close();
   }
