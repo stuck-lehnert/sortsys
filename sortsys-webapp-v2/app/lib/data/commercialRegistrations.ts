@@ -5,7 +5,7 @@ import {
   InvalidProtectedData,
 } from "@sortsys/zerotrust/sortsys";
 import { createDocumentHeadVerifier } from "../crypto/documentHeads";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import { commercialCollection, type CommercialFacet } from "./commercialAreas";
 import { joinCommercialFacets } from "./commercialData";
 import type { CaseSnapshot } from "./commercialSnapshot";
@@ -59,13 +59,7 @@ export async function readRetainedDocumentRows(
   collections: Collections,
   view: View,
 ) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
+  const { account, live } = captureAccountScope(signal, client);
   const scope = `commercial:${caseId}`;
   const verifier = createDocumentHeadVerifier(client, {
     account,

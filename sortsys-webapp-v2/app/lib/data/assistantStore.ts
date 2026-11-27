@@ -4,19 +4,14 @@ import {
   InvalidProtectedData,
 } from "@sortsys/zerotrust/sortsys";
 import { verifiedAccessContext } from "../crypto/accessContext";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import { canUseAssistant, privateLlmCollection } from "./assistantArea";
 import { protectedCollection, type Collection } from "./protectedObjects";
 
 function assistantSession(client: Client, signal: AbortSignal) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
+  const { account, live } = captureAccountScope(signal, client);
   const area = privateLlmCollection(account.vault.subject);
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
+
   live();
   return { account, area, subject: account.vault.subject, live };
 }

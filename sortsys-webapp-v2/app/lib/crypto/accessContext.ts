@@ -14,7 +14,7 @@ import {
   type Policy,
 } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
-import { unlockedAccount, verifyAccountHistory } from "./session";
+import { captureAccountScope, verifyAccountHistory } from "./session";
 import { verifyPolicySnapshot } from "./policy";
 import { verifyCreatedAccess } from "./createdAccess";
 
@@ -65,14 +65,9 @@ export async function verifiedAccessContext(
   signal: AbortSignal,
   options: AccessOptions = {},
 ) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
+  const { account, live } = captureAccountScope(signal, client);
   live();
+
   // A permission change between pages invalidates the entire inventory. Only
   // repeat this read; never carry verified rows across security snapshots.
   for (let attempt = 0; ; attempt++) {
@@ -105,7 +100,7 @@ async function readAccessContext(
   client: Client,
   signal: AbortSignal,
   options: AccessOptions,
-  account: NonNullable<ReturnType<typeof unlockedAccount>>,
+  account: ReturnType<typeof captureAccountScope>["account"],
   live: () => void,
 ) {
   live();

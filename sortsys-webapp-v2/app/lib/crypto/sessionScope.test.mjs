@@ -31,5 +31,22 @@ test("an account scope retains the caller's abort reason", async () => {
   const reason = new Error("cancelled by caller");
 
   controller.abort(reason);
+  expect(scope.active()).toBe(false);
   expect(() => scope.live()).toThrow(reason);
+});
+
+test("an authenticated scope stops when transport authentication ends", async () => {
+  await protectedTenant([]);
+  const signal = new AbortController().signal;
+  let authenticated = true;
+  const client = { loggedIn: () => authenticated };
+  const scope = captureAccountScope(signal, client);
+
+  expect(scope.active()).toBe(true);
+  expect(() => scope.live()).not.toThrow();
+
+  authenticated = false;
+  expect(scope.active()).toBe(false);
+  expect(() => scope.live()).toThrow(InvalidProtectedData);
+  expect(() => captureAccountScope(signal).live()).not.toThrow();
 });

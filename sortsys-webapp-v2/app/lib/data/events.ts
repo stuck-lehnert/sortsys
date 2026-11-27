@@ -10,7 +10,7 @@ import {
   sign,
   sized,
 } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "../crypto/session";
+import { captureAccountScope, trustedHistory } from "../crypto/session";
 import { required } from "./protectedObjects";
 import { announceDocumentMessage } from "./documentMessageHints";
 
@@ -39,15 +39,10 @@ export async function watchEncryptedEvents(
   initialAdmission?: () => void,
   connectionChanged?: (connected: boolean) => void,
 ): Promise<void> {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
+  const { account, active, live } = captureAccountScope(signal, client);
   let delay = 250,
     fingerprint: string | null = null;
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
+
   const pause = () =>
     new Promise<void>((resolve) => {
       const done = () => {
@@ -59,11 +54,8 @@ export async function watchEncryptedEvents(
       signal.addEventListener("abort", done, { once: true });
       if (signal.aborted) done();
     });
-  while (
-    !signal.aborted &&
-    unlockedAccount() === account &&
-    client.loggedIn()
-  ) {
+
+  while (active()) {
     try {
       live();
       // A ticket is independently authenticated. Fetch it while verifying
@@ -245,8 +237,8 @@ export async function watchEncryptedEvents(
       initialAdmission = undefined;
       release?.();
     }
-    if (signal.aborted || unlockedAccount() !== account || !client.loggedIn())
-      return;
+    if (!active()) return;
+
     await pause();
     delay = Math.min(delay * 2, 10000);
   }

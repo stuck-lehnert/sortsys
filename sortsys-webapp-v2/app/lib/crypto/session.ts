@@ -53,15 +53,22 @@ export function unlockedAccount(): UnlockedAccount | null {
 }
 
 /** Bind an operation to this unlock, not merely to the same account name. */
-export function captureAccountScope(signal: AbortSignal) {
+export function captureAccountScope(
+  signal: AbortSignal,
+  client?: Pick<Client, "loggedIn">,
+) {
   const captured = unlockedAccount();
   if (!captured) throw new InvalidProtectedData();
 
+  const current = () =>
+    unlockedAccount() === captured && (!client || client.loggedIn());
+
   return {
     account: captured,
+    active: () => !signal.aborted && current(),
     live() {
       signal.throwIfAborted();
-      if (unlockedAccount() !== captured) throw new InvalidProtectedData();
+      if (!current()) throw new InvalidProtectedData();
     },
   };
 }

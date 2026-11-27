@@ -4,7 +4,7 @@ import {
   InvalidProtectedData,
   type HistoryOrigin,
 } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "./session";
+import { captureAccountScope, trustedHistory } from "./session";
 import { openVerifiedAuthority } from "./setup";
 import { required } from "../data/protectedObjects";
 import { readVerifiedInitializationSource } from "./initializationSource";
@@ -15,14 +15,9 @@ export async function migrationOriginAttester(
   client: Client,
   signal: AbortSignal,
 ) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
+  const { account, live } = captureAccountScope(signal, client);
   live();
+
   const history = await trustedHistory(client);
   live();
 

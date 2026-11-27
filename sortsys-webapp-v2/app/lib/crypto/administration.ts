@@ -1,19 +1,14 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { required } from "../data/protectedObjects";
-import { trustedHistory, unlockedAccount } from "./session";
+import { captureAccountScope, trustedHistory } from "./session";
 import { openVerifiedAuthority } from "./setup";
 import { verifiedAccessContext } from "./accessContext";
 
 async function administratorSession(client: Client, signal: AbortSignal) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
+  const { account, live } = captureAccountScope(signal, client);
   live();
+
   const session = await required(
     client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
   );

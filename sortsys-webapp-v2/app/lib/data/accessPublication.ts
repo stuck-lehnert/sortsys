@@ -6,7 +6,7 @@ import {
   InvalidProtectedData,
   type DomainDefinition,
 } from "@sortsys/zerotrust/sortsys";
-import { unlockedAccount } from "../crypto/session";
+import { captureAccountScope } from "../crypto/session";
 import { verifyPublishedDomainDefinitions } from "./domainDefinitions";
 import { required } from "./protectedObjects";
 
@@ -50,13 +50,7 @@ async function publishAccessChanges(
   changes: readonly AccessChange[],
   signal: AbortSignal,
 ): Promise<void> {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (unlockedAccount() !== account || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
+  const { account, live } = captureAccountScope(signal, client);
   const encoder = new TextEncoder();
   const domainIds = new Set<string>();
   const grantIds = new Set<string>();
