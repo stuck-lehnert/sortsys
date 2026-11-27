@@ -5567,6 +5567,57 @@ test("the delivery note form offers authorized project changes and keeps quantit
   assert.equal(await dialog.getByText("Projekt", { exact: true }).count(), 0);
 });
 
+test("project editing leaves unreadable and pending assignments untouched", async () => {
+  api.fail("customers.get", "Synthetic customer denial", "FORBIDDEN");
+  api.respond("users.get", { id: "d", firstName: "Fixture", lastName: "Leader" });
+  api.hold("users.get");
+  api.respond("projects.contacts.list", []);
+  api.respond("projects.update", ({ id, data }) => ({ id, ...data }));
+
+  try {
+    await openApplication("/projects/c?editAssignments&customerId=f", "de");
+    await page.getByRole("button", { name: "Edit project assignments", exact: true }).click();
+    const dialog = page.getByRole("dialog", { name: "Projekt bearbeiten" });
+    const title = "Baustelle Nord – neuer Titel";
+    await dialog.getByRole("textbox", { name: "Titel" }).fill(title);
+    await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
+    await dialog.waitFor({ state: "hidden" });
+
+    const writes = api.requests.filter(({ path }) => path === "projects.update");
+    assert.equal(writes.length, 1);
+    const { data } = writes[0].input;
+    assert.equal(data.title, title);
+    assert.ok(!Object.hasOwn(data, "customerId"));
+    assert.ok(!Object.hasOwn(data, "responsibleProjectLeaderUserId"));
+  } finally {
+    api.release("users.get");
+  }
+});
+
+test("project editing can explicitly clear both assignments", async () => {
+  api.respond("customers.get", { id: "f", name: "Fixture GmbH" });
+  api.respond("users.get", { id: "d", firstName: "Fixture", lastName: "Leader" });
+  api.respond("projects.contacts.list", []);
+  api.respond("projects.update", ({ id, data }) => ({ id, ...data }));
+
+  await openApplication("/projects/c?editAssignments&customerId=f", "de");
+  await page.getByRole("button", { name: "Edit project assignments", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "Projekt bearbeiten" });
+  await dialog.getByText("Fixture GmbH", { exact: true }).waitFor();
+  await dialog.getByText("Fixture Leader", { exact: true }).waitFor();
+
+  const clear = dialog.getByRole("button", { name: "Auswahl entfernen", exact: true });
+  await clear.first().click();
+  await clear.first().click();
+  await dialog.getByRole("button", { name: "Speichern", exact: true }).click();
+  await dialog.waitFor({ state: "hidden" });
+
+  const writes = api.requests.filter(({ path }) => path === "projects.update");
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0].input.data.customerId, null);
+  assert.equal(writes[0].input.data.responsibleProjectLeaderUserId, null);
+});
+
 test("contractor offer listing has localized empty, failed and permission-restricted states", async () => {
   seedContractorWorkflows(false);
   api.setRoles(["view:projects"]);

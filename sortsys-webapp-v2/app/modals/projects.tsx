@@ -188,16 +188,20 @@ function ProjectContactsFormFields({
   );
 }
 
+type ProjectReferenceField = "customer" | "responsibleProjectLeader";
+
 function ProjectFields({
   context,
   modals,
   project,
   initialTitle,
+  onReferenceChange,
 }: {
   context: MyPublicFormContext;
   modals: MyModalsInterface;
   project?: Project;
   initialTitle?: string;
+  onReferenceChange?: (field: ProjectReferenceField) => void;
 }) {
   const createEntityAction = useCreateEntityAction(modals);
   const address = project?.address;
@@ -238,6 +242,7 @@ function ProjectFields({
         labelText={uiText("Kunde")}
         name="customer"
         maxSelectedItems={1}
+        onValueChange={() => onReferenceChange?.("customer")}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query("customers.list", {
             search: query,
@@ -257,6 +262,7 @@ function ProjectFields({
         labelText={uiText("Verantwortlicher Projektleiter")}
         name="responsibleProjectLeader"
         maxSelectedItems={1}
+        onValueChange={() => onReferenceChange?.("responsibleProjectLeader")}
         getOptions={async ({ query }) => {
           const [data, err] = await client.query("users.list", { search: query });
           if (err) throw err;
@@ -273,16 +279,26 @@ function ProjectFields({
   );
 }
 
-function readProjectFields(values: ReturnType<MyPublicFormContext["getValues"]>) {
+function readProjectFields(
+  values: ReturnType<MyPublicFormContext["getValues"]>,
+  changedReferences?: ReadonlySet<ProjectReferenceField>,
+) {
   processFormAddress(values);
+
+  const updateCustomer = !changedReferences || changedReferences.has("customer");
+  const updateLeader =
+    !changedReferences || changedReferences.has("responsibleProjectLeader");
 
   return {
     title: values.title,
     address: values.address,
-    customerId: values.customer.at(0)?.id ?? null,
-    responsibleProjectLeaderUserId:
-      values.responsibleProjectLeader?.at(0)?.id ?? null,
     orderReceivedAt: values.orderReceivedAt ?? null,
+    ...(updateCustomer && {
+      customerId: values.customer?.at(0)?.id ?? null,
+    }),
+    ...(updateLeader && {
+      responsibleProjectLeaderUserId: values.responsibleProjectLeader?.at(0)?.id ?? null,
+    }),
   };
 }
 
@@ -338,12 +354,18 @@ export function showModifyProjectModal(
   project: Project,
 ) {
   let initialProjectContacts: ProjectContactSelection[] | null = null;
+  const changedReferences = new Set<ProjectReferenceField>();
 
   modals.showForm({
     content: ({ context }) => {
       return (
         <>
-          <ProjectFields context={context} modals={modals} project={project} />
+          <ProjectFields
+            context={context}
+            modals={modals}
+            project={project}
+            onReferenceChange={(field) => changedReferences.add(field)}
+          />
           <ProjectContactsFormFields
             context={context}
             modals={modals}
@@ -364,7 +386,9 @@ export function showModifyProjectModal(
                 client
                   .query("customers.get", { id: project.customerId })
                   .then(([data]) => {
-                    if (data) context.setValues({ customer: [data] });
+                    if (data && !changedReferences.has("customer")) {
+                      context.setValues({ customer: [data] });
+                    }
                   });
 
               if (project.responsibleProjectLeaderUserId)
@@ -373,8 +397,9 @@ export function showModifyProjectModal(
                     id: project.responsibleProjectLeaderUserId,
                   })
                   .then(([data]) => {
-                    if (data)
+                    if (data && !changedReferences.has("responsibleProjectLeader")) {
                       context.setValues({ responsibleProjectLeader: [data] });
+                    }
                   });
             }}
           />
@@ -383,7 +408,9 @@ export function showModifyProjectModal(
     },
     onSubmit: async ({ context, hide }) => {
       const values = context.getValues();
-      const dataToUpdate = readProjectFields(values);
+      // An empty selection can mean an unreadable or still loading reference.
+      // Only an explicit change should replace the stored assignment.
+      const dataToUpdate = readProjectFields(values, changedReferences);
 
       const contacts = projectContactPayload(values);
       if (initialProjectContacts === null && contacts.length) {

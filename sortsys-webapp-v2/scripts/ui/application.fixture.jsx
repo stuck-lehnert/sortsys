@@ -30,6 +30,7 @@ import {
   showModifyDailyProjectReportModal,
 } from "../../app/modals/dailyProjectReport";
 import { showCreateRegieReportModal, showModifyRegieReportModal } from "../../app/modals/regieReports";
+import { showModifyProjectModal } from "../../app/modals/projects";
 import { showCreateProductModal, showModifyProductModal } from "../../app/modals/products";
 import { showCreateDeliveryNoteModal, showModifyDeliveryNoteModal } from "../../app/modals/deliveryNotes";
 import { showCommandPaletteModal } from "../../app/modals/commandPalette";
@@ -227,8 +228,25 @@ function FormEntrypoints() {
 
 function ProjectFixture() {
   const { search } = useLocation();
-  const customerId = new URLSearchParams(search).get("customerId");
-  const project = { id: "c", title: "Fixture project", customerId };
+  const modals = useMyModals();
+  const params = new URLSearchParams(search);
+  const project = {
+    id: "c",
+    title: "Fixture project",
+    customerId: params.get("customerId"),
+  };
+
+  if (params.has("editAssignments")) {
+    const assignmentFixture = {
+      ...project,
+      responsibleProjectLeaderUserId: "d",
+    };
+    return (
+      <Button onClick={() => showModifyProjectModal(modals, assignmentFixture)}>
+        Edit project assignments
+      </Button>
+    );
+  }
 
   return (
     <>
