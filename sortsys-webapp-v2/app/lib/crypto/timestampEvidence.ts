@@ -22,7 +22,7 @@ import {
   type OtsNode,
   type TimestampTarget,
 } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "./session";
+import { captureAccountScope, trustedHistory, unlockedAccount } from "./session";
 import { createObjectAuthorVerifier } from "./objectAuthors";
 import { required } from "../protectedResult";
 import { listenDataChanges } from "../data/runtime/changes";
@@ -42,14 +42,9 @@ export async function checkTimestampEvidence(
   packet: Uint8Array<ArrayBuffer>;
   proof: Uint8Array<ArrayBuffer> | null;
 }> {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (!client.loggedIn() || account !== unlockedAccount())
-      throw new InvalidProtectedData();
-  };
+  const { account, live } = captureAccountScope(signal, client);
   live();
+
   const target = timestampTarget(value.target);
   if (
     target.tenant !== account.tenant ||
@@ -142,14 +137,9 @@ export async function timestampEvidenceAttempt(
     upgrade?: typeof upgradeOtsProof;
   } = {},
 ): Promise<TimestampAttempt> {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (!client.loggedIn() || unlockedAccount() !== account)
-      throw new InvalidProtectedData();
-  };
+  const { live } = captureAccountScope(signal, client);
   live();
+
   const [work, error] = await client.mutate(
     "zerotrust.timestamps.work",
     undefined,

@@ -31,7 +31,7 @@ import type {
   Rule,
 } from "@sortsys/zerotrust/sortsys";
 import {
-  unlockedAccount,
+  captureAccountScope,
   trustedHistory,
   updateAccountPins,
   registerInvitedPassword,
@@ -268,14 +268,10 @@ export async function joinMemberInvitation(
   input: InvitationLink,
   signal: AbortSignal,
 ) {
-  const link = readInvitationLink(input),
-    account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (account !== unlockedAccount()) throw new InvalidProtectedData();
-  };
+  const link = readInvitationLink(input);
+  const { account, live } = captureAccountScope(signal);
   live();
+
   const session = await required(
     client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
   );

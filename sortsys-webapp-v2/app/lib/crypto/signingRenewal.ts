@@ -20,9 +20,9 @@ import { addressId } from "../data/addressBook";
 import { required } from "../protectedResult";
 import { administratorContext } from "./administration";
 import {
+  captureAccountScope,
   enrollPasswordAccount,
   trustedHistory,
-  unlockedAccount,
   validateChangedPassword,
 } from "./session";
 
@@ -103,18 +103,6 @@ function seedCipher(successor: Successor, nonce: Uint8Array<ArrayBuffer>) {
   };
 }
 
-function ownSession(client: Client, signal: AbortSignal) {
-  const account = unlockedAccount();
-  if (!account) throw new InvalidProtectedData();
-  const live = () => {
-    signal.throwIfAborted();
-    if (account !== unlockedAccount() || !client.loggedIn())
-      throw new InvalidProtectedData();
-  };
-  live();
-  return { account, live };
-}
-
 async function verifyRequest(
   request: SigningRequest,
   tenant: string,
@@ -147,7 +135,9 @@ export async function createSigningRequest(
   client: Client,
   signal: AbortSignal,
 ) {
-  const { account, live } = ownSession(client, signal);
+  const { account, live } = captureAccountScope(signal, client);
+  live();
+
   const [history, status] = await Promise.all([
     trustedHistory(client),
     required(
@@ -255,7 +245,9 @@ export async function signingRenewalEnrollment(
   password: string,
   signal: AbortSignal,
 ) {
-  const { account, live } = ownSession(client, signal);
+  const { account, live } = captureAccountScope(signal, client);
+  live();
+
   validateChangedPassword(password);
   const approval = record(parseTransfer(input), ["request", "certificate"]);
   const request = readRequest(approval.request);
