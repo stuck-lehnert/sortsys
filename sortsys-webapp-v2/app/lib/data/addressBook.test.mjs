@@ -72,6 +72,53 @@ function fullPages(calls) {
   return selections.filter((page) => !page.headOnly);
 }
 
+test("write references verify only selected contacts at the current catalog head", async () => {
+  const area = CONTACT_COLLECTION;
+  const { client, seed, calls, domains } = await protectedTenant(
+    [area],
+    () => ["read"],
+  );
+  const store = createProtectedAddressBook(client, new AbortController().signal, duckDriver);
+  const contact = (id) => ({
+    format: "sortsys-address-v1",
+    kind: "contacts",
+    row: row("contacts", {
+      id,
+      last_name: `Kontakt ${id}`,
+      phone_numbers: "[]",
+      email_addresses: "[]",
+    }),
+    links: [],
+  });
+
+  try {
+    await seed(area, "contact:35", contact("101"));
+    await seed(area, "contact:36", contact("102"));
+    await seed(area, "contact:37", contact("103"));
+
+    expect(await store.references("contacts", ["35", "36", "35"])).toEqual({
+      domain: area.domain,
+      sequence: String(domains.get(area.domain).head),
+    });
+    expect(objectReads(calls).sort()).toEqual(["contact:35", "contact:36"]);
+    expect(fullPages(calls)).toEqual([]);
+
+    const next = calls.length;
+    await seed(area, "contact:36", { ...contact("102"), row: null });
+    await expect(store.references("contacts", ["35", "36"])).rejects.toThrow();
+    await expect(store.references("contacts", ["38"])).rejects.toThrow();
+    expect(await store.references("contacts", ["35"])).toEqual({
+      domain: area.domain,
+      sequence: String(domains.get(area.domain).head),
+    });
+    expect(objectReads(calls.slice(next))).not.toContain("contact:37");
+    expect(fullPages(calls.slice(next))).toEqual([]);
+  } finally {
+    store.close();
+    lockCryptoSession();
+  }
+}, fixtureTimeout(30_000));
+
 test("unlinked projects and customers read their parent but do not open the contact area", async () => {
   const projectArea = projectCollection("2");
   const { client, seed, calls } = await protectedTenant(

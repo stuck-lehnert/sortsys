@@ -529,11 +529,19 @@ export function createProtectedAddressBook(
       ids: string[],
     ): Promise<{ domain: string; sequence: string }> {
       lease.live();
+
+      const distinctIds = [...new Set(ids)];
+      const selected = addressObjects(kind, distinctIds);
       runtime.revalidate();
-      const selected = request(kind);
+
       const result = await runtime.read([selected], (view) => {
-        const values = payloads(view, kind);
-        for (const id of ids) find(values, id);
+        const documents = view.documents(selected);
+        if (
+          documents.length !== distinctIds.length ||
+          documents.some(({ value }) => !value.row)
+        )
+          throw new InvalidProtectedData();
+
         return view.head(selected);
       });
       lease.live();
