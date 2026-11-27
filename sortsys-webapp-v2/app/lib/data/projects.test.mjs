@@ -183,7 +183,7 @@ test("project change ordering keeps microseconds before applying the search limi
   }
 }, 60_000);
 
-test("planning excludes scheduled projects by their public project IDs", async () => {
+test("planning does not fetch or open scheduled projects", async () => {
   const scheduled = projectCollection("12");
   const eligible = projectCollection("13");
   const tenant = await protectedTenant([scheduled, eligible], () => ["read"]);
@@ -210,8 +210,33 @@ test("planning excludes scheduled projects by their public project IDs", async (
       });
     }
 
+    tenant.calls.length = 0;
     const candidates = await projects.planningCandidates(["12"]);
     expect(candidates.map(({ id }) => id)).toEqual(["13"]);
+
+    const selectedDomains = new Set(
+      tenant.calls.flatMap(({ path, input }) => {
+        if (path === "zerotrust.objects.pages") {
+          return input.selections.map(({ domain }) => domain);
+        }
+        if (path === "zerotrust.access.snapshot") {
+          return input.pages?.selections.map(({ domain }) => domain) ?? [];
+        }
+        if (path.startsWith("zerotrust.objects.") && input.domain) {
+          return [input.domain];
+        }
+        return [];
+      }),
+    );
+    expect([...selectedDomains]).toEqual([eligible.domain]);
+
+    const keyReads = tenant.calls.filter(
+      ({ path }) => path === "zerotrust.keys.history",
+    );
+    expect(keyReads.map(({ input }) => input.domain)).toEqual([eligible.domain]);
+
+    const allProjects = await projects.query("projects.list", {});
+    expect(allProjects.map(({ id }) => id)).toEqual(["12", "13"]);
   } finally {
     projects.close();
     lockCryptoSession();

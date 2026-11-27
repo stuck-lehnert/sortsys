@@ -30,7 +30,7 @@ import {
   PROJECT_QUERIES,
   type ProjectPayload,
 } from "./projectData";
-import { readableProjectAreas } from "./projectAreas";
+import { readableAreas } from "./readableAreas";
 import { PROJECT_ACCESS_KEYS, projectAccessArea } from "./projectScope";
 import { createResourceAreas } from "./createProjectArea";
 import { createBusinessRow } from "./rowCodec";
@@ -150,9 +150,16 @@ export function createProtectedProjects(
     runtime = lease.runtime,
     live = lease.live;
 
-  async function projectRequests() {
+  async function projectRequests(excluded?: ReadonlySet<string>) {
     live();
-    const areas = await readableProjectAreas(client, signal);
+
+    const areas = await readableAreas(client, signal, (domain) => {
+      const id = projectDomainId(domain);
+      if (!id || excluded?.has(id)) return null;
+
+      return projectCollection(id);
+    });
+
     live();
     return areas.map((area) => ({ model: PROJECT_MODEL, area }));
   }
@@ -274,13 +281,12 @@ export function createProtectedProjects(
     close: lease.close,
     prepareCreate,
     async planningCandidates(excluded: readonly string[]) {
-      const omitted = new Set(excluded);
-      const selected = await projectRequests();
+      const selected = await projectRequests(new Set(excluded));
       const candidates = await runtime.read(
         selected,
         (view) => listedProjects(view, selected).flatMap((payload) => {
           const project = wireProject(payload);
-          if (project.finishedAt || omitted.has(project.id)) return [];
+          if (project.finishedAt) return [];
 
           return [{
             id: project.id,
