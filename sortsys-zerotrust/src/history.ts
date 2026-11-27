@@ -1,7 +1,8 @@
 import {
   frame,
-  identifier,
   InvalidProtectedData,
+  parseWireCounter,
+  parseWireMicros,
   record,
   revision,
   validateBase64Size,
@@ -16,14 +17,7 @@ export type MigrationOrigin = {
   history?: HistoryOrigin;
 };
 export function historyInstant(value: unknown): asserts value is string {
-  if (
-    typeof value !== "string" ||
-    !/^(?:0|-[1-9]\d*|[1-9]\d*)$/.test(value) ||
-    value.length > 19 ||
-    BigInt(value) < -62135596800000000n ||
-    BigInt(value) > 253402300799999999n
-  )
-    throw new InvalidProtectedData();
+  parseWireMicros(value);
 }
 function historyOrigin(input: unknown): HistoryOrigin {
   const value = record(input, ["source", "occurredMicros"]);
@@ -112,6 +106,5 @@ export async function verifyMigrationOrigin(
   return origin;
 }
 export function historySequence(value: unknown): asserts value is string {
-  identifier(value);
-  if (value !== "0") revision(value);
+  parseWireCounter(value);
 }

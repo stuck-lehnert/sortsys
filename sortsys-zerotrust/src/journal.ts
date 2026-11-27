@@ -2,6 +2,8 @@ import {
   bytes,
   identifier,
   InvalidProtectedData,
+  parseWireCounter,
+  parseWireMicros,
   record,
   revision,
 } from "./encoding";
@@ -40,18 +42,10 @@ export type JournalPage = {
   entries: JournalEntry[];
 };
 export function journalInstant(value: unknown): asserts value is string {
-  if (
-    typeof value !== "string" ||
-    !/^(?:0|-[1-9]\d*|[1-9]\d*)$/.test(value) ||
-    value.length > 19 ||
-    BigInt(value) < -62135596800000000n ||
-    BigInt(value) > 253402300799999999n
-  ) {
-    throw new InvalidProtectedData();
-  }
+  parseWireMicros(value);
 }
 export function journalCursor(value: unknown): asserts value is string {
-  if (value !== "0") revision(value);
+  parseWireCounter(value);
 }
 export function journalAppend(input: unknown): JournalAppend {
   const value = record(input, [

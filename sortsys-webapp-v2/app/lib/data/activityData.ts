@@ -1,8 +1,8 @@
 import type { QueryResult } from "@sortsys/v2-client";
 import {
-  historyInstant,
-  historySequence,
   InvalidProtectedData,
+  parseRevision,
+  parseWireMicros,
 } from "@sortsys/zerotrust/sortsys";
 import { addressId, partialAddressRecord } from "./addressBook";
 import { dataKey } from "./runtime/model";
@@ -55,14 +55,11 @@ export function activityCursor(
   if (!match) {
     throw new InvalidProtectedData();
   }
-  historyInstant(match[2]);
-  historySequence(match[3]);
-  historySequence(match[4]);
   return {
     legacy: match[1] === "l",
-    instant: BigInt(match[2]),
-    order: BigInt(match[3]!),
-    sequence: BigInt(match[4]!),
+    instant: parseWireMicros(match[2]),
+    order: parseRevision(match[3]),
+    sequence: parseRevision(match[4]),
     ordinal: Number(match[5]),
   };
 }

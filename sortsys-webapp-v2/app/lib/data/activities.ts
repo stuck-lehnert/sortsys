@@ -2,9 +2,10 @@ import type { Client, QueryResult } from "@sortsys/v2-client";
 import { createSerialQueue } from "@sortsys/zerotrust";
 import {
   encryptedObject,
-  historyInstant,
   stockReferenceFrame,
   InvalidProtectedData,
+  parseWireCounter,
+  parseWireMicros,
   stockDeletion,
   stockReferences,
   verifyMigrationOrigin,
@@ -72,6 +73,7 @@ type ActivityOwner = {
 };
 type Candidate = ActivityCandidate;
 type ActivityScope = "all" | "tool" | "planning";
+type PositionedChange = { change: Change; position: ActivityPosition };
 type ActivityCache = {
   prefixes: string;
   head: string;
@@ -93,22 +95,9 @@ function createActivityLane() {
 }
 
 class ChangedAccess extends Error {}
-const MAX_SEQUENCE = 9223372036854775807n;
 const HISTORY_PAGE_SIZE = 16;
 const MAX_HISTORY_PAGES = 10_000;
 const MAX_INACTIVE_ACTIVITY_GROUPS = 256;
-
-function parseHistoryCounter(value: unknown): bigint {
-  if (typeof value !== "string" || !/^(?:0|[1-9]\d{0,18})$/.test(value)) {
-    throw new InvalidProtectedData();
-  }
-
-  const counter = BigInt(value);
-  if (counter > MAX_SEQUENCE) {
-    throw new InvalidProtectedData();
-  }
-  return counter;
-}
 
 const findRowValues = (node: HistoryNode | null, table: string) =>
   node?.rows.find((row) => row.table === table)?.values;
@@ -524,17 +513,15 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       assertCurrentAccess,
     );
     async function readCandidates(
-      change: Change,
+      { change, position }: PositionedChange,
       findChange: (id: string) => Change | undefined,
       readRows: typeof readSourceRows,
     ): Promise<Candidate[]> {
       verifyAccessVersion(change.access);
-      parseHistoryCounter(change.sequence);
-      historyInstant(change.occurredMicros);
-      if (
-        new Date(change.occurredAt).getTime() !==
-        new Date(timestampFromMicros(change.occurredMicros)).getTime()
-      ) {
+
+      const occurredAt = new Date(change.occurredAt);
+      const journalDate = new Date(timestampFromMicros(position.instant));
+      if (occurredAt.getTime() !== journalDate.getTime()) {
         throw new InvalidProtectedData();
       }
       if (change.envelope.object.startsWith(LEGACY_ACTIVITY_PREFIX)) {
@@ -658,18 +645,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           `#${parent.id}`;
         const contextId = parent.project && project ? parent.project : null;
         const created = fields.created_at ?? base?.created_at;
-        const occurredAt = new Date(change.occurredAt);
-        if (!Number.isFinite(occurredAt.getTime())) {
-          throw new InvalidProtectedData();
-        }
-        const position = {
-          instant: BigInt(change.occurredMicros),
-          order: BigInt(change.orderId),
-          sequence: BigInt(change.sequence),
-          ordinal,
-        };
+        const rowPosition = { ...position, ordinal };
         const item: Activity = {
-          id: activityId(position),
+          id: activityId(rowPosition),
           entityTable: value.table,
           entityId: value.entityId,
           changedColumns: unknownPrevious ? [] : value.columns,
@@ -699,7 +677,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
         output.push({
           item,
           group: JSON.stringify([change.publication, value.key]),
-          ...position,
+          ...rowPosition,
         });
       }
       return output;
@@ -713,9 +691,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       }
     >;
     let preceding: Openings | undefined;
-    let precedingChanges: readonly Change[] = [];
+    let precedingChanges: readonly PositionedChange[] = [];
 
-    async function readPage(changes: Page["changes"]) {
+    async function readPage(changes: readonly PositionedChange[]) {
       // A page's oldest event can already contain the next page's first
       // revision. Retain one preceding page within this access check only.
       const opened: Openings = new Map();
@@ -747,9 +725,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
 
       // Copied events and their name facets share a timestamp and order ID.
       // Retain the previous page from this snapshot for a split group.
-      const findChange = (id: string) =>
-        changes.find((change) => change.envelope.object === id) ??
-        precedingChanges.find((change) => change.envelope.object === id);
+      const findChange = (id: string) => {
+        const matches = ({ change }: PositionedChange) =>
+          change.envelope.object === id;
+        return (changes.find(matches) ?? precedingChanges.find(matches))?.change;
+      };
 
       const candidates = (
         await Promise.all(
@@ -765,11 +745,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       page: Page,
       before: ActivityPosition | null,
       snapshot: string | null,
-    ): ActivityPosition | null {
+    ) {
       verifyAccessVersion(page.access);
-      const currentSequence = parseHistoryCounter(page.current);
-      const snapshotSequence = parseHistoryCounter(page.snapshot);
-      parseHistoryCounter(page.total);
+      const currentSequence = parseWireCounter(page.current);
+      const snapshotSequence = parseWireCounter(page.snapshot);
+      parseWireCounter(page.total);
 
       if (snapshotSequence > currentSequence) {
         throw new InvalidProtectedData();
@@ -791,11 +771,10 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
 
       let boundary: ActivityPosition | null = null;
       if (hasCursor) {
-        historyInstant(page.afterMicros);
         boundary = {
-          instant: BigInt(page.afterMicros),
-          order: parseHistoryCounter(page.afterOrder),
-          sequence: parseHistoryCounter(page.after),
+          instant: parseWireMicros(page.afterMicros),
+          order: parseWireCounter(page.afterOrder),
+          sequence: parseWireCounter(page.after),
           ordinal: 0,
         };
         if (boundary.sequence > snapshotSequence) {
@@ -807,12 +786,11 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       }
 
       let previous = before;
-      for (const change of page.changes) {
-        historyInstant(change.occurredMicros);
+      const changes = page.changes.map((change): PositionedChange => {
         const position = {
-          instant: BigInt(change.occurredMicros),
-          order: parseHistoryCounter(change.orderId),
-          sequence: parseHistoryCounter(change.sequence),
+          instant: parseWireMicros(change.occurredMicros),
+          order: parseWireCounter(change.orderId),
+          sequence: parseWireCounter(change.sequence),
           ordinal: 0,
         };
         if (position.sequence > snapshotSequence) {
@@ -825,8 +803,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           throw new InvalidProtectedData();
         }
         previous = position;
-      }
-      return boundary;
+        return { change, position };
+      });
+      return { boundary, changes };
     }
     try {
       const stamp = context.activityStamp();
@@ -852,9 +831,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       const first =
         conditional && !state ? await readFirstPage(null) : initialPage;
       assertCurrentAccess();
-      const firstEdge = validatePage(first, null, null);
+      const firstPage = validatePage(first, null, null);
       if (!first.unchanged) {
-        const initial = await readPage(first.changes);
+        const initial = await readPage(firstPage.changes);
         assertCurrentAccess();
 
         const groups = new Map<string, Candidate>();
@@ -865,7 +844,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           total: first.total,
           snapshot: first.snapshot,
           after: first.after,
-          edge: firstEdge,
+          edge: firstPage.boundary,
           groups,
           actorNames: new Map(),
           complete: first.after === null,
@@ -900,16 +879,16 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           ),
         );
         assertCurrentAccess();
-        const edge = validatePage(page, state.edge, state.snapshot);
+        const nextPage = validatePage(page, state.edge, state.snapshot);
         if (page.unchanged) {
           throw new InvalidProtectedData();
         }
 
-        const next = await readPage(page.changes);
+        const next = await readPage(nextPage.changes);
         assertCurrentAccess();
         appendActivityFacets(state.groups, next);
         state.after = page.after;
-        state.edge = edge;
+        state.edge = nextPage.boundary;
         state.complete = page.after === null;
       }
       throw new InvalidProtectedData();

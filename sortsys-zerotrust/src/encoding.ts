@@ -117,10 +117,40 @@ export function identifier(value: unknown): asserts value is string {
   }
 }
 
-export function revision(value: unknown): asserts value is string {
-  if (typeof value !== "string" || !/^[1-9][0-9]{0,18}$/.test(value) || BigInt(value) > 9223372036854775807n) {
+export function parseRevision(value: unknown): bigint {
+  if (typeof value !== "string" || !/^[1-9][0-9]{0,18}$/.test(value)) {
     throw new InvalidProtectedData();
   }
+
+  const number = BigInt(value);
+  if (number > 9223372036854775807n) throw new InvalidProtectedData();
+  return number;
+}
+
+export function revision(value: unknown): asserts value is string {
+  parseRevision(value);
+}
+
+/** A signed wire counter, with zero allowed as the empty position. */
+export function parseWireCounter(value: unknown): bigint {
+  return value === "0" ? 0n : parseRevision(value);
+}
+
+/** Canonical UTC microseconds in the journal and signed migration proofs. */
+export function parseWireMicros(value: unknown): bigint {
+  if (
+    typeof value !== "string" ||
+    value.length > 19 ||
+    !/^(?:0|-[1-9]\d*|[1-9]\d*)$/.test(value)
+  ) {
+    throw new InvalidProtectedData();
+  }
+
+  const micros = BigInt(value);
+  if (micros < -62135596800000000n || micros > 253402300799999999n) {
+    throw new InvalidProtectedData();
+  }
+  return micros;
 }
 
 export async function digest(value: BufferSource): Promise<string> {
