@@ -16,6 +16,7 @@ import { administratorPolicyContext } from "./administration";
 import { verifiedAccessContext } from "./accessContext";
 import { readVerifiedPolicy } from "./policy";
 import { prepareHistoricalKeyGrants } from "./historicalKeyGrants";
+import { readMemberPages } from "./memberDirectory";
 import { verifyDirectoryCertificate } from "./recipientCertificate";
 import { MASTER_DATA_AREAS } from "./accessProfiles";
 import { ORGANIZATION_AREAS } from "../data/organizationData";
@@ -37,21 +38,17 @@ type Context = Awaited<ReturnType<typeof administratorPolicyContext>>;
 type Domain = QueryResult<"zerotrust.access.snapshot">["domains"][number];
 
 async function memberDirectory(client: Client, context: Context) {
+  const pages = readMemberPages(client, context.live);
   const [identities, first] = await Promise.all([
     required(
       client.query("zerotrust.identities.list", undefined, {
         strategy: "network-only",
       }),
     ),
-    required(
-      client.query(
-        "zerotrust.members.list",
-        { after: null },
-        { strategy: "network-only" },
-      ),
-    ),
+    pages.next(),
   ]);
   context.live();
+
   const certificates = new Map<string, IdentityCertificate>();
   for (const identity of identities) {
     if (certificates.has(identity.subject))
@@ -61,29 +58,18 @@ async function memberDirectory(client: Client, context: Context) {
     context.live();
     certificates.set(identity.subject, certificate);
   }
+
   const members: QueryResult<"zerotrust.members.list">["rows"] = [];
   const users = new Set<string>();
-  const cursors = new Set<string>();
-  let page = first;
-  for (;;) {
-    for (const member of page.rows) {
-      if (users.has(member.id) || users.size >= 10000)
+  for (let page = first; !page.done; page = await pages.next()) {
+    for (const member of page.value) {
+      if (users.has(member.id))
         throw new InvalidProtectedData();
       users.add(member.id);
       members.push(member);
     }
-    if (page.after === null) break;
-    if (cursors.has(page.after)) throw new InvalidProtectedData();
-    cursors.add(page.after);
-    page = await required(
-      client.query(
-        "zerotrust.members.list",
-        { after: page.after },
-        { strategy: "network-only" },
-      ),
-    );
-    context.live();
   }
+
   return { certificates, members };
 }
 

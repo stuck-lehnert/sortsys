@@ -12,6 +12,7 @@ import {
   createIdentity,
   createDomain,
   createTenantSetup,
+  InvalidProtectedData,
   openBox,
   publicIdentity,
   signPolicy,
@@ -439,6 +440,27 @@ test("scoped completion checks only edited areas and preserves another pending r
       (input) => input.domains?.length === 1 && input.domains[0] === f.a.domain,
     ),
   ).toBe(true);
+});
+
+test("key rotation stops before publication when the member listing skips an empty page", async () => {
+  const f = await rotationFixture();
+  const query = f.client.query;
+  const memberCursors = [];
+  f.client.query = async (path, input) => {
+    if (path === "zerotrust.members.list") {
+      memberCursors.push(input.after);
+      if (input.after === null) return [{ rows: [], after: "1" }, null];
+    }
+    return query(path, input);
+  };
+
+  await expect(
+    finishAccessChanges(f.client, new AbortController().signal),
+  ).rejects.toBeInstanceOf(InvalidProtectedData);
+
+  expect(memberCursors).toEqual([null]);
+  expect(f.calls).not.toContain("zerotrust.access.publish");
+  expect(f.pending.size).toBe(2);
 });
 
 test("unrelated catalogue conflicts retry from fresh input and remain bounded", async () => {
