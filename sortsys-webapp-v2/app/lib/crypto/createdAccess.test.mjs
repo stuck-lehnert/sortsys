@@ -5,13 +5,12 @@ import {
   creationResource,
 } from "@sortsys/zerotrust/sortsys";
 import { creationFixture } from "../../../../sortsys-zerotrust/test/support/creationFixture";
-import { createdAccess, verifyCreatedAccess } from "./createdAccess";
+import { verifyCreatedAccess } from "./createdAccess";
 
-test("point reads verify certified creation rights for every declared resource namespace and retain root denials", async () => {
+test("inventories verify creation rights for each resource namespace and retain root denials", async () => {
   for (const namespace of Object.keys(CREATION_FACETS)) {
-    const f = await creationFixture(namespace),
-      domain = f.origin.id,
-      calls = [];
+    const f = await creationFixture(namespace);
+    const selected = new Set([f.origin.id]);
     const permissions = {
       tenant: "test",
       version: "1",
@@ -25,22 +24,17 @@ test("point reads verify certified creation rights for every declared resource n
         },
       ],
     };
-    const client = {
-      async query(path, input) {
-        calls.push({ path, input });
-        return [f.origin, null];
-      },
-    };
     const history = {
       authority: () => f.authorityKey.publicKey,
       current: { generation: "1" },
     };
-    const effective = await createdAccess(
-      client,
+    const signal = new AbortController().signal;
+    const { permissions: effective } = await verifyCreatedAccess(
+      [f.origin],
       permissions,
       history,
-      new AbortController().signal,
-      domain,
+      signal,
+      selected,
     );
     const request = {
       tenant: "test",
@@ -56,50 +50,42 @@ test("point reads verify certified creation rights for every declared resource n
     expect(allows(effective, { ...request, scope: `${namespace}:def` })).toBe(
       false,
     );
-    expect(calls).toEqual([
-      { path: "zerotrust.creations.origin", input: { domain } },
-    ]);
     expect(creationResource(f.origin.scope)).toEqual({ namespace, id: "abc" });
+
+    const signature = f.origin.signature;
+    const tamperedSignature = (signature[0] === "A" ? "B" : "A") + signature.slice(1);
     await expect(
-      createdAccess(
-        {
-          async query() {
-            return [
-              {
-                ...f.origin,
-                id: `${namespace}:def:master-data`,
-                scope: `${namespace}:def`,
-              },
-              null,
-            ];
-          },
-        },
+      verifyCreatedAccess(
+        [{ ...f.origin, signature: tamperedSignature }],
         permissions,
         history,
-        new AbortController().signal,
-        domain,
+        signal,
+        selected,
       ),
     ).rejects.toThrow();
   }
 });
 
-test("unrelated catalogues and invalid resource identifiers cannot trigger or acquire delegated grants", async () => {
-  const permissions = { tenant: "test", version: "1", rules: [] },
-    client = {
-      async query() {
-        throw new Error("No namespace lookup expected");
-      },
-    };
-  expect(
-    await createdAccess(
-      client,
-      permissions,
-      {},
-      new AbortController().signal,
-      "catalog:tools:master-data",
-    ),
-  ).toBe(permissions);
+test("an empty inventory adds no grants, and invalid resource scopes grant nothing", async () => {
+  const policy = { tenant: "test", version: "1", rules: [] };
+  const history = {
+    authority() {
+      throw new Error("No origin to verify");
+    },
+    current: { generation: "1" },
+  };
+  const { origins, permissions } = await verifyCreatedAccess(
+    [],
+    policy,
+    history,
+    new AbortController().signal,
+  );
+
+  expect(origins).toEqual([]);
+  expect(permissions).toBe(policy);
+
   for (const scope of [
+    "catalog:tools:master-data",
     "tool:0",
     "tool:01",
     "tool:8000000000000",
@@ -154,5 +140,8 @@ test("a selected batch accepts only unique creation proofs for the requested dom
       signal,
       new Set(["commercial:def:master-data"]),
     ),
+  ).rejects.toThrow();
+  await expect(
+    verifyCreatedAccess([null], policy, history, signal, selected),
   ).rejects.toThrow();
 });
