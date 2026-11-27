@@ -1,5 +1,6 @@
 import {
   base64,
+  base64ByteLength,
   frame,
   identifier,
   InvalidProtectedData,
@@ -8,6 +9,7 @@ import {
   signedPacketFrame,
   sized,
   unbase64,
+  validateBase64Size,
 } from "./encoding";
 import { hpke, sign, verify } from "./identity";
 
@@ -83,13 +85,11 @@ export function sealedBox(value: unknown): SealedBox {
   const obj = record(value, keys);
   context(Object.fromEntries(contextKeys.map((key) => [key, obj[key]])));
   if (obj.format !== "sortsys-hpke-v1") throw new InvalidProtectedData();
-  for (const name of ["enc", "ciphertext", "signature"] as const) {
-    if (typeof obj[name] !== "string") throw new InvalidProtectedData();
-  }
-  sized(obj.enc as string, 32);
-  sized(obj.signature as string, 64);
-  if (unbase64(obj.ciphertext as string, MAX_BYTES + 16).length < 16)
+  validateBase64Size(obj.enc, 32);
+  validateBase64Size(obj.signature, 64);
+  if (base64ByteLength(obj.ciphertext, MAX_BYTES + 16) < 16)
     throw new InvalidProtectedData();
+
   return { ...obj } as SealedBox;
 }
 
@@ -101,10 +101,12 @@ export async function sealBox(
 ): Promise<SealedBox> {
   const ctx = context(expected);
   if (plaintext.length > MAX_BYTES) throw new InvalidProtectedData();
+
+  const aad = info(ctx);
   const sealed = await hpke.seal(
-    { recipientPublicKey: recipient, info: info(ctx) },
+    { recipientPublicKey: recipient, info: aad },
     plaintext,
-    info(ctx),
+    aad,
   );
   const result: SealedBox = {
     ...ctx,
@@ -129,11 +131,13 @@ export async function openBox(
     if (contextKeys.some((key) => box[key] !== ctx[key]))
       throw new InvalidProtectedData();
     await verify(author, box.signature, boxFrame(box));
+
+    const aad = info(ctx);
     return new Uint8Array(
       await hpke.open(
-        { recipientKey: recipient, enc: sized(box.enc, 32), info: info(ctx) },
+        { recipientKey: recipient, enc: sized(box.enc, 32), info: aad },
         unbase64(box.ciphertext, MAX_BYTES + 16),
-        info(ctx),
+        aad,
       ),
     );
   } catch {
