@@ -83,7 +83,7 @@ export function useMyModals(): MyModalsInterface {
     // replacement account or after the action's data access was revoked.
     return {
       show: (...args) => {
-        if (currentDataContext(context)) modals.show(...args);
+        if (currentDataContext(context)) return modals.show(...args);
       },
       showDefault: (...args) => {
         if (currentDataContext(context)) modals.showDefault(...args);
@@ -146,7 +146,11 @@ export function MyModalsProvider({ children }: { children: React.ReactNode }) {
 }
 
 export interface MyModalsInterface {
-  show: (render: MyModal["render"], options?: MyModal["options"]) => void;
+  /** Return a dismissal handle, or undefined if this context is no longer active. */
+  show: (
+    render: MyModal["render"],
+    options?: MyModal["options"],
+  ) => (() => void) | undefined;
   /** Share modal history with a dialog whose content is already rendered by its page. */
   trackLocation: (
     location: { url: string; backgroundUrl: string },
@@ -299,7 +303,8 @@ function _Modals(props: { interfaceRef: RefObject<MyModalsInterface> }) {
   };
   const _interface: MyModalsInterface = {
     show: (render, options) => {
-      registerModal(render, options);
+      const modal = registerModal(render, options);
+      if (modal) return () => hideModal(modal);
     },
     trackLocation: (location, onRequestClose) => {
       const modal = registerModal(() => null, { location, onRequestClose });

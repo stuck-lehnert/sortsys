@@ -110,3 +110,32 @@ test("replacing the HTTP session stops the old worker; normal completion also re
     expect(listeners.size).toBe(0);
   });
 });
+
+test.each([
+  ["popup.confirm", { title: "Confirm script action" }],
+  ["modalForm.show", { title: "Script form", fields: [] }],
+])("ending a script closes its pending %s dialog", async (kind, payload) => {
+  await withScriptWorker(async (workers, listeners) => {
+    await protectedTenant([]);
+    const dismiss = spyOn({ close() {} }, "close");
+    const modals = { show: () => dismiss };
+    const show = spyOn(modals, "show");
+    const running = runClientScript(modals, "const fixture = true;");
+    const [worker] = workers;
+    const reply = spyOn(worker, "postMessage");
+
+    const request = worker.onmessage({
+      data: { type: "request", id: "dialog", kind, payload },
+    });
+    expect(show).toHaveBeenCalledTimes(1);
+    expect(dismiss).not.toHaveBeenCalled();
+
+    worker.onerror({ message: "Stopped" });
+
+    expect(await running).toMatchObject({ ok: false, error: { message: "Stopped" } });
+    expect(dismiss).toHaveBeenCalledTimes(1);
+    await request;
+    expect(reply).not.toHaveBeenCalled();
+    expect(listeners.size).toBe(0);
+  });
+});

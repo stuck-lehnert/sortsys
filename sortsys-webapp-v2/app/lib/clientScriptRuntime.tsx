@@ -45,6 +45,8 @@ type ScriptFormConfig = {
   fields?: ScriptField[];
 };
 
+type ScriptFormResult = { confirmed: boolean; values?: Record<string, unknown> };
+
 type ScriptRunResult = {
   ok: boolean;
   error?: SerializedError;
@@ -461,31 +463,57 @@ ${code}
 `;
 }
 
-function showScriptConfirmation(modals: MyModalsInterface, input: { title?: string; content?: string; buttonText?: string; danger?: boolean }) {
-  return new Promise<boolean>((resolve) => {
-    let settled = false;
-    const settle = (value: boolean, hide: () => void) => {
-      if (settled) return;
-      settled = true;
+function scriptDialog<T>(
+  modals: MyModalsInterface,
+  lifetime: AbortSignal,
+  declined: T,
+  render: (visible: boolean, settle: (value: T) => void) => ReactNode,
+): Promise<T> {
+  if (lifetime.aborted) return Promise.resolve(declined);
+
+  return new Promise((resolve) => {
+    let dismiss: (() => void) | undefined;
+    const cancel = () => settle(declined);
+    const settle = (value: T) => {
+      if (!dismiss) return;
+
+      const close = dismiss;
+      dismiss = undefined;
+      lifetime.removeEventListener("abort", cancel);
       resolve(value);
-      hide();
+      close();
     };
 
-    modals.show(({ visible, hide }) => <Modal
+    dismiss = modals.show(({ visible }) => render(visible, settle), {
+      onRequestClose: cancel,
+    });
+    if (!dismiss) resolve(declined);
+    else if (lifetime.aborted) cancel();
+    else lifetime.addEventListener("abort", cancel, { once: true });
+  });
+}
+
+function showScriptConfirmation(
+  modals: MyModalsInterface,
+  lifetime: AbortSignal,
+  input: { title?: string; content?: string; buttonText?: string; danger?: boolean },
+) {
+  return scriptDialog(modals, lifetime, false, (visible, settle) => (
+    <Modal
       open={visible}
       modalHeading={input.title || uiText('Bestätigung', 'Confirmation')}
       primaryButtonText={input.buttonText || uiText('Bestätigen', 'Confirm')}
       secondaryButtonText={uiText("Abbrechen")}
       danger={!!input.danger}
-      onRequestClose={() => settle(false, hide)}
-      onRequestSubmit={() => settle(true, hide)}
+      onRequestClose={() => settle(false)}
+      onRequestSubmit={() => settle(true)}
     >
       <div className="script-confirmation-content" data-danger={input.danger ? 'true' : undefined}>
         {!!input.danger && <MyCallout icon={Icons.Deny} color="red">{uiText("Gefährliche Aktion. Prüfe die Auswirkungen vor dem Fortfahren.", "Dangerous action. Review the impact before continuing.")}</MyCallout>}
         <div className="script-html-content" dangerouslySetInnerHTML={{ __html: sanitizeHtml(input.content ?? '') }} />
       </div>
-    </Modal>);
-  });
+    </Modal>
+  ));
 }
 
 function normalizeOptions(value: unknown): ScriptOption[] {
@@ -532,17 +560,12 @@ function fieldInitialValue(field: ScriptField) {
 function ScriptModalForm(props: {
   config: ScriptFormConfig;
   visible: boolean;
-  hide: () => void;
   callCallback: (callbackId: string, args: unknown[]) => Promise<unknown>;
-  resolve: (value: { confirmed: boolean; values?: Record<string, unknown> }) => void;
+  settle: (value: ScriptFormResult) => void;
 }) {
   const [error, setError] = useState<string | null>(null);
   const fields = props.config.fields ?? [];
-
-  const settle = (value: { confirmed: boolean; values?: Record<string, unknown> }) => {
-    props.resolve(value);
-    props.hide();
-  };
+  const { settle } = props;
 
   async function validateCallbacks(values: Record<string, unknown>) {
     for (const field of fields) {
@@ -663,29 +686,11 @@ function ScriptModalFormContent(props: {
   </Modal>;
 }
 
-function showScriptModalForm(modals: MyModalsInterface, config: ScriptFormConfig, callCallback: (callbackId: string, args: unknown[]) => Promise<unknown>) {
-  return new Promise<{ confirmed: boolean; values?: Record<string, unknown> }>((resolve) => {
-    let settled = false;
-    const settle = (value: { confirmed: boolean; values?: Record<string, unknown> }) => {
-      if (settled) return;
-      settled = true;
-      resolve(value);
-    };
-
-    modals.show(({ visible, hide }) => <ScriptModalForm
-      config={config}
-      visible={visible}
-      hide={hide}
-      resolve={settle}
-      callCallback={callCallback}
-    />);
-  });
-}
-
 async function handleClientRequest(
   kind: string,
   payload: any,
   modals: MyModalsInterface,
+  dialogLifetime: AbortSignal,
   callCallback: (callbackId: string, args: unknown[]) => Promise<unknown>,
   sleep: (ms: unknown) => Promise<void>,
   onLog?: (values: unknown[]) => void,
@@ -694,8 +699,22 @@ async function handleClientRequest(
   if (kind === 'client.mutate') return await client.mutateDynamic(payload.path, payload.input, payload.opts);
   if (kind === 'client.invalidate') return await client.invalidate(payload.path);
   if (kind === 'client.invalidateCascading') return await client.invalidateCascading(payload.path);
-  if (kind === 'popup.confirm') return await showScriptConfirmation(modals, payload);
-  if (kind === 'modalForm.show') return await showScriptModalForm(modals, payload, callCallback);
+  if (kind === 'popup.confirm') return await showScriptConfirmation(modals, dialogLifetime, payload);
+  if (kind === 'modalForm.show') {
+    return await scriptDialog<ScriptFormResult>(
+      modals,
+      dialogLifetime,
+      { confirmed: false },
+      (visible, settle) => (
+        <ScriptModalForm
+          config={payload}
+          visible={visible}
+          settle={settle}
+          callCallback={callCallback}
+        />
+      ),
+    );
+  }
   if (kind === 'utils.sleep') return await sleep(payload?.ms);
   if (kind === 'log.write') {
     onLog?.(Array.isArray(payload?.values) ? payload.values : []);
@@ -737,6 +756,7 @@ export function runClientScript(
   const userModuleUrl = createObjectUrl(createUserModuleSource(replaceAllowedImports(code, urls)));
   const workerUrl = createObjectUrl(createWorkerSource(userModuleUrl));
   const worker = new Worker(workerUrl, { type: 'module', name: 'sortsys-client-script' });
+  const dialogLifetime = new AbortController();
   const pendingCallbacks = new Map<string, PendingResolver>();
   const sleepWaiters = new Set<{ timeout: number; resolve: () => void }>();
   let nextCallbackId = 1;
@@ -748,6 +768,7 @@ export function runClientScript(
   ));
   const cleanup = () => {
     active = false;
+    dialogLifetime.abort();
     for (const pending of pendingCallbacks.values()) {
       pending.reject(inactiveError());
     }
@@ -847,7 +868,15 @@ export function runClientScript(
 
       if (message.type === 'request') {
         try {
-          const value = await handleClientRequest(message.kind, message.payload, modals, callCallback, sleep, onLog);
+          const value = await handleClientRequest(
+            message.kind,
+            message.payload,
+            modals,
+            dialogLifetime.signal,
+            callCallback,
+            sleep,
+            onLog,
+          );
           if (active) worker.postMessage({ type: 'response', id: message.id, value });
         } catch (err) {
           if (active) worker.postMessage({ type: 'response', id: message.id, error: serializeError(err) });

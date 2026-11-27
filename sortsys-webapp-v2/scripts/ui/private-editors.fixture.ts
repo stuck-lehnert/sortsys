@@ -483,6 +483,7 @@ Object.assign(window, {
               ),
             );
           draw();
+          return hide;
         },
         showDefault: () => {
           throw new Error("Export unexpectedly failed");

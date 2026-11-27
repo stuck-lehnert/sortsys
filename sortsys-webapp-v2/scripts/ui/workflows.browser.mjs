@@ -4682,6 +4682,33 @@ await log("Document encoding verified");`;
   assert.equal(runtimeRequests.length, 1);
 });
 
+test("a client script closes its remaining form when the run finishes", async () => {
+  const code = `
+const { showModalForm } = await import("sortsys-modal-forms");
+const { sleep } = await import("sortsys-utils");
+const { log } = await import("sortsys-log");
+
+void showModalForm({ title: "Optional note", fields: [{ name: "note", label: "Note" }] });
+await sleep(7_000);
+await log("Script finished without a note");`;
+
+  await page.goto(`${server.origin}/crypto.html`);
+  await page.waitForFunction(() => window.cryptoFixture);
+  await page.evaluate(
+    (source) => window.cryptoFixture.showClientScripts({ locale: "en", code: source }),
+    code,
+  );
+  await page.getByRole("button", { name: /Fixture script/ }).click({ timeout: 25_000 });
+  await page.getByRole("button", { name: "Run", exact: true }).click();
+
+  const form = page.getByRole("dialog", { name: "Optional note", exact: true });
+  await form.waitFor();
+  await page.getByRole("log", { name: "Script console" })
+    .getByText("Script finished without a note", { exact: true })
+    .waitFor({ timeout: 15_000 });
+  await form.waitFor({ state: "hidden" });
+});
+
 test("locking the account stops a running client script worker", async () => {
   const code = `
 const { log } = await import("sortsys-log");
