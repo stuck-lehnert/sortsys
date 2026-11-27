@@ -2722,10 +2722,6 @@ export function createProtectedCommercial(
           limit = maximum;
         }
         const page = ordered.slice(offset, offset + Number(limit));
-        const [customerNames, titles] = await Promise.all([
-          searchNames ?? listCustomerNames(page),
-          listProjectTitles(overview ? [] : page),
-        ]);
         live();
 
         // One case fits in a scoped access snapshot. Keep sharing a single
@@ -2740,14 +2736,27 @@ export function createProtectedCommercial(
           );
           return (await stores)(scope);
         };
-        return mapConcurrent(page, 4, async ({ basis, current }) => {
+
+        // Once the page is chosen, document checks do not depend on labels.
+        const [customerNames, titles, priced] = await Promise.all([
+          searchNames ?? listCustomerNames(page),
+          listProjectTitles(overview ? [] : page),
+          mapConcurrent(page, 4, async (entry) => {
+            const calculated = await calculatedCaseRows(
+              entry.basis,
+              openStore,
+              overview ? "case" : "all",
+            );
+            return {
+              ...entry,
+              netAmount: wireCommercialCase(calculated).netAmount,
+            };
+          }),
+        ]);
+        live();
+
+        return priced.map(({ basis, current, netAmount }) => {
           const value = labels(current, basis.visible, titles, customerNames);
-          const calculated = await calculatedCaseRows(
-            basis,
-            openStore,
-            overview ? "case" : "all",
-          );
-          const netAmount = wireCommercialCase(calculated).netAmount;
           if (overview) {
             return {
               id: value.id,

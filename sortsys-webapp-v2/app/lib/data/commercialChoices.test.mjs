@@ -395,6 +395,7 @@ test("document choices batch only verified headers and never open price or calcu
 
 test("the offers table reads checked totals without opening private notes or attachment fields", async () => {
   const id = "34";
+  const customerId = publicId("201");
   const areas = [
     "master-data",
     "scope",
@@ -404,7 +405,7 @@ test("the offers table reads checked totals without opening private notes or att
     "contract-quantities",
   ].map((facet) => commercialCollection(id, facet));
   const unrelated = commercialCollection("35", "master-data");
-  const tenant = await protectedTenant([...areas, unrelated]);
+  const tenant = await protectedTenant([...areas, unrelated, CUSTOMER_COLLECTION]);
   const rows = splitCommercialRows(id, [
     row("commercial_cases", {
       id: "100",
@@ -416,6 +417,7 @@ test("the offers table reads checked totals without opening private notes or att
       net_amount: "123456.78",
       notes: "Interner Kalkulationsansatz",
       project_id: "43",
+      customer_id: "201",
       scope_item_ids: "[]",
     }),
     row("commercial_documents", {
@@ -455,10 +457,12 @@ test("the offers table reads checked totals without opening private notes or att
   }, tenant.identity.signingKey.privateKey);
 
   const documentReads = [];
+  const totalsStarted = Promise.withResolvers();
   const query = tenant.client.query;
   tenant.client.query = async (path, input, options) => {
     if (path === "zerotrust.documents.get") {
       documentReads.push(input);
+      totalsStarted.resolve(true);
       return [structuredClone(head), null];
     }
     return query(path, input, options);
@@ -466,7 +470,28 @@ test("the offers table reads checked totals without opening private notes or att
   const store = createProtectedCommercial(
     tenant.client,
     new AbortController().signal,
-    unusedDependency,
+    async () => ({
+      async customerNames(ids) {
+        expect(ids).toEqual([customerId]);
+
+        const deadline = Promise.withResolvers();
+        const timer = setTimeout(
+          () => deadline.resolve(false),
+          fixtureTimeout(5_000),
+        );
+        try {
+          const started = await Promise.race([
+            totalsStarted.promise,
+            deadline.promise,
+          ]);
+          expect(started).toBe(true);
+        } finally {
+          clearTimeout(timer);
+        }
+
+        return new Map([[customerId, "Verwaltung Süd"]]);
+      },
+    }),
     unusedDependency,
     duckDriver,
   );
@@ -475,7 +500,6 @@ test("the offers table reads checked totals without opening private notes or att
     expect(
       await store.query("commercial.cases.overview", {
         kind: "sales",
-        search: "Nordflügel",
       }),
     ).toEqual([
       {
@@ -485,7 +509,7 @@ test("the offers table reads checked totals without opening private notes or att
         projectId: "1b",
         kind: "offer",
         status: "draft",
-        customerName: null,
+        customerName: "Verwaltung Süd",
         counterpartyName: null,
         currency: "EUR",
         netAmount: "123456.78",
@@ -512,7 +536,7 @@ test("the offers table reads checked totals without opening private notes or att
   } finally {
     store.close();
   }
-});
+}, fixtureTimeout(30_000));
 
 test("offer overview opens only linked customer records and still searches by their names", async () => {
   const area = commercialCollection("34", "master-data");
