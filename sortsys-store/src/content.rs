@@ -20,6 +20,7 @@ use crate::{
 };
 
 const PAGE_SIZE: usize = 32;
+const COLLECTIONS_PER_STEP: usize = 16;
 const VALUE_BUDGET: usize = 4 * 1024 * 1024;
 const PREPARATIONS: &str = "zt-content-preparations";
 const OPERATIONS: &str = "zt-content-preparation-operations";
@@ -304,8 +305,9 @@ impl Source {
         &self,
         collection: &str,
         after: Option<String>,
-    ) -> Result<Vec<MetadataRecord>, StoreError> {
-        let mut page = metadata::scan(
+        limit: usize,
+    ) -> Result<metadata::RecordPage, StoreError> {
+        metadata::scan(
             &self.connection,
             "source",
             &metadata::ScanRequest {
@@ -314,25 +316,9 @@ impl Source {
                 prefix: None,
                 after,
                 version: None,
-                limit: Some(PAGE_SIZE),
+                limit: Some(limit),
             },
-        )?
-        .records;
-        let mut bytes = 0;
-        let mut count = 0;
-        for row in &page {
-            let size = row.value.as_ref().ok_or(StoreError::Integrity)?.len();
-            if size > sortsys_zerotrust::metadata::MAX_RECORD_BYTES {
-                return Err(StoreError::Integrity);
-            }
-            if count > 0 && bytes + size > VALUE_BUDGET {
-                break;
-            }
-            bytes += size;
-            count += 1;
-        }
-        page.truncate(count);
-        Ok(page)
+        )
     }
 
     fn ciphertexts(&self, after: Option<&str>) -> Result<Vec<(String, String)>, StoreError> {
@@ -359,6 +345,77 @@ impl Source {
             result.push((id, data));
         }
         Ok(result)
+    }
+}
+
+impl CopyPlan {
+    fn copy_metadata(
+        &self,
+        state: &mut Preparation,
+        batch: &mut MetadataBatch,
+    ) -> Result<(), StoreError> {
+        let mut bytes = 0;
+        let mut rows = 0;
+
+        // The closed snapshot is immutable. Reuse the page's continuation to
+        // pack small collections together without writing an empty cursor step.
+        'collections: for _ in 0..COLLECTIONS_PER_STEP {
+            let Some(collection) = self.input.collections.get(state.collection) else {
+                state.phase = Phase::Ciphertexts;
+                state.collection = 0;
+                state.after = None;
+                break;
+            };
+            let sample = RecordKey {
+                collection: collection.clone(),
+                key: "sample".into(),
+            };
+            let source = namespace_record(&sample, &self.input.source_number)
+                .map_err(|_| StoreError::Integrity)?;
+            let target =
+                namespace_record(&sample, &self.input.number).map_err(|_| StoreError::Integrity)?;
+            let page =
+                self.source
+                    .rows(&source.collection, state.after.clone(), PAGE_SIZE - rows)?;
+
+            for row in page.records {
+                let value = row.value.ok_or(StoreError::Integrity)?;
+                if value.len() > sortsys_zerotrust::metadata::MAX_RECORD_BYTES {
+                    return Err(StoreError::Integrity);
+                }
+                if bytes + value.len() > VALUE_BUDGET {
+                    break 'collections;
+                }
+
+                bytes += value.len();
+                rows += 1;
+                state.after = Some(row.record.key.clone());
+                let record = RecordKey {
+                    collection: target.collection.clone(),
+                    key: row.record.key,
+                };
+                batch.checks.push(RecordCheck {
+                    record: record.clone(),
+                    version: None,
+                });
+                batch.puts.push(RecordPut { record, value });
+            }
+
+            if page.after.is_some() {
+                break;
+            }
+            state.collection += 1;
+            state.after = None;
+            if rows == PAGE_SIZE || bytes == VALUE_BUDGET {
+                break;
+            }
+        }
+
+        state.records = zero_revision(&state.records)?
+            .checked_add(rows as i64)
+            .ok_or(StoreError::Integrity)?
+            .to_string();
+        Ok(())
     }
 }
 
@@ -530,49 +587,7 @@ pub(crate) fn advance(
                     state.phase = Phase::Metadata;
                 }
             }
-            Phase::Metadata => {
-                if let Some(collection) = input.collections.get(state.collection) {
-                    let sample = RecordKey {
-                        collection: collection.clone(),
-                        key: "sample".into(),
-                    };
-                    let source_collection = namespace_record(&sample, &input.source_number)
-                        .map_err(|_| StoreError::Integrity)?
-                        .collection;
-                    let rows = source.rows(&source_collection, state.after.clone())?;
-                    if rows.is_empty() {
-                        state.collection += 1;
-                        state.after = None;
-                    } else {
-                        state.records = zero_revision(&state.records)?
-                            .checked_add(rows.len() as i64)
-                            .ok_or(StoreError::Integrity)?
-                            .to_string();
-                        state.after = rows.last().map(|row| row.record.key.clone());
-                        let target_collection = namespace_record(&sample, &input.number)
-                            .map_err(|_| StoreError::Integrity)?
-                            .collection;
-                        for row in rows {
-                            let record = RecordKey {
-                                collection: target_collection.clone(),
-                                key: row.record.key,
-                            };
-                            batch.checks.push(RecordCheck {
-                                record: record.clone(),
-                                version: None,
-                            });
-                            batch.puts.push(RecordPut {
-                                record,
-                                value: row.value.ok_or(StoreError::Integrity)?,
-                            });
-                        }
-                    }
-                } else {
-                    state.phase = Phase::Ciphertexts;
-                    state.collection = 0;
-                    state.after = None;
-                }
-            }
+            Phase::Metadata => plan.copy_metadata(&mut state, &mut batch)?,
             Phase::Ciphertexts => {
                 let rows = source.ciphertexts(state.after.as_deref())?;
                 for (id, data) in &rows {
@@ -870,6 +885,63 @@ mod tests {
             })
             .unwrap();
         assert_eq!(blobs, 3);
+    }
+
+    #[test]
+    fn metadata_copy_resumes_within_a_collection_when_a_shared_batch_fills() {
+        let fixture = Fixture::new();
+        let mut records = vec![
+            (key("opening", "first"), "vec".repeat(64 * 1024)),
+            (key("closing", "last"), "opaque last record".into()),
+        ];
+        for number in 0..5 {
+            records.push((
+                key("wide", &format!("row-{number}")),
+                "x".repeat(960 * 1024),
+            ));
+        }
+        fixture.put(records.clone());
+        fixture.put(vec![(key("unselected", "one"), "not copied".into())]);
+
+        let selection = fixture.snapshot("shared-batch-source");
+        let source = fixture.open(&selection);
+        let mut request = input(&source, selection.clone(), "shared-batch-copy");
+        request.collections = vec!["opening".into(), "wide".into(), "closing".into()];
+        let plan = source.plan(request.clone()).unwrap();
+
+        assert_eq!(
+            advance(&fixture.connection, "tenant", &plan).unwrap().phase,
+            Phase::Reset
+        );
+        assert_eq!(
+            advance(&fixture.connection, "tenant", &plan).unwrap().phase,
+            Phase::Metadata
+        );
+        let partial = advance(&fixture.connection, "tenant", &plan).unwrap();
+        assert_eq!(partial.phase, Phase::Metadata);
+        assert_eq!(partial.collection, 1);
+        assert_eq!(partial.records, "5");
+        assert_eq!(partial.after.as_deref(), Some("row-3"));
+        assert!(
+            fixture
+                .read(namespace_record(&key("wide", "row-4"), "1").unwrap())
+                .is_none()
+        );
+        drop(plan);
+
+        let reopened = fixture.open(&selection).plan(request).unwrap();
+        let ready = complete(&fixture, &reopened);
+        assert_eq!(ready.records, records.len().to_string());
+        for (record, value) in records {
+            let target = namespace_record(&record, "1").unwrap();
+            assert_eq!(fixture.read(target).as_deref(), Some(value.as_str()));
+        }
+        assert!(
+            fixture
+                .read(namespace_record(&key("unselected", "one"), "1").unwrap())
+                .is_none()
+        );
+        assert!(fixture.read(head_key()).is_none());
     }
 
     #[test]
