@@ -69,7 +69,6 @@ type ActivityOwner = {
 };
 type Candidate = ActivityCandidate;
 type ActivityCache = {
-  stamp: string;
   prefixes: string;
   head: string;
   total: string;
@@ -84,6 +83,7 @@ class ChangedAccess extends Error {}
 const MAX_SEQUENCE = 9223372036854775807n;
 const HISTORY_PAGE_SIZE = 16;
 const MAX_HISTORY_PAGES = 10_000;
+const MAX_INACTIVE_ACTIVITY_GROUPS = 256;
 
 function parseHistoryCounter(value: unknown): bigint {
   if (typeof value !== "string" || !/^(?:0|[1-9]\d{0,18})$/.test(value)) {
@@ -224,7 +224,8 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
   }
   let closed = false;
   let accessEpoch = 0;
-  let cache: ActivityCache | null = null;
+  let cacheStamp: string | undefined;
+  const caches = new Map<"all" | "tool", ActivityCache>();
   const queries = createSerialQueue();
   const assertActive = () => {
     signal.throwIfAborted();
@@ -234,8 +235,9 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
   };
   async function query(input: unknown): Promise<Activity[]> {
     const request = activityInput(input);
+    const scope = request.resourceType === "tool" ? "tool" : "all";
     let prefixes = ACTIVITY_PREFIXES;
-    if (request.resourceType === "tool") {
+    if (scope === "tool") {
       prefixes = [
         request.resourceId ? `tool:${request.resourceId}:` : "tool:",
         // The tool reference is encrypted inside each booking. Keep these
@@ -245,6 +247,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
       ];
     }
     const prefixKey = JSON.stringify(prefixes);
+    const previous = caches.get(scope);
     const expectedAccessEpoch = accessEpoch;
     const assertCurrentAccess = () => {
       assertActive();
@@ -272,7 +275,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     // but verify the page's access version before any packet can be opened.
     const [context, coldPage] = await Promise.all([
       protectedCollections(client, signal),
-      cache?.prefixes === prefixKey ? null : readFirstPage(null),
+      previous?.prefixes === prefixKey ? null : readFirstPage(null),
     ]);
     assertCurrentAccess();
 
@@ -795,11 +798,26 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     }
     try {
       const stamp = context.activityStamp();
-      if (cache?.stamp !== stamp || cache.prefixes !== prefixKey) {
-        cache = null;
+      if (cacheStamp !== stamp) {
+        caches.clear();
+        cacheStamp = stamp;
       }
 
-      const first = coldPage ?? (await readFirstPage(cache));
+      // Keep the overview and one tool timeline warm, without holding on to a
+      // large paginated timeline after leaving it.
+      const inactive = scope === "tool" ? "all" : "tool";
+      const inactiveSize = caches.get(inactive)?.groups.size ?? 0;
+      if (inactiveSize > MAX_INACTIVE_ACTIVITY_GROUPS) {
+        caches.delete(inactive);
+      }
+
+      let state = caches.get(scope);
+      if (state && state.prefixes !== prefixKey) {
+        caches.delete(scope);
+        state = undefined;
+      }
+
+      const first = coldPage ?? (await readFirstPage(state ?? null));
       assertCurrentAccess();
       const firstEdge = validatePage(first, null, null);
       if (!first.unchanged) {
@@ -808,8 +826,7 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
 
         const groups = new Map<string, Candidate>();
         appendActivityFacets(groups, initial);
-        cache = {
-          stamp,
+        state = {
           prefixes: prefixKey,
           head: first.current,
           total: first.total,
@@ -820,17 +837,16 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           actorNames: new Map(),
           complete: first.after === null,
         };
-      } else {
-        const matchesCache =
-          cache !== null &&
-          cache.head === first.current &&
-          cache.total === first.total;
-        if (!matchesCache || first.changes.length > 0) {
-          throw new InvalidProtectedData();
-        }
+        caches.set(scope, state);
+      } else if (
+        !state ||
+        state.head !== first.current ||
+        state.total !== first.total ||
+        first.changes.length > 0
+      ) {
+        throw new InvalidProtectedData();
       }
 
-      const state = cache!;
       for (let pages = 0; pages < MAX_HISTORY_PAGES; pages++) {
         const result = selectActivity(state.groups.values(), request);
         const lastRequested = result.at(-1)?.item;
@@ -884,12 +900,12 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
     close() {
       closed = true;
       accessEpoch++;
-      cache = null;
+      caches.clear();
     },
     async refresh() {
       assertActive();
       accessEpoch++;
-      cache = null;
+      caches.clear();
     },
     async mutate() {
       throw new InvalidProtectedData();
@@ -903,10 +919,14 @@ export function createProtectedActivity(client: Client, signal: AbortSignal) {
           try {
             return await query(input);
           } catch (error) {
-            if (!(error instanceof ChangedAccess) || attempt === 2) {
+            if (!(error instanceof ChangedAccess)) {
               throw error;
             }
-            cache = null;
+
+            caches.clear();
+            if (attempt === 2) {
+              throw error;
+            }
           }
         }
         throw new InvalidProtectedData();

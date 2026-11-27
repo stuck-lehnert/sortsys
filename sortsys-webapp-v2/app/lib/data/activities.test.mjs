@@ -385,12 +385,41 @@ test("a tool timeline excludes unrelated history and keeps its cache separate fr
       limit: 50,
     });
     expect(complete.some((item) => item.resourceType === "user")).toBe(true);
+
+    f.calls.length = 0;
     const again = await f.store.query("personalization.activity.list", {
       resourceType: "tool",
       resourceId: "34",
       limit: 50,
     });
     expect(again).toEqual(selected);
+    expect(
+      await f.store.query("personalization.activity.list", { limit: 50 }),
+    ).toEqual(complete);
+
+    const warmReads = f.calls.filter(
+      (call) => call.path === "zerotrust.history.list",
+    );
+    const head = f.history.at(-1).sequence;
+    expect(warmReads.map(({ input }) => [input.known, input.knownTotal])).toEqual([
+      [head, "2"],
+      [head, String(f.history.length)],
+    ]);
+    expect(
+      f.calls.filter(({ path }) => path === "zerotrust.history.get"),
+    ).toHaveLength(0);
+
+    await f.revokeArea(master.scope, master.facet);
+    await f.revokeArea(booking.scope, booking.facet);
+    for (const input of [{}, { resourceType: "tool", resourceId: "34" }]) {
+      const afterRevocation = await f.store.query(
+        "personalization.activity.list",
+        input,
+      );
+      expect(
+        afterRevocation.some(({ resourceType }) => resourceType === "tool"),
+      ).toBe(false);
+    }
   } finally {
     f.store.close();
   }
