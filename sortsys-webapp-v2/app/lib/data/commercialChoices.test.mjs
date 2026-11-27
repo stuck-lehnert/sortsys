@@ -6,9 +6,10 @@ import { commercialCollection } from "./commercialAreas";
 import { splitCommercialRows } from "./commercialData";
 import { row } from "./testing/businessRow.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
+import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { announceDataChanges } from "./runtime/changes";
-import { CUSTOMER_COLLECTION } from "./addressBook";
+import { createProtectedAddressBook, CUSTOMER_COLLECTION } from "./addressBook";
 import { createBusinessClient } from "./businessClient";
 
 afterEach(() => lockCryptoSession());
@@ -283,6 +284,134 @@ test("the offers table reads checked totals without opening private notes or att
     store.close();
   }
 });
+
+test("offer overview opens only linked customer records and still searches by their names", async () => {
+  const area = commercialCollection("34", "master-data");
+  const older = commercialCollection("35", "master-data");
+  const tenant = await protectedTenant([area, older, CUSTOMER_COLLECTION]);
+  const parts = splitCommercialRows("34", [
+    row("commercial_cases", {
+      id: "100",
+      customer_id: "2",
+      kind: "offer",
+      status: "draft",
+      title: "Innenausbau",
+      reference: "ANG-26-100",
+      created_at: "2026-11-20T12:00:00Z",
+      scope_item_ids: "[]",
+    }),
+  ]);
+  await tenant.seed(area, `${area.prefix}case`, parts.get("master-data"));
+
+  const olderParts = splitCommercialRows("35", [
+    row("commercial_cases", {
+      id: "101",
+      customer_id: "3",
+      kind: "offer",
+      status: "draft",
+      title: "Fassade",
+      reference: "ANG-26-101",
+      created_at: "2026-11-19T12:00:00Z",
+      scope_item_ids: "[]",
+    }),
+  ]);
+  await tenant.seed(older, `${older.prefix}case`, olderParts.get("master-data"));
+
+  const customers = [
+    ["2", "Hausverwaltung Nord"],
+    ["3", "Hausverwaltung Süd"],
+    ["4", "Fremdverwaltung"],
+  ];
+  for (const [id, name] of customers) {
+    await tenant.seed(CUSTOMER_COLLECTION, CUSTOMER_COLLECTION.prefix + id, {
+      format: "sortsys-address-v1",
+      kind: "customers",
+      row: row("customers", {
+        id,
+        name,
+        phone_numbers: "[]",
+        email_addresses: "[]",
+      }),
+      links: [],
+    });
+  }
+
+  const signal = new AbortController().signal;
+  const directory = createProtectedAddressBook(tenant.client, signal, duckDriver);
+  const store = createProtectedCommercial(
+    tenant.client,
+    signal,
+    async () => directory,
+    unusedDependency,
+    duckDriver,
+  );
+  try {
+    const search = (search) =>
+      store.query("commercial.cases.overview", {
+        kind: "sales",
+        search,
+        limit: 1n,
+      });
+    const customerSelections = () =>
+      tenant.calls.flatMap(({ path, input }) => {
+        if (path === "zerotrust.objects.getMany" && input.domain === CUSTOMER_COLLECTION.domain)
+          return input.ids;
+        if (path === "zerotrust.objects.get" && input.id.startsWith(CUSTOMER_COLLECTION.prefix))
+          return [input.id];
+        return [];
+      });
+    const firstPage = await search(undefined);
+    expect(firstPage.map(({ id, customerName }) => [id, customerName])).toEqual([
+      ["34", "Hausverwaltung Nord"],
+    ]);
+    expect(customerSelections()).toEqual(["customer:2"]);
+
+    const offers = await search("verwaltung Süd");
+    expect(offers.map(({ id, customerName }) => [id, customerName])).toEqual([
+      ["35", "Hausverwaltung Süd"],
+    ]);
+    expect(new Set(customerSelections())).toEqual(
+      new Set(["customer:2", "customer:3"]),
+    );
+
+    const pages = tenant.calls.flatMap(({ path, input }) => {
+      if (path === "zerotrust.objects.pages") return input.selections;
+      if (path === "zerotrust.objects.list") return [input];
+      return input?.pages?.selections ?? [];
+    });
+    const customerPages = pages.filter(
+      ({ domain, headOnly }) => domain === CUSTOMER_COLLECTION.domain && !headOnly,
+    );
+    expect(customerPages).toEqual([]);
+
+    const [policy] = await tenant.client.query("zerotrust.policy.get");
+    const { signature, ...unsigned } = policy;
+    const revoked = await signPolicy({
+      ...unsigned,
+      version: "3",
+      rules: unsigned.rules.filter((rule) => rule.scope !== CUSTOMER_COLLECTION.scope),
+    }, tenant.authorityKey.privateKey);
+    const query = tenant.client.query;
+    tenant.client.query = (path, input, options) =>
+      path === "zerotrust.policy.get"
+        ? Promise.resolve([revoked, null])
+        : query(path, input, options);
+
+    tenant.calls.length = 0;
+    announceDataChanges(tenant.client, new Set([CUSTOMER_COLLECTION.domain]), {
+      control: true,
+    });
+    expect(await search("verwaltung Süd")).toEqual([]);
+    const remaining = await search("Innenausbau");
+    expect(remaining.map(({ id, customerName }) => [id, customerName])).toEqual([
+      ["34", null],
+    ]);
+    expect(customerSelections()).toEqual([]);
+  } finally {
+    store.close();
+    directory.close();
+  }
+}, fixtureTimeout(30_000));
 
 test("concurrent searches share one running case inventory and the next search observes a fresh read", async () => {
   const areas = ["34", "35"].map((id) =>

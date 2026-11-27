@@ -505,6 +505,25 @@ export function createProtectedAddressBook(
     runtime = lease.runtime;
   return {
     close: lease.close,
+    async customerNames(
+      ids: readonly string[],
+    ): Promise<ReadonlyMap<string, string>> {
+      lease.live();
+
+      const selected = addressObjects("customers", ids);
+      const names = await runtime.read([selected], (view) => {
+        const result = new Map<string, string>();
+        for (const { value } of view.documents(selected)) {
+          if (value.row) {
+            const { id, name } = value.row.values;
+            result.set(publicId(id), name as string);
+          }
+        }
+        return result;
+      });
+      lease.live();
+      return names;
+    },
     async references(
       kind: Kind,
       ids: string[],

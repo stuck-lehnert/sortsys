@@ -642,46 +642,66 @@ export function createProtectedCommercial(
     live();
     return values;
   }
+  function visibleCustomerId(
+    customerId: string | null,
+    visible: ReadonlySet<string>,
+  ) {
+    return visible.has(CUSTOMER_COLLECTION.domain) ? customerId : null;
+  }
+
   async function labels(
-    snapshot: Pick<CaseSnapshot, "values" | "visible">,
+    current: ReturnType<typeof wireCommercialCase>,
+    visible: ReadonlySet<string>,
     projectTitles?: Map<string, string>,
     customerNames?: ReadonlyMap<string, string>,
   ) {
-    const { values, visible } = snapshot;
-    const current = wireCommercialCase(values);
-    let customerName: string | undefined;
-    if (current.customerId && visible.has(CUSTOMER_COLLECTION.domain)) {
+    let customerName: string | null = null;
+    const customerId = visibleCustomerId(current.customerId, visible);
+
+    if (customerId) {
       if (customerNames) {
-        if (!customerNames.has(current.customerId))
-          throw new InvalidProtectedData();
-        customerName = customerNames.get(current.customerId);
+        const name = customerNames.get(customerId);
+        if (name === undefined) throw new InvalidProtectedData();
+
+        customerName = name;
       } else {
         const customer = (await (
           await directory()
         ).query("customers.get", {
-          id: current.customerId,
+          id: customerId,
         })) as QueryResult<"customers.get">;
         customerName = customer.name;
       }
     }
-    const project =
-      !projectTitles &&
+
+    let projectTitle: string | null = null;
+
+    if (
       current.projectId &&
       visible.has(projectCollection(current.projectId).domain)
-        ? ((await (
-            await projects()
-          ).query("projects.get", {
-            id: current.projectId,
-          })) as QueryResult<"projects.get">)
-        : null;
-    return wireCommercialCase(values, {
+    ) {
+      if (projectTitles) {
+        projectTitle = projectTitles.get(current.projectId) ?? null;
+      } else {
+        const store = await projects();
+        const project = (await store.query("projects.get", {
+          id: current.projectId,
+        })) as QueryResult<"projects.get">;
+        projectTitle = project.title;
+      }
+    }
+
+    return {
+      ...current,
       customerName,
-      projectTitle: current.projectId
-        ? (projectTitles?.get(current.projectId) ?? project?.title)
-        : null,
-    });
+      projectTitle,
+    };
   }
   type ListScope = { projectId?: unknown; kind?: unknown; overview?: boolean };
+  type ListCase = {
+    basis: CaseSnapshot;
+    current: ReturnType<typeof wireCommercialCase>;
+  };
   const pendingListViews = pendingReads(
     (_path, input) => readListView(input as ListScope),
     // Signed snapshots remain internal. Each returned public row is copied.
@@ -708,42 +728,42 @@ export function createProtectedCommercial(
   });
   signal.addEventListener("abort", stopListChanges, { once: true });
 
-  async function readListView(filter: ListScope) {
-    const all = await list(filter);
-    const projectIds = [
-      ...new Set(
-        all.flatMap((basis) => {
-          const id = wireCommercialCase(basis.values).projectId;
-          return id && basis.visible.has(projectCollection(id).domain)
-            ? [id]
-            : [];
-        }),
-      ),
-    ];
-    const relatedProjects = !filter.overview && projectIds.length
-      ? await (await projects()).getMany(projectIds)
-      : [];
-    const titles = new Map(
-      relatedProjects.map((project) => [project.id, project.title]),
-    );
-    const needsCustomers = all.some(
-      (basis) =>
-        wireCommercialCase(basis.values).customerId &&
-        basis.visible.has(CUSTOMER_COLLECTION.domain),
-    );
-    const customers = needsCustomers
-      ? ((await (
-          await directory()
-        ).query("customers.list", {})) as QueryResult<"customers.list">)
-      : [];
-    const customerNames = new Map(
-      customers.map((customer) => [customer.id, customer.name]),
-    );
-    const values = await Promise.all(
-      all.map((rows) => labels(rows, titles, customerNames)),
-    );
+  async function readListView(filter: ListScope): Promise<ListCase[]> {
+    const cases = (await list(filter)).map((basis) => {
+      const current = wireCommercialCase(basis.values);
+      if (current.id !== basis.id) throw new InvalidProtectedData();
+
+      return { basis, current };
+    });
     live();
-    return { all, values };
+    return cases;
+  }
+
+  async function listCustomerNames(cases: ListCase[]) {
+    const ids = new Set<string>();
+    for (const { current: { customerId }, basis } of cases) {
+      const visibleId = visibleCustomerId(customerId, basis.visible);
+      if (visibleId) ids.add(visibleId);
+    }
+    if (!ids.size) return new Map<string, string>();
+
+    const names = await (await directory()).customerNames([...ids]);
+    if ([...ids].some((id) => !names.has(id))) throw new InvalidProtectedData();
+
+    return names;
+  }
+
+  async function listProjectTitles(cases: ListCase[]) {
+    const ids = new Set<string>();
+    for (const { current: { projectId }, basis } of cases) {
+      if (projectId && basis.visible.has(projectCollection(projectId).domain)) {
+        ids.add(projectId);
+      }
+    }
+    if (!ids.size) return new Map<string, string>();
+
+    const related = await (await projects()).getMany([...ids]);
+    return new Map(related.map(({ id, title }) => [id, title]));
   }
 
   async function listView(filter: ListScope) {
@@ -2641,28 +2661,26 @@ export function createProtectedCommercial(
             throw new InvalidProtectedData();
           }
         }
-        const { all, values } = await listView({ ...data, overview });
+        const rows = (await listView({ ...data, overview })).filter(
+          ({ current }) => matchesListScope(current, data) &&
+            (data.status == null || current.status === data.status),
+        );
         const search =
           (data.search as string | undefined)?.trim().toLocaleLowerCase() ?? "";
-        const filtered = values
-          .filter((value) => {
-            if (!matchesListScope(value, data)) return false;
-            if (data.status != null && value.status !== data.status) {
-              return false;
-            }
-            if (!search) {
-              return true;
-            }
-            const searchableFields = [
-              value.title,
-              value.reference,
-              value.customerName,
-            ];
-            return searchableFields.some((text) =>
-              text?.toLocaleLowerCase().includes(search),
-            );
-          })
-          .sort((left, right) => {
+
+        // A customer-name search considers matching-scope cases on all pages.
+        // Browsing without search needs names only for the returned page.
+        const searchNames = search ? await listCustomerNames(rows) : undefined;
+        const matching = searchNames ? rows.filter(({ current, basis }) => {
+          const id = visibleCustomerId(current.customerId, basis.visible);
+          const name = id ? searchNames.get(id) : undefined;
+          return [current.title, current.reference, name].some((text) =>
+            text?.toLocaleLowerCase().includes(search),
+          );
+        }) : rows;
+
+        const ordered = matching
+          .sort(({ current: left }, { current: right }) => {
             const dateOrder =
               Date.parse(right.createdAt) - Date.parse(left.createdAt);
             if (dateOrder !== 0) {
@@ -2687,20 +2705,25 @@ export function createProtectedCommercial(
         if (limit > maximum) {
           limit = maximum;
         }
-        // Only open native documents for cases on this page. Filtering and
-        // ordering use metadata and do not require recalculating every case.
-        const snapshotsById = new Map(all.map((basis) => [basis.id, basis]));
-        const page = filtered.slice(offset, offset + Number(limit));
+        const page = ordered.slice(offset, offset + Number(limit));
+        const [customerNames, titles] = await Promise.all([
+          searchNames ?? listCustomerNames(page),
+          listProjectTitles(overview ? [] : page),
+        ]);
+        live();
+
         let stores: ReturnType<typeof commercialDocumentStores> | undefined;
         const openStore = async (scope: string) => {
           stores ??= commercialDocumentStores(client, signal);
           return (await stores)(scope);
         };
-        return mapConcurrent(page, 4, async (value) => {
-          const basis = snapshotsById.get(value.id);
-          if (!basis) {
-            throw new InvalidProtectedData();
-          }
+        return mapConcurrent(page, 4, async ({ basis, current }) => {
+          const value = await labels(
+            current,
+            basis.visible,
+            titles,
+            customerNames,
+          );
           const calculated = await calculatedCaseRows(
             basis,
             openStore,
@@ -2755,7 +2778,7 @@ export function createProtectedCommercial(
         "all",
         documentHeads,
       );
-      const current = await labels({ values, visible: basis.visible });
+      const current = await labels(wireCommercialCase(values), basis.visible);
       const documents = values
         .filter((row) => row.table === "commercial_documents")
         .map((row) => {
