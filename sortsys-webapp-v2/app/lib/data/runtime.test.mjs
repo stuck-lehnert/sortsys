@@ -737,6 +737,50 @@ test("a cold directory drops a captured result when its area is invalidated", as
   }
 }, 15000);
 
+test("a warm selected directory still checks its area, IDs and access", async () => {
+  const { runtime, calls, seed, deny } = fixture();
+  const selection = {
+    model: defineDataModel({
+      name: "directory-label",
+      tables: [],
+      decode: (value) => value,
+    }),
+    area: mainArea,
+    ids: ["main:1"],
+  };
+  const read = (request = selection) =>
+    runtime.read(
+      [request],
+      (view) => view.documents(request).map(({ value }) => value.label),
+      undefined,
+      { batchDirectory: true },
+    );
+  seed(mainArea, "main:1", { label: "Vorher" });
+
+  try {
+    expect(await read()).toEqual(["Vorher"]);
+    expect(await read()).toEqual(["Vorher"]);
+    expect(calls.selected).toBe(1);
+
+    for (const request of [
+      { ...selection, ids: ["private:1"] },
+      { ...selection, ids: ["main:1", "main:1"] },
+      { ...selection, area: { ...mainArea, scope: "different" } },
+      { ...selection, area: { ...mainArea, facet: "procurement" } },
+    ]) {
+      await expect(read(request)).rejects.toBeInstanceOf(InvalidProtectedData);
+    }
+    expect(calls.selected).toBe(1);
+
+    deny(mainArea.domain);
+    runtime.revalidate(new Set([mainArea.domain]));
+    await expect(read()).rejects.toBeInstanceOf(InvalidProtectedData);
+    expect(calls.selected).toBe(1);
+  } finally {
+    await runtime.close();
+  }
+});
+
 test("a duplicate hint for an already invalidated area does not restart an unrelated load", async () => {
   const current = fixture();
   const original = current.storage.open;

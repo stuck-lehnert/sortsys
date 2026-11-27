@@ -41,6 +41,16 @@ export type DataRequest<T = unknown> = {
   area: Collection;
   ids?: readonly string[];
 };
+
+function validSelection({ area, ids }: DataRequest): boolean {
+  return (
+    ids === undefined ||
+    (ids.length <= 40_001 &&
+      new Set(ids).size === ids.length &&
+      ids.every((id) => id.startsWith(area.prefix)))
+  );
+}
+
 export type DataVersion = {
   domain: string;
   id: string;
@@ -619,10 +629,7 @@ export class DataRuntime {
     work: (view: DataView) => T | Promise<T>,
   ): Promise<T> {
     this.live();
-    if (
-      requests.every((request) => request.ids === undefined) &&
-      this.hasCurrent(requests)
-    ) {
+    if (requests.every(validSelection) && this.hasCurrent(requests)) {
       // A warm directory uses verified RAM data. It can finish while another
       // area is being fetched or materialized in the shared SQL database.
       const generation = this.generation;
@@ -710,6 +717,8 @@ export class DataRuntime {
       return (
         !this.stale.has(key) &&
         resource?.request.model === request.model &&
+        resource.request.area.scope === request.area.scope &&
+        resource.request.area.facet === request.area.facet &&
         (resource.complete ||
           (request.ids !== undefined &&
             request.ids.every((id) => resource.known.has(id))))
@@ -725,13 +734,9 @@ export class DataRuntime {
     for (const request of input) {
       const key = dataAreaKey(request.area);
       const previous = merged.get(key);
-      if (
-        request.ids &&
-        (request.ids.length > 40_001 ||
-          new Set(request.ids).size !== request.ids.length ||
-          request.ids.some((id) => !id.startsWith(request.area.prefix)))
-      )
-        throw new InvalidProtectedData();
+
+      if (!validSelection(request)) throw new InvalidProtectedData();
+
       if (
         previous &&
         (previous.model !== request.model ||

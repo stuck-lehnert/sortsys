@@ -340,22 +340,28 @@ export function readLinkedContacts(
 
   const selected = addressObjects("contacts", ids);
 
-  return runtime.read([parent, selected], (view) => {
-    // The contact selection belongs to the verified parent head. A changed
-    // customer or project cannot use the links chosen by the first read.
-    if (view.head(parent).sequence !== sequence)
-      throw new ProtectedWriteConflict();
+  return runtime.read(
+    [parent, selected],
+    (view) => {
+      // The contact selection belongs to the verified parent head. A changed
+      // customer or project cannot use the links chosen by the first read.
+      if (view.head(parent).sequence !== sequence)
+        throw new ProtectedWriteConflict();
 
-    const contacts: Contact[] = [];
-    for (const { value } of view.documents(selected)) {
-      if (!value.row) continue;
+      const contacts: Contact[] = [];
+      for (const { value } of view.documents(selected)) {
+        if (!value.row) continue;
 
-      const contact = wire(value);
-      if ("name" in contact) throw new InvalidProtectedData();
-      contacts.push(contact);
-    }
-    return contacts.sort(compare);
-  });
+        const contact = wire(value);
+        if ("name" in contact) throw new InvalidProtectedData();
+        contacts.push(contact);
+      }
+
+      return contacts.sort(compare);
+    },
+    undefined,
+    { batchDirectory: true },
+  );
 }
 
 const addressSearch = {

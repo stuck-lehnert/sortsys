@@ -123,9 +123,12 @@ test("project contacts load by signed link and do not return stale selections", 
   }
 }, 120_000);
 
-test("the warm project directory and detail run while another projection holds the runtime queue", async () => {
+test("the warm project directory, detail and signed contact selection do not wait for another projection", async () => {
   const area = projectCollection("2");
-  const { client, seed } = await protectedTenant([area], () => ["read"]);
+  const { client, calls, seed } = await protectedTenant(
+    [area, CONTACT_COLLECTION],
+    () => ["read"],
+  );
   const signal = new AbortController().signal;
   const lease = acquireDataRuntime(client, signal, duckDriver);
   const projects = createProtectedProjects(client, signal, async () => {
@@ -135,19 +138,37 @@ test("the warm project directory and detail run while another projection holds t
   const entered = Promise.withResolvers();
   const release = Promise.withResolvers();
   const list = () => projects.query("projects.list", { orderBy: "activity" });
+  const contacts = () =>
+    projects.query("projects.contacts.list", { projectId: "2" });
   let holder;
+  let visible;
   let timeout;
 
   try {
     await seed(area, area.prefix, {
       format: "sortsys-project-v1",
       project: row("projects", { id: "2", title: "Sanierung" }),
-      contacts: [],
+      contacts: [
+        row("project_contacts", { project_id: "2", contact_id: "3", label: null }),
+      ],
+    });
+    await seed(CONTACT_COLLECTION, CONTACT_COLLECTION.prefix + "3", {
+      format: "sortsys-address-v1",
+      kind: "contacts",
+      row: row("contacts", {
+        id: "3",
+        last_name: "Auer",
+        phone_numbers: "[]",
+        email_addresses: "[]",
+      }),
+      links: [],
     });
 
     setReadableAreasConnection(client, true);
     const expected = await list();
+    const expectedContacts = await contacts();
     expect(expected.map(({ title }) => title)).toEqual(["Sanierung"]);
+    expect(expectedContacts.map(({ id }) => id)).toEqual(["3"]);
 
     holder = lease.runtime.read([], async () => {
       entered.resolve();
@@ -155,18 +176,28 @@ test("the warm project directory and detail run while another projection holds t
     });
     await entered.promise;
 
+    const rpcCount = calls.length;
     const deadline = new Promise((resolve) => {
       timeout = setTimeout(() => resolve("Blocked by unrelated projection"), 2000);
     });
-    const visible = Promise.all([
+
+    visible = contacts();
+    expect(await Promise.race([visible, deadline])).toEqual(expectedContacts);
+    expect(calls.slice(rpcCount).map(({ path }) => path)).toEqual([]);
+
+    visible = Promise.all([
       list(),
       projects.query("projects.get", { id: "2" }),
     ]);
-    expect(await Promise.race([visible, deadline])).toEqual([expected, expected[0]]);
+    expect(await Promise.race([visible, deadline])).toEqual([
+      expected,
+      expected[0],
+    ]);
   } finally {
     clearTimeout(timeout);
     release.resolve();
     await holder;
+    await visible?.catch(() => undefined);
     setReadableAreasConnection(client, false);
     projects.close();
     lease.close();
