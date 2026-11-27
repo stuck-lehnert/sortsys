@@ -16,7 +16,6 @@ import type { FileInspection } from "../fileInspection";
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import { createBusinessDatabase, type DuckDriver } from "./database";
 import {
-  protectedCollection,
   protectedCollections,
   required,
   type CollectionPageRequest,
@@ -40,7 +39,6 @@ import {
 import { prepareProjectGaebReplay } from "./projectGaebReplay";
 import { stockEnvelopeHash } from "./stockObjects";
 import { projectCollection, projectPayload } from "./projectData";
-import { readableProjectAreas } from "./projectAreas";
 import {
   loadFileContent,
   storeFileContents,
@@ -74,8 +72,8 @@ import {
   type FolderPayload,
 } from "./projectFileData";
 
-type Collection = Awaited<ReturnType<typeof protectedCollection>>;
 type Collections = Awaited<ReturnType<typeof protectedCollections>>;
+type Collection = ReturnType<Collections>;
 type Store = {
   collection: Collection;
   head: string;
@@ -334,14 +332,10 @@ export function createProtectedProjectFiles(
     // File-only editors must not receive the master-data key just to attach a
     // file. Check the private row and its head whenever that facet is readable;
     // otherwise this cross-facet business condition remains explicitly deferred.
-    if (
-      !(await readableProjectAreas(client, signal)).some(
-        (value) => value.domain === area.domain,
-      )
-    ) {
-      return null;
-    }
-    const linked = await protectedCollection(client, area, signal);
+    const access = await protectedCollections(client, signal, [area.domain]);
+    if (!access.readable(area)) return null;
+
+    const linked = access(area);
     try {
       const objects = await linked.read();
       if (

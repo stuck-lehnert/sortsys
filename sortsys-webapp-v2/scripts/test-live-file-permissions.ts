@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import type { Client } from "@sortsys/v2-client";
+import type { Client, MutateInput, QueryInput } from "@sortsys/v2-client";
 import {
   areaKey,
   bytes,
@@ -23,6 +23,7 @@ import {
   fileObject,
   filePayload,
 } from "../app/lib/data/projectFileData";
+import { projectCollection } from "../app/lib/data/projectData";
 import {
   protectedCollection,
   required,
@@ -36,6 +37,48 @@ import {
   sameOfficeRecipients,
 } from "../app/lib/data/officeRecipients";
 
+function observeProjectReference(base: Client, projectId: string) {
+  const domain = projectCollection(projectId).domain;
+  const selections: (string[] | undefined)[] = [];
+  let guardCount = 0;
+  let historyReads = 0;
+  const client: Client = {
+    ...base,
+    query(path, input, options) {
+      if (path === "zerotrust.access.snapshot") {
+        const selection = input as QueryInput<"zerotrust.access.snapshot">;
+        const domains = selection.domains ?? (selection.domain ? [selection.domain] : undefined);
+        if (!domains || domains.includes(domain)) selections.push(domains);
+      }
+      if (path === "zerotrust.keys.history" || path === "zerotrust.keys.get") {
+        if ((input as { domain: string }).domain === domain) historyReads++;
+      }
+      return base.query(path, input, options);
+    },
+    mutate(path, input, options) {
+      if (path === "zerotrust.objects.batch") {
+        const batch = input as MutateInput<"zerotrust.objects.batch">;
+        guardCount += (batch.heads ?? []).filter((head) => head.domain === domain).length;
+      }
+      return base.mutate(path, input, options);
+    },
+  };
+
+  return {
+    client,
+    reset() {
+      selections.length = 0;
+      guardCount = 0;
+      historyReads = 0;
+    },
+    check(readable: boolean) {
+      assert.deepEqual(selections, [[domain]], "Only one scoped project-reference snapshot");
+      assert.equal(guardCount > 0, readable, "Only a readable parent can guard the file commit");
+      if (!readable) assert.equal(historyReads, 0, "File-only upload does not fetch a parent key");
+    },
+  };
+}
+
 export async function testFilePermissions(
   rootClient: Client,
   memberClient: Client,
@@ -46,7 +89,8 @@ export async function testFilePermissions(
   projectId: string,
 ) {
   const user = `user:${(await required(memberClient.query("auth.sessionInfo", undefined))).user.id}`;
-  let owner = createBusinessClient(rootClient, { productDriver: driver }),
+  const ownerUpload = observeProjectReference(rootClient, projectId);
+  let owner = createBusinessClient(ownerUpload.client, { productDriver: driver }),
     business: ReturnType<typeof createBusinessClient> | undefined;
   const id = await owner.files.upload({
     projectId,
@@ -54,6 +98,8 @@ export async function testFilePermissions(
     mime: "text/plain",
     blob: new Blob(["First private file revision"]),
   });
+  ownerUpload.check(true);
+
   const room = (letter: string) => ({
     editKey: `/2/integration/edit/${letter.repeat(24)}/`,
     viewKey: `/2/integration/view/${letter.repeat(32)}/`,
@@ -333,7 +379,8 @@ export async function testFilePermissions(
     );
     const oldFile = await owner.files.officeStatus(projectId, id);
     await acceptVaultWithKey(member.dataKey, member.vault, member.username, false);
-    business = createBusinessClient(memberClient, { productDriver: driver });
+    const memberUpload = observeProjectReference(memberClient, projectId);
+    business = createBusinessClient(memberUpload.client, { productDriver: driver });
     assert.ok((await business.query("projects.get", { id: projectId }))[1]);
     assert.equal(
       await (await business.files.blob(projectId, id)).text(),
@@ -358,12 +405,15 @@ export async function testFilePermissions(
       BigInt(oldFile.contentVersion),
       new Blob(["Edited by a file-only collaborator"]),
     );
+
+    memberUpload.reset();
     const own = await business.files.upload({
       projectId,
       name: "Neue Datei ohne Grunddatenschlüssel.txt",
       mime: "text/plain",
       blob: new Blob(["No project title key required"]),
     });
+    memberUpload.check(false);
     assert.equal(
       await (await business.files.blob(projectId, own)).text(),
       "No project title key required",
