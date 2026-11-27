@@ -4,9 +4,8 @@ import {
   digest,
   encryptedObject,
   InvalidProtectedData,
-  objectFrame,
+  objectPacketHash,
   record,
-  signedPacketFrame,
   unbase64,
 } from "@sortsys/zerotrust/sortsys";
 import {
@@ -82,10 +81,7 @@ async function fetchFileBlocks(
   return packets;
 }
 
-async function packetHash(input: unknown): Promise<string> {
-  const envelope = encryptedObject(input);
-  return digest(signedPacketFrame(objectFrame(envelope), envelope.signature));
-}
+const packetHash = (input: unknown) => objectPacketHash(encryptedObject(input));
 function block(input: unknown, size: number): Uint8Array<ArrayBuffer> {
   const data = record(input, ["format", "data"]);
   if (

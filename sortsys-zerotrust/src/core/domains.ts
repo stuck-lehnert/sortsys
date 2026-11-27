@@ -1,4 +1,4 @@
-import { boxFrame, openBox, sealBox, sealedBox } from "../boxes";
+import { boxFrame, boxPacketFrame, openBox, sealBox, sealedBox } from "../boxes";
 import type { SealedBox } from "../boxes";
 import {
   frame,
@@ -208,7 +208,7 @@ export function createDomainCodec<
     }
     const hashes = await Promise.all(
       [...input.envelopes, input.recoveryEnvelope].map((box) =>
-        digest(signedPacketFrame(boxFrame(box), box.signature)),
+        digest(boxPacketFrame(box)),
       ),
     );
     return domainFrameFromHashes(input, hashes);

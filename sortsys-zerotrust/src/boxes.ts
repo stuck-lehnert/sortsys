@@ -5,6 +5,7 @@ import {
   InvalidProtectedData,
   record,
   revision,
+  signedPacketFrame,
   sized,
   unbase64,
 } from "./encoding";
@@ -72,6 +73,10 @@ export function boxFrame(value: SealedBox): Uint8Array<ArrayBuffer> {
     value.enc,
     value.ciphertext,
   ]);
+}
+
+export function boxPacketFrame(box: SealedBox): Uint8Array<ArrayBuffer> {
+  return signedPacketFrame(boxFrame(box), box.signature);
 }
 
 export function sealedBox(value: unknown): SealedBox {

@@ -1,4 +1,4 @@
-import { boxFrame, sealedBox, type SealedBox } from "./boxes";
+import { boxFrame, boxPacketFrame, sealedBox, type SealedBox } from "./boxes";
 import {
   creationAuthor,
   verifyCreationOrigin,
@@ -9,7 +9,6 @@ import {
   digest,
   InvalidProtectedData,
   record,
-  signedPacketFrame,
   sized,
 } from "./encoding";
 import { importSigningKey, verify } from "./identity";
@@ -41,14 +40,14 @@ export async function domainProof(
   definition: DomainDefinition,
 ): Promise<DomainProof> {
   const { envelopes, ...publicFields } = definition;
+  const envelopeHashes = await Promise.all(
+    envelopes.map((box) => digest(boxPacketFrame(box))),
+  );
+
   return {
     ...publicFields,
     format: "sortsys-domain-proof-v1",
-    envelopeHashes: await Promise.all(
-      envelopes.map((box) =>
-        digest(signedPacketFrame(boxFrame(box), box.signature)),
-      ),
-    ),
+    envelopeHashes,
   };
 }
 
@@ -170,9 +169,7 @@ export async function verifyDomainProof(
     ...(creation ? { creation } : {}),
     ...(management ? { keyAuthority: management } : {}),
   };
-  const recoveryHash = await digest(
-    signedPacketFrame(boxFrame(recoveryEnvelope), recoveryEnvelope.signature),
-  );
+  const recoveryHash = await digest(boxPacketFrame(recoveryEnvelope));
   await verify(
     signer,
     proof.proof,

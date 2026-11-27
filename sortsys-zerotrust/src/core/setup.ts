@@ -12,7 +12,7 @@ import {
 } from "./certificates";
 import type { AuthorityCertificate, IdentityCertificate } from "./certificates";
 import type { PolicyCodec, SignedPolicy } from "./policy";
-import { boxFrame, sealBox, sealedBox } from "../boxes";
+import { boxFrame, boxPacketFrame, sealBox, sealedBox } from "../boxes";
 import type { SealedBox } from "../boxes";
 import {
   digest,
@@ -152,15 +152,8 @@ export function createSetupCodec<F extends string, O extends string = never>(
           input.owner.signature,
         ),
       ),
-      digest(
-        signedPacketFrame(
-          boxFrame(input.authorityEnvelope),
-          input.authorityEnvelope.signature,
-        ),
-      ),
-      digest(
-        signedPacketFrame(boxFrame(input.catalog), input.catalog.signature),
-      ),
+      digest(boxPacketFrame(input.authorityEnvelope)),
+      digest(boxPacketFrame(input.catalog)),
       digest(
         signedPacketFrame(
           policyFrame(permissions, transaction),

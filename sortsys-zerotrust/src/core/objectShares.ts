@@ -1,4 +1,4 @@
-import { boxFrame, sealedBox, type SealedBox } from "../boxes";
+import { boxPacketFrame, sealedBox, type SealedBox } from "../boxes";
 import {
   digest,
   frame,
@@ -41,7 +41,7 @@ export async function objectKeyRecipientBinding(
             identity.signature,
           ),
         ),
-        digest(signedPacketFrame(boxFrame(box), box.signature)),
+        digest(boxPacketFrame(box)),
       ])),
     );
   }

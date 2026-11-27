@@ -1,4 +1,6 @@
 import { expect, test } from "bun:test";
+import { boxFrame } from "../src/boxes";
+import { digest, signedPacketFrame } from "../src/encoding";
 import {
   certifyCreationCapability,
   certifyIdentity,
@@ -110,6 +112,13 @@ test("a public domain proof authenticates the original definition without exposi
       ),
     ).toEqual(current.proof);
     expect(Object.hasOwn(current.proof, "envelopes")).toBe(false);
+    const hashes = await Promise.all(
+      current.definition.envelopes.map((box) =>
+        digest(signedPacketFrame(boxFrame(box), box.signature)),
+      ),
+    );
+    expect(current.proof.envelopeHashes).toEqual(hashes);
+
     const encoded = JSON.stringify(current.proof);
     for (const envelope of current.definition.envelopes) {
       expect(encoded.includes(envelope.ciphertext)).toBe(false);

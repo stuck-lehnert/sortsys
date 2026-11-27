@@ -19,7 +19,7 @@ import {
   verifyAuthority,
 } from "./certificates";
 import type { AuthorityCertificate } from "./certificates";
-import { boxFrame, openBox, sealBox, sealedBox } from "../boxes";
+import { boxFrame, boxPacketFrame, openBox, sealBox, sealedBox } from "../boxes";
 import type { SealedBox } from "../boxes";
 import type { DomainCodec, DomainCreation, DomainDefinition } from "./domains";
 import {
@@ -333,9 +333,7 @@ export function createRecoveryCodec<
   ): Promise<string> {
     if (input.accountVersion !== undefined) sized(input.accountVersion, 32);
     const oldKeys = await Promise.all(
-      input.oldKeyEnvelopes.map((box) =>
-        digest(signedPacketFrame(boxFrame(box), box.signature)),
-      ),
+      input.oldKeyEnvelopes.map((box) => digest(boxPacketFrame(box))),
     );
     const domains = await Promise.all(
       input.domains.map(async (domain) =>

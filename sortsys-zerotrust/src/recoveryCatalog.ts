@@ -1,4 +1,4 @@
-import { boxFrame, openBox, sealBox, sealedBox, type SealedBox } from "./boxes";
+import { boxPacketFrame, openBox, sealBox, sealedBox, type SealedBox } from "./boxes";
 import {
   base64,
   bytes,
@@ -9,7 +9,6 @@ import {
   randomSecret,
   record,
   revision,
-  signedPacketFrame,
   sized,
   unbase64,
   utf8,
@@ -93,17 +92,13 @@ function boxContext(context: Context, object: string) {
   };
 }
 
-function packetHash(packet: SealedBox): Promise<string> {
-  return digest(signedPacketFrame(boxFrame(packet), packet.signature));
-}
-
 async function readPage(
   storage: RecoveryCatalogStorage,
   { object, hash, generation }: RecoveryCatalogReference,
 ): Promise<SealedBox> {
   const packet = sealedBox(await storage.read({ object, hash, generation }));
   storage.signal?.throwIfAborted();
-  if (await packetHash(packet) !== hash) {
+  if ((await digest(boxPacketFrame(packet))) !== hash) {
     throw new InvalidProtectedData();
   }
   return packet;
@@ -157,7 +152,7 @@ export async function createRecoveryCatalog(
 
     const object = `${PAGE_PREFIX}${base64(randomSecret())}`;
     const packet = await sealNode(node, object, access);
-    const hash = await packetHash(packet);
+    const hash = await digest(boxPacketFrame(packet));
     await storage.write(packet);
     storage.signal?.throwIfAborted();
     await readPage(storage, { object, hash, generation });
