@@ -45,14 +45,14 @@ import {
   type InvoiceSeal,
 } from "./commercialBillingData";
 import type { CommercialFacet } from "./commercialAreas";
-import { commercialRow, copyCommercialRows } from "./commercialRows";
+import { copyCommercialRows } from "./commercialRows";
 import { caseGuards, type CaseSnapshot } from "./commercialSnapshot";
 import { createInvoiceNumbers } from "./invoiceNumbers";
 import { financialInputsReadable } from "./documentEditor";
 import { newProductRowId, publicId } from "./products";
 import { financialObject, financialRequest } from "./projectFinancialData";
 import { required } from "./protectedObjects";
-import type { BusinessRow } from "./rowCodec";
+import { createBusinessRow, type BusinessRow } from "./rowCodec";
 import type { DataRuntime, DataView, PreparedData } from "./runtime/runtime";
 
 export type CaseChange = {
@@ -148,7 +148,7 @@ export function newInvoiceDetails(
   const date = calendarDay(now.slice(0, 10));
   const due = new Date(`${date}T00:00:00Z`);
   due.setUTCDate(due.getUTCDate() + 14);
-  return commercialRow("commercial_invoice_details", {
+  return createBusinessRow("commercial_invoice_details", {
     case_id: addressId(caseId),
     basis: selectedBasis,
     vat_rate: billingRate(rate ?? "19.00"),
@@ -496,7 +496,7 @@ export function createCommercialBilling(
         applyInvoiceDetails(rows, numbered.validated.details);
         invoiceRow(rows).values.invoice_number = plan.number;
         rows.push(
-          commercialRow("commercial_case_events", {
+          createBusinessRow("commercial_case_events", {
             id: newProductRowId(),
             case_id: addressId(id),
             action: "invoice_issued",
@@ -515,7 +515,7 @@ export function createCommercialBilling(
         const split = splitCommercialRows(id, rows);
         const amounts = await runtime.prepare([frozen, financial], (tx) => {
           tx.create(frozen, invoiceBillingObject(id), split.get("billing")!);
-          const row = commercialRow("project_financial_entries", {
+          const row = createBusinessRow("project_financial_entries", {
             id: addressId(id),
             project_id: addressId(current.projectId!),
             type: "invoice",
@@ -653,7 +653,7 @@ export function createCommercialBilling(
       const main = rows.find((row) => row.table === "commercial_cases")!;
       main.values.status = status;
       main.values.modified_at = now;
-      const payment = commercialRow("commercial_invoice_payments", {
+      const payment = createBusinessRow("commercial_invoice_payments", {
         id: addressId(operationId),
         case_id: addressId(id),
         amount,
@@ -662,7 +662,7 @@ export function createCommercialBilling(
         created_by_user_id: actor,
         created_at: now,
       });
-      const event = commercialRow("commercial_case_events", {
+      const event = createBusinessRow("commercial_case_events", {
         id: newProductRowId(),
         case_id: addressId(id),
         action: "payment_recorded",

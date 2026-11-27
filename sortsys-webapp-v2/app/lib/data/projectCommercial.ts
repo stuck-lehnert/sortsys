@@ -5,8 +5,7 @@ import type { PreparedWrites } from "./atomicWrites";
 import { documentAmount } from "./commercialDocumentRules";
 import { protectedCollection, type Collection } from "./protectedObjects";
 import { publicId, newProductRowId } from "./products";
-import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow, decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { uiText } from "../i18n";
 import { projectFacetArea, projectFacetDomain } from "./projectScope";
 import { defineDataModel } from "./runtime/model";
@@ -197,21 +196,17 @@ export function addProjectOffer(
       throw new InvalidProtectedData();
     return register;
   }
-  const row = decodeBusinessRow({
-    format: "sortsys-row-v2",
-    schema: businessSchema.fingerprint,
-    table: "project_financial_entries",
-    values: {
-      id: newProductRowId(),
-      project_id: addressId(register.projectId),
-      type: "offer",
-      amount: Number(amount),
-      comment: addressText(input.comment, true, 1000),
-      created_by_user_id: addressId(input.actor),
-      created_at: input.now,
-      commercial_case_id: addressId(input.caseId),
-    },
+  const row = createBusinessRow("project_financial_entries", {
+    id: newProductRowId(),
+    project_id: addressId(register.projectId),
+    type: "offer",
+    amount: Number(amount),
+    comment: addressText(input.comment, true, 1000),
+    created_by_user_id: addressId(input.actor),
+    created_at: input.now,
+    commercial_case_id: addressId(input.caseId),
   });
+
   return projectCommercialRegister(
     { ...register, offers: [...register.offers, { row, exactAmount: amount }] },
     register.projectId,

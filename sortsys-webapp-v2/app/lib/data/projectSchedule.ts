@@ -10,8 +10,7 @@ import { PROJECT_MODEL, projectCollection } from "./projectData";
 import { newProductRowId, publicId } from "./products";
 import { readableAreas } from "./readableAreas";
 import { required } from "./protectedObjects";
-import { decodeBusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow, decodeBusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataRequest, DataView } from "./runtime/runtime";
 import {
@@ -320,19 +319,14 @@ export function createProtectedProjectSchedule(
               throw new ProtectedWriteConflict();
             return;
           }
-          const row = decodeBusinessRow({
-            format: "sortsys-row-v2",
-            schema: businessSchema.fingerprint,
-            table: SCHEDULE_TABLES[kind],
-            values: {
-              id: addressId(id),
-              ...changes,
-              ...(kind === "unavailability"
-                ? { created_by_user_id: addressId(session!.user.id) }
-                : {}),
-              created_at: now,
-              modified_at: now,
-            },
+          const row = createBusinessRow(SCHEDULE_TABLES[kind], {
+            id: addressId(id),
+            ...changes,
+            ...(kind === "unavailability"
+              ? { created_by_user_id: addressId(session!.user.id) }
+              : {}),
+            created_at: now,
+            modified_at: now,
           });
           tx.create(
             target,

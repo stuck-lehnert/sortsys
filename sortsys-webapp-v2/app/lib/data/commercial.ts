@@ -107,11 +107,10 @@ import {
   protectedCollections,
   required,
 } from "./protectedObjects";
-import type { BusinessRow } from "./rowCodec";
+import { createBusinessRow as row, type BusinessRow } from "./rowCodec";
 import { mapConcurrent } from "./runtime/concurrentReads";
 import { pendingReads } from "@sortsys/zerotrust";
 import { listenDataChanges } from "./runtime/changes";
-import { commercialRow as row } from "./commercialRows";
 import { commercialRequest, workflowReceiptRequest } from "./commercialModel";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataRequest, DataView, PreparedData } from "./runtime/runtime";

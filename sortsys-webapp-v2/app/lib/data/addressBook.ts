@@ -11,8 +11,7 @@ import type {
   DataRuntime,
   DataView,
 } from "./runtime/runtime";
-import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow, decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { newProductRowId, publicId } from "./products";
 import { required, type Collection } from "./protectedObjects";
 
@@ -441,11 +440,9 @@ export async function addressBookCommand(
           CUSTOMER_COLLECTION.prefix + publicId(customerId),
           (customer) => {
             customer.links = next.map((contact_id) =>
-              decodeBusinessRow({
-                format: "sortsys-row-v2",
-                schema: businessSchema.fingerprint,
-                table: "customer_contacts",
-                values: { customer_id: customerId, contact_id },
+              createBusinessRow("customer_contacts", {
+                customer_id: customerId,
+                contact_id,
               }),
             );
           },
@@ -467,11 +464,11 @@ export async function addressBookCommand(
         tx.create(selected, selected.area.prefix + publicId(id), {
           format: "sortsys-address-v1",
           kind,
-          row: decodeBusinessRow({
-            format: "sortsys-row-v2",
-            schema: businessSchema.fingerprint,
-            table: kind,
-            values: { id, ...values, created_at: now, modified_at: now },
+          row: createBusinessRow(kind, {
+            id,
+            ...values,
+            created_at: now,
+            modified_at: now,
           }),
           links: [],
         });

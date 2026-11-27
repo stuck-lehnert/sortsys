@@ -1,17 +1,4 @@
-import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
-
-export function commercialRow(
-  table: string,
-  values: Record<string, unknown>,
-): BusinessRow {
-  return decodeBusinessRow({
-    format: "sortsys-row-v2",
-    schema: businessSchema.fingerprint,
-    table,
-    values,
-  });
-}
+import type { BusinessRow } from "./rowCodec";
 
 export function copyCommercialRows(
   rows: readonly BusinessRow[],

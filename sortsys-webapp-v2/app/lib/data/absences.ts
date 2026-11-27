@@ -25,8 +25,7 @@ import { personnelDomain, personnelRequest } from "./personnelData";
 import { newProductRowId, publicId } from "./products";
 import { readableAreas } from "./readableAreas";
 import { required } from "./protectedObjects";
-import { decodeBusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 import type { DataView } from "./runtime/runtime";
 
@@ -380,22 +379,17 @@ export function createProtectedAbsences(
         const value: AbsenceRequest = {
           format: "sortsys-absence-request-v1",
           legacy: null,
-          row: decodeBusinessRow({
-            format: "sortsys-row-v2",
-            schema: businessSchema.fingerprint,
-            table: "user_vacations",
-            values: {
-              id: addressId(id),
-              user_id: addressId(user),
-              requested_by_user_id: addressId(actor),
-              decided_by_user_id: null,
-              status: "requested",
-              denial_reason: null,
-              decided_at: null,
-              ...changes,
-              created_at: now,
-              modified_at: now,
-            },
+          row: createBusinessRow("user_vacations", {
+            id: addressId(id),
+            user_id: addressId(user),
+            requested_by_user_id: addressId(actor),
+            decided_by_user_id: null,
+            status: "requested",
+            denial_reason: null,
+            decided_at: null,
+            ...changes,
+            created_at: now,
+            modified_at: now,
           }),
         };
         const source = await runtime.prepare([...selected, person], (tx) => {

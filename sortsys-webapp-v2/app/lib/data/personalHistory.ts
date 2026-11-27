@@ -21,8 +21,7 @@ import {
 } from "./personalHistoryData";
 import { newProductRowId, publicId } from "./products";
 import { required } from "./protectedObjects";
-import { decodeBusinessRow } from "./rowCodec";
-import { businessSchema } from "./schema";
+import { createBusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 
 function pinInput(input: unknown, operation: string) {
@@ -186,26 +185,21 @@ export function createProtectedPersonalHistory(
             .find((doc) => doc.id === object);
           if (!pins) {
             const fields = historyFields!;
-            const row = decodeBusinessRow({
-              format: "sortsys-row-v2",
-              schema: businessSchema.fingerprint,
-              table:
-                kind === "visits"
-                  ? "user_visit_history"
-                  : "user_action_history",
-              values: {
-                id,
-                user_id: addressId(selected.subject.slice(5)),
-                [historyTimestamp(kind)]: now,
-                ...("path" in fields
-                  ? { path: fields.path, title: fields.title }
-                  : {
-                      action_id: fields.actionId,
-                      label: fields.label,
-                      href: fields.href,
-                    }),
-              },
+            const table =
+              kind === "visits" ? "user_visit_history" : "user_action_history";
+            const row = createBusinessRow(table, {
+              id,
+              user_id: addressId(selected.subject.slice(5)),
+              [historyTimestamp(kind)]: now,
+              ...("path" in fields
+                ? { path: fields.path, title: fields.title }
+                : {
+                    action_id: fields.actionId,
+                    label: fields.label,
+                    href: fields.href,
+                  }),
             });
+
             const rows = recentHistory(
               [
                 ...((previous?.value as HistoryPayload | undefined)?.rows ??

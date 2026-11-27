@@ -45,8 +45,7 @@ import { timestampInstant, timestampMicros } from "./timestamps";
 import { priceRequest, publicId } from "./products";
 import { readableAreas } from "./readableAreas";
 import { protectedCollections, type Collection } from "./protectedObjects";
-import { businessSchema } from "./schema";
-import { decodeBusinessRow } from "./rowCodec";
+import { createBusinessRow } from "./rowCodec";
 import type { DataRequest, DataView } from "./runtime/runtime";
 import { acquireDataRuntime } from "./runtime/session";
 import { mapConcurrent } from "./runtime/concurrentReads";
@@ -203,16 +202,14 @@ function sources(
       }
       continue;
     }
-    tools.push(decodeBusinessRow({
-      format: "sortsys-row-v2",
-      schema: businessSchema.fingerprint,
-      table: "tool_trackings",
-      values: {
+
+    tools.push(
+      createBusinessRow("tool_trackings", {
         ...tracking.values,
         ...price.values,
         ...closure,
-      },
-    }));
+      }),
+    );
   }
   return {
     pending,
