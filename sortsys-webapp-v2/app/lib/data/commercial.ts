@@ -918,26 +918,68 @@ export function createProtectedCommercial(
     if (!result) throw new InvalidProtectedData();
     return result;
   }
-  async function documentHead(
+  async function findDocumentHead(
     id: string,
     caseId?: string,
-  ): Promise<DocumentHead> {
+    openStore = (scope: string) => commercialDocumentStore(client, scope, signal),
+  ): Promise<DocumentHead | null> {
     const [head, error] = await client.query(
       "zerotrust.documents.get",
       { id, ...(caseId ? { scope: `commercial:${caseId}` } : {}) },
       { strategy: "network-only" },
     );
     if (error) throw error;
-    if (!head) throw new InvalidProtectedData();
-    const store = await commercialDocumentStore(client, head.scope, signal);
+    if (!head) return null;
+
+    const store = await openStore(head.scope);
     try {
-      const verified = await store.head(id);
-      if (!verified) throw new InvalidProtectedData();
-      return verified;
+      return await store.head(id);
     } finally {
       store.close();
     }
   }
+
+  async function documentHead(id: string, caseId?: string): Promise<DocumentHead> {
+    const head = await findDocumentHead(id, caseId);
+    if (!head) throw new InvalidProtectedData();
+    return head;
+  }
+
+  async function sourceVersions(
+    documents: readonly BusinessRow[],
+    heads: ReadonlyMap<string, DocumentHead>,
+    openStore: (scope: string) => Promise<DocumentStore>,
+  ) {
+    const versions = new Map(
+      documents.map(({ values }) => {
+        const id = publicId(values.id);
+        return [id, BigInt(heads.get(id)?.version ?? (values.version as string))];
+      }),
+    );
+    const external = new Set<string>();
+    for (const { values } of documents) {
+      if (values.source_document_id === null) continue;
+
+      const id = publicId(values.source_document_id);
+      if (!versions.has(id)) external.add(id);
+    }
+
+    // Measurements and invoices can refer to a different case. Read only the
+    // referenced heads; current access and signature checks still apply.
+    await mapConcurrent([...external], 4, async (id) => {
+      try {
+        const head = await findDocumentHead(id, undefined, openStore);
+        if (head) versions.set(id, BigInt(head.version));
+      } catch (error) {
+        if (!(error instanceof RpcClientError) || error.code !== "FORBIDDEN") {
+          throw error;
+        }
+      }
+    });
+    live();
+    return versions;
+  }
+
   function editable(
     values: BusinessRow[],
     document: BusinessRow,
@@ -2779,22 +2821,22 @@ export function createProtectedCommercial(
         documentHeads,
       );
       const current = await labels(wireCommercialCase(values), basis.visible);
-      const documents = values
-        .filter((row) => row.table === "commercial_documents")
+      const currentDocuments = values.filter(
+        (row) => row.table === "commercial_documents",
+      );
+      const versions = await sourceVersions(
+        currentDocuments,
+        documentHeads,
+        openStore,
+      );
+      const documents = currentDocuments
         .map((row) => {
           const p = row.values;
-          const source =
+          const sourceDocumentId =
             p.source_document_id === null
               ? null
-              : values.find(
-                  (row) =>
-                    row.table === "commercial_documents" &&
-                    row.values.id === p.source_document_id,
-                );
+              : publicId(p.source_document_id);
           const head = documentHeads.get(publicId(p.id));
-          const sourceHead = source
-            ? documentHeads.get(publicId(source.values.id))
-            : undefined;
           return {
             id: publicId(p.id),
             caseId: id,
@@ -2806,16 +2848,13 @@ export function createProtectedCommercial(
               (p.read_only as boolean) ||
               head?.readOnly === true ||
               head?.locked === true,
-            sourceDocumentId:
-              p.source_document_id === null
-                ? null
-                : publicId(p.source_document_id),
+            sourceDocumentId,
             sourceVersion:
               p.source_version === null
                 ? null
                 : BigInt(p.source_version as string),
-            sourceCurrentVersion: source
-              ? BigInt(sourceHead?.version ?? (source.values.version as string))
+            sourceCurrentVersion: sourceDocumentId
+              ? (versions.get(sourceDocumentId) ?? null)
               : null,
             partnerName: p.partner_name as string | null,
             netAmount: p.net_amount as string | null,

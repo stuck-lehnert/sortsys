@@ -1,5 +1,13 @@
 import { afterEach, expect, test } from "bun:test";
-import { ACTIONS, signPolicy } from "@sortsys/zerotrust/sortsys";
+import { RpcClientError } from "@sortsys/v2-client";
+import {
+  ACTIONS,
+  bytes,
+  digest,
+  documentObject,
+  signDocumentHead,
+  signPolicy,
+} from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
 import { createProtectedCommercial } from "./commercial";
 import { commercialCollection } from "./commercialAreas";
@@ -17,6 +25,110 @@ afterEach(() => lockCryptoSession());
 async function unusedDependency() {
   throw new Error("A document choice must not load related business records");
 }
+
+test("case detail checks the version of a shared GAEB source in another case", async () => {
+  const target = commercialCollection("34", "master-data");
+  const parent = commercialCollection("35", "master-data");
+  const parentScope = commercialCollection("35", "scope");
+  const tenant = await protectedTenant([target, parent, parentScope]);
+  const caseRow = row("commercial_cases", {
+    id: "100",
+    project_id: "200",
+    parent_case_id: "101",
+    kind: "offer",
+    status: "draft",
+    scope_item_ids: "[]",
+  });
+  const offers = ["103", "104"].map((id) =>
+    row("commercial_documents", {
+      id,
+      case_id: "100",
+      purpose: "offer",
+      phase: "84",
+      source_document_id: "102",
+      source_version: "1",
+    }),
+  );
+  const parts = splitCommercialRows("34", [caseRow, ...offers]);
+  await tenant.seed(target, `${target.prefix}case`, parts.get("master-data"));
+
+  const source = "36";
+  const head = await signDocumentHead({
+    tenant: "test",
+    scope: parent.scope,
+    id: source,
+    version: "1",
+    previous: "",
+    generation: "1",
+    policyVersion: "2",
+    author: "user:1",
+    modifiedMicros: "1794484800000000",
+    readOnly: false,
+    locked: false,
+    parts: [{
+      facet: "scope",
+      object: documentObject(parent.scope, source, "scope", "a".repeat(32), "manifest"),
+      hash: await digest(bytes("Protected source manifest")),
+      keys: [{ facet: "scope", generation: "1" }],
+    }],
+  }, tenant.identity.signingKey.privateKey);
+  const forbidden = new RpcClientError({
+    code: -32003,
+    data: { code: "FORBIDDEN" },
+    message: "Source no longer readable",
+  });
+  const query = tenant.client.query;
+  const sourceReads = [];
+  let available = "shared";
+  tenant.client.query = async (path, input, options) => {
+    if (path === "zerotrust.documents.registrations") {
+      return [{ documents: [], after: null }, null];
+    }
+    if (path !== "zerotrust.documents.get") return query(path, input, options);
+    if (input.id !== source) return [null, null];
+
+    sourceReads.push(input.scope);
+    if (available === "denied" || (available === "revoked" && input.scope)) {
+      return [null, forbidden];
+    }
+    if (available === "missing") return [null, null];
+    if (available === "tampered" && input.scope) {
+      return [{ ...head, readOnly: true }, null];
+    }
+    return [head, null];
+  };
+  const store = createProtectedCommercial(
+    tenant.client,
+    new AbortController().signal,
+    unusedDependency,
+    unusedDependency,
+    duckDriver,
+  );
+  const read = async () => {
+    const detail = await store.query("commercial.cases.get", { id: "34" });
+    return detail.documents.map((document) => document.sourceCurrentVersion);
+  };
+  try {
+    expect(await read()).toEqual([1n, 1n]);
+    expect(sourceReads).toEqual([undefined, parent.scope]);
+
+    available = "denied";
+    expect(await read()).toEqual([null, null]);
+    expect(sourceReads.at(-1)).toBeUndefined();
+
+    available = "revoked";
+    expect(await read()).toEqual([null, null]);
+    expect(sourceReads.slice(-2)).toEqual([undefined, parent.scope]);
+
+    available = "missing";
+    expect(await read()).toEqual([null, null]);
+
+    available = "tampered";
+    await expect(read()).rejects.toThrow();
+  } finally {
+    store.close();
+  }
+});
 
 test("subscribed headers follow project moves and signed revocation without exposing business queries", async () => {
   const area = commercialCollection("34", "master-data");
