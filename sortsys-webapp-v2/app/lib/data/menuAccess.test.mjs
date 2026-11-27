@@ -5,6 +5,7 @@ import {
   createAccountVault,
   createIdentity,
   createTenantSetup,
+  InvalidProtectedData,
   policy,
   signPolicy,
 } from "@sortsys/zerotrust/sortsys";
@@ -494,6 +495,40 @@ test("cached projections cannot cross account replacement even before an explici
     );
     await expect(service.read()).rejects.toThrow();
   } finally {
+    service.close();
+  }
+});
+
+test("account replacement behind the synchronization barrier skips menu proof reads", async () => {
+  const data = await fixture();
+  const context = new AbortController();
+  const release = deferred();
+  const service = createContentAccess(
+    data.client,
+    () => context.signal,
+    () => release.promise,
+  );
+
+  try {
+    const stale = service.read().then(
+      () => false,
+      (error) => error instanceof InvalidProtectedData,
+    );
+    const other = await createIdentity();
+    const exportKey = base64(crypto.getRandomValues(new Uint8Array(64)));
+    await acceptVault(
+      exportKey,
+      await createAccountVault(exportKey, "test", "user:2", other, {}),
+      "different",
+      false,
+    );
+
+    const sentBeforeRelease = data.sent.length;
+    release.resolve();
+    expect(await stale).toBe(true);
+    expect(data.sent).toHaveLength(sentBeforeRelease);
+  } finally {
+    release.resolve();
     service.close();
   }
 });

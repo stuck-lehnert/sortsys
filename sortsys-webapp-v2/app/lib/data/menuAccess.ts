@@ -334,26 +334,12 @@ export function createContentAccess(
     },
     async read() {
       if (closed) throw new InvalidProtectedData();
+
       const epoch = controller.signal;
       const accountContext = context();
       const account = unlockedAccount();
-      await barrier();
-      epoch.throwIfAborted();
-      accountContext.throwIfAborted();
-      if (closed || epoch !== controller.signal || accountContext !== context())
-        throw new InvalidProtectedData();
-      if (pendingContext !== accountContext || pendingAccount !== account) {
-        pending = null;
-        pendingContext = accountContext;
-        pendingAccount = account;
-      }
-      pending ??= readMenuAccess(
-        client,
-        AbortSignal.any([epoch, accountContext]),
-      );
-      const request = pending;
-      try {
-        const value = await request;
+
+      const assertCurrent = () => {
         epoch.throwIfAborted();
         accountContext.throwIfAborted();
         if (
@@ -361,8 +347,29 @@ export function createContentAccess(
           epoch !== controller.signal ||
           accountContext !== context() ||
           account !== unlockedAccount()
-        )
+        ) {
           throw new InvalidProtectedData();
+        }
+      };
+
+      await barrier();
+      assertCurrent();
+
+      if (pendingContext !== accountContext || pendingAccount !== account) {
+        pending = null;
+        pendingContext = accountContext;
+        pendingAccount = account;
+      }
+
+      pending ??= readMenuAccess(
+        client,
+        AbortSignal.any([epoch, accountContext]),
+      );
+      const request = pending;
+
+      try {
+        const value = await request;
+        assertCurrent();
         return value;
       } catch (error) {
         if (pending === request) pending = null;
