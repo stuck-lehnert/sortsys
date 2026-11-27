@@ -45,6 +45,47 @@ test("provisioning reuses one fresh authority history without writing on replay"
   expect(calls.some(({ path }) => path === "zerotrust.domains.list")).toBe(true);
 });
 
+test("provisioning overlaps independent reads without publishing after a lock", async () => {
+  const { client } = await protectedTenant([area]);
+  const status = Promise.withResolvers();
+  const issued = [];
+  const query = client.query;
+
+  client.query = async (path, input, options) => {
+    issued.push(path);
+    if (path === "zerotrust.status") await status.promise;
+    return query(path, input, options);
+  };
+  let writes = 0;
+  client.mutate = async () => {
+    writes++;
+    throw new Error("Unexpected publication after locking");
+  };
+
+  const setup = provisionOwnedCollections(
+    client,
+    subject,
+    [area],
+    new AbortController().signal,
+  );
+  const issuedBeforeStatus = issued.slice();
+
+  try {
+    await lockCryptoSession();
+  } finally {
+    status.resolve();
+  }
+
+  await expect(setup).rejects.toBeInstanceOf(InvalidProtectedData);
+  expect(issuedBeforeStatus).toEqual([
+    "zerotrust.status",
+    "auth.sessionInfo",
+    historyRoute,
+  ]);
+  expect(issued).not.toContain("zerotrust.policy.get");
+  expect(writes).toBe(0);
+});
+
 test("archive attestation checks source and profile against the same history", async () => {
   const { client, calls, identity, authorityKey } = await protectedTenant(
     [area],

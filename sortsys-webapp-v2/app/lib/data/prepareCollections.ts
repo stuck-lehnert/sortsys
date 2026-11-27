@@ -1,7 +1,7 @@
 import type { Client } from "@sortsys/v2-client";
 import {
   ACTIONS,
-  allows,
+  compilePolicy,
   createDomain,
   InvalidProtectedData,
   publicIdentity,
@@ -39,19 +39,22 @@ export async function provisionOwnedCollections(
     if (signal.aborted || unlockedAccount() !== account)
       throw new InvalidProtectedData();
   };
-  const status = await required(
-    client.query("zerotrust.status", undefined, { strategy: "network-only" }),
-  );
+  live();
+
+  const [status, session, history] = await Promise.all([
+    required(
+      client.query("zerotrust.status", undefined, { strategy: "network-only" }),
+    ),
+    required(
+      client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
+    ),
+    trustedHistory(client),
+  ]);
   live();
   if (status.tenant !== account.tenant || !status.profile)
     throw new InvalidProtectedData();
-  const session = await required(
-    client.query("auth.sessionInfo", undefined, { strategy: "network-only" }),
-  );
-  live();
   if (subject !== `user:${session.user.id}`) throw new InvalidProtectedData();
-  const history = await trustedHistory(client);
-  live();
+
   const authority = await openVerifiedAuthority(status.profile, account, history);
   live();
   let { permissions } = await readVerifiedPolicy(client, {
@@ -59,19 +62,13 @@ export async function provisionOwnedCollections(
     history,
     live,
   });
+
+  const access = compilePolicy(permissions, [subject]);
   const missing = collections.filter(
-    (collection) =>
-      !ACTIONS.every((action) =>
-        allows(permissions, {
-          tenant: account.tenant,
-          version: permissions.version,
-          subjects: [subject],
-          scope: collection.scope,
-          facet: collection.facet,
-          action,
-        }),
-      ),
+    ({ scope, facet }) =>
+      !ACTIONS.every((action) => access.allows(scope, facet, action)),
   );
+
   if (missing.length) {
     const next = {
       ...permissions,
@@ -93,42 +90,43 @@ export async function provisionOwnedCollections(
       next,
     ));
   }
-  let domains = await required(
+  const domains = await required(
     client.query("zerotrust.domains.list", undefined, {
       strategy: "network-only",
     }),
   );
+  live();
+
+  const existing = new Set(domains.map(({ id }) => id));
   const definitions: DomainDefinition[] = [];
+  let reader: Awaited<ReturnType<typeof publicIdentity>> | undefined;
+
   for (const c of collections) {
     live();
-    if (!domains.some((d) => d.id === c.domain)) {
-      const made = await createDomain({
-        tenant: account.tenant,
-        id: c.domain,
-        scope: c.scope,
-        facet: c.facet,
-        generation: "1",
-        policyVersion: permissions.version,
-        authorityGeneration: history.current.generation,
-        authorityKey: authority,
-        recovery: {
-          encryptionKey: history.current.recoveryEncryptionKey,
-          signingKey: history.current.recoverySigningKey,
-        },
-        readers: [
-          { subject, identity: await publicIdentity(account.identity) },
-        ],
-      });
-      definitions.push(made.definition);
-      domains.push({
-        id: c.domain,
-        scope: c.scope,
-        facet: c.facet,
-        generation: "1",
-        rotationRequired: false,
-      });
-    }
+    if (existing.has(c.domain)) continue;
+
+    reader ??= await publicIdentity(account.identity);
+    const made = await createDomain({
+      tenant: account.tenant,
+      id: c.domain,
+      scope: c.scope,
+      facet: c.facet,
+      generation: "1",
+      policyVersion: permissions.version,
+      authorityGeneration: history.current.generation,
+      authorityKey: authority,
+      recovery: {
+        encryptionKey: history.current.recoveryEncryptionKey,
+        signingKey: history.current.recoverySigningKey,
+      },
+      readers: [{ subject, identity: reader }],
+    });
+
+    definitions.push(made.definition);
+    existing.add(c.domain);
   }
+
+  live();
   await publishDomainDefinitions(client, definitions, signal);
   live();
 }
