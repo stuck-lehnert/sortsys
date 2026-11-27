@@ -26,9 +26,13 @@ type CheckedHead = {
   hash: string;
   frame: Uint8Array<ArrayBuffer>;
 };
+type VerifiedHeads = {
+  byHash: Map<string, DocumentHead>;
+  bySignature: Map<string, DocumentHead>;
+};
 const verifiedHeadsByAccount = new WeakMap<
   object,
-  WeakMap<Client, Map<string, DocumentHead>>
+  WeakMap<Client, VerifiedHeads>
 >();
 const CACHE_SIZE = 1024;
 const PAGE_SIZE = 32;
@@ -51,9 +55,32 @@ function headCacheFor(account: object, client: Client) {
     return existingHeads;
   }
 
-  const heads = new Map<string, DocumentHead>();
+  const heads: VerifiedHeads = { byHash: new Map(), bySignature: new Map() };
   accountCache.set(client, heads);
   return heads;
+}
+
+type DocumentPart = DocumentHead["parts"][number];
+
+function samePart(part: DocumentPart, other: DocumentPart | undefined) {
+  // The parser rebuilds parts and their key vectors in a fixed field order.
+  return other !== undefined && JSON.stringify(part) === JSON.stringify(other);
+}
+
+function sameHead(candidate: DocumentHead, known: DocumentHead) {
+  const fields = Object.keys(known) as (keyof DocumentHead)[];
+  if (Object.keys(candidate).length !== fields.length) {
+    return false;
+  }
+
+  const sameMetadata = fields.every(
+    (field) => field === "parts" || candidate[field] === known[field],
+  );
+  return (
+    sameMetadata &&
+    candidate.parts.length === known.parts.length &&
+    known.parts.every((part, index) => samePart(part, candidate.parts[index]))
+  );
 }
 
 function requiredRights(
@@ -71,7 +98,7 @@ function requiredRights(
     const previousPart = previous?.parts.find(
       (candidate) => candidate.facet === part.facet,
     );
-    if (previousPart && JSON.stringify(previousPart) === JSON.stringify(part)) {
+    if (samePart(part, previousPart)) {
       continue;
     }
     const replacesContent =
@@ -119,21 +146,28 @@ function assertTransition(current: DocumentHead, previous: DocumentHead) {
 /** Check the complete signed ancestry once, then reuse verified immutable heads
  * within this account. History pages contain public headers, never old XML. */
 export function createDocumentHeadVerifier(client: Client, context: Context) {
-  const verified = headCacheFor(context.account, client);
+  const { byHash, bySignature } = headCacheFor(context.account, client);
 
   function remember(hash: string, value: DocumentHead) {
-    verified.delete(hash);
-    verified.set(hash, structuredClone(value));
-    while (verified.size > CACHE_SIZE) {
-      verified.delete(verified.keys().next().value!);
+    const snapshot = structuredClone(value);
+    byHash.delete(hash);
+    byHash.set(hash, snapshot);
+    bySignature.set(snapshot.signature, snapshot);
+
+    if (byHash.size > CACHE_SIZE) {
+      const [oldHash, oldHead] = byHash.entries().next().value!;
+      byHash.delete(oldHash);
+      if (bySignature.get(oldHead.signature) === oldHead) {
+        bySignature.delete(oldHead.signature);
+      }
     }
   }
-  function parse(input: unknown, id: string): DocumentHead {
+  function parse(input: unknown, id?: string): DocumentHead {
     const value = documentHead(input);
     if (
       value.tenant !== context.account.tenant ||
       value.scope !== context.scope ||
-      value.id !== id
+      (id !== undefined && value.id !== id)
     ) {
       throw new InvalidProtectedData();
     }
@@ -141,9 +175,16 @@ export function createDocumentHeadVerifier(client: Client, context: Context) {
   }
   async function check(input: unknown): Promise<DocumentHead> {
     context.live();
-    const candidate = documentHead(input);
-    const id = candidate.id;
-    let current = parse(candidate, id);
+    let current = parse(input);
+    const id = current.id;
+    const exact = bySignature.get(current.signature);
+    // The signature locates a candidate, not a proof. A hit requires the
+    // entire parsed head to match the snapshot verified for this account.
+    if (exact && sameHead(current, exact)) {
+      context.live();
+      return structuredClone(exact);
+    }
+
     const chain: CheckedHead[] = [];
     const page = new Map<string, DocumentHead>();
     let previous: DocumentHead | undefined;
@@ -157,7 +198,7 @@ export function createDocumentHeadVerifier(client: Client, context: Context) {
       if (expectedHash !== undefined && hash !== expectedHash) {
         throw new InvalidProtectedData();
       }
-      const known = verified.get(hash);
+      const known = byHash.get(hash);
       if (known) {
         previous = structuredClone(known);
         break;
@@ -176,7 +217,7 @@ export function createDocumentHeadVerifier(client: Client, context: Context) {
       if (!current.previous) {
         break;
       }
-      const knownPredecessor = verified.get(current.previous);
+      const knownPredecessor = byHash.get(current.previous);
       if (knownPredecessor) {
         previous = parse(structuredClone(knownPredecessor), id);
         break;
@@ -250,7 +291,7 @@ export function createDocumentHeadVerifier(client: Client, context: Context) {
     }
     while (current.previous) {
       context.live();
-      let previous = verified.get(current.previous);
+      let previous = byHash.get(current.previous);
       if (!previous) {
         const [history, error] = await client.query(
           "zerotrust.documents.history",
@@ -273,7 +314,7 @@ export function createDocumentHeadVerifier(client: Client, context: Context) {
       const previousPart = previous.parts.find(
         (candidate) => candidate.facet === facet,
       );
-      if (JSON.stringify(previousPart) !== JSON.stringify(part)) {
+      if (!samePart(part, previousPart)) {
         break;
       }
       current = previous;

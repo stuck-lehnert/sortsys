@@ -100,6 +100,25 @@ test("a known public document head needs no WebCrypto digests but still binds it
   await expect(current.verifier.check(altered)).rejects.toThrow();
 });
 
+test("mutating a returned head does not alter its cached proof", async () => {
+  const current = await createDocumentHeadFixture();
+  const head = await current.head();
+  await current.verifier.check(head);
+
+  const reordered = Object.fromEntries(Object.entries(head).reverse());
+  const opened = await current.verifier.check(reordered);
+  expect(opened).toEqual(head);
+
+  opened.modifiedMicros = String(BigInt(opened.modifiedMicros) + 1n);
+  await expect(current.verifier.check(opened)).rejects.toThrow();
+
+  opened.modifiedMicros = head.modifiedMicros;
+  const key = opened.parts[0].keys[0];
+  key.generation = String(BigInt(key.generation) + 1n);
+  await expect(current.verifier.check(opened)).rejects.toThrow();
+  expect(await current.verifier.check(head)).toEqual(head);
+});
+
 test("historical writer rights remain valid after revocation while regrant never legitimizes a denied publication", async () => {
   const current = await createDocumentHeadFixture(["offer-prices"]);
   const first = await current.head();
