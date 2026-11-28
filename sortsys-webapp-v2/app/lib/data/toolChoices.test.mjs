@@ -277,6 +277,10 @@ test("tool and booking choices read only permitted master data and reuse one acc
     },
     duckDriver,
   );
+  const documents = spyOn(DataView.prototype, "documents");
+  const masterReads = () =>
+    documents.mock.calls.filter(([{ area }]) => area.domain === master.domain);
+
   try {
     tenant.calls.length = 0;
     const tools = await store.choices();
@@ -292,6 +296,9 @@ test("tool and booking choices read only permitted master data and reuse one acc
     expect(
       tenant.calls.filter((call) => call.path === "zerotrust.access.snapshot"),
     ).toHaveLength(1);
+    expect(masterReads()).toHaveLength(2);
+
+    documents.mockClear();
     tenant.calls.length = 0;
     const choices = await store.trackingChoices();
     expect(choices).toEqual([
@@ -311,6 +318,8 @@ test("tool and booking choices read only permitted master data and reuse one acc
     expect(
       tenant.calls.filter((call) => call.path === "zerotrust.access.snapshot"),
     ).toHaveLength(1);
+    expect(masterReads()).toHaveLength(2);
+
     const reads = tenant.calls.filter((call) =>
       [
         "zerotrust.objects.pages",
@@ -339,7 +348,11 @@ test("tool and booking choices read only permitted master data and reuse one acc
       }
     }
     expect(JSON.stringify(tenant.calls)).not.toContain("Sanierung Nordflügel");
+
+    documents.mockClear();
     expect(await store.searchChoices("sanierung nord")).toEqual(tools);
+    expect(masterReads()).toHaveLength(1);
+
     expect(await store.searchChoices("73")).toEqual(tools);
     expect(await store.searchChoices("fehlend")).toEqual([]);
     store.close();
@@ -347,6 +360,7 @@ test("tool and booking choices read only permitted master data and reuse one acc
     await expect(store.choices()).rejects.toThrow();
     expect(tenant.calls).toHaveLength(calls);
   } finally {
+    documents.mockRestore();
     store.close();
   }
 });

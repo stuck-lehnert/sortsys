@@ -527,20 +527,22 @@ export function createProtectedTools(
     }
     throw new InvalidProtectedData();
   };
-  function toolChoice(view: DataView, request: PartRequest): ToolChoice {
-    return describeTool(document(view, request)!.value, values(view, request));
-  }
-  function active(view: DataView, request: PartRequest) {
-    return !document(view, request)!.value.deleted;
-  }
   function isToolMaster(request: PartRequest) {
     const part = toolDomain(request.area.domain)!;
     return part.namespace === "tool" && part.facet === "master-data";
   }
-  function toolChoices(view: DataView, selected: PartRequest[]) {
-    return matching(selected, "tool", "master-data")
-      .filter((request) => document(view, request, true) && active(view, request))
-      .map((request) => toolChoice(view, request));
+  function toolChoices(view: DataView, selected: PartRequest[]): ToolChoice[] {
+    const choices: ToolChoice[] = [];
+
+    for (const request of selected) {
+      if (!isToolMaster(request)) continue;
+
+      const part = document(view, request, true)?.value;
+      if (part && !part.deleted)
+        choices.push(describeTool(part, partValues(part)));
+    }
+
+    return choices;
   }
   return {
     close: lease.close,
@@ -571,12 +573,9 @@ export function createProtectedTools(
       return readAll(
         (view, selected) => {
           const tools = new Map(
-            matching(selected, "tool", "master-data")
-              .filter((request) => active(view, request))
-              .map((request) => {
-                const choice = toolChoice(view, request);
-                return [choice.id, choice] as const;
-              }),
+            toolChoices(view, selected).map(
+              (choice) => [choice.id, choice] as const,
+            ),
           );
 
           return activeTrackings(view, selected).map((value) => {
