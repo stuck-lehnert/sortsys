@@ -32,7 +32,11 @@ import {
   verifyCreationOrigin,
 } from "@sortsys/zerotrust/sortsys";
 import type { EncryptedObject, Facet } from "@sortsys/zerotrust/sortsys";
-import { trustedHistory, unlockedAccount } from "../crypto/session";
+import {
+  captureAccountScope,
+  trustedHistory,
+  unlockedAccount,
+} from "../crypto/session";
 import { verifiedAccessContext } from "../crypto/accessContext";
 import { createObjectAuthorVerifier } from "../crypto/objectAuthors";
 import { readBoxKeyAuthority } from "../crypto/keyAuthorities";
@@ -198,8 +202,13 @@ export async function protectedCollections(
   signal: AbortSignal,
   selectedDomains?: readonly string[],
   initial: readonly CollectionPageRequest[] = [],
+  { retryUnavailableInitial = false } = {},
 ) {
   if (initial.length > 0 && initial.length <= PAGE_BATCH_LIMIT) {
+    const scope = retryUnavailableInitial
+      ? captureAccountScope(signal, client)
+      : null;
+
     try {
       return await bindCollections(
         client,
@@ -212,10 +221,12 @@ export async function protectedCollections(
       const inaccessible =
         error instanceof RpcClientError &&
         (error.code === "FORBIDDEN" || error.code === "NOT_FOUND");
-      if (inaccessible && selectedDomains) throw new InvalidProtectedData();
+      if (inaccessible && selectedDomains && !retryUnavailableInitial)
+        throw new InvalidProtectedData();
       // Warm pages are a hint. A changed selection can be rebuilt from the
       // current inventory; a large reply can still use the normal page reader.
       if (!inaccessible && !exceedsResponseBudget(error)) throw error;
+      scope?.live();
     }
   }
   return bindCollections(client, signal, selectedDomains);

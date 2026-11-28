@@ -19,12 +19,13 @@ export async function loadPersonnelNames(
   const names = new Map<string, string>();
   if (!people.length) return names;
 
+  const selected = people.length <= PERSONNEL_PAGE_BATCH ? people : undefined;
   const access = await protectedCollections(
     client,
     signal,
-    people.length <= PERSONNEL_PAGE_BATCH
-      ? people.map(({ area }) => area.domain)
-      : undefined,
+    selected?.map(({ area }) => area.domain),
+    selected?.map(({ area }) => ({ area })),
+    { retryUnavailableInitial: true },
   );
   const readable = people.filter(({ area }) => access.readable(area));
 
