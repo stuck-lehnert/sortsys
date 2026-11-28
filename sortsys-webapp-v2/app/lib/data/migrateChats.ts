@@ -1,6 +1,6 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import {
   CHAT_PREFIX,
   chatHead,
@@ -12,7 +12,7 @@ import {
 import { copyOwnedAreas, copyProtectedAreas } from "./copyCollection";
 import { legacyChatDate, legacyProposalPayload } from "./legacyChatProposals";
 import { privateLlmCollection } from "./privateLlm";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 
 type ChatSource = {

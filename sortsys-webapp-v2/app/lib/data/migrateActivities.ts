@@ -1,8 +1,7 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { captureAccountScope, trustedHistory } from "../crypto/session";
-import type { BusinessDatabase } from "./database";
-import { readBusinessRows } from "./products";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { RESOURCE_TYPES } from "./activityData";
 import {
   LEGACY_ACTIVITY_PREFIX,

@@ -2,11 +2,11 @@ import assert from "node:assert/strict";
 import { createClient, type Client } from "@sortsys/v2-client";
 import { acceptVaultWithKey, signIn, unlockedAccount } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
-import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "../app/lib/data/database";
 import { prepareTools } from "../app/lib/data/migrateTools";
 import { preparePersonnel } from "../app/lib/data/migratePersonnel";
 import { personnelDomain } from "../app/lib/data/personnelData";
-import { readBusinessRows, publicId } from "../app/lib/data/products";
+import { publicId } from "../app/lib/data/products";
 import { required } from "../app/lib/data/protectedObjects";
 import { toolCollection } from "../app/lib/data/toolData";
 

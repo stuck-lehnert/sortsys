@@ -28,7 +28,7 @@ import {
   copyProtectedSingletons,
   lazyCopyAttester,
 } from "./copyCollection";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { createInvoiceNumbers } from "./invoiceNumbers";
 import {
   invoiceCounterRequest,
@@ -37,7 +37,7 @@ import {
   nextInvoiceNumber,
   type InvoiceNumberClaim,
 } from "./invoiceNumberData";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 import { protectedCollection, protectedCollections } from "./protectedObjects";
 import type { BusinessRow } from "./rowCodec";
 

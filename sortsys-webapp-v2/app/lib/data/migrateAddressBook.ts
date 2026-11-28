@@ -1,9 +1,9 @@
 import type { Client } from "@sortsys/v2-client";
 import { CUSTOMER_COLLECTION, CONTACT_COLLECTION, addressPayload, type AddressPayload } from "./addressBook";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { prepareOwnerCollections } from "./prepareCollections";
 import { copyProtectedCollection } from "./copyCollection";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 
 export async function prepareAddressBook(client: Client, source: BusinessDatabase, subject: string, signal: AbortSignal): Promise<void> {
   await prepareOwnerCollections(client, subject, [CUSTOMER_COLLECTION, CONTACT_COLLECTION], signal);

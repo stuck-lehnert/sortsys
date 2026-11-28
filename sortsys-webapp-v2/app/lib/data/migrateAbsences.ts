@@ -15,9 +15,9 @@ import {
   type AbsenceRequest,
 } from "./absenceData";
 import { commitProtectedWrites } from "./atomicWrites";
-import type { BusinessDatabase, DuckDriver } from "./database";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "./database";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 

@@ -1,6 +1,6 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { copyProtectedCollection } from "./copyCollection";
 import {
   COMMON_COST_COLLECTION,
@@ -8,7 +8,6 @@ import {
   commonCostPayload,
 } from "./commonCostData";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { readBusinessRows } from "./products";
 import type { BusinessRow } from "./rowCodec";
 import { timestampMicros } from "./timestamps";
 

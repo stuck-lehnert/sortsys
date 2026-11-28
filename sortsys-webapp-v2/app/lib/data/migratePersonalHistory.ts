@@ -1,6 +1,6 @@
 import type { Client } from "@sortsys/v2-client";
-import type { BusinessDatabase } from "./database";
-import { readBusinessRows, publicId } from "./products";
+import { readBusinessRows, type BusinessDatabase } from "./database";
+import { publicId } from "./products";
 import { prepareOwnerCollections } from "./prepareCollections";
 import { copySmallProtectedCollections } from "./copyCollection";
 import {

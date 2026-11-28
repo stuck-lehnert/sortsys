@@ -7,8 +7,8 @@ import {
 } from "@sortsys/zerotrust/sortsys";
 import { administratorContext } from "../crypto/administration";
 import { memberCreationFrame } from "../crypto/members";
-import type { BusinessDatabase } from "../data/database";
-import { publicId, readBusinessRows } from "../data/products";
+import { readBusinessRows, type BusinessDatabase } from "../data/database";
+import { publicId } from "../data/products";
 import { required } from "../data/protectedObjects";
 import { timestampMicros } from "../data/timestamps";
 

@@ -1,7 +1,6 @@
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { uiText } from "../i18n";
-import type { BusinessDatabase } from "../data/database";
-import { readBusinessRows } from "../data/products";
+import { readBusinessRows, type BusinessDatabase } from "../data/database";
 import { MAX_FILE_BYTES } from "../data/projectFileData";
 
 export type BackupObject = {

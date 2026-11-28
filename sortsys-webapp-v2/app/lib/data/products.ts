@@ -6,10 +6,10 @@ import type {
 } from "@sortsys/v2-client";
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { buildPrefixSearch, createPrefixMatcher } from "../search/prefixQuery";
-import type { BusinessDatabase, DuckDriver } from "./database";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "./database";
 import { decodeBusinessRow } from "./rowCodec";
 import type { BusinessRow } from "./rowCodec";
-import { businessSchema, quoted, tableDefinition } from "./schema";
+import { businessSchema } from "./schema";
 import type { Collection } from "./protectedObjects";
 import { acquireDataRuntime } from "./runtime/session";
 import { defineDataModel } from "./runtime/model";
@@ -241,62 +241,6 @@ export async function readProtectedPrices(
   } finally {
     lease.close();
   }
-}
-
-/** Select the migration's canonical wire types without rounding int64 IDs or
- * timestamps through JavaScript numbers/Date. No generated search columns. */
-export async function readBusinessRows(
-  database: BusinessDatabase,
-  name: string,
-): Promise<BusinessRow[]> {
-  const table = tableDefinition(name);
-  const columns = table.columns.map((column) => {
-    const key = quoted(column.name);
-    if (column.type.startsWith("_")) {
-      const type = column.type.slice(1);
-      const value =
-        type.startsWith("int") || type === "numeric" || type === "date"
-          ? "CAST(item AS VARCHAR)"
-          : type === "timestamptz"
-            ? "strftime(make_timestamp(epoch_us(item)),'%Y-%m-%dT%H:%M:%S.%fZ')"
-            : "item";
-      return `list_transform(${key},item -> ${value}) AS ${key}`;
-    }
-    if (
-      column.type.startsWith("int") ||
-      column.type === "numeric" ||
-      column.type === "date"
-    )
-      return `CAST(${key} AS VARCHAR) AS ${key}`;
-    if (column.type === "timestamptz")
-      return `strftime(make_timestamp(epoch_us(${key})),'%Y-%m-%dT%H:%M:%S.%fZ') AS ${key}`;
-    return key;
-  });
-  const rows = await database.query<Record<string, unknown>>(
-    `SELECT ${columns.join(",")} FROM ${quoted(name)}`,
-  );
-  return rows.rows.map((values) =>
-    decodeBusinessRow({
-      format: "sortsys-row-v2",
-      schema: businessSchema.fingerprint,
-      table: name,
-      values: Object.fromEntries(
-        table.columns.map((column) => {
-          let value = values[column.name];
-          if (column.type.startsWith("_") && value !== null) {
-            if (
-              !value ||
-              typeof value !== "object" ||
-              !(Symbol.iterator in value)
-            )
-              throw new InvalidProtectedData();
-            value = Array.from(value as Iterable<unknown>);
-          }
-          return [column.name, value];
-        }),
-      ),
-    }),
-  );
 }
 
 export async function productPayloads(

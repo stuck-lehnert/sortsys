@@ -1,6 +1,8 @@
 import { createSerialQueue } from "@sortsys/zerotrust";
 import schema from "~/generated/browser-schema.generated.json";
-import { installBusinessSchema } from "./schema";
+import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
+import { createBusinessRow, type BusinessRow } from "./rowCodec";
+import { installBusinessSchema, quoted, tableDefinition } from "./schema";
 
 export interface ArrowResult {
   schema: { fields: readonly { name: string; type: { typeId: number; scale?: number; unit?: number } }[] };
@@ -183,6 +185,49 @@ export async function createBusinessDatabase(driver?: DuckDriver, partial = fals
     });
     return db;
   } catch (error) { await db.close(); throw error; }
+}
+
+function migrationCell(expression: string, type: string): string {
+  if (type.startsWith("int") || type === "numeric" || type === "date")
+    return `CAST(${expression} AS VARCHAR)`;
+  if (type === "timestamptz")
+    return `strftime(make_timestamp(epoch_us(${expression})),'%Y-%m-%dT%H:%M:%S.%fZ')`;
+  return expression;
+}
+
+/** Read canonical migration rows without rounding int64 values or timestamps
+ * through JavaScript numbers or Date. The schema excludes generated columns. */
+export async function readBusinessRows(
+  database: BusinessDatabase,
+  name: string,
+): Promise<BusinessRow[]> {
+  const { columns } = tableDefinition(name);
+  const select = columns.map(({ name, type }) => {
+    const key = quoted(name);
+    if (type.startsWith("_")) {
+      const item = migrationCell("item", type.slice(1));
+      return `list_transform(${key},item -> ${item}) AS ${key}`;
+    }
+
+    const value = migrationCell(key, type);
+    return value === key ? key : `${value} AS ${key}`;
+  });
+
+  const { rows } = await database.query(
+    `SELECT ${select.join(",")} FROM ${quoted(name)}`,
+  );
+
+  return rows.map((row) => {
+    const entries = columns.map(({ name, type }) => {
+      const value = row[name];
+      if (!type.startsWith("_") || value === null) return [name, value];
+
+      if (!value || typeof value !== "object" || !(Symbol.iterator in value))
+        throw new InvalidProtectedData();
+      return [name, Array.from(value as Iterable<unknown>)];
+    });
+    return createBusinessRow(name, Object.fromEntries(entries));
+  });
 }
 
 export const businessSchemaFingerprint = schema.fingerprint;

@@ -6,12 +6,12 @@ import { acceptVaultWithKey, type UnlockedAccount } from "../app/lib/crypto/sess
 import { createMemberInvitation, approveMemberInvitation, invitationMembers, signInMemberInvitation, joinMemberInvitation } from "../app/lib/crypto/invitations";
 import { privateLlmCollection } from "../app/lib/data/privateLlm";
 import { createBusinessClient } from "../app/lib/data/businessClient";
-import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "../app/lib/data/database";
 import { preparePreferences } from "../app/lib/data/migratePreferences";
 import { gaebViewCollection, preferenceCollection, preferenceDomain, preferencePayload } from "../app/lib/data/preferenceData";
 import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 import { addressId } from "../app/lib/data/addressBook";
-import { readBusinessRows, publicId } from "../app/lib/data/products";
+import { publicId } from "../app/lib/data/products";
 
 export const MEMBER_VIEW = { showFields: false, outlineOpen: false, outlineWidth: 575, ribbonCollapsed: true, zoom: 1.375 };
 export async function capturedPreferences(client: Client) {

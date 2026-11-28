@@ -2,7 +2,7 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { unlockedAccount } from "../crypto/session";
 import { prepareOwnerCollections } from "./prepareCollections";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { copyProtectedAreas } from "./copyCollection";
 import {
   PRICE_COLLECTION,
@@ -11,7 +11,6 @@ import {
   productPayload,
   productPayloads,
   publicId,
-  readBusinessRows,
 } from "./products";
 import { VENDOR_COLLECTION, vendorPayload } from "./vendorData";
 

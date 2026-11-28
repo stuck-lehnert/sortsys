@@ -4,9 +4,9 @@ import { mapConcurrent } from "@sortsys/zerotrust";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { missingBackupFiles, type BackupFiles } from "../backups/files";
 import type { BusinessRow } from "./rowCodec";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { commercialDocumentStores } from "./commercialDocumentContent";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 
 const MAX_XML = 20 * 1024 * 1024;
 const PARALLEL_CASES = 2;

@@ -1,8 +1,8 @@
+import * as databaseReader from "./database";
 import { expect, spyOn, test } from "bun:test";
 import * as migration from "../crypto/migrationOrigin";
 import { prepareProjectCommercial } from "./migrateProjectCommercial";
 import * as provisioning from "./prepareCollections";
-import * as products from "./products";
 import * as objects from "./protectedObjects";
 import { row } from "./testing/businessRow.mjs";
 
@@ -75,7 +75,7 @@ test("project offer and procurement registers share bounded reads and commits", 
     },
   };
 
-  const read = spyOn(products, "readBusinessRows")
+  const read = spyOn(databaseReader, "readBusinessRows")
     .mockImplementation(async (_, table) => rows[table]);
   const prepare = spyOn(provisioning, "prepareOwnerCollections")
     .mockResolvedValue(undefined);

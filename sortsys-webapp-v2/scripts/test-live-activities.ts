@@ -7,8 +7,8 @@ import {
   readVerifiedPolicy,
 } from "../app/lib/crypto/policy";
 import { createBusinessClient } from "../app/lib/data/businessClient";
-import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
-import { readBusinessRows, publicId } from "../app/lib/data/products";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "../app/lib/data/database";
+import { publicId } from "../app/lib/data/products";
 import { personnelCollection } from "../app/lib/data/personnelData";
 import { required } from "../app/lib/data/protectedObjects";
 import { splitLegacyActivity } from "../app/lib/data/legacyActivityData";

@@ -1,11 +1,10 @@
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { test, expect } from "bun:test";
-import { createBusinessDatabase, businessSchemaFingerprint } from "./database";
+import { readBusinessRows, createBusinessDatabase, businessSchemaFingerprint } from "./database";
 import { businessSchema, checkExpression, quoted } from "./schema";
 import { projectCompleteRows, projectFacetRows } from "./projection";
 import { projectCompleteSnapshot } from "./snapshot";
 import { row } from "./rowCodec.test.mjs";
-import { readBusinessRows } from "./products";
 
 async function database() {
   return createBusinessDatabase(await duckDriver());

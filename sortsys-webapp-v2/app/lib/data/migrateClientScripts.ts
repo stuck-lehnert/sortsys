@@ -1,5 +1,5 @@
 import type { Client } from "@sortsys/v2-client";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import type { BusinessRow } from "./rowCodec";
 import {
   CLIENT_SCRIPT_COLLECTION,
@@ -8,7 +8,6 @@ import {
 } from "./clientScriptData";
 import { copyProtectedCollection } from "./copyCollection";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { readBusinessRows } from "./products";
 
 export async function copyClientScripts(
   client: Client,

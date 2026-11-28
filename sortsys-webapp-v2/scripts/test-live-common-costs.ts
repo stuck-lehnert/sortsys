@@ -6,10 +6,9 @@ import {
   unlockedAccount,
 } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
-import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "../app/lib/data/database";
 import { wireCommonCosts } from "../app/lib/data/commonCostData";
 import { prepareCommonCosts } from "../app/lib/data/migrateCommonCosts";
-import { readBusinessRows } from "../app/lib/data/products";
 import { required } from "../app/lib/data/protectedObjects";
 
 /** Real encrypted writes and conflict handling against the two independent

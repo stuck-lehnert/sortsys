@@ -1,3 +1,4 @@
+import * as databaseReader from "./database";
 import { expect, spyOn, test } from "bun:test";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import * as session from "../crypto/session";
@@ -28,7 +29,7 @@ test.each([false, true])("catalogue migration shares provisioning (account chang
   const account = spyOn(session, "unlockedAccount").mockReturnValue({});
   const prepare = spyOn(setup, "prepareOwnerCollections").mockResolvedValue(undefined);
   const readProducts = spyOn(products, "productPayloads").mockResolvedValue([product]);
-  const readRows = spyOn(products, "readBusinessRows").mockImplementation(async (_, table) => {
+  const readRows = spyOn(databaseReader, "readBusinessRows").mockImplementation(async (_, table) => {
     if (table === "product_vendors") {
       if (switchAccount) account.mockReturnValue({});
       return [vendor];

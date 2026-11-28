@@ -1,9 +1,9 @@
 import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { copyProtectedCollection } from "./copyCollection";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 import {
   financialCollection,
   financialObject,

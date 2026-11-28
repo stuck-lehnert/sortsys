@@ -2,9 +2,9 @@ import assert from "node:assert/strict";
 import { createClient, type Client, type QueryResult } from "@sortsys/v2-client";
 import { acceptVaultWithKey, signIn, unlockedAccount } from "../app/lib/crypto/session";
 import { createBusinessClient } from "../app/lib/data/businessClient";
-import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "../app/lib/data/database";
 import { prepareDailyReports } from "../app/lib/data/migrateProjectReports";
-import { publicId, readBusinessRows } from "../app/lib/data/products";
+import { publicId } from "../app/lib/data/products";
 import { required } from "../app/lib/data/protectedObjects";
 
 /** Run by the disposable two-API migration stack; no plaintext daily-report

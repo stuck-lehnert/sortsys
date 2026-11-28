@@ -2,7 +2,7 @@ import type { Client } from "@sortsys/v2-client";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
 import { groupBy } from "../groupBy";
 import { copyOwnedAreas } from "./copyCollection";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import {
   dailyCollection,
   dailyCosts,
@@ -10,7 +10,7 @@ import {
   type DailyCosts,
   type DailyPayload,
 } from "./dailyReportData";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 import type { Collection } from "./protectedObjects";
 import {
   regieCollection,

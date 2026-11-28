@@ -27,8 +27,7 @@ import {
   verify,
   verifyCreationCapability,
 } from "@sortsys/zerotrust/sortsys";
-import { createBusinessDatabase } from "../../app/lib/data/database";
-import { readBusinessRows } from "../../app/lib/data/products";
+import { readBusinessRows, createBusinessDatabase } from "../../app/lib/data/database";
 import { RecoveryPhraseBackup } from "../../app/components/RecoveryPhraseBackup";
 import { I18nProvider } from "../../app/lib/i18n";
 import { LLMActivityHost } from "../../app/components/LLMActivityHost";

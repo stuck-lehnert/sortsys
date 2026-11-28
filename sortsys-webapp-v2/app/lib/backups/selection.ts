@@ -1,6 +1,6 @@
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
-import type { DuckDriver } from "../data/database";
-import { readBusinessRows, publicId } from "../data/products";
+import { readBusinessRows, type DuckDriver } from "../data/database";
+import { publicId } from "../data/products";
 import { memberCreationFrame } from "../crypto/members";
 import { uiText } from "../i18n";
 import {

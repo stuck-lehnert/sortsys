@@ -6,7 +6,7 @@ import {
   sized,
 } from "@sortsys/zerotrust/sortsys";
 import { missingBackupFiles, type BackupFiles } from "../backups/files";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { copyProtectedCollection } from "./copyCollection";
 import { storeFileContent, verifyFileContent } from "./fileContent";
 import {
@@ -20,7 +20,6 @@ import {
 } from "./logoData";
 import { prepareOwnerCollections } from "./prepareCollections";
 import { validatePrintAssetBytes } from "./printAssetBytes";
-import { readBusinessRows } from "./products";
 
 type LegacyLogo =
   | { kind: "none" | "incomplete" }

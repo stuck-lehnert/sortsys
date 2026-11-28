@@ -4,10 +4,10 @@ import {
   CREATION_FACETS,
   InvalidProtectedData,
 } from "@sortsys/zerotrust/sortsys";
-import type { BusinessDatabase } from "./database";
+import { readBusinessRows, type BusinessDatabase } from "./database";
 import { copyProtectedCollection } from "./copyCollection";
 import { prepareOwnerCollections } from "./prepareCollections";
-import { publicId, readBusinessRows } from "./products";
+import { publicId } from "./products";
 import {
   toolBookingArea,
   toolBookingState,

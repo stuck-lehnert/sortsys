@@ -9,8 +9,8 @@ import { createBusinessClient } from "../app/lib/data/businessClient";
 import { commercialCollection } from "../app/lib/data/commercialAreas";
 import { commercialDocumentStore } from "../app/lib/data/commercialDocumentContent";
 import { parseCommercialDocumentUrl } from "../app/lib/data/commercialDocumentUrl";
-import type { BusinessDatabase, DuckDriver } from "../app/lib/data/database";
-import { publicId, readBusinessRows } from "../app/lib/data/products";
+import { readBusinessRows, type BusinessDatabase, type DuckDriver } from "../app/lib/data/database";
+import { publicId } from "../app/lib/data/products";
 import { protectedCollection, required } from "../app/lib/data/protectedObjects";
 
 const TITLE = "Geschütztes neues Angebot";

@@ -1,7 +1,6 @@
 import { InvalidProtectedData, record } from "@sortsys/zerotrust/sortsys";
 import { masterRecord, type MasterRecord } from "../crypto/masterRecord";
-import { readBusinessRows } from "../data/products";
-import type { BusinessDatabase } from "../data/database";
+import { readBusinessRows, type BusinessDatabase } from "../data/database";
 import { uiText } from "../i18n";
 import { readPostgresBackup } from "./postgres";
 
