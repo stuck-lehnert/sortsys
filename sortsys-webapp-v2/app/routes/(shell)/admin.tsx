@@ -108,9 +108,9 @@ function OrganizationAdministration() {
     { id: "staff", label: uiText("Personal", "Staff") },
     { id: "usage", label: uiText("LLM-Verbrauch", "LLM usage") },
   ];
-  const selected = tabs.some((tab) => tab.id === search.get("tab"))
-    ? search.get("tab")!
-    : "organization";
+  const requested = search.get("tab");
+  const tabId = requested === "offers" ? "offer-numbers" : requested;
+  const selected = tabs.find((tab) => tab.id === tabId)?.id ?? "organization";
   const [visited, setVisited] = useState(() => new Set([selected]));
   useEffect(() => {
     setVisited((previous) =>

@@ -50,9 +50,15 @@ export async function showOfferNumbering(root) {
     tenant.client,
     controller.signal,
   );
-  organizationSettings.profile = () => organization.edit("profile");
-  organizationSettings.numbering = () => organization.edit("numbering");
-  organizationSettings.offerNumbering = () => organization.edit(kind);
+  const opened = [];
+  const edit = (setting) => {
+    opened.push(setting);
+    return organization.edit(setting);
+  };
+
+  organizationSettings.profile = () => edit("profile");
+  organizationSettings.numbering = () => edit("numbering");
+  organizationSettings.offerNumbering = () => edit(kind);
 
   const sessionClient = {
     loggedIn: () => true,
@@ -71,6 +77,7 @@ export async function showOfferNumbering(root) {
   };
 
   window.cryptoFixture.offerNumbering = {
+    opened,
     async saved() {
       const { value } = await tenant.plain(OFFER_NUMBERING_COLLECTION, object);
       return value;
@@ -83,7 +90,7 @@ export async function showOfferNumbering(root) {
 
   root.render(
     <I18nProvider>
-      <MemoryRouter initialEntries={["/admin"]}>
+      <MemoryRouter initialEntries={[`/admin${window.location.search}`]}>
         <SessionInfoProvider sessionClient={sessionClient} access={access}>
           <NotificationProvider>
             <Routes>

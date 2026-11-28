@@ -18,7 +18,7 @@ after(async () => {
   await server?.close();
 });
 
-async function exercise(run) {
+async function exercise(run, search = "") {
   const page = await browser.newPage({ timezoneId: "UTC" });
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.stack ?? error.message));
@@ -29,7 +29,7 @@ async function exercise(run) {
   );
 
   try {
-    await page.goto(`${server.origin}/crypto.html`);
+    await page.goto(`${server.origin}/crypto.html${search}`);
     await page.waitForFunction(() => window.cryptoFixture?.showOfferNumbering);
     await page.evaluate(() => window.cryptoFixture.showOfferNumbering());
 
@@ -43,16 +43,19 @@ async function exercise(run) {
       name: "Angebotsnummern",
       exact: true,
     });
-    await expect(company).toHaveAttribute("aria-selected", "true");
-    await expect(page.getByRole("textbox", { name: "Firmenname" }))
-      .toHaveValue("Ausbau Beispiel");
-
     const start = page.getByRole("textbox", { name: "Globale Startnummer" });
-    await invoiceNumbers.click();
-    await expect(invoiceNumbers).toHaveAttribute("aria-selected", "true");
-    await expect(start).toHaveValue("12");
+    if (!search) {
+      await expect(company).toHaveAttribute("aria-selected", "true");
+      await expect(page.getByRole("textbox", { name: "Firmenname" }))
+        .toHaveValue("Ausbau Beispiel");
 
-    await offerNumbers.click();
+      await invoiceNumbers.click();
+      await expect(invoiceNumbers).toHaveAttribute("aria-selected", "true");
+      await expect(start).toHaveValue("12");
+
+      await offerNumbers.click();
+    }
+
     await expect(offerNumbers).toHaveAttribute("aria-selected", "true");
     await expect(start).toHaveValue("8");
     await run(page, start);
@@ -60,6 +63,18 @@ async function exercise(run) {
   } finally {
     await page.close();
   }
+}
+
+for (const tab of ["offers", "offer-numbers"]) {
+  test(`the ${tab} link opens only the offer numbering settings`, async () => {
+    await exercise(async (page) => {
+      const opened = await page.evaluate(
+        () => window.cryptoFixture.offerNumbering.opened,
+      );
+
+      assert.deepEqual(opened, ["offerNumbering"]);
+    }, `?tab=${tab}`);
+  });
 }
 
 test("offer numbers use the three organization-wide schemes and keep exact starting values", async () => {
