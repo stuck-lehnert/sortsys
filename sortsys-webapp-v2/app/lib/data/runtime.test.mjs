@@ -988,6 +988,43 @@ test("a tool handover is an ordinary multi-row command with state checks and one
   }
 }, 15000);
 
+test("only a complete set of known current heads suppresses a change notification", async () => {
+  const f = fixture();
+  const notifications = [];
+  const stop = f.runtime.listen((domains) => notifications.push([...domains]));
+  const domains = new Set([mainArea.domain, privateArea.domain]);
+  const current = () => new Map([
+    [mainArea.domain, String(f.state(mainArea).sequence)],
+    [privateArea.domain, String(f.state(privateArea).sequence)],
+  ]);
+
+  try {
+    await f.runtime.read([first, second], () => {});
+    const heads = current();
+    heads.set(privateArea.domain, "0");
+    f.runtime.invalidate(domains, heads);
+    expect(notifications).toEqual([]);
+
+    const unknown = "unloaded:master-data";
+    const mismatches = [
+      [new Set([...domains, unknown]), current().set(unknown, "0")],
+      [domains, new Map([[mainArea.domain, "1"]])],
+      [domains, current().set(privateArea.domain, "01")],
+      [domains, current().set(privateArea.domain, "2")],
+    ];
+
+    for (const [changed, hints] of mismatches) {
+      notifications.length = 0;
+      f.runtime.invalidate(changed, hints);
+      expect(notifications).toEqual([[...changed]]);
+      await f.runtime.read([first, second], () => {});
+    }
+  } finally {
+    stop();
+    await f.runtime.close();
+  }
+});
+
 test("a soft policy refresh removes revoked fragments without rebuilding still-authorized database state", async () => {
   const f = fixture();
   try {

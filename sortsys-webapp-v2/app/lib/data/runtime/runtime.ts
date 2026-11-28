@@ -514,12 +514,33 @@ export class DataRuntime {
     minimumHeads?: ReadonlyMap<string, string>,
   ): void {
     if (domains) {
+      let affected = false;
+      let pendingHeads = minimumHeads && new Set(domains);
+
+      // Check all cached resources for the hinted domains in one pass. Each
+      // domain must have at least one hit, and none may lag behind the hint.
+      for (const resource of this.resources.values()) {
+        const domain = resource.request.area.domain;
+        if (!domains.has(domain)) continue;
+
+        affected = true;
+        if (!pendingHeads) break;
+
+        const head = minimumHeads?.get(domain);
+        if (
+          head === undefined ||
+          !/^(0|[1-9]\d*)$/.test(head) ||
+          BigInt(resource.head) < BigInt(head)
+        ) {
+          pendingHeads = undefined;
+          break;
+        }
+        pendingHeads.delete(domain);
+      }
+
       // A removed resource has already retired its projected rows. Repeated
       // hints for it must not restart another area's load; an in-flight reload
-      // of that same area is still protected by loadingDomains below.
-      const affected = [...this.resources.values()].some((resource) =>
-        domains.has(resource.request.area.domain),
-      );
+      // of that same area is still protected by loadingDomains.
       const loading = [...this.loadingDomains].some((domain) =>
         domains.has(domain),
       );
@@ -529,24 +550,9 @@ export class DataRuntime {
         for (const listener of this.listeners) listener(domains);
         return;
       }
+      if (pendingHeads?.size === 0) return;
     }
-    if (
-      domains &&
-      minimumHeads &&
-      [...domains].every((domain) => {
-        const head = minimumHeads.get(domain);
-        const current = [...this.resources.values()].filter(
-          (resource) => resource.request.area.domain === domain,
-        );
-        return (
-          head !== undefined &&
-          /^(0|[1-9]\d*)$/.test(head) &&
-          current.length &&
-          current.every((resource) => BigInt(resource.head) >= BigInt(head))
-        );
-      })
-    )
-      return;
+
     this.generation++;
     for (const [key, resource] of this.resources)
       if (!domains || domains.has(resource.request.area.domain))
