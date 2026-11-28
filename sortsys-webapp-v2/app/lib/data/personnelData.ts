@@ -20,7 +20,12 @@ export type PersonnelPart = {
   facet: PersonnelFacet;
   values: Record<string, unknown>;
 };
-export const PERSONNEL_QUERIES = new Set(["users.list", "users.get"]);
+export const SUPERVISOR_CHOICES_QUERY = "users.supervisors.choices";
+export const PERSONNEL_QUERIES = new Set([
+  "users.list",
+  "users.get",
+  SUPERVISOR_CHOICES_QUERY,
+]);
 export const PERSONNEL_MUTATIONS = new Set([
   "users.create",
   "users.update",

@@ -243,6 +243,58 @@ test("ordinary roles, unknown people and malformed settings cannot change the fa
   }
 }, 30000);
 
+test("supervisor choices keep all names in order without opening private personnel facets", async () => {
+  const tenant = await fixture();
+  const personnel = createProtectedPersonnel(
+    tenant.client,
+    tenant.signal,
+    duckDriver,
+  );
+  const scope = personnelCollection("3", "scope").domain;
+  const master = personnelCollection("3", "master-data").domain;
+
+  function listed(calls, domain) {
+    return calls.some(({ path, input }) => {
+      switch (path) {
+        case "zerotrust.objects.list":
+          return input.domain === domain;
+        case "zerotrust.objects.pages":
+          return input.selections.some((page) => page.domain === domain);
+        case "zerotrust.access.snapshot":
+          return input.pages?.selections.some((page) => page.domain === domain);
+        default:
+          return false;
+      }
+    });
+  }
+
+  const labels = (users) => users.map(({ id, firstName, lastName }) => ({
+    id,
+    firstName,
+    lastName,
+  }));
+
+  try {
+    const start = tenant.calls.length;
+    const choices = await personnel.query("users.supervisors.choices");
+    const choiceCalls = tenant.calls.slice(start);
+    expect(listed(choiceCalls, master)).toBe(true);
+    expect(listed(choiceCalls, scope)).toBe(false);
+    expect(choices.find(({ id }) => id === "3").supervisorUserId).toBeNull();
+
+    const listStart = tenant.calls.length;
+    const rows = await personnel.query("users.list", {});
+    expect(listed(tenant.calls.slice(listStart), scope)).toBe(true);
+    expect(rows.find(({ id }) => id === "3").supervisorUserId).toBe("2");
+
+    expect(labels(choices)).toEqual(labels(rows));
+    expect(choices).toHaveLength(3);
+  } finally {
+    personnel.close();
+    tenant.store.close();
+  }
+}, 120000);
+
 test("an administrative role cannot bypass the encrypted organization's write permission", async () => {
   const tenant = await fixture(false);
   try {

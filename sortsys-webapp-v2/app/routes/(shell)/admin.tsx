@@ -18,7 +18,7 @@ import { MyCallout } from "~/components/MyCallout";
 import { MyForm } from "~/components/MyForm";
 import { useClientStream } from "~/hooks/useClientStream";
 import { useSessionInfo } from "~/hooks/useSessionInfo";
-import { client } from "~/lib/client";
+import { client, streamSupervisorChoices } from "~/lib/client";
 import { userFullName } from "~/lib/format";
 import { Icons } from "~/lib/icons";
 import { SmallUserTile } from "~/lib/tiles";
@@ -129,7 +129,7 @@ function OrganizationAdministration() {
   const usageRequested = hasOpened("usage");
 
   const [users, usersError] = useClientStream(
-    () => (staffRequested ? client.streamQuery("users.list", {}) : EMPTY),
+    () => (staffRequested ? streamSupervisorChoices() : EMPTY),
     [staffRequested],
   );
   const [defaultSupervisor, defaultSupervisorLoadError] = useClientStream<

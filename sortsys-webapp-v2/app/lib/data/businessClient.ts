@@ -72,6 +72,7 @@ import { TOOL_QUERIES, TOOL_MUTATIONS, toolQueryAffected } from "./toolData";
 import {
   PERSONNEL_QUERIES,
   PERSONNEL_MUTATIONS,
+  SUPERVISOR_CHOICES_QUERY,
   personnelDomain,
 } from "./personnelData";
 import { DAILY_QUERIES, DAILY_MUTATIONS, dailyDomain } from "./dailyReportData";
@@ -1716,6 +1717,15 @@ export function createBusinessClient(
     });
   }
 
+  function streamSupervisorChoices() {
+    type Choices = QueryResult<"users.list">;
+
+    return watchQuery<Choices>("users.list", async () => {
+      const [rows, error] = await readQuery(SUPERVISOR_CHOICES_QUERY, undefined);
+      return [rows as Choices | null, error];
+    });
+  }
+
   function streamPlanningProjects(excluded: readonly string[]) {
     return watchQuery<string[]>(PLANNING_ACTIVITY_QUERY, async (signal) => {
       const ids = await readResourceChoices(async () => {
@@ -2035,6 +2045,7 @@ export function createBusinessClient(
     toolResources: typeof toolResourceActions;
     streamDirectorySearch: typeof streamDirectorySearch;
     streamPersonnelName: typeof streamPersonnelName;
+    streamSupervisorChoices: typeof streamSupervisorChoices;
     streamPlanningProjects: typeof streamPlanningProjects;
     organization: typeof organizationActions;
     logo: typeof logoActions;
@@ -2053,6 +2064,7 @@ export function createBusinessClient(
     toolResources: toolResourceActions,
     streamDirectorySearch,
     streamPersonnelName,
+    streamSupervisorChoices,
     streamPlanningProjects,
     organization: organizationActions,
     logo: logoActions,

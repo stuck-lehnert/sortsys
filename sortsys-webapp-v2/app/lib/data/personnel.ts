@@ -10,6 +10,7 @@ import {
   PERSONNEL_MODEL,
   PERSONNEL_QUERIES,
   PERSONNEL_MUTATIONS,
+  SUPERVISOR_CHOICES_QUERY,
   personnelDomain,
   personnelCollection,
   personnelRequest,
@@ -303,12 +304,17 @@ export function createProtectedPersonnel(
           typeof data.includeArchived !== "boolean")
       )
         throw new InvalidProtectedData();
+
       const search = addressText(data.search, false, 1000);
-      const namesOnly = path === "users.list" && limit !== undefined;
+      const supervisorChoices = path === SUPERVISOR_CHOICES_QUERY;
+      const namesOnly =
+        supervisorChoices || (path === "users.list" && limit !== undefined);
       const requestedUser = path === "users.get" ? (data.id as string) : undefined;
-      const selected = (await requests(!namesOnly, requestedUser)).filter(
+      const prepareOwnProfile = supervisorChoices || !namesOnly;
+      const selected = (await requests(prepareOwnProfile, requestedUser)).filter(
         ({ area }) => !namesOnly || area.facet === "master-data",
       );
+
       const result = await runtime.read(
         selected,
         (view) => {
