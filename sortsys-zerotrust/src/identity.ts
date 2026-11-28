@@ -1,4 +1,5 @@
 import { AeadId, CipherSuite, KdfId, KemId } from "hpke-js";
+import { readCachedPromise } from "./core/boundedPromiseCache";
 import {
   base64,
   digest,
@@ -97,20 +98,10 @@ export async function fingerprint(identity: PublicIdentity): Promise<string> {
 
 const signingKeys = new Map<string, Promise<CryptoKey>>();
 export async function importSigningKey(key: string): Promise<CryptoKey> {
-  let pending = signingKeys.get(key);
-  if (!pending) {
+  return readCachedPromise(signingKeys, key, 512, () => {
     const raw = sized(key, 32);
-    pending = crypto.subtle.importKey("raw", raw, "Ed25519", true, ["verify"]);
-    signingKeys.set(key, pending);
-    if (signingKeys.size > 512)
-      signingKeys.delete(signingKeys.keys().next().value!);
-  }
-  try {
-    return await pending;
-  } catch (error) {
-    if (signingKeys.get(key) === pending) signingKeys.delete(key);
-    throw error;
-  }
+    return crypto.subtle.importKey("raw", raw, "Ed25519", true, ["verify"]);
+  });
 }
 
 export async function sign(

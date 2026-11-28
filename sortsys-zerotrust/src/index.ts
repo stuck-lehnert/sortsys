@@ -30,6 +30,7 @@ export * from "./core/framework";
 export * from "./core/store";
 export * from "./core/numberSequence";
 export { arrayBatches } from "./core/arrayBatches";
+export { readCachedPromise } from "./core/boundedPromiseCache";
 export { createCursorHistory, type CursorHistoryState } from "./core/cursorHistory";
 export { latestQuery } from "./core/latestQuery";
 export { mapConcurrent } from "./core/mapConcurrent";

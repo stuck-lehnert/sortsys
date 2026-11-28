@@ -1,5 +1,10 @@
 import type { Client } from "@sortsys/v2-client";
-import { arrayBatches, createWeakPairCache, mapConcurrent } from "@sortsys/zerotrust";
+import {
+  arrayBatches,
+  createWeakPairCache,
+  mapConcurrent,
+  readCachedPromise,
+} from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
   keyAuthority,
@@ -158,41 +163,33 @@ export async function readBoxKeyAuthority(
   if (!certificate) {
     const account = unlockedAccount();
     if (!account) throw new InvalidProtectedData();
+
     const cache = certificates.getOrCreate(client, account);
-    let pending = cache.get(signature);
-    if (!pending) {
-      pending = (async () => {
-        const result = await required(
-          client.query(
-            "zerotrust.keyAuthorities.get",
-            { signature },
-            { strategy: "network-only" },
-          ),
-        );
-        if (unlockedAccount() !== account || !client.loggedIn())
-          throw new InvalidProtectedData();
-        const parsed = keyAuthority(result);
-        if (parsed.signature !== signature) throw new InvalidProtectedData();
-        return verifyKeyAuthority(
-          parsed,
-          {
-            tenant: account.tenant,
-            generation: parsed.generation,
-            scope: parsed.scope,
-            facet: parsed.facet,
-          },
-          input.history.authority(parsed.generation),
-        );
-      })();
-      if (cache.size >= 1024) cache.delete(cache.keys().next().value!);
-      cache.set(signature, pending);
-    }
-    try {
-      certificate = await pending;
-    } catch (error) {
-      if (cache.get(signature) === pending) cache.delete(signature);
-      throw error;
-    }
+    certificate = await readCachedPromise(cache, signature, 1024, async () => {
+      const result = await required(
+        client.query(
+          "zerotrust.keyAuthorities.get",
+          { signature },
+          { strategy: "network-only" },
+        ),
+      );
+      if (unlockedAccount() !== account || !client.loggedIn())
+        throw new InvalidProtectedData();
+
+      const parsed = keyAuthority(result);
+      if (parsed.signature !== signature) throw new InvalidProtectedData();
+
+      return verifyKeyAuthority(
+        parsed,
+        {
+          tenant: account.tenant,
+          generation: parsed.generation,
+          scope: parsed.scope,
+          facet: parsed.facet,
+        },
+        input.history.authority(parsed.generation),
+      );
+    });
   }
   input.live();
   if (keyAuthorityAuthor(certificate) !== box.author)

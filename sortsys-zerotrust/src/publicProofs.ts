@@ -1,4 +1,5 @@
 import { sha256 } from "@noble/hashes/sha2.js";
+import { readCachedPromise } from "./core/boundedPromiseCache";
 import { base64, digest, validateBase64Size } from "./encoding";
 import { verify } from "./identity";
 
@@ -43,19 +44,9 @@ export function createPublicProofVerifier(options: { capacity?: number } = {}) {
         keys.set(key, keyId);
       }
       const identity = `${keyId}/${signature}/${base64(sha256(message))}`;
-      let pending = verified.get(identity);
-      if (!pending) {
-        pending = verify(key, signature, message);
-        verified.set(identity, pending);
-        if (verified.size > capacity)
-          verified.delete(verified.keys().next().value!);
-      }
-      try {
-        await pending;
-      } catch (error) {
-        if (verified.get(identity) === pending) verified.delete(identity);
-        throw error;
-      }
+      return readCachedPromise(verified, identity, capacity, () =>
+        verify(key, signature, message),
+      );
     },
   };
 }
