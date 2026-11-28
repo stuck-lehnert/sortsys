@@ -299,10 +299,10 @@ try {
   );
 
   const staleText = "VERALTETE_TEXTERKENNUNG_519842";
-  const staleVersion = await upload(visible.id, "Montagefassung.txt", staleText);
+  const staleVersion = await upload(visible.id, "Montage Fassung.txt", staleText);
   const failedExtraction = await upload(
     visible.id,
-    "Montageprotokoll.txt",
+    "Montage Protokoll.txt",
     staleText,
   );
   const attachments = await protectedCollection(
@@ -539,7 +539,8 @@ try {
   assert.deepEqual(await findDocuments(memberBusiness, `"${oldVersionText}"`), []);
   const excluded = await required(
     memberBusiness.query("projects.files.search", {
-      query: 'Wand -"Fenster neben"',
+      // Use a separate OR branch so the plain-term fallback cannot also match.
+      query: 'Wand -"Fenster neben" OR Rohbau',
       limit: 50n,
     }),
   );

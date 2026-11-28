@@ -64,12 +64,37 @@ try {
       request.postData() ?? "",
     );
   });
-  await page.goto(documentsPage);
+
+  const projectMenu = page.getByRole("button", {
+    name: "Projektarbeit",
+    exact: true,
+  });
+  await expect(projectMenu).toBeVisible();
+  if ((await projectMenu.getAttribute("aria-expanded")) !== "true") {
+    await projectMenu.click();
+  }
+  await expect(projectMenu).toHaveAttribute("aria-expanded", "true");
+  await page.getByRole("link", { name: "Dokumente", exact: true }).click();
+  await expect(page).toHaveURL(documentsPage);
+
   const search = page.getByRole("searchbox", { name: "Dokumente durchsuchen" });
   await search.fill(pagedQuery);
-  await search.press("Enter");
+  await page.getByRole("button", { name: "Suchen", exact: true }).click();
+
   const pagedResults = page.locator(".documents-search__result");
-  await expect(pagedResults).toHaveCount(1);
+  try {
+    await expect(pagedResults).toHaveCount(1);
+  } catch (error) {
+    const loading = await page.getByText("Dokumente werden gesucht …", { exact: true }).isVisible();
+    const empty = await page.getByText("Keine passenden Dokumente gefunden.", { exact: true }).isVisible();
+    const failed = await page.getByText(/^Die Dokumentensuche ist fehlgeschlagen\./).isVisible();
+    const workerBatches = await page.evaluate(() => window.documentSearchMessages.length);
+
+    console.error("Initial document search state", {
+      loading, empty, failed, workerBatches, pageErrors: errors.length,
+    });
+    throw error;
+  }
   await expect(pagedResults.getByRole("link")).toHaveAttribute(
     "href",
     `/projects/${fixture.projectId}/files/${fixture.pagedFileId}`,
