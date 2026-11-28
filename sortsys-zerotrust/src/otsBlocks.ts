@@ -1,8 +1,14 @@
 import { InvalidProtectedData } from "./encoding";
 import type { OtsBlockSource } from "./otsCalendars";
+import {
+  OTS_HTTP_PRIVACY,
+  otsRequestSignal,
+  readOtsBody,
+  type OtsHttpOptions,
+} from "./otsHttp";
 
 const SOURCES = ["https://blockstream.info/api", "https://mempool.space/api"] as const;
-type Options = { fetch?: (url: string, options: RequestInit) => Promise<Response>; timeoutMs?: number };
+type Options = Omit<OtsHttpOptions, "signal">;
 const hex = (data: Uint8Array) => Array.from(data, b => b.toString(16).padStart(2, "0")).join("");
 /** This is an explicit trust choice, not an SPV node: two independent HTTPS
  * explorers must agree on the canonical hash at the exact height, with at
@@ -11,17 +17,15 @@ const hex = (data: Uint8Array) => Array.from(data, b => b.toString(16).padStart(
 export function publicOtsBlockSource(options: Options = {}): OtsBlockSource {
   const cache = new Map<number, Promise<{ height: number; header: Uint8Array<ArrayBuffer> }>>();
   async function text(origin: typeof SOURCES[number], path: string, signal?: AbortSignal): Promise<string> {
-    const timeout = options.timeoutMs ?? 10_000;
-    if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000) throw new InvalidProtectedData();
-    const cancellation = signal ? AbortSignal.any([signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout);
-    cancellation.throwIfAborted();
-    const response = await (options.fetch ?? fetch)(origin + path, { signal: cancellation, credentials: "omit", redirect: "error", referrerPolicy: "no-referrer", mode: "cors" });
+    const cancellation = otsRequestSignal(options.timeoutMs, signal);
+    const response = await (options.fetch ?? fetch)(origin + path, {
+      ...OTS_HTTP_PRIVACY,
+      signal: cancellation,
+    });
     if (!response.ok || !response.body) throw new InvalidProtectedData();
-    const reader = response.body.getReader(), decoder = new TextDecoder("utf-8", { fatal: true }); let result = "", length = 0;
-    try { for (;;) { cancellation.throwIfAborted(); const part = await reader.read(); cancellation.throwIfAborted(); if (part.done) break;
-      length += part.value.length; if (length > 1024) throw new InvalidProtectedData(); result += decoder.decode(part.value, { stream: true });
-    } result += decoder.decode(); } finally { await reader.cancel().catch(() => undefined); reader.releaseLock(); }
-    return result.trim();
+
+    const bytes = await readOtsBody(response.body, 1024, cancellation);
+    return new TextDecoder("utf-8", { fatal: true }).decode(bytes).trim();
   }
   async function block(height: number, signal?: AbortSignal) {
     if (!Number.isSafeInteger(height) || height < 0 || height > 100_000_000) throw new InvalidProtectedData();

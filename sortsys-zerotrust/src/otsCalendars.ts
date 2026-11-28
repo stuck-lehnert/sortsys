@@ -1,10 +1,15 @@
 import { InvalidProtectedData } from "./encoding";
 import {
+  OTS_HTTP_PRIVACY,
+  otsRequestSignal,
+  readOtsBody,
+  type OtsHttpOptions,
+} from "./otsHttp";
+import {
   applyOtsOperation,
   evaluateOtsProof,
   MAX_OTS_BYTES,
   mergeOtsNodes,
-  otsConcat,
   parseOtsProof,
   parseOtsTree,
   serializeOtsProof,
@@ -22,11 +27,7 @@ export const OTS_CALENDARS = [
   "https://a.pool.eternitywall.com",
 ] as const;
 
-export type OtsCalendarOptions = {
-  fetch?: (url: string, options: RequestInit) => Promise<Response>;
-  signal?: AbortSignal;
-  timeoutMs?: number;
-};
+export type OtsCalendarOptions = OtsHttpOptions;
 
 function hex(value: Uint8Array): string {
   return Array.from(value, byte => byte.toString(16).padStart(2, "0")).join("");
@@ -69,21 +70,16 @@ async function request(
   body: Uint8Array<ArrayBuffer> | undefined,
   options: OtsCalendarOptions,
 ): Promise<Uint8Array<ArrayBuffer>> {
-  const timeout = options.timeoutMs ?? 10_000;
-  if (!Number.isInteger(timeout) || timeout < 1 || timeout > 30_000 || !allowedCalendar(origin)) {
+  if (!allowedCalendar(origin)) {
     throw new InvalidProtectedData();
   }
-  const timeoutSignal = AbortSignal.timeout(timeout);
-  const signal = options.signal ? AbortSignal.any([options.signal, timeoutSignal]) : timeoutSignal;
-  signal.throwIfAborted();
+
+  const signal = otsRequestSignal(options.timeoutMs, options.signal);
   const response = await (options.fetch ?? fetch)(origin + path, {
+    ...OTS_HTTP_PRIVACY,
     method: body ? "POST" : "GET",
     ...(body ? { body } : {}),
     signal,
-    credentials: "omit",
-    redirect: "error",
-    referrerPolicy: "no-referrer",
-    mode: "cors",
     headers: {
       Accept: "application/vnd.opentimestamps.v1",
       ...(body ? { "Content-Type": "application/x-www-form-urlencoded" } : {}),
@@ -91,24 +87,8 @@ async function request(
   });
   signal.throwIfAborted();
   if (!response.ok || !response.body) throw new OpenTimestampUnavailable();
-  const reader = response.body.getReader();
-  const parts: Uint8Array[] = [];
-  let length = 0;
-  try {
-    for (;;) {
-      signal.throwIfAborted();
-      const part = await reader.read();
-      signal.throwIfAborted();
-      if (part.done) break;
-      length += part.value.length;
-      if (length > MAX_OTS_BYTES) throw new InvalidProtectedData();
-      parts.push(part.value);
-    }
-  } finally {
-    await reader.cancel().catch(() => undefined);
-    reader.releaseLock();
-  }
-  return otsConcat(...parts);
+
+  return readOtsBody(response.body, MAX_OTS_BYTES, signal);
 }
 
 /** Only a nonce-blinded commitment leaves the browser. The document and its
