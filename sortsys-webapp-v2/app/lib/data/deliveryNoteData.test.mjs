@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 import { InvalidProtectedData } from "@sortsys/zerotrust/sortsys";
+import { lockCryptoSession } from "../crypto/session";
 import { businessSchema } from "./schema";
 import {
   DELIVERY_MODEL,
@@ -12,10 +13,14 @@ import {
   wireDelivery,
   wireDeliveryCosts,
 } from "./deliveryNoteData";
+import { deliveryObject } from "./deliveryIdentity";
+import { createProtectedDeliveryNotes } from "./deliveryNotes";
 import { indexHistoricalPrices } from "./historicalPrices";
 import { openDataDocument } from "./runtime/model";
 import { dailyCollection } from "./dailyReportData";
 import { regieCollection } from "./regieReportData";
+import { duckDriver } from "./testing/duckDriver.mjs";
+import { protectedTenant } from "./testing/protectedTenant.mjs";
 import { timestampMicros } from "./timestamps";
 
 const row = (table, values) => ({
@@ -85,6 +90,81 @@ const price = (id, timestamp, value) =>
     created_at: date,
     modified_at: date,
   });
+
+for (const canReadPrices of [true, false]) {
+  test(`delivery detail reads only the selected objects (price access: ${canReadPrices})`, async () => {
+    const quantityArea = deliveryCollection("2");
+    const priceArea = deliveryCollection("2", true);
+    const tenant = await protectedTenant([quantityArea, priceArea], ({ facet }) =>
+      facet === "master-data" || canReadPrices ? ["read"] : [],
+    );
+    const { payload, prices } = fixture();
+    const allocation = { id: prices.noteId, projectId: "2", number: "12" };
+    const other = fixture();
+    other.payload.note.values.id = "8";
+    other.payload.note.values.auto_id = "13";
+    other.payload.records[0].values.id = "9";
+    other.payload.records[0].values.note_id = "8";
+    other.payload.specialRecords[0].values.id = "10";
+    other.payload.specialRecords[0].values.note_id = "8";
+    other.prices.noteId = "8";
+    other.prices.prices[0].id = "10";
+
+    const quantityId = deliveryObject(allocation);
+    const priceId = deliveryObject(allocation, true);
+    const otherAllocation = { ...allocation, id: "8", number: "13" };
+    const transport = {
+      ...tenant.client,
+      query(path, input, options) {
+        if (path === "zerotrust.deliveryNotes.locate") {
+          expect(input).toEqual({ number: allocation.number });
+          return Promise.resolve([allocation, null]);
+        }
+        return tenant.client.query(path, input, options);
+      },
+    };
+    const notes = createProtectedDeliveryNotes(
+      transport,
+      new AbortController().signal,
+      duckDriver,
+    );
+
+    try {
+      await tenant.seed(quantityArea, quantityId, payload);
+      await tenant.seed(priceArea, priceId, prices);
+      await tenant.seed(quantityArea, deliveryObject(otherAllocation), other.payload);
+      await tenant.seed(priceArea, deliveryObject(otherAllocation, true), other.prices);
+
+      const detail = await notes.query("deliveryNotes.get", { autoId: 12 });
+      const selected = [];
+      const contentPages = [];
+      for (const { path, input } of tenant.calls) {
+        if (path === "zerotrust.objects.get") selected.push(input.id);
+        if (path === "zerotrust.objects.getMany") selected.push(...input.ids);
+        if (path === "zerotrust.objects.list" && !input.headOnly) {
+          contentPages.push(input);
+        }
+        if (path === "zerotrust.objects.pages") {
+          contentPages.push(...input.selections.filter((page) => !page.headOnly));
+        }
+      }
+
+      expect(contentPages).toEqual([]);
+      expect(selected.sort()).toEqual(
+        (canReadPrices ? [quantityId, priceId] : [quantityId]).sort(),
+      );
+
+      const list = await notes.query("deliveryNotes.list", { projectId: "2" });
+      expect(list.map(({ autoId }) => autoId)).toEqual([13, 12]);
+      expect(detail).toEqual(list[1]);
+      expect(detail.specialRecords[0].pricePerUnit).toBe(canReadPrices ? 23.4567 : null);
+      expect(detail.priceRevision).toBe(canReadPrices ? "1" : undefined);
+    } finally {
+      notes.close();
+      lockCryptoSession();
+    }
+  });
+}
 
 test("delivery quantities and prices have separate project bindings and preserve identifiers and values", () => {
   const { payload, prices } = fixture(),

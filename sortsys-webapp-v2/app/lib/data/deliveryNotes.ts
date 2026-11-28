@@ -45,7 +45,12 @@ export function createProtectedDeliveryNotes(
     priceRevisions: Map<string, string>;
     placements: Map<string, string | undefined>;
   };
-  async function load(projectId?: string): Promise<Loaded> {
+  async function load(
+    selection?: string | ReturnType<typeof deliveryAllocation>,
+  ): Promise<Loaded> {
+    const allocation = typeof selection === "object" ? selection : undefined;
+    const projectId =
+      typeof selection === "string" ? selection : allocation?.projectId;
     const domains =
       projectId === undefined
         ? undefined
@@ -69,13 +74,16 @@ export function createProtectedDeliveryNotes(
         quantityProjects.has(deliveryDomain(area.domain)!.projectId),
     );
     const quantityRequests = quantities.map((area) => ({
-        model: DELIVERY_MODEL,
-        area,
-      })),
-      priceRequests = priceAreas.map((area) => ({
-        model: DELIVERY_PRICE_MODEL,
-        area,
-      }));
+      model: DELIVERY_MODEL,
+      area,
+      ids: allocation ? [deliveryObject(allocation)] : undefined,
+    }));
+    const priceRequests = priceAreas.map((area) => ({
+      model: DELIVERY_PRICE_MODEL,
+      area,
+      ids: allocation ? [deliveryObject(allocation, true)] : undefined,
+    }));
+
     return runtime.read([...quantityRequests, ...priceRequests], (view) => {
       const payloads: DeliveryPayload[] = [],
         prices = new Map<string, DeliveryPrices>(),
@@ -285,7 +293,7 @@ export function createProtectedDeliveryNotes(
         return result;
       }
 
-      const state = await load(allocation.projectId);
+      const state = await load(allocation);
       live();
       const payload = state.payloads.find(
         (item) => publicId(item.note.values.id) === allocation.id,
