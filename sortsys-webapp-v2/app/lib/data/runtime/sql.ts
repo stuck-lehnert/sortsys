@@ -4,6 +4,7 @@ import type { BusinessDatabase, BusinessTransaction } from "../database";
 import { insertTableRows } from "../rowInsert";
 import {
   assertUniqueIndexes,
+  checkOperand,
   missingReference,
   primaryColumns,
   quoted,
@@ -43,16 +44,23 @@ async function validateConstraint(
   table: BusinessTable,
   constraint: BusinessConstraint,
   rows: readonly DataRecord[],
+  allRows: boolean,
 ): Promise<void> {
   if (rows.length === 0) return;
-  let violation: string;
-  if (constraint.kind === "c") {
-    if (!constraint.expression.startsWith("CHECK ("))
-      throw new InvalidProtectedData();
-    violation = `((${constraint.expression.slice(6)}) IS FALSE)`;
-  } else {
-    violation = missingReference(constraint);
+
+  const violation =
+    constraint.kind === "c"
+      ? `(${checkOperand(constraint)} IS FALSE)`
+      : missingReference(constraint);
+  const source = `SELECT 1 FROM ${quoted(table.name)} source`;
+  if (allRows) {
+    // This table was just rebuilt from these exact rows. No primary-key
+    // predicates are needed when every row is eligible for the constraint.
+    const invalid = await tx.query(`${source} WHERE ${violation} LIMIT 1`);
+    if (invalid.rows.length > 0) throw new InvalidProtectedData();
+    return;
   }
+
   const keys = primaryColumns(table);
   const batchSize = Math.min(128, Math.max(1, Math.floor(4096 / keys.length)));
   for (const selected of arrayBatches(rows, batchSize)) {
@@ -67,7 +75,7 @@ async function validateConstraint(
       return `(${columns.join(" AND ")})`;
     });
     const invalid = await tx.query(
-      `SELECT 1 FROM ${quoted(table.name)} source WHERE (${predicates.join(" OR ")}) AND (${violation}) LIMIT 1`,
+      `${source} WHERE (${predicates.join(" OR ")}) AND (${violation}) LIMIT 1`,
       parameters,
     );
     if (invalid.rows.length > 0) throw new InvalidProtectedData();
@@ -102,7 +110,13 @@ export function projectRuntimeRows(
         const selected = [...rows.values()].filter((row) =>
           needsConstraint(row, constraint),
         );
-        await validateConstraint(tx, table, constraint, selected);
+        await validateConstraint(
+          tx,
+          table,
+          constraint,
+          selected,
+          selected.length === rows.size,
+        );
       }
       // Constraint fields that are present keep their usual SQL semantics.
       // Unknown fields never count as an observed NULL in the public row API.

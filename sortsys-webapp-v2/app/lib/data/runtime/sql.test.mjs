@@ -22,14 +22,23 @@ function tables(name, values) {
   ]);
 }
 
-test("many rows keep their checks while using a bounded number of database requests", async () => {
+test("a complete check uses one table scan and still rejects a violation in the last row", async () => {
   const driver = await duckDriver();
+  const query = driver.connection.query.bind(driver.connection);
   const prepare = driver.connection.prepare.bind(driver.connection);
-  let prepared = 0;
+  const checkStatements = [];
+  const isHourlyRateCheck = (sql) =>
+    sql.startsWith('SELECT 1 FROM "users" source WHERE ') &&
+    sql.includes("cost_per_hour");
+  driver.connection.query = (sql) => {
+    if (isHourlyRateCheck(sql)) checkStatements.push({ prepared: false });
+    return query(sql);
+  };
   driver.connection.prepare = (sql) => {
-    prepared++;
+    if (isHourlyRateCheck(sql)) checkStatements.push({ prepared: true });
     return prepare(sql);
   };
+
   const database = await createBusinessDatabase(driver, true);
   const values = Array.from({ length: 260 }, (_, index) => ({
     id: String(index + 1),
@@ -39,13 +48,13 @@ test("many rows keep their checks while using a bounded number of database reque
   }));
   const original = tables("users", values);
   try {
-    prepared = 0;
     await projectRuntimeRows(database, new Map(), original);
-    expect(prepared).toBeLessThan(40);
+    expect(checkStatements).toEqual([{ prepared: false }]);
     expect(
       (await database.query("SELECT count(*) AS total FROM users")).rows[0]
         .total,
     ).toBe(260n);
+
     const preview = tables("users", [
       { id: "1", username: "renamed-worker", contract_type: "internal" },
     ]);
@@ -70,7 +79,7 @@ test("many rows keep their checks while using a bounded number of database reque
   }
 });
 
-test("composite keys and late missing references fail atomically without hiding non-external rows", async () => {
+test("mixed references use scoped checks even when most rows have local parents", async () => {
   const database = await createBusinessDatabase(await duckDriver(), true);
   const categories = Array.from({ length: 260 }, (_, index) => ({
     product_id: "1",

@@ -122,15 +122,18 @@ export function primaryColumns(table: BusinessTable): string[] {
 /** DuckDB does not permit subqueries in CHECK constraints. PostgreSQL's ANY
  * checks bind as subqueries there, but are valid SELECT expressions. Evaluate
  * them inside the same transaction before publishing a decrypted row. */
+export function checkOperand(constraint: BusinessConstraint): string {
+  if (constraint.kind !== "c" || !constraint.expression.startsWith("CHECK ("))
+    throw new Error("Invalid schema constraint");
+
+  return `(${constraint.expression.slice(6)})`;
+}
+
 export function checkExpression(table: BusinessTable): string {
   return (
     table.constraints
       .filter((c) => c.kind === "c")
-      .map((c) => {
-        if (!c.expression.startsWith("CHECK ("))
-          throw new Error("Invalid schema constraint");
-        return `((${c.expression.slice(6)}) IS NOT FALSE)`;
-      })
+      .map((c) => `(${checkOperand(c)} IS NOT FALSE)`)
       .join(" AND ") || "TRUE"
   );
 }
