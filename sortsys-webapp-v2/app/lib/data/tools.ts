@@ -8,7 +8,6 @@ import {
 import { addressId, addressText, partialAddressRecord } from "./addressBook";
 import { unlockedAccount } from "../crypto/session";
 import {
-  commitProtectedWrites,
   ProtectedWriteConflict,
   type PreparedWrites,
 } from "./atomicWrites";
@@ -22,6 +21,7 @@ import {
   type Collection,
 } from "./protectedObjects";
 import { readableAreas } from "./readableAreas";
+import { createBusinessRow } from "./rowCodec";
 import { acquireDataRuntime } from "./runtime/session";
 import { announceDataChanges } from "./runtime/changes";
 import type { DataRequest, DataTransaction, DataView } from "./runtime/runtime";
@@ -37,7 +37,6 @@ import {
   toolIndexRequest,
   toolPart,
   toolRequest,
-  toolRow,
   toolTimestamp as timestamp,
   TOOL_INDEX,
   TOOL_MODEL,
@@ -46,16 +45,16 @@ import {
   type ToolNamespace,
   type ToolPart,
 } from "./toolData";
-import { bookProtectedTools, createToolBooking } from "./toolBookings";
 import {
-  attachBookingRatePins,
+  bookProtectedTools,
+  createToolBooking,
+  publishToolBookingChanges,
+} from "./toolBookings";
+import {
   prepareBookingRates,
   type BookingRatePin,
 } from "./toolRates";
-import {
-  finishToolBookingRotations,
-  finishToolResponsibilityChanges,
-} from "./toolResponsibility";
+import { finishToolBookingRotations } from "./toolResponsibility";
 import { prepareToolReturnKeys, signToolReturn } from "./toolReturnKey";
 import { loadToolReturns, type ToolReturns } from "./toolReturns";
 import { timestampMicros } from "./timestamps";
@@ -308,24 +307,9 @@ export function createProtectedTools(
       },
       guards,
     );
-    try {
-      if (ratePins) attachBookingRatePins(prepared.groups, ratePins);
-      await commitProtectedWrites(
-        client,
-        prepared.groups,
-        signal,
-        prepared.guards,
-      );
-      live();
-      await finishToolResponsibilityChanges(
-        client,
-        prepared.groups.flatMap((group) => group.packets),
-        signal,
-      );
-      return prepared.value;
-    } finally {
-      prepared.close();
-    }
+    return publishToolBookingChanges(client, prepared, signal, live, {
+      pins: ratePins,
+    });
   }
   async function returnTool(
     resource: string,
@@ -1009,7 +993,7 @@ export function createProtectedTools(
         const requests = CREATION_FACETS.tool.map((facet) =>
           toolRequest("tool", resource, facet),
         );
-        const row = toolRow("tools", {
+        const row = createBusinessRow("tools", {
           id: addressId(resource),
           ...changes,
           archived_since: null,
@@ -1568,7 +1552,7 @@ export function createProtectedTools(
             )
               throw new ProtectedWriteConflict();
             const returnKey = await returnKeyFor?.(nextId);
-            const row = toolRow("tool_trackings", {
+            const row = createBusinessRow("tool_trackings", {
               id: addressId(nextId),
               tool_id: current.tool_id,
               project_id: targetProject == null ? null : addressId(targetProject),

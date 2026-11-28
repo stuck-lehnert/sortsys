@@ -5,10 +5,15 @@ import {
   CREATION_FACETS,
   immutableObject,
   immutablePrefix,
+  InvalidProtectedData,
 } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession, unlockedAccount } from "../crypto/session";
 import { ProtectedWriteConflict } from "./atomicWrites";
-import { toolBookingInput, toolBookingTargets } from "./toolBookings";
+import {
+  publishToolBookingChanges,
+  toolBookingInput,
+  toolBookingTargets,
+} from "./toolBookings";
 import { toolBookingArea, toolCollection, toolPart } from "./toolData";
 import { createProtectedTools } from "./tools";
 import { toolUsageCollection, toolUsagePart } from "./projectToolUsage";
@@ -17,6 +22,35 @@ import { duckDriver } from "./testing/duckDriver.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 afterEach(() => lockCryptoSession());
+
+test("only an existing booking receipt can acknowledge an empty publication", async () => {
+  const signal = new AbortController().signal;
+  const calls = [];
+  const client = {
+    async mutate() {
+      calls.push("unexpected write");
+    },
+  };
+  const prepared = {
+    value: { trackings: ["7"] },
+    groups: [],
+    guards: [],
+    versions: [],
+    close: () => calls.push("close"),
+  };
+  const live = () => calls.push("live");
+
+  await expect(
+    publishToolBookingChanges(client, prepared, signal, live, {}),
+  ).rejects.toBeInstanceOf(InvalidProtectedData);
+  expect(calls.splice(0)).toEqual(["close"]);
+
+  const result = await publishToolBookingChanges(client, prepared, signal, live, {
+    allowExistingReceipt: true,
+  });
+  expect(result).toEqual(prepared.value);
+  expect(calls).toEqual(["live", "close"]);
+});
 
 async function fixture(options = {}) {
   const master = toolCollection("tool", "34", "master-data");

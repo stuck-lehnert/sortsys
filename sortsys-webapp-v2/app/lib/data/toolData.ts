@@ -11,7 +11,6 @@ import type { Collection } from "./protectedObjects";
 import { publicId } from "./products";
 import {
   decodeBusinessFields,
-  decodeBusinessRow,
   type BusinessFields,
   type BusinessRow,
 } from "./rowCodec";
@@ -583,17 +582,6 @@ export function toolPart(
         ),
       })),
   };
-}
-export function toolRow(
-  table: string,
-  values: Record<string, unknown>,
-): BusinessRow {
-  return decodeBusinessRow({
-    format: "sortsys-row-v2",
-    schema: businessSchema.fingerprint,
-    table,
-    values,
-  });
 }
 export function toolChanges(
   input: unknown,

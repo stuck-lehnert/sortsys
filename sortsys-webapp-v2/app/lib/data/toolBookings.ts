@@ -25,13 +25,18 @@ import {
   toolUsageRequests,
 } from "./projectToolUsage";
 import { protectedCollections } from "./protectedObjects";
-import { attachBookingRatePins, prepareBookingRates } from "./toolRates";
+import {
+  attachBookingRatePins,
+  prepareBookingRates,
+  type BookingRatePin,
+} from "./toolRates";
 import { finishToolResponsibilityChanges } from "./toolResponsibility";
 import { prepareToolReturnKeys } from "./toolReturnKey";
 import { loadToolReturns } from "./toolReturns";
 import type { ToolReturnKey } from "./toolReturnKey";
-import type { BusinessRow } from "./rowCodec";
+import { createBusinessRow, type BusinessRow } from "./rowCodec";
 import { defineDataModel } from "./runtime/model";
+import type { PreparedData } from "./runtime/runtime";
 import type {
   DataRequest,
   DataRuntime,
@@ -45,7 +50,6 @@ import {
   toolBookingRequest,
   toolPart,
   toolRequest,
-  toolRow,
   toolTimestamp,
   bookingToolSummary,
   checkToolReturnBinding,
@@ -283,6 +287,36 @@ function part(view: BusinessView, request: PartRequest) {
   )
     throw new InvalidProtectedData();
   return documents[0]!.value;
+}
+
+export async function publishToolBookingChanges<T>(
+  client: Client,
+  prepared: PreparedData<T>,
+  signal: AbortSignal,
+  live: () => void,
+  options: {
+    pins?: ReadonlyMap<string, BookingRatePin>;
+    allowExistingReceipt?: boolean;
+  },
+): Promise<T> {
+  const { groups, guards } = prepared;
+  try {
+    if (options.pins) attachBookingRatePins(groups, options.pins);
+
+    if (groups.length || !options.allowExistingReceipt) {
+      await commitProtectedWrites(client, groups, signal, guards);
+    }
+    live();
+
+    await finishToolResponsibilityChanges(
+      client,
+      groups.flatMap((group) => group.packets),
+      signal,
+    );
+    return prepared.value;
+  } finally {
+    prepared.close();
+  }
 }
 
 type BookingContext = {
@@ -549,7 +583,7 @@ export async function bookProtectedTools(
           const rate = deferredRate
             ? null
             : part(tx, selection.price).rows[0]!.values.usage_cost_per_day;
-          const row = toolRow("tool_trackings", {
+          const row = createBusinessRow("tool_trackings", {
             id: addressId(selection.trackingId),
             tool_id: addressId(selection.id),
             responsible_user_id: responsible,
@@ -593,25 +627,10 @@ export async function bookProtectedTools(
       },
       guards,
     );
-    try {
-      attachBookingRatePins(prepared.groups, pins);
-      if (prepared.groups.length)
-        await commitProtectedWrites(
-          client,
-          prepared.groups,
-          signal,
-          prepared.guards,
-        );
-      live();
-      await finishToolResponsibilityChanges(
-        client,
-        prepared.groups.flatMap((group) => group.packets),
-        signal,
-      );
-      return prepared.value;
-    } finally {
-      prepared.close();
-    }
+    return await publishToolBookingChanges(client, prepared, signal, live, {
+      pins,
+      allowExistingReceipt: true,
+    });
   } catch (error) {
     // A committed receipt can acknowledge a retry even after another user has
     // already returned the tool. Current booking contents are not its receipt.
