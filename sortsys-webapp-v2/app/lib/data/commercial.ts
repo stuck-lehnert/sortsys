@@ -2373,7 +2373,7 @@ export function createProtectedCommercial(
           values: { ...row.values },
         }));
         const main = updated.find((row) => row.table === "commercial_cases")!;
-        main.values.project_id = addressId(prepared.id);
+        main.values.project_id = addressId(prepared.value);
         main.values.modified_at = now;
         if (caseId === id) {
           updated.push(
@@ -2399,9 +2399,9 @@ export function createProtectedCommercial(
         [...guards, ...prepared.guards],
         prepared.groups,
       );
-      return { id: prepared.id };
+      return { id: prepared.value };
     } finally {
-      for (const group of prepared.groups) group.close();
+      prepared.close();
     }
   }
   async function adoptContract(input: unknown) {

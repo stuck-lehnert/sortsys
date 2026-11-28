@@ -34,7 +34,7 @@ import { readableAreas } from "./readableAreas";
 import { PROJECT_ACCESS_KEYS, projectAccessArea } from "./projectScope";
 import { createResourceAreas } from "./createProjectArea";
 import { createBusinessRow } from "./rowCodec";
-import { commitProtectedWrites } from "./atomicWrites";
+import { commitProtectedWrites, finishPreparedData } from "./atomicWrites";
 import {
   addProjectOffer,
   emptyProjectCommercial,
@@ -274,8 +274,14 @@ export function createProtectedProjects(
       },
       guards,
     );
-    live();
-    return { id, groups: prepared.groups, guards: prepared.guards };
+
+    try {
+      live();
+      return prepared;
+    } catch (error) {
+      prepared.close();
+      throw error;
+    }
   }
   return {
     close: lease.close,
@@ -439,23 +445,13 @@ export function createProtectedProjects(
     async mutate(path: string, input: unknown): Promise<unknown> {
       live();
       if (!PROJECT_MUTATIONS.has(path)) throw new InvalidProtectedData();
+
       if (path === "projects.create") {
         const prepared = await prepareCreate(input);
-        try {
-          if (prepared.groups.length) {
-            await commitProtectedWrites(
-              client,
-              prepared.groups,
-              signal,
-              prepared.guards,
-            );
-          }
-          live();
-          return { id: prepared.id };
-        } finally {
-          for (const group of prepared.groups) group.close();
-        }
+        const id = await finishPreparedData(client, prepared, signal, live);
+        return { id };
       }
+
       if (path === "projects.delete")
         return deleteProtectedProject(client, input, signal);
       if (!isProjectEdit(path)) throw new InvalidProtectedData();
