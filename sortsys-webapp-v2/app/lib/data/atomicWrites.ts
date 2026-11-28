@@ -6,6 +6,7 @@ import {
 import { uiText } from "../i18n";
 import { announceDataChanges } from "./runtime/changes";
 import { mapConcurrent } from "./runtime/concurrentReads";
+import type { PreparedData } from "./runtime/runtime";
 import type { LivePublication } from "./liveCheckpoints";
 
 export type PreparedWrites = {
@@ -144,6 +145,35 @@ export async function commitProtectedWrites(
     );
   }
 }
+
+/** Publish a complete data command without creating a write for a replay or
+ * no-op. Own the prepared groups until verification and cleanup finish. */
+export async function finishPreparedData<T>(
+  client: Client,
+  prepared: PreparedData<T>,
+  signal: AbortSignal,
+  live: () => void,
+): Promise<T> {
+  try {
+    live();
+    signal.throwIfAborted();
+
+    if (prepared.groups.length) {
+      await commitProtectedWrites(
+        client,
+        prepared.groups,
+        signal,
+        prepared.guards,
+      );
+    }
+
+    live();
+    return prepared.value;
+  } finally {
+    prepared.close();
+  }
+}
+
 async function publishProtectedWrites(
   client: Client,
   groups: PreparedWrites[],

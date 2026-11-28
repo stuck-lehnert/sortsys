@@ -5,6 +5,7 @@ import superjson from "superjson";
 import {
   checkExpectedRevision,
   commitProtectedWrites,
+  finishPreparedData,
   mergePreparedWrites,
   ProtectedWriteConflict,
 } from "./atomicWrites";
@@ -82,6 +83,79 @@ function group(count) {
     close() {},
   };
 }
+
+test("a prepared report publishes exact guards before verification and closure", async () => {
+  const events = [];
+  const guards = [{ domain: "source", sequence: "37" }];
+  const write = group(1);
+  const signal = new AbortController().signal;
+  const client = {
+    async mutate(path, input, options) {
+      events.push("publish");
+      expect(path).toBe("zerotrust.objects.batch");
+      expect(input.objects).toEqual(write.packets);
+      expect(input.heads).toEqual([write.head, ...guards]);
+      expect(options.signal).toBe(signal);
+      return [{ success: true }, null];
+    },
+    async invalidate() {},
+  };
+
+  write.verify = async () => {
+    events.push("verify");
+    return true;
+  };
+  const prepared = {
+    value: { id: "4" },
+    groups: [write],
+    guards,
+    versions: [],
+    close: () => events.push("close"),
+  };
+  const live = () => events.push("live");
+
+  const result = await finishPreparedData(client, prepared, signal, live);
+  expect(result).toBe(prepared.value);
+  expect(events).toEqual(["live", "publish", "verify", "live", "close"]);
+});
+
+test("replayed or cancelled prepared reports close without publication", async () => {
+  const client = {
+    async mutate() {
+      throw new Error("Unexpected publication");
+    },
+  };
+  const controller = new AbortController();
+  let liveChecks = 0;
+  let closures = 0;
+  const live = () => {
+    liveChecks++;
+  };
+  const replay = {
+    value: { success: true },
+    groups: [],
+    guards: [],
+    versions: [],
+    close: () => {
+      closures++;
+    },
+  };
+
+  const result = await finishPreparedData(client, replay, controller.signal, live);
+  expect(result).toBe(replay.value);
+  expect(liveChecks).toBe(2);
+  expect(closures).toBe(1);
+
+  const cancelled = new Error("Cancelled before publication");
+  controller.abort(cancelled);
+  const pending = { ...replay, groups: [group(1)] };
+
+  await expect(
+    finishPreparedData(client, pending, controller.signal, live),
+  ).rejects.toBe(cancelled);
+  expect(liveChecks).toBe(3);
+  expect(closures).toBe(2);
+});
 
 test("independent publication confirmations overlap, remain bounded and finish before a failed write returns", async () => {
   let active = 0;

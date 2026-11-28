@@ -4,7 +4,7 @@ import { addressId, partialAddressRecord } from "./addressBook";
 import { existingAggregateRows } from "./aggregateRows";
 import {
   checkExpectedRevision,
-  commitProtectedWrites,
+  finishPreparedData,
   ProtectedWriteConflict,
 } from "./atomicWrites";
 import type { DuckDriver } from "./database";
@@ -535,21 +535,8 @@ export function createProtectedDailyReports(
           return { success: true as const };
         },
       );
-      try {
-        live();
-        currentSignal.throwIfAborted();
-        if (prepared.groups.length)
-          await commitProtectedWrites(
-            client,
-            prepared.groups,
-            currentSignal,
-            prepared.guards,
-          );
-        live();
-        return prepared.value;
-      } finally {
-        prepared.close();
-      }
+
+      return finishPreparedData(client, prepared, currentSignal, live);
     },
   };
 }
