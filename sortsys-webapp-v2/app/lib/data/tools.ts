@@ -115,7 +115,10 @@ function replace(tx: DataTransaction, request: PartRequest, value: ToolPart) {
   else tx.create(request, request.area.prefix, value);
 }
 function values(view: DataView, request: PartRequest) {
-  const value = document(view, request)!.value;
+  return partValues(document(view, request)!.value);
+}
+
+function partValues(value: ToolPart) {
   if (value.deleted || value.rows.length !== 1)
     throw new InvalidProtectedData();
   return value.rows[0]!.values;
@@ -142,8 +145,14 @@ function trackingParts(
 
   return candidates.filter((request) => {
     const part = document(view, request, true)?.value;
-    return !!part && !part.deleted && values(view, request).tool_id === toolId;
+    return !!part && !part.deleted && partValues(part).tool_id === toolId;
   });
+}
+
+function activeTrackings(view: DataView, selected: readonly PartRequest[]) {
+  return matching(selected, "tool-tracking", "master-data")
+    .map((request) => document(view, request)!.value)
+    .filter((part) => !part.deleted);
 }
 
 function procurementValues(
@@ -196,11 +205,10 @@ function wireTool(
 }
 function wireTracking(
   view: DataView,
-  request: PartRequest,
+  part: ToolPart,
   byDomain: ReadonlyMap<string, PartRequest>,
 ) {
-  const p = values(view, request);
-  const part = document(view, request)!.value;
+  const p = partValues(part);
   const resource = part.id;
   const startedAt = date(p.started_at)!;
   const status = view.row("tool_trackings", { id: p.id });
@@ -570,19 +578,18 @@ export function createProtectedTools(
                 return [choice.id, choice] as const;
               }),
           );
-          return matching(selected, "tool-tracking", "master-data")
-            .filter((request) => active(view, request))
-            .map((request) => {
-              const value = document(view, request)!.value;
-              const record = values(view, request);
-              const startedAt = date(record.started_at)!;
-              return {
-                id: value.id,
-                tool: tools.get(publicId(record.tool_id)) ?? null,
-                startedAt,
-                endedAt: date(view.row("tool_trackings", { id: record.id }).require("ended_at")),
-              };
-            });
+
+          return activeTrackings(view, selected).map((value) => {
+            const record = partValues(value);
+            const status = view.row("tool_trackings", { id: record.id });
+
+            return {
+              id: value.id,
+              tool: tools.get(publicId(record.tool_id)) ?? null,
+              startedAt: date(record.started_at)!,
+              endedAt: date(status.require("ended_at")),
+            };
+          });
         },
         (request) => request.area.facet === "master-data",
       );
@@ -701,11 +708,7 @@ export function createProtectedTools(
               )
               .sort((a, b) => a.customId - b.customId);
           }
-          const trackingRequests = matching(
-            selected,
-            "tool-tracking",
-            "master-data",
-          ).filter((request) => !document(view, request)!.value.deleted);
+          const trackings = activeTrackings(view, selected);
           if (path === "tools.trackings.list") {
             const p = partialAddressRecord(input ?? {}, [
               "finished",
@@ -741,8 +744,8 @@ export function createProtectedTools(
             );
             return pagination(
               p,
-              trackingRequests
-                .map((request) => wireTracking(view, request, byDomain))
+              trackings
+                .map((part) => wireTracking(view, part, byDomain))
                 .filter(
                   (tracking) =>
                     (p.finished == null || !!tracking.endedAt === p.finished) &&
@@ -795,6 +798,8 @@ export function createProtectedTools(
               !["open", "denied", "accepted"].includes(p.status as string)
             )
               throw new InvalidProtectedData();
+
+            const trackingById = new Map(trackings.map((part) => [part.id, part]));
             const transfers = matching(
               selected,
               "tool-tracking",
@@ -802,9 +807,7 @@ export function createProtectedTools(
             ).flatMap((request) => {
               const value = document(view, request)!.value;
               if (value.deleted) return [];
-              const tracking = trackingRequests.find(
-                (request) => document(view, request)!.value.id === value.id,
-              );
+              const tracking = trackingById.get(value.id);
               if (!tracking) return [];
               const source = wireTracking(view, tracking, byDomain);
               return value.rows.map((row) => {
@@ -892,8 +895,8 @@ export function createProtectedTools(
               responsibleUserId: string | null;
             }
           >();
-          for (const request of trackingRequests) {
-            const row = values(view, request);
+          for (const tracking of trackings) {
+            const row = partValues(tracking);
             const toolId = publicId(row.tool_id);
             const started = timestampMicros(row.started_at as string);
             const bookingId = BigInt(row.id as string);

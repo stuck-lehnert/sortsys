@@ -1,6 +1,8 @@
-import { afterEach, expect, test } from "bun:test";
+import { afterEach, expect, spyOn, test } from "bun:test";
 import { ACTIONS } from "@sortsys/zerotrust/sortsys";
 import { lockCryptoSession } from "../crypto/session";
+import { publicId } from "./products";
+import { DataView } from "./runtime/runtime";
 import { createProtectedTools } from "./tools";
 import { toolBookingArea, toolCollection, toolPart } from "./toolData";
 import { row } from "./testing/businessRow.mjs";
@@ -8,6 +10,89 @@ import { duckDriver } from "./testing/duckDriver.mjs";
 import { protectedTenant } from "./testing/protectedTenant.mjs";
 
 afterEach(() => lockCryptoSession());
+
+test("booking lists reuse the loaded records when resolving transfers", async () => {
+  const endedAt = "2026-11-12T11:00:00Z";
+  const bookings = [
+    { id: "101", toolId: "21", projectId: "5", endedAt: null },
+    { id: "102", toolId: "22", projectId: "5", endedAt },
+    { id: "103", toolId: "23", projectId: "6", endedAt: null },
+  ].map((booking) => ({
+    ...booking,
+    master: toolCollection("tool-tracking", publicId(booking.id), "master-data"),
+    scope: toolCollection("tool-tracking", publicId(booking.id), "scope"),
+  }));
+  const hidden = bookings[2].master;
+  const tenant = await protectedTenant(
+    bookings.flatMap(({ master, scope }) => [master, scope]),
+    (area) => (area === hidden ? [] : [...ACTIONS]),
+  );
+
+  for (const booking of bookings) {
+    const id = publicId(booking.id);
+    const tracking = row("tool_trackings", {
+      id: booking.id,
+      tool_id: booking.toolId,
+      project_id: booking.projectId,
+      started_at: "2026-11-12T08:00:00Z",
+      ended_at: booking.endedAt,
+    });
+    const transfer = row("tool_tracking_transfer_requests", {
+      id: booking.id,
+      tool_tracking_id: booking.id,
+      transfer_to_user_id: "2",
+      status: "open",
+    });
+
+    await tenant.seed(
+      booking.master,
+      booking.master.prefix,
+      toolPart("tool-tracking", id, "master-data", [tracking]),
+    );
+    await tenant.seed(
+      booking.scope,
+      booking.scope.prefix,
+      toolPart("tool-tracking", id, "scope", [transfer]),
+    );
+  }
+
+  const store = createProtectedTools(
+    tenant.client,
+    new AbortController().signal,
+    async () => {
+      throw new Error("Bookings do not open project contents");
+    },
+    duckDriver,
+  );
+  const documents = spyOn(DataView.prototype, "documents");
+
+  try {
+    const active = await store.query("tools.trackings.list", {
+      projectId: publicId("5"),
+      finished: false,
+    });
+    expect(active.map(({ id }) => id)).toEqual([publicId("101")]);
+
+    const transfers = await store.query("tools.trackings.transfers.list", {});
+    const results = transfers.map(({ toolTrackingId, toolId, status }) =>
+      [toolTrackingId, toolId, status],
+    );
+    expect(results.sort()).toEqual([
+      [publicId("101"), publicId("21"), "open"],
+      [publicId("102"), publicId("22"), "denied"],
+    ]);
+
+    // For each read, one copy checks presence and one supplies the result.
+    const masterCopies = documents.mock.calls
+      .map(([{ area }]) => area)
+      .filter(({ facet }) => facet === "master-data");
+    expect(masterCopies).toHaveLength(8);
+    expect(masterCopies.map(({ domain }) => domain)).not.toContain(hidden.domain);
+  } finally {
+    documents.mockRestore();
+    store.close();
+  }
+});
 
 test("one tool read checks its description, booking state and costs without paging the tenant inventory", async () => {
   const master = toolCollection("tool", "34", "master-data");
