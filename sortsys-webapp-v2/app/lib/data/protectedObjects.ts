@@ -5,7 +5,7 @@ import {
   type QueryInput,
   type QueryResult,
 } from "@sortsys/v2-client";
-import { splitBatchOn } from "@sortsys/zerotrust";
+import { arrayBatches, splitBatchOn } from "@sortsys/zerotrust";
 import {
   areaKey,
   base64,
@@ -313,8 +313,8 @@ function createPageReader(
         setTimeout(async () => {
           const pages = waiting;
           waiting = [];
-          for (let offset = 0; offset < pages.length; offset += PAGE_BATCH_LIMIT) {
-            await deliver(pages.slice(offset, offset + PAGE_BATCH_LIMIT));
+          for (const group of arrayBatches(pages, PAGE_BATCH_LIMIT)) {
+            await deliver(group);
           }
         }, PAGE_BATCH_WINDOW_MS);
       }
@@ -405,9 +405,7 @@ async function bindCollections(
     const missing = selections.filter(
       (selection) => !context.pages.has(pageKey(selectionRequest(selection))),
     );
-    const groups: CollectionPageRequest[][] = [];
-    for (let offset = 0; offset < missing.length; offset += PAGE_BATCH_LIMIT)
-      groups.push(missing.slice(offset, offset + PAGE_BATCH_LIMIT));
+    const groups = [...arrayBatches(missing, PAGE_BATCH_LIMIT)];
     await mapConcurrent(groups, 4, async (group) => {
       const requests = group.map(selectionRequest);
       const pages = await context.pageReader.batch(requests);
@@ -951,12 +949,10 @@ function openCollection(
           // must not skip backwards over any object returned on this page.
           checkCursor(prefix, after, page.after, previousId);
           const opened: OpenedObject[] = [];
-          for (let offset = 0; offset < envelopes.length; offset += 16) {
+          for (const group of arrayBatches(envelopes, 16)) {
             opened.push(
               ...(await Promise.all(
-                envelopes
-                  .slice(offset, offset + 16)
-                  .map((envelope) => openEnvelope(envelope, envelope.object)),
+                group.map((envelope) => openEnvelope(envelope, envelope.object)),
               )),
             );
             live();
@@ -1033,8 +1029,7 @@ function openCollection(
         throw new InvalidProtectedData();
       return values;
     }
-    for (let offset = 0; offset < ids.length; offset += 32) {
-      const selectedIds = ids.slice(offset, offset + 32);
+    for (const selectedIds of arrayBatches(ids, 32)) {
       const envelopes = await splitBatchOn(
         selectedIds,
         fetchSelected,

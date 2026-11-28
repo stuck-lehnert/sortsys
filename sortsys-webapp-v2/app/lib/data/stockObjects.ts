@@ -1,6 +1,8 @@
 import type { Client, QueryInput } from "@sortsys/v2-client";
+import { arrayBatches, mapConcurrent } from "@sortsys/zerotrust";
 import {
   InvalidProtectedData,
+  objectPacketHash,
   record,
   signStockDeletion,
   signStockReferences,
@@ -13,7 +15,6 @@ import {
   verify,
   verifyStockDeletion,
   verifyStockReferences,
-  objectPacketHash,
 } from "@sortsys/zerotrust/sortsys";
 import type {
   EncryptedObject,
@@ -21,8 +22,8 @@ import type {
   StockReferences,
 } from "@sortsys/zerotrust/sortsys";
 import type { trustedHistory, UnlockedAccount } from "../crypto/session";
+import { required } from "../protectedResult";
 import { decodeBusinessRow, type BusinessRow } from "./rowCodec";
-import { mapConcurrent } from "./runtime/concurrentReads";
 
 type History = Awaited<ReturnType<typeof trustedHistory>>;
 type ProofSigner = History["proofSigner"];
@@ -31,12 +32,7 @@ export type StockState = {
   vendorDeletion: StockDeletion | null;
 };
 type Opened = { envelope: EncryptedObject; value: unknown; stock?: StockState };
-const required = async <T>(response: Promise<[T | null, Error | null]>) => {
-  const [value, error] = await response;
-  if (error) throw error;
-  if (value === null) throw new InvalidProtectedData();
-  return value;
-};
+
 function id(input: unknown) {
   if (
     typeof input !== "string" ||
@@ -140,12 +136,8 @@ export async function checkStockObjects(
   // Four independent metadata reads can share one HTTP batch. Keep the next
   // window bounded, and retain the existing limit of 16 cryptographic checks
   // across the entire window rather than multiplying it by the read count.
-  for (let offset = 0; offset < selected.length; offset += 256) {
-    const window = selected.slice(offset, offset + 256);
-    const chunks: Opened[][] = [];
-    for (let start = 0; start < window.length; start += 64) {
-      chunks.push(window.slice(start, start + 64));
-    }
+  for (const window of arrayBatches(selected, 256)) {
+    const chunks = [...arrayBatches(window, 64)];
     const responses = await mapConcurrent(chunks, 4, async (chunk) => {
       live();
       const states = await required(
