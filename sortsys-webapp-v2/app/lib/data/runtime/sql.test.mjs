@@ -40,7 +40,7 @@ test("many rows keep their checks while using a bounded number of database reque
   const original = tables("users", values);
   try {
     prepared = 0;
-    await projectRuntimeRows(database, new Map(), original, []);
+    await projectRuntimeRows(database, new Map(), original);
     expect(prepared).toBeLessThan(40);
     expect(
       (await database.query("SELECT count(*) AS total FROM users")).rows[0]
@@ -49,7 +49,7 @@ test("many rows keep their checks while using a bounded number of database reque
     const preview = tables("users", [
       { id: "1", username: "renamed-worker", contract_type: "internal" },
     ]);
-    await projectRuntimeRows(database, original, preview, [], { rollback: true });
+    await projectRuntimeRows(database, original, preview, { rollback: true });
     expect(
       (await database.query("SELECT username FROM users WHERE id=1")).rows,
     ).toEqual([{ username: "worker-0" }]);
@@ -60,9 +60,7 @@ test("many rows keep their checks while using a bounded number of database reque
         index === values.length - 1 ? { ...value, cost_per_hour: -1 } : value,
       ),
     );
-    await expect(
-      projectRuntimeRows(database, original, invalid, []),
-    ).rejects.toThrow();
+    await expect(projectRuntimeRows(database, original, invalid)).rejects.toThrow();
     expect(
       (await database.query("SELECT cost_per_hour FROM users WHERE id=260"))
         .rows[0].cost_per_hour,
@@ -84,7 +82,7 @@ test("composite keys and late missing references fail atomically without hiding 
     tables("product_categories", categories).get("product_categories"),
   );
   try {
-    await projectRuntimeRows(database, new Map(), original, []);
+    await projectRuntimeRows(database, new Map(), original);
     const invalid = tables("products", [{ id: "1" }]);
     invalid.set(
       "product_categories",
@@ -99,15 +97,24 @@ test("composite keys and late missing references fail atomically without hiding 
       .get("product_categories")
       .get("260")
       .owners.set("product_id", [{ document: external }]);
-    await expect(
-      projectRuntimeRows(database, original, invalid, [external]),
-    ).rejects.toThrow();
+    await expect(projectRuntimeRows(database, original, invalid)).rejects.toThrow();
     expect(
       (await database.query("SELECT count(*) AS total FROM product_categories"))
         .rows[0].total,
     ).toBe(260n);
-    invalid.get("product_categories").delete("261");
-    await projectRuntimeRows(database, original, invalid, [external]);
+    const projectedCategories = invalid.get("product_categories");
+    projectedCategories.delete("261");
+    const owners = projectedCategories.get("260").owners;
+    const unrelated = { model: { externalReferences: ["product_vendors"] } };
+    owners.set("product_id", [{ document: external }, { document: unrelated }]);
+    await expect(projectRuntimeRows(database, original, invalid)).rejects.toThrow();
+    expect(
+      (await database.query("SELECT count(*) AS total FROM product_categories"))
+        .rows[0].total,
+    ).toBe(260n);
+
+    owners.set("product_id", [{ document: external }]);
+    await projectRuntimeRows(database, original, invalid);
     expect(
       (await database.query("SELECT count(*) AS total FROM product_categories"))
         .rows[0].total,
@@ -123,13 +130,11 @@ test("an unavailable private field remains distinct from a supplied NULL in cros
     { id: "1", kind: "measurement" },
   ]);
   try {
-    await projectRuntimeRows(database, new Map(), partial, []);
+    await projectRuntimeRows(database, new Map(), partial);
     const invalid = tables("commercial_cases", [
       { id: "1", kind: "measurement", project_id: null },
     ]);
-    await expect(
-      projectRuntimeRows(database, partial, invalid, []),
-    ).rejects.toThrow();
+    await expect(projectRuntimeRows(database, partial, invalid)).rejects.toThrow();
     expect(
       (await database.query("SELECT kind FROM commercial_cases WHERE id=1"))
         .rows[0].kind,

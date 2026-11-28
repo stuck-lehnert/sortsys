@@ -11,7 +11,6 @@ import {
   type BusinessConstraint,
   type BusinessTable,
 } from "../schema";
-import type { DataDocument } from "./model";
 import type { DataRecord } from "./rows";
 
 export type DataTables = Map<string, Map<string, DataRecord>>;
@@ -19,7 +18,6 @@ export type DataTables = Map<string, Map<string, DataRecord>>;
 function needsConstraint(
   row: DataRecord,
   constraint: BusinessConstraint,
-  external: ReadonlyMap<DataDocument<unknown>, ReadonlySet<string>>,
 ): boolean {
   // Unavailable private fields cannot be validated as observed SQL NULLs.
   if (constraint.columns.some((column) => !Object.hasOwn(row.values, column)))
@@ -27,11 +25,15 @@ function needsConstraint(
   if (constraint.kind === "c") return true;
   if (constraint.columns.some((column) => row.values[column] === null))
     return false;
+
+  // Every owner comes from the documents that built this projection.
   const owners = row.owners.get(constraint.columns[0]!) ?? [];
   const externalOnly =
     owners.length > 0 &&
     owners.every((owner) =>
-      external.get(owner.document)?.has(constraint.referencedTable!),
+      owner.document.model.externalReferences?.includes(
+        constraint.referencedTable!,
+      ),
     );
   return !externalOnly;
 }
@@ -78,12 +80,8 @@ export function projectRuntimeRows(
   database: BusinessDatabase,
   previous: DataTables,
   tables: DataTables,
-  documents: Iterable<DataDocument<unknown>>,
   options?: { rollback?: boolean },
 ): Promise<void> {
-  const external = new Map<DataDocument<unknown>, Set<string>>();
-  for (const document of documents)
-    external.set(document, new Set(document.model.externalReferences));
   return database.transaction(async (tx) => {
     const names = new Set([...previous.keys(), ...tables.keys()]);
     if (names.size) {
@@ -102,7 +100,7 @@ export function projectRuntimeRows(
       for (const constraint of table.constraints) {
         if (constraint.kind !== "c" && constraint.kind !== "f") continue;
         const selected = [...rows.values()].filter((row) =>
-          needsConstraint(row, constraint, external),
+          needsConstraint(row, constraint),
         );
         await validateConstraint(tx, table, constraint, selected);
       }

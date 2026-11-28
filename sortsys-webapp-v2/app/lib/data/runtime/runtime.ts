@@ -291,7 +291,6 @@ export class DataTransaction extends DataView {
     this.live();
     return new Map(this.deletions);
   }
-  private readonly originalResources = this.resources;
   private readonly originalTables = this.tables;
   override async query<T>(
     fields: Readonly<Record<string, readonly string[]>>,
@@ -301,22 +300,10 @@ export class DataTransaction extends DataView {
     if (!this.changes.size) return super.query<T>(fields, sql, parameters);
     const database = await this.database();
     try {
-      await projectRuntimeRows(
-        database,
-        this.originalTables,
-        this.tables,
-        [...this.resources.values()].flatMap((resource) => resource.documents),
-      );
+      await projectRuntimeRows(database, this.originalTables, this.tables);
       return await super.query<T>(fields, sql, parameters);
     } finally {
-      await projectRuntimeRows(
-        database,
-        this.tables,
-        this.originalTables,
-        [...this.originalResources.values()].flatMap(
-          (resource) => resource.documents,
-        ),
-      );
+      await projectRuntimeRows(database, this.tables, this.originalTables);
     }
   }
   patch(
@@ -911,28 +898,34 @@ export class DataRuntime {
       const fresh = new Map(
         [...next].filter(([key]) => merged.has(key) || !this.stale.has(key)),
       );
-      const documents = [...fresh.values()].flatMap(
-        (resource) => resource.documents,
-      );
       const changed =
         this.projectedGeneration !== generation ||
         fresh.size !== this.projectedResources.size ||
         [...fresh].some(
           ([key, value]) => this.projectedResources.get(key) !== value,
         );
-      const project = changed
-        ? await this.loadProjection?.(documents, this.controller.signal)
-        : this.project;
-      this.live();
-      if (generation !== this.generation) throw new ProtectedWriteConflict();
-      const tables = changed ? projectDataRows(documents, project) : this.tables;
-      if (changed && (this.tables.size || tables.size))
-        await projectRuntimeRows(
-          await (database ?? this.db()),
-          this.tables,
-          tables,
-          documents,
+      let project = this.project;
+      let tables = this.tables;
+      if (changed) {
+        const documents = [...fresh.values()].flatMap(
+          (resource) => resource.documents,
         );
+        project = await this.loadProjection?.(
+          documents,
+          this.controller.signal,
+        );
+        this.live();
+        if (generation !== this.generation) throw new ProtectedWriteConflict();
+
+        tables = projectDataRows(documents, project);
+        if (this.tables.size || tables.size)
+          await projectRuntimeRows(
+            await (database ?? this.db()),
+            this.tables,
+            tables,
+          );
+      }
+
       this.live();
       if (generation !== this.generation) throw new ProtectedWriteConflict();
       if (changed) this.generation++;
@@ -1159,7 +1152,7 @@ export class DataRuntime {
       // Validate the prospective state; rollback the local projection before
       // network publication. Nothing speculative is visible to other callers.
       if (this.tables.size || tables.size)
-        await projectRuntimeRows(await this.db(), this.tables, tables, documents, {
+        await projectRuntimeRows(await this.db(), this.tables, tables, {
           rollback: true,
         });
       this.live();
