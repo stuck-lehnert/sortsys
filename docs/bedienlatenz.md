@@ -49,9 +49,12 @@ Abgleich des Musterbestands.
 
 Die Gruppe **Projektarbeit** wird nach der Anmeldung außerhalb der Messung
 aufgeklappt, falls sie geschlossen ist. Jede Runde nutzt einen frischen
-Browserkontext; der Rückweg zur Projektliste nutzt denselben Kontext. Die
-Server bleiben zwischen Runden aktiv. Das ist ein Test mit kaltem
-Browserzustand, kein Test des Server-Kaltstarts. Das Zeitlimit pro
+Browserkontext. Die Rückkehr zur Projektliste (`revisitedList`) und das
+erneute Öffnen desselben Projekts (`revisitedDetail`, optional
+`revisitedDetailWithContacts`) nutzen denselben Kontext. Das zeigt, was
+beim direkten Wiederaufruf aus dem Browsercache nutzbar ist. Anschließend
+folgen Suche, Angebotsliste und Editor. Die Server bleiben zwischen Runden
+aktiv; ein Server-Kaltstart wird nicht gemessen. Das Zeitlimit pro
 Browseraktion beträgt standardmäßig 30 Sekunden. `SORTSYS_LATENCY_ACTION_TIMEOUT_MS`
 setzt ein anderes Limit in Millisekunden, ohne einen fehlgeschlagenen Lauf
 als Messwert zu zählen.

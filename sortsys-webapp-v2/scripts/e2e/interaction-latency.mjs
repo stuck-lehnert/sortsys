@@ -130,7 +130,32 @@ async function scenario(browser, target) {
       has: page.getByText(title, { exact: true }),
     });
     const projectHeading = page.getByRole("heading", { name: title, exact: true, level: 1 });
+    const contacts = projectContacts === undefined
+      ? undefined
+      : page.getByRole("button", {
+          name: new RegExp(`^(Ansprechpartner|Contacts) \\(${projectContacts}\\)$`),
+        });
     const ready = (locator) => locator.waitFor({ state: "visible" });
+
+    const openProjectList = async () => {
+      await projects.click();
+      await page.waitForURL((url) => url.pathname === "/projects");
+      await ready(projectRow);
+    };
+    const measureProjectDetail = async (detailStep, contactsStep) => {
+      const start = diagnostics ? await diagnostics.snapshot() : performance.now();
+      await projectRow.press("Enter");
+      await page.waitForURL((url) => /^\/projects\/[0-9a-v]+$/.test(url.pathname));
+      await ready(projectHeading);
+      await record(detailStep, start);
+
+      if (contacts) {
+        await ready(contacts);
+        await record(contactsStep, start);
+      }
+
+      return new URL(page.url()).pathname.split("/").at(-1);
+    };
 
     await page.goto(new URL("/auth/login", target.url).href);
     await page.getByRole("textbox", { name: /^(Nutzername|Username)/ }).fill(target.username);
@@ -159,29 +184,19 @@ async function scenario(browser, target) {
     if (await projectWork.getAttribute("aria-expanded") === "false") await projectWork.click();
     await ready(projects);
 
-    await measure("firstList", async () => {
-      await projects.click();
-      await page.waitForURL((url) => url.pathname === "/projects");
-      await ready(projectRow);
-    });
-    const detailStart = diagnostics ? await diagnostics.snapshot() : performance.now();
-    await projectRow.press("Enter");
-    await page.waitForURL((url) => /^\/projects\/[0-9a-v]+$/.test(url.pathname));
-    await ready(projectHeading);
-    await record("detail", detailStart);
+    await measure("firstList", openProjectList);
+    const projectId = await measureProjectDetail("detail", "detailWithContacts");
+    await measure("revisitedList", openProjectList);
 
-    if (projectContacts !== undefined) {
-      const name = new RegExp(`^(Ansprechpartner|Contacts) \\(${projectContacts}\\)$`);
-      await ready(page.getByRole("button", { name }));
-      await record("detailWithContacts", detailStart);
+    const revisitedId = await measureProjectDetail(
+      "revisitedDetail",
+      "revisitedDetailWithContacts",
+    );
+    if (revisitedId !== projectId) {
+      throw new Error(`${target.branch}: the revisited project has a different identifier`);
     }
 
-    const projectId = new URL(page.url()).pathname.split("/").at(-1);
-    await measure("revisitedList", async () => {
-      await projects.click();
-      await page.waitForURL((url) => url.pathname === "/projects");
-      await ready(projectRow);
-    });
+    await openProjectList();
 
     await page.keyboard.press("Control+k");
     const palette = page.getByRole("dialog", { name: /^(Befehlspalette|Command palette)$/ });
