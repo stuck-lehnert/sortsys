@@ -530,16 +530,20 @@ async fn browser_password_changes_revoke_peer_sessions_without_postgres() {
     // Renewal of an identical value changes the expiry head. A stale queue
     // entry must never delete a still-live exchange or reset a login budget.
     let temporary = key("temporary", "renewed");
+    let abandoned = key("temporary", "abandoned");
+    let past = Utc::now() - chrono::Duration::minutes(1);
+
     let mut expired = tenant.transaction().unwrap();
     expired
-        .put_expiring(
-            temporary.clone(),
-            &"unchanged",
-            Utc::now() - chrono::Duration::minutes(1),
-        )
+        .put_expiring(temporary.clone(), &"unchanged", past)
+        .await
+        .unwrap();
+    expired
+        .put_expiring(abandoned.clone(), &"expired", past)
         .await
         .unwrap();
     expired.commit().await.unwrap();
+
     let mut renewed = second.tenant("test").unwrap().transaction().unwrap();
     renewed
         .put_expiring(
@@ -560,6 +564,7 @@ async fn browser_password_changes_revoke_peer_sessions_without_postgres() {
             .as_deref(),
         Some("unchanged")
     );
+    assert_eq!(tenant.read::<String>(abandoned).await.unwrap().value, None);
 
     // Authorization observed before a concurrent tenant/session generation
     // change cannot publish a protected update afterwards.

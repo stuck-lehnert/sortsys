@@ -69,13 +69,16 @@ pub(crate) fn fingerprint(value: &str) -> String {
     sortsys_zerotrust::crypto::encode(&Sha256::digest(value.as_bytes()))
 }
 
-fn expiry_head(record: &RecordKey) -> RecordKey {
-    let identity = fingerprint(&format!("{}\0{}", record.collection, record.key));
+fn record_fingerprint(record: &RecordKey) -> String {
+    fingerprint(&format!("{}\0{}", record.collection, record.key))
+}
+
+fn expiry_head(identity: &str) -> RecordKey {
     key("control-expiry-heads", &format!("e_{identity}"))
 }
 
 fn protection_name(record: &RecordKey) -> String {
-    let identity = fingerprint(&format!("{}\0{}", record.collection, record.key));
+    let identity = record_fingerprint(record);
     format!("record-{identity}")
 }
 
@@ -473,7 +476,7 @@ impl Repository {
             if expiration.expires_at > Utc::now() {
                 continue;
             }
-            let head_key = expiry_head(&expiration.record);
+            let head_key = expiry_head(&record_fingerprint(&expiration.record));
             let head: Option<Expiration> = transaction.read(head_key.clone()).await?;
             if head.as_ref() == Some(&expiration) {
                 let current = transaction.encoded(expiration.record.clone()).await?;
@@ -897,22 +900,31 @@ impl Transaction {
         if expires_at.timestamp_micros() < 0 || record.collection == "control-expiries" {
             return Err(unavailable());
         }
+
+        let identity = record_fingerprint(&record);
+        let head = expiry_head(&identity);
+        let entry = key(
+            "control-expiries",
+            &format!("{:020}:{identity}", expires_at.timestamp_micros()),
+        );
+
+        // All three versions still participate in the same CAS. Observe the
+        // missing versions together rather than reading each write separately.
+        self.prefetch(vec![record.clone(), head.clone(), entry.clone()])
+            .await?;
+
         self.put(record.clone(), value).await?;
         let encoded = self
             .encoded(record.clone())
             .await?
             .ok_or_else(unavailable)?;
-        let identity = fingerprint(&format!("{}\0{}", record.collection, record.key));
-        let expiry_key = format!("{:020}:{identity}", expires_at.timestamp_micros());
         let expiration = Expiration {
             record,
             fingerprint: fingerprint(&encoded),
             expires_at,
         };
-        self.put(expiry_head(&expiration.record), &expiration)
-            .await?;
-        self.put(key("control-expiries", &expiry_key), &expiration)
-            .await
+        self.put(head, &expiration).await?;
+        self.put(entry, &expiration).await
     }
 
     pub async fn delete(&mut self, record: RecordKey) -> RpcResult<()> {
