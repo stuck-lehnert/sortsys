@@ -522,16 +522,24 @@ export function createProtectedAddressBook(
       lease.live();
 
       const selected = addressObjects("customers", ids);
-      const names = await runtime.read([selected], (view) => {
-        const result = new Map<string, string>();
-        for (const { value } of view.documents(selected)) {
-          if (value.row) {
-            const { id, name } = value.row.values;
-            result.set(publicId(id), name as string);
+      const names = await runtime.read(
+        [selected],
+        (view) => {
+          const result = new Map<string, string>();
+
+          for (const { value } of view.documents(selected)) {
+            if (value.row) {
+              const { id, name } = value.row.values;
+              result.set(publicId(id), name as string);
+            }
           }
-        }
-        return result;
-      });
+
+          return result;
+        },
+        undefined,
+        { batchDirectory: true },
+      );
+
       lease.live();
       return names;
     },

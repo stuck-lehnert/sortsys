@@ -12,6 +12,8 @@ import {
 } from "./addressBook";
 import { projectCollection } from "./projectData";
 import { createProtectedProjects } from "./projects";
+import { announceDataChanges } from "./runtime/changes";
+import { acquireDataRuntime } from "./runtime/session";
 import { row } from "./testing/businessRow.mjs";
 import { duckDriver } from "./testing/duckDriver.mjs";
 import { fixtureTimeout } from "./testing/fixtureTimeout.mjs";
@@ -72,6 +74,95 @@ function fullPages(calls) {
 
   return selections.filter((page) => !page.headOnly);
 }
+
+test("offer labels share the first verified load and warm customer names do not wait for SQL", async () => {
+  const area = projectCollection("2");
+  const { client, calls, seed } = await protectedTenant(
+    [area, CUSTOMER_COLLECTION],
+    () => ["read"],
+  );
+
+  const signal = new AbortController().signal;
+  const lease = acquireDataRuntime(client, signal, duckDriver);
+  const directory = createProtectedAddressBook(client, signal);
+  const projects = createProtectedProjects(client, signal, async () => directory);
+
+  const customerRecord = { ...customer(), links: [] };
+  const customerId = "34";
+  const customerObject = CUSTOMER_COLLECTION.prefix + customerId;
+
+  const entered = Promise.withResolvers();
+  const release = Promise.withResolvers();
+  let holder;
+  let warm;
+  let timeout;
+
+  try {
+    await seed(CUSTOMER_COLLECTION, customerObject, customerRecord);
+    await seed(area, area.prefix, {
+      format: "sortsys-project-v1",
+      project: row("projects", { id: "2", title: "Sanierung" }),
+      contacts: [],
+    });
+
+    const [names, associatedProjects] = await Promise.all([
+      directory.customerNames([customerId]),
+      projects.getMany(["2"]),
+    ]);
+    expect(names).toEqual(new Map([[customerId, "Bauherr"]]));
+    expect(associatedProjects.map(({ title }) => title)).toEqual(["Sanierung"]);
+
+    const initialSelections = calls
+      .filter(({ path }) => path === "zerotrust.access.snapshot")
+      .map(({ input }) =>
+        input.pages?.selections.map(({ domain }) => domain).sort(),
+      )
+      .filter(Boolean);
+    expect(initialSelections).toEqual([
+      [area.domain, CUSTOMER_COLLECTION.domain].sort(),
+    ]);
+    expect(fullPages(calls).map(({ domain }) => domain)).toEqual([area.domain]);
+
+    holder = lease.runtime.read([], async () => {
+      entered.resolve();
+      await release.promise;
+    });
+    await entered.promise;
+
+    const rpcCount = calls.length;
+    const deadline = new Promise((resolve) => {
+      timeout = setTimeout(
+        () => resolve("Unexpected wait for the SQL queue"),
+        2000,
+      );
+    });
+
+    warm = directory.customerNames([customerId]);
+    expect(await Promise.race([warm, deadline])).toEqual(names);
+    expect(calls.slice(rpcCount)).toEqual([]);
+
+    release.resolve();
+    await holder;
+
+    await seed(CUSTOMER_COLLECTION, customerObject, {
+      ...customerRecord,
+      row: null,
+    });
+    announceDataChanges(client, new Set([CUSTOMER_COLLECTION.domain]));
+
+    expect(await directory.customerNames([customerId])).toEqual(new Map());
+  } finally {
+    clearTimeout(timeout);
+    release.resolve();
+    await holder;
+    await warm?.catch(() => undefined);
+
+    projects.close();
+    directory.close();
+    lease.close();
+    lockCryptoSession();
+  }
+}, fixtureTimeout(30_000));
 
 test("write references verify only selected contacts at the current catalog head", async () => {
   const area = CONTACT_COLLECTION;
