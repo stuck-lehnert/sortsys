@@ -44,6 +44,8 @@ export type PricePayload = {
   price: BusinessRow;
 };
 
+const PRODUCT_ID = /^(?:[1-9a-v][0-9a-v]{0,11}|[1-7][0-9a-v]{12})$/;
+
 export function publicId(value: unknown): string {
   if (
     typeof value !== "string" ||
@@ -501,13 +503,6 @@ export function openProtectedProducts(
     lease.live();
     return value;
   };
-  function payload(products: ProductPayload[], id: string): ProductPayload {
-    const value = products.find(
-      (product) => publicId(product.product.values.id) === id,
-    );
-    if (!value) throw new InvalidProtectedData();
-    return value;
-  }
   async function write<T>(apply: (tx: DataTransaction) => T): Promise<T> {
     lease.live();
     const result = await runtime.transaction([productRequest], apply);
@@ -560,8 +555,27 @@ export function openProtectedProducts(
       }
       return rows;
     },
-    get: (id: string): Promise<Product> =>
-      read((products) => wireProduct(payload(products, id))),
+    async get(id: string): Promise<Product> {
+      lease.live();
+      if (id !== "0" && !PRODUCT_ID.test(id)) throw new InvalidProtectedData();
+
+      const request = {
+        ...productRequest,
+        ids: [PRODUCT_COLLECTION.prefix + id],
+      };
+      const product = await runtime.read(
+        [request],
+        (view) => {
+          const [document] = view.documents(request);
+          if (!document) throw new InvalidProtectedData();
+          return wireProduct(document.value);
+        },
+        undefined,
+        { batchDirectory: true },
+      );
+      lease.live();
+      return product;
+    },
     categories: () =>
       read((products) =>
         [
@@ -636,8 +650,7 @@ export function openProtectedProducts(
       write(updateProduct(input)),
     async remove(id: string) {
       lease.live();
-      if (!/^(?:[1-9a-v][0-9a-v]{0,11}|[1-7][0-9a-v]{12})$/.test(id))
-        throw new InvalidProtectedData();
+      if (!PRODUCT_ID.test(id)) throw new InvalidProtectedData();
       await runtime.removeStock(productRequest, PRODUCT_COLLECTION.prefix + id);
       lease.live();
       return { success: true as const };

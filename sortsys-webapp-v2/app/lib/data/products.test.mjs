@@ -88,6 +88,65 @@ test("opening the catalogue leaves the first protected read to the requested ope
   }
 });
 
+test("product references fetch only the requested catalogue objects", async () => {
+  const fixture = await protectedTenant([PRODUCT_COLLECTION]);
+  const catalogue = openProtectedProducts(
+    fixture.client,
+    new AbortController().signal,
+    duckDriver,
+  );
+
+  try {
+    for (let number = 1; number <= 40; number++) {
+      const id = String(number);
+      const product = row("products", {
+        id,
+        custom_id: id,
+        name: `Produkt ${id}`,
+      });
+
+      await fixture.seed(PRODUCT_COLLECTION, `product:${publicId(id)}`, {
+        format: "sortsys-product-v1",
+        product,
+        categories: [],
+      });
+    }
+
+    fixture.calls.length = 0;
+    const ids = ["1", publicId("40"), publicId("41")];
+    const [first, last, missing] = await Promise.allSettled(
+      ids.map((id) => catalogue.get(id)),
+    );
+
+    expect(first).toMatchObject({
+      status: "fulfilled",
+      value: { name: "Produkt 1" },
+    });
+    expect(last).toMatchObject({
+      status: "fulfilled",
+      value: { name: "Produkt 40" },
+    });
+    expect(missing.status).toBe("rejected");
+
+    const selected = fixture.calls
+      .filter(({ path }) => path === "zerotrust.objects.getMany")
+      .map(({ input }) => input.ids);
+    expect(selected).toEqual([ids.map((id) => `product:${id}`)]);
+
+    fixture.calls.length = 0;
+    expect(await catalogue.get(ids[0])).toEqual(first.value);
+    expect(fixture.calls).toEqual([]);
+
+    expect(await catalogue.list({})).toHaveLength(40);
+    fixture.calls.length = 0;
+    expect(await catalogue.get(ids[1])).toEqual(last.value);
+    expect(fixture.calls).toEqual([]);
+  } finally {
+    await catalogue.close();
+    await lockCryptoSession();
+  }
+}, 45_000);
+
 test("a verified historical vendor deletion cannot erase a newly assigned vendor during a price patch", async () => {
   const { PRICE_MODEL } = await import("./products"), { openDataDocument } = await import("./runtime/model");
   const area = { domain: "catalog:products:procurement", scope: "catalog:products", facet: "procurement", prefix: "product-price:" };
