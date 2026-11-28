@@ -16,6 +16,7 @@ import {
 } from "./deliveryNoteData";
 import { priceRequest, publicId } from "./products";
 import { protectedCollections, required } from "./protectedObjects";
+import { readableAreas } from "./readableAreas";
 import { historicalPriceIndex } from "./historicalPrices";
 import { deliveryAllocation } from "./deliveryRegistry";
 import {
@@ -58,11 +59,13 @@ export function createProtectedDeliveryNotes(
             deliveryCollection(projectId).domain,
             deliveryCollection(projectId, true).domain,
           ];
-    const inventory = await protectedCollections(client, signal, domains);
-    const areas = inventory.areas((domain) => {
+    const select = (domain: string) => {
       const area = deliveryDomain(domain);
       return area ? deliveryCollection(area.projectId, area.prices) : null;
-    });
+    };
+    const areas = domains
+      ? (await protectedCollections(client, signal, domains)).areas(select)
+      : await readableAreas(client, signal, select);
     live();
     const quantities = areas.filter((area) => area.facet === "master-data"),
       quantityProjects = new Set(

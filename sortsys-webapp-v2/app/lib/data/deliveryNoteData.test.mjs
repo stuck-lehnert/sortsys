@@ -16,6 +16,10 @@ import {
 import { deliveryObject } from "./deliveryIdentity";
 import { createProtectedDeliveryNotes } from "./deliveryNotes";
 import { indexHistoricalPrices } from "./historicalPrices";
+import {
+  invalidateReadableAreas,
+  setReadableAreasConnection,
+} from "./readableAreas";
 import { openDataDocument } from "./runtime/model";
 import { dailyCollection } from "./dailyReportData";
 import { regieCollection } from "./regieReportData";
@@ -165,6 +169,49 @@ for (const canReadPrices of [true, false]) {
     }
   });
 }
+
+test("the all-project delivery list reuses the verified directory only while connected", async () => {
+  const area = deliveryCollection("2");
+  const tenant = await protectedTenant([area]);
+  const signal = new AbortController().signal;
+  const notes = createProtectedDeliveryNotes(tenant.client, signal, duckDriver);
+  const directoryReads = () =>
+    tenant.calls.filter(
+      ({ path, input }) =>
+        path === "zerotrust.access.snapshot" &&
+        input.includeDomains !== false &&
+        !input.domain &&
+        !input.domains &&
+        !input.pages,
+    ).length;
+
+  try {
+    const { payload, prices } = fixture();
+    const id = deliveryObject({ id: prices.noteId, projectId: "2" });
+    await tenant.seed(area, id, payload);
+    setReadableAreasConnection(tenant.client, true);
+
+    const first = await notes.query("deliveryNotes.list", {});
+    expect(first.map(({ autoId }) => autoId)).toEqual([12]);
+    const cold = directoryReads();
+    expect(cold).toBe(1);
+
+    expect(await notes.query("deliveryNotes.list", {})).toEqual(first);
+    expect(directoryReads()).toBe(cold);
+
+    invalidateReadableAreas(tenant.client);
+    expect(await notes.query("deliveryNotes.list", {})).toEqual(first);
+    expect(directoryReads()).toBe(cold + 1);
+
+    setReadableAreasConnection(tenant.client, false);
+    expect(await notes.query("deliveryNotes.list", {})).toEqual(first);
+    expect(await notes.query("deliveryNotes.list", {})).toEqual(first);
+    expect(directoryReads()).toBe(cold + 3);
+  } finally {
+    notes.close();
+    lockCryptoSession();
+  }
+});
 
 test("delivery quantities and prices have separate project bindings and preserve identifiers and values", () => {
   const { payload, prices } = fixture(),
