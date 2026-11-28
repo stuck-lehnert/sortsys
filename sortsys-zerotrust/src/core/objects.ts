@@ -84,8 +84,7 @@ export function createObjectCodec<const F extends string>(
   // Keep ciphertext traffic separate from the authority and identity proofs.
   const objectProofs = createPublicProofVerifier({ capacity: 1024 });
 
-  function objectContext(value: unknown): ObjectContext<F> {
-    const obj = record(value, contextKeys);
+  function checkContextFields(obj: Record<string, unknown>): void {
     for (const key of ["tenant", "scope", "object", "author"] as const) {
       identifier(obj[key]);
     }
@@ -95,7 +94,12 @@ export function createObjectCodec<const F extends string>(
     if (!allowedFacets.has(obj.facet as string)) {
       throw new InvalidProtectedData();
     }
-    return { ...obj } as ObjectContext<F>;
+  }
+
+  function objectContext(value: unknown): ObjectContext<F> {
+    const obj = { ...record(value, contextKeys) };
+    checkContextFields(obj);
+    return obj as ObjectContext<F>;
   }
 
   function contextFrame(context: ObjectContext<F>): Uint8Array<ArrayBuffer> {
@@ -120,10 +124,8 @@ export function createObjectCodec<const F extends string>(
   }
 
   function encryptedObject(value: unknown): EncryptedObject<F> {
-    const obj = record(value, envelopeKeys);
-    objectContext(
-      Object.fromEntries(contextKeys.map((key) => [key, obj[key]])),
-    );
+    const obj = { ...record(value, envelopeKeys) };
+    checkContextFields(obj);
     if (obj.format !== "sortsys-object-v1" && obj.format !== TOMBSTONE_FORMAT) {
       throw new InvalidProtectedData();
     }
@@ -140,7 +142,7 @@ export function createObjectCodec<const F extends string>(
         (ciphertextLength !== 16 || obj.revision === "1"))
     )
       throw new InvalidProtectedData();
-    return { ...obj } as EncryptedObject<F>;
+    return obj as EncryptedObject<F>;
   }
 
   async function encryptObject(
@@ -159,8 +161,6 @@ export function createObjectCodec<const F extends string>(
     key: CryptoKey,
     author: CryptoKey,
   ): Promise<EncryptedObject<F>> {
-    objectContext(context);
-    if (context.revision === "1") throw new InvalidProtectedData();
     return sealObject(
       context,
       new Uint8Array(0),
@@ -170,14 +170,20 @@ export function createObjectCodec<const F extends string>(
     );
   }
   async function sealObject(
-    context: ObjectContext<F>,
+    input: ObjectContext<F>,
     plaintext: Uint8Array<ArrayBuffer>,
     key: CryptoKey,
     author: CryptoKey,
     format: EncryptedObject<F>["format"],
   ): Promise<EncryptedObject<F>> {
     if (plaintext.length > MAX_CONTENT_BYTES) throw new InvalidProtectedData();
-    objectContext(context);
+
+    // Use the same validated context for the AAD and the signed envelope,
+    // even while the caller is free to reuse its input during the crypto work.
+    const context = objectContext(input);
+    if (format === TOMBSTONE_FORMAT && context.revision === "1")
+      throw new InvalidProtectedData();
+
     const raw = randomSecret();
     try {
       const dataKey = await crypto.subtle.importKey(
@@ -193,7 +199,7 @@ export function createObjectCodec<const F extends string>(
           {
             name: "AES-GCM",
             iv: nonce,
-            additionalData: contextFrame(context),
+            additionalData: frameContext(context),
             tagLength: 128,
           },
           dataKey,

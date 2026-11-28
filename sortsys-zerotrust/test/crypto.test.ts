@@ -26,6 +26,27 @@ describe("protected objects", () => {
     expect(a.ciphertext).not.toBe(b.ciphertext);
   });
 
+  test("sealing uses one validated context for encryption and signature", async () => {
+    const identity = await createIdentity();
+    const key = await areaKey();
+    const context = { ...object };
+    const plaintext = bytes("original context");
+
+    const pending = encryptObject(
+      context,
+      plaintext,
+      key,
+      identity.signingKey.privateKey,
+    );
+    context.object = "line:789";
+
+    const encrypted = await pending;
+    expect(encrypted.object).toBe(object.object);
+    expect(
+      await decryptObject(encrypted, object, key, identity.signingKey.publicKey),
+    ).toEqual(plaintext);
+  });
+
   test("rejects substitution of every signed header, extra properties and an untrusted signer", async () => {
     const identity = await createIdentity();
     const key = await areaKey();
