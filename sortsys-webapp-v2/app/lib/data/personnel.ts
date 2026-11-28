@@ -140,7 +140,7 @@ export function createProtectedPersonnel(
     }
     const present = await runtime.read(
       [master],
-      (view) => view.documents(master).length > 0,
+      (view) => view.documentCount(master) > 0,
     );
     live();
     if (present) return;
@@ -164,8 +164,8 @@ export function createProtectedPersonnel(
     );
     await runtime.transaction(selected, (tx) => {
       live();
-      if (tx.documents(selected[0]!).length) return;
-      if (selected.slice(1).some((request) => tx.documents(request).length))
+      if (tx.documentCount(selected[0]!)) return;
+      if (selected.slice(1).some((request) => tx.documentCount(request)))
         throw new InvalidProtectedData();
       for (const request of selected)
         tx.create(
@@ -330,7 +330,7 @@ export function createProtectedPersonnel(
             for (const [id, parts] of byId) {
               const master = parts.findIndex((part) => part.area.facet === "master-data");
               if (master < 0) continue;
-              const counts = parts.map((part) => view.documents(part).length);
+              const counts = parts.map((part) => view.documentCount(part));
               if (!counts[master]) {
                 if (counts.some((count) => count)) throw new InvalidProtectedData();
                 continue;

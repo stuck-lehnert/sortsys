@@ -149,23 +149,39 @@ export class DataView {
       throw new InvalidProtectedData();
     return resource.permissions[action];
   }
-  documents<T>(request: DataRequest<T>): {
-    id: string;
-    revision: string;
-    signature: string | undefined;
-    value: T;
-  }[] {
+  protected documentSelection(request: DataRequest) {
     this.live();
     const resource = this.resources.get(dataAreaKey(request.area));
     if (!resource || resource.request.model !== request.model)
       throw new InvalidProtectedData();
+
     const selected = request.ids && new Set(request.ids);
     if (
       !resource.complete &&
       (!selected || [...selected].some((id) => !resource.known.has(id)))
     )
       throw new InvalidProtectedData();
-    return resource.documents
+
+    return { documents: resource.documents, selected };
+  }
+  documentCount(request: DataRequest): number {
+    const { documents, selected } = this.documentSelection(request);
+    if (!selected) return documents.length;
+
+    let count = 0;
+    for (const document of documents)
+      if (selected.has(document.object.envelope.object)) count++;
+
+    return count;
+  }
+  documents<T>(request: DataRequest<T>): {
+    id: string;
+    revision: string;
+    signature: string | undefined;
+    value: T;
+  }[] {
+    const { documents, selected } = this.documentSelection(request);
+    return documents
       .filter(
         (document) =>
           !selected || selected.has(document.object.envelope.object),
@@ -261,15 +277,19 @@ export class DataTransaction extends DataView {
     id: string,
     expected: { signature?: string; revision?: string },
   ): void {
-    const document = this.documents(request).find(
-      (document) => document.id === id,
-    );
+    const { documents, selected } = this.documentSelection(request);
+    const document =
+      selected && !selected.has(id)
+        ? undefined
+        : documents.find(({ object }) => object.envelope.object === id);
+    const version = document?.object.envelope;
+
     if (
-      !document ||
+      !version ||
       (expected.signature !== undefined &&
-        expected.signature !== document.signature) ||
+        expected.signature !== version.signature) ||
       (expected.revision !== undefined &&
-        expected.revision !== document.revision)
+        expected.revision !== version.revision)
     )
       throw new ProtectedWriteConflict();
   }

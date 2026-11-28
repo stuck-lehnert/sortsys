@@ -1,5 +1,5 @@
 import { duckDriver as driver } from "./testing/duckDriver.mjs";
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 import {
   InvalidProtectedData,
   TOMBSTONE_FORMAT,
@@ -1059,6 +1059,86 @@ test("a soft policy refresh removes revoked fragments without rebuilding still-a
       ).rejects.toThrow();
     });
     expect(f.calls.drivers).toBe(1);
+  } finally {
+    await f.runtime.close();
+  }
+}, 15000);
+
+test("checking a document version does not copy any document values", async () => {
+  const f = fixture();
+  const size = 128;
+  for (let i = 2; i <= size; i++) {
+    f.seed(mainArea, `main:${i}`, {
+      row: row("product_price_records", {
+        id: String(i),
+        product_id: "2",
+        comment: `Entry ${i}`,
+      }),
+    });
+  }
+
+  try {
+    await f.runtime.transaction([first], (tx) => {
+      const id = `main:${size}`;
+      const copy = tx.documents(first).find((document) => document.id === id);
+      const { revision, signature } = copy;
+      copy.value.row.values.comment = "Changed copy";
+
+      const clone = spyOn(globalThis, "structuredClone");
+      let copies;
+      try {
+        tx.expect(first, id, { revision, signature });
+        copies = clone.mock.calls.length;
+      } finally {
+        clone.mockRestore();
+      }
+
+      expect(copies).toBe(0);
+      const original = tx.documents(first).find((document) => document.id === id);
+      expect(original.value.row.values.comment).toBe(`Entry ${size}`);
+    });
+    expect(f.calls.commit).toBe(0);
+  } finally {
+    await f.runtime.close();
+  }
+}, 15000);
+
+test("document metadata keeps the same complete and selected scope as document values", async () => {
+  const f = fixture();
+  const one = { ...first, ids: ["main:1"] };
+  const missing = { ...first, ids: ["main:2"] };
+  const both = { ...first, ids: ["main:1", "main:2"] };
+  const wrongModel = { ...one, model: prices };
+
+  try {
+    await f.runtime.transaction([one], (tx) => {
+      const { revision, signature } = tx.documents(one)[0];
+      expect(tx.documentCount(one)).toBe(1);
+      expect(() =>
+        tx.expect(one, "main:1", { revision, signature }),
+      ).not.toThrow();
+      expect(() => tx.expect(one, "main:2", {})).toThrow(ProtectedWriteConflict);
+      expect(() => tx.expect(one, "main:1", { revision: "0" })).toThrow(
+        ProtectedWriteConflict,
+      );
+      expect(() => tx.expect(one, "main:1", { signature: "stale" })).toThrow(
+        ProtectedWriteConflict,
+      );
+
+      for (const request of [first, missing, both, wrongModel]) {
+        expect(() => tx.documentCount(request)).toThrow(InvalidProtectedData);
+        expect(() => tx.expect(request, "main:1", {})).toThrow(
+          InvalidProtectedData,
+        );
+      }
+    });
+    await f.runtime.transaction([first], (tx) => {
+      expect(tx.documentCount(first)).toBe(1);
+      expect(tx.documentCount(missing)).toBe(0);
+      expect(tx.documentCount(both)).toBe(1);
+      expect(() => tx.expect(missing, "main:1", {})).toThrow(ProtectedWriteConflict);
+    });
+    expect(f.calls.commit).toBe(0);
   } finally {
     await f.runtime.close();
   }
